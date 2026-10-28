@@ -99,15 +99,11 @@ give.campaigns (
   goal_amount     bigint CHECK (goal_amount > 0),
   starts_at, ends_at timestamptz,          -- back: bắt buộc ends_at, thời lượng ≤ 60 ngày
   payment_window_days int DEFAULT 7,       -- back: số ngày để trả tiền sau khi đạt mục tiêu
-  receiving_account_id uuid → give.receiving_accounts,
+  receiving_account_id uuid → give.receiving_accounts,   -- gắn qua give.account_bindings (mục 2.2)
   status text CHECK IN ('draft','in_review','changes_requested','approved','live',
                         'settling','succeeded','failed','closed','suspended','cancelled'),
   outcome_at timestamptz
 )
--- Chỉ mục unique có điều kiện: một tài khoản nhận chỉ gắn với tối đa một campaign đang mở
-CREATE UNIQUE INDEX ... ON give.campaigns(receiving_account_id)
-  WHERE status IN ('approved','live','settling');
-
 -- Trigger: category.applies_to phải là 'both' hoặc bằng campaign.type
 give.campaign_milestones (id, campaign_id, title, description, target_amount bigint, unlock_note, sort_order)
   -- "đã đạt" tính từ sổ cái (received với give, pledged với back), không lưu cờ IsReached
@@ -145,7 +141,23 @@ give.receiving_accounts (
   verified_by, verified_at,
   UNIQUE (bank_bin, account_number), UNIQUE (chain, address)
 )
+
+-- Một tài khoản nhận thuộc về đúng một campaign cho tới khi được nhả RÕ RÀNG,
+-- không tự nhả khi campaign đổi trạng thái.
+give.account_bindings (
+  id uuid PK,
+  receiving_account_id uuid, campaign_id uuid,
+  bound_at timestamptz, released_at timestamptz NULL, released_by uuid NULL
+)
+CREATE UNIQUE INDEX ... ON give.account_bindings(receiving_account_id) WHERE released_at IS NULL;
 ```
+
+Chỉ hàm `give.release_account_binding()` được nhả binding, và chỉ khi campaign đã xong hẳn phần tiền:
+
+- `give`: đã `closed` ít nhất 30 ngày, và mọi giao dịch của tài khoản trong thời gian binding đã được khớp hoặc giải trình.
+- `back`: `failed` hoặc `cancelled`, hoặc `succeeded` và không còn contribution nào ở `payment_due`, `partially_paid` hay `refund_due`.
+
+Mỗi giao dịch được gắn `campaign_id` theo binding đang hiệu lực tại lúc ghi nhận, và không bao giờ đổi sau đó (mục 2.4). Nhờ vậy, khi tài khoản được dùng lại cho campaign sau, sao kê, tiền chưa khớp và báo cáo chi của campaign cũ vẫn tách bạch.
 
 Cách xác minh quyền sở hữu tài khoản trong MVP:
 
@@ -173,15 +185,24 @@ give.contributions (
   reward_tier_id uuid NULL,
   shipping_address jsonb NULL,
   reference_code text UNIQUE NOT NULL,    -- mã ủng hộ, ví dụ "GV7K2M9Q"
+  status_token_hash bytea NULL,           -- sha256 của token xem trạng thái cho khách vãng lai (mục 4.1)
+  status_token_expires_at timestamptz NULL,
   status text CHECK IN (
     -- donation
     'awaiting_transfer','received','expired',
     -- pledge
-    'pledged','cancelled','payment_due','partially_paid','paid','lapsed'),
+    'pledged','cancelled','payment_due','partially_paid','paid','lapsed',
+    'refund_due','refunded'),
   payment_due_at timestamptz NULL,
+  refund_due_at timestamptz NULL,
   fulfillment_status text NULL CHECK IN ('pending','in_progress','delivered','issue'),
-  CHECK (kind='donation' OR contributor_user_id IS NOT NULL)   -- pledge bắt buộc đăng nhập
+  CHECK (kind='donation' OR contributor_user_id IS NOT NULL),  -- pledge bắt buộc đăng nhập
+  CHECK (reward_tier_id IS NULL OR kind='pledge')
 )
+-- Trigger BEFORE INSERT/UPDATE give.contributions_enforce_type, bổ sung cho các kiểm tra trong RPC:
+--   kind='donation' ⇒ campaign.type='give';  kind='pledge' ⇒ campaign.type='back'
+--   reward_tier_id NOT NULL ⇒ tier.campaign_id = contributions.campaign_id
+--   campaign_id, kind, reward_tier_id không được đổi sau khi tạo
 
 give.reward_tiers (
   id, campaign_id, title, description,
@@ -193,8 +214,8 @@ give.reward_tiers (
   requires_shipping bool DEFAULT false,
   status text CHECK IN ('active','hidden'), sort_order
 )
--- quantity_claimed chỉ được đổi bên trong create_pledge, cancel_pledge và lapse_pledge,
--- sau khi đã SELECT ... FOR UPDATE dòng tier.
+-- quantity_claimed chỉ được đổi bên trong create_pledge, cancel_pledge và lapse_overdue_pledges,
+-- theo thứ tự khóa cố định: dòng campaign trước, rồi dòng tier (SELECT ... FOR UPDATE).
 ```
 
 `expired` của donation chỉ có nghĩa là mã QR hết hạn hiển thị (24 giờ). Nếu tiền vẫn về sau đó, hàm đối soát vẫn khớp và chuyển sang `received`.
@@ -211,7 +232,9 @@ give.inbound_events (                    -- toàn bộ webhook và lô import nh
 give.bank_transactions (                 -- bản sao sao kê, cho cả crypto (direction = in/out)
   id uuid PK,
   receiving_account_id uuid,
-  provider_tx_id text NOT NULL,          -- số bút toán / FT / tx hash; nếu không có thì là fingerprint
+  campaign_id uuid NULL,                 -- theo account_bindings tại lúc ghi nhận; trigger cấm đổi.
+                                         -- NULL = tài khoản không có binding hiệu lực → hàng chờ admin
+  provider_tx_id text NOT NULL,          -- id do ngân hàng/kênh cấp (số bút toán, FT, tx hash); xem mục 5.2
   direction text CHECK IN ('in','out'),
   asset text, amount bigint CHECK (> 0),
   vnd_equivalent bigint NULL,            -- crypto: quy đổi theo tỷ giá lúc ghi nhận
@@ -245,20 +268,34 @@ give.ledger_entries (                    -- chỉ ghi thêm; trigger chặn UPDA
   id bigserial PK,
   campaign_id uuid,
   bucket text CHECK IN ('pledged','received','disbursed','refunded','unmatched_in'),
+  entry_kind text CHECK IN ('post','reversal'),
   amount bigint,                          -- có dấu: bỏ cam kết thì ghi số âm vào 'pledged'
+  reverses_entry_id bigint NULL UNIQUE,   -- reversal trỏ tới đúng 1 dòng post; mỗi dòng chỉ bị đảo 1 lần
+  CHECK ((entry_kind='reversal') = (reverses_entry_id IS NOT NULL)),
   asset text, vnd_equivalent bigint,
   contribution_id uuid NULL, bank_transaction_id uuid NULL,
-  reason text, created_at,
-  UNIQUE (bank_transaction_id, bucket)    -- một giao dịch không ghi sổ 2 lần
+  reason text, actor_id uuid NULL, created_at
 )
+-- Một giao dịch chỉ được "post" một lần vào mỗi bucket:
+CREATE UNIQUE INDEX ... ON give.ledger_entries(bank_transaction_id, bucket)
+  WHERE entry_kind='post' AND bank_transaction_id IS NOT NULL;
 ```
+
+**Phân loại lại (reclassification)** không bao giờ sửa dòng cũ. Nó ghi một cặp dòng trong cùng transaction: một `reversal` đảo dòng `post` cũ (số tiền ngược dấu, trỏ `reverses_entry_id`), và một `post` vào bucket mới. Có hai trường hợp:
+
+| Từ             | Sang       | Khi nào                                                                                        |
+| -------------- | ---------- | ---------------------------------------------------------------------------------------------- |
+| `unmatched_in` | `received` | Người tổ chức hoặc admin khớp tay một giao dịch không có mã với một contribution               |
+| `disbursed`    | `refunded` | Khoản chi được giải trình là hoàn tiền cho một contribution (`record_disbursement(is_refund)`) |
+
+Vì index unique chỉ áp lên dòng `post`, và `reverses_entry_id` là UNIQUE, mỗi giao dịch đổi bucket được đúng một lần. Nếu admin cần sửa một lần khớp sai, việc đó đi qua hàm riêng `give.admin_correct_match()`, có lý do bắt buộc và ghi `audit_log`; hàm này nằm ngoài MVP.
 
 Bốn con số mà handoff yêu cầu, áp dụng cho mô hình không giữ tiền:
 
 | Con số              | Tính từ                                                                                 | Ghi chú                                                                                                                |
 | ------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | Cam kết             | `SUM(pledged)`                                                                          | Chỉ có ở back                                                                                                          |
-| Đã thanh toán       | `SUM(received)` + `SUM(unmatched_in)`                                                   | Tiền đã vào tài khoản nhận                                                                                             |
+| Đã thanh toán       | `SUM(received)` + `SUM(unmatched_in)` (đã tính cả các dòng reversal)                    | Tiền đã vào tài khoản nhận. Khớp tay sau này chỉ chuyển tiền giữa hai bucket, tổng không đổi.                          |
 | Được phép giải ngân | give: bằng "đã thanh toán". back: bằng "đã thanh toán", vì chỉ thu sau khi đạt mục tiêu | Tiền đã nằm trong tài khoản của người tổ chức, Give không chặn được. Con số này để công khai, không phải để kiểm soát. |
 | Đã chi / đã hoàn    | `SUM(disbursed)`, `SUM(refunded)`                                                       | Kèm phần chưa giải trình: các khoản chi chưa có dòng trong `disbursements`                                             |
 
@@ -293,17 +330,17 @@ give.admins (user_id PK, role ('moderator','finance','admin'))       -- hoặc d
 
 ## 3. Hàm Postgres cho nghiệp vụ tiền
 
-| Hàm                                                            | Việc chính                                                                                                                                                                           | Chống lỗi                                                                                        |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
-| `give.transition_campaign(campaign, to, actor, reason)`        | Đổi trạng thái theo bảng chuyển hợp lệ, ghi `campaign_status_events` và `audit_log`                                                                                                  | `FOR UPDATE` dòng campaign; chuyển không hợp lệ thì `RAISE`                                      |
-| `give.create_donation(campaign, amount, contributor/guest, …)` | Tạo contribution `awaiting_transfer` và sinh `reference_code`                                                                                                                        | Chỉ cho campaign `live`; sinh lại mã nếu trùng                                                   |
-| `give.create_pledge(campaign, tier, amount, user, address)`    | Khóa tier, kiểm tra còn suất, tăng `quantity_claimed`, ghi ledger `pledged +amount`                                                                                                  | `FOR UPDATE` tier; `amount ≥ min_amount`; campaign phải `live` và `now() < ends_at`              |
-| `give.cancel_pledge(contribution, user)`                       | Hoàn suất, ghi ledger `pledged −amount`                                                                                                                                              | Chỉ khi campaign còn `live`                                                                      |
-| `give.record_bank_transaction(normalized_tx)`                  | Upsert `bank_transactions`, rồi gọi `match_transaction`                                                                                                                              | `ON CONFLICT (receiving_account_id, provider_tx_id) DO NOTHING`; gọi lại nhiều lần vẫn an toàn   |
-| `give.match_transaction(tx, contribution?, actor?)`            | Tìm mã ủng hộ trong `description`, kiểm tra mã thuộc **đúng campaign của tài khoản này**, ghi `transaction_matches` và ledger `received`, cập nhật `received_amount` và `status`     | `UNIQUE (bank_transaction_id)`; không có mã thì ghi `unmatched_in`                               |
-| `give.finalize_campaign(campaign)`                             | back: tổng `pledged` ≥ mục tiêu thì `succeeded` và mọi pledge sang `payment_due`, có `payment_due_at`. Ngược lại thì `failed`, pledge sang `cancelled` và hoàn suất. give: `closed`. | `FOR UPDATE`; chỉ chạy khi `now() ≥ ends_at` và đang `live`/`settling`; gọi lần hai không làm gì |
-| `give.lapse_overdue_pledges()`                                 | Pledge `payment_due` hoặc `partially_paid` quá hạn sang `lapsed`, hoàn suất, ghi ledger `pledged −(phần chưa trả)`                                                                   | Xử lý theo lô, có khóa                                                                           |
-| `give.record_disbursement(tx, purpose, …)`                     | Giải trình một khoản chi; nếu là hoàn tiền thì ghi `refunded` thay cho `disbursed`                                                                                                   | Chỉ người tổ chức của campaign, hoặc finance                                                     |
+| Hàm                                                            | Việc chính                                                                                                                                                                                                                                                                                   | Chống lỗi                                                                                                                                                      |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `give.transition_campaign(campaign, to, actor, reason)`        | Đổi trạng thái theo bảng chuyển hợp lệ, ghi `campaign_status_events` và `audit_log`                                                                                                                                                                                                          | `FOR UPDATE` dòng campaign; chuyển không hợp lệ thì `RAISE`                                                                                                    |
+| `give.create_donation(campaign, amount, contributor/guest, …)` | Tạo contribution `awaiting_transfer`, sinh `reference_code`; với khách vãng lai sinh thêm token xem trạng thái và trả về đúng một lần                                                                                                                                                        | Campaign phải `type='give'` và `live`; sinh lại mã nếu trùng                                                                                                   |
+| `give.create_pledge(campaign, tier, amount, user, address)`    | Khóa campaign rồi khóa tier, kiểm tra còn suất, tăng `quantity_claimed`, ghi ledger `pledged +amount`                                                                                                                                                                                        | `FOR UPDATE` campaign **rồi** tier; kiểm tra lại dưới khóa: `type='back'`, `status='live'`, `now() < ends_at`, tier thuộc đúng campaign, `amount ≥ min_amount` |
+| `give.cancel_pledge(contribution, user)`                       | Hoàn suất, ghi ledger `pledged −amount`                                                                                                                                                                                                                                                      | `FOR UPDATE` campaign rồi tier; kiểm tra lại dưới khóa `status='live'` **và** `now() < ends_at`. Nếu cron chưa kịp finalize thì vẫn từ chối sau `ends_at`.     |
+| `give.record_bank_transaction(normalized_tx)`                  | Upsert `bank_transactions` (gắn `campaign_id` theo binding), rồi rẽ nhánh theo chiều: `in` → `match_transaction`; `out` → ledger `disbursed` (post), chờ giải trình                                                                                                                          | `ON CONFLICT (receiving_account_id, provider_tx_id) DO NOTHING`; gọi lại nhiều lần vẫn an toàn                                                                 |
+| `give.match_transaction(tx, contribution?, actor?)`            | Chỉ cho giao dịch `in`. Tìm mã ủng hộ trong `description`, kiểm tra mã thuộc **đúng `campaign_id` của giao dịch**, ghi `transaction_matches` và ledger `received`, cập nhật `received_amount` và `status`. Khớp tay một giao dịch đang `unmatched_in` thì ghi cặp reversal + post (mục 2.4). | `RAISE` nếu `direction='out'`; `UNIQUE (bank_transaction_id)`; không có mã thì ghi `unmatched_in`                                                              |
+| `give.finalize_campaign(campaign)`                             | back: tổng `pledged` ≥ mục tiêu thì `succeeded` và mọi pledge sang `payment_due`, có `payment_due_at`. Ngược lại thì `failed`, pledge sang `cancelled` và hoàn suất. give: `closed`.                                                                                                         | `FOR UPDATE` campaign (cùng khóa với các hàm pledge); chỉ chạy khi `now() ≥ ends_at` và đang `live`/`settling`; gọi lần hai không làm gì                       |
+| `give.lapse_overdue_pledges()`                                 | Pledge quá hạn: chưa trả đồng nào → `lapsed`; đã trả một phần → `refund_due` (người tạo phải hoàn lại `received_amount` trong 14 ngày). Cả hai đều nhả suất và ghi ledger `pledged −(intended_amount)`.                                                                                      | Khóa campaign rồi tier theo lô                                                                                                                                 |
+| `give.record_disbursement(tx, purpose, …)`                     | Giải trình một khoản chi. Nếu là hoàn tiền cho một contribution: ghi reversal `disbursed` + post `refunded`, và khi tổng hoàn ≥ `received_amount` thì contribution `refund_due` → `refunded`                                                                                                 | Chỉ người tổ chức của campaign, hoặc finance; chỉ cho giao dịch `out` cùng `campaign_id`                                                                       |
 
 Quy tắc khớp mã ủng hộ:
 
@@ -331,7 +368,12 @@ Người góp (không cần đăng nhập)
 7. Chuyển khoản             ───────────────────────────────────────►  tài khoản campaign
 8.                              ◄── webhook / poll / import sao kê / indexer
                                record_bank_transaction → match → ledger 'received'
-9. Trang của người góp nghe Supabase Realtime trên contribution → "Đã nhận"
+9. Trang chờ hiện "Đã nhận" khi contribution chuyển sang received:
+   - Đã đăng nhập: Supabase Realtime trên contribution của mình (RLS cho phép).
+   - Khách vãng lai: create_donation trả về token ngẫu nhiên 32 byte (DB chỉ giữ sha256,
+     hết hạn sau 7 ngày). Trang gọi GET /api/contributions/status với token đó mỗi 5 giây,
+     tối đa 30 phút. Route chạy phía server, chỉ trả status và received_amount.
+     Không mở RLS cho anon.
 10. Người tổ chức chi tiền   ───────────────────────────────────────►  giao dịch 'out'
                                ledger 'disbursed' → yêu cầu giải trình trong 7 ngày
                                (công khai số "chưa giải trình")
@@ -351,7 +393,11 @@ Người góp (không cần đăng nhập)
       → gửi email kèm VietQR hoặc link PayOS tới TÀI KHOẢN CỦA NGƯỜI TẠO, nội dung = mã ủng hộ
    b. Không đạt → 'failed'; pledge → 'cancelled'; báo tin. Không có tiền nào phải hoàn.
 4. Tiền về → record_bank_transaction → match → 'paid' (hoặc 'partially_paid')
-5. Nhắc thanh toán vào ngày 1, 3 và 6; quá hạn → lapse_overdue_pledges → 'lapsed', nhả suất
+5. Nhắc thanh toán vào ngày 1, 3 và 6; quá hạn → lapse_overdue_pledges, nhả suất:
+   - chưa trả gì → 'lapsed'
+   - đã trả một phần → 'refund_due': người tạo phải hoàn received_amount trong 14 ngày.
+     Trang campaign công khai số "hoàn tiền còn nợ" cho tới khi hoàn xong ('refunded').
+     Người ủng hộ không mất tiền mà không có quà.
 6. Công khai song song: "Cam kết X / Đã thanh toán Y / Mục tiêu Z"
 7. Giao quà: người tạo cập nhật fulfillment_status; người ủng hộ thấy trong "Ủng hộ của tôi"
 8. Hoàn tiền (khi người tạo không thực hiện được): người tạo tự chuyển trả →
@@ -368,7 +414,7 @@ Chính sách còn mở (P1): nếu sau hạn thanh toán, số **đã thanh toá
 type ChannelKind = "bank_api" | "payos" | "statement_import" | "crypto"
 
 interface NormalizedTx {
-  providerTxId: string // bắt buộc; nếu kênh không có id thì là fingerprint ổn định
+  providerTxId: string | null // id do ngân hàng/kênh cấp; null → đi qua hàng chờ import (mục 5.2)
   direction: "in" | "out"
   asset: string // 'VND' | 'USDT' …
   amount: bigint
@@ -421,7 +467,8 @@ Pipeline dùng chung cho mọi kênh, mỗi bước đều chạy lại được
 ```
 đầu vào → inbound_events (UNIQUE channel+dedupe_key) → parse/normalize
        → give.record_bank_transaction (UNIQUE account+provider_tx_id)
-       → give.match_transaction → ledger_entries (UNIQUE tx+bucket)
+       → in:  give.match_transaction → ledger_entries (post 'received' | 'unmatched_in')
+       → out: ledger_entries (post 'disbursed') → chờ give.record_disbursement
 ```
 
 Webhook trả 200 ngay sau khi đã ghi `inbound_events`. Việc xử lý thất bại không làm mất dữ liệu, vì job `reprocess_inbound_events` sẽ chạy lại các dòng có `processed_at IS NULL`.
@@ -430,10 +477,17 @@ Webhook trả 200 ngay sau khi đã ghi `inbound_events`. Việc xử lý thất
 
 | Kênh               | Dùng khi                                                                 | `buildInstruction`                                                                  | Nhận giao dịch                                                                                              | Ghi chú                                                                                                                                                                            |
 | ------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `statement_import` | **Mặc định cho MVP**, hợp với mọi ngân hàng                              | VietQR sinh tại chỗ theo chuẩn EMVCo/NAPAS (không gọi dịch vụ ngoài)                | Người tổ chức hoặc admin tải file sao kê lên; parser theo từng ngân hàng                                    | Fingerprint = hash(account, booked_at, amount, description, balance_after). Trên các ngân hàng có số bút toán thì ưu tiên dùng số đó.                                              |
+| `statement_import` | **Mặc định cho MVP**, hợp với mọi ngân hàng                              | VietQR sinh tại chỗ theo chuẩn EMVCo/NAPAS (không gọi dịch vụ ngoài)                | Người tổ chức hoặc admin tải file sao kê lên; parser theo từng ngân hàng                                    | Dùng số bút toán làm `provider_tx_id` khi sao kê có. Nếu không có, xem "Import không có id" ngay dưới bảng.                                                                        |
 | `bank_api`         | Khi ngân hàng đối tác cấp API hoặc webhook biến động số dư               | VietQR                                                                              | Webhook có chữ ký + `fetchTransactions` để đối soát hằng ngày                                               | Mỗi ngân hàng một implementation. Các bước giữ nguyên.                                                                                                                             |
 | `payos`            | Người tổ chức có tài khoản PayOS của riêng họ, tiền vào tài khoản của họ | `createPaymentLink`, `orderCode` = số nguyên duy nhất ánh xạ tới contribution       | Webhook PayOS (HMAC-SHA256 bằng checksum key), sau đó **gọi API lấy thông tin đơn để xác nhận** rồi mới ghi | Key của người tổ chức lưu trong Supabase Vault. Không dùng API chi hộ (payouts), vì nền tảng không giữ tiền. Giới hạn độ dài `description` cần xác minh.                           |
 | `crypto`           | Chỉ bật sau khi JOY chốt pháp lý (G2)                                    | Địa chỉ ví của campaign và token được chấp nhận (ví dụ USDT trên một chain cố định) | Indexer, ví dụ webhook của một dịch vụ theo dõi địa chỉ, sau đó đọc lại từ RPC để xác nhận đủ số block      | `providerTxId` = `txHash:logIndex`. Ghi `vnd_equivalent` theo tỷ giá lúc ghi nhận. Không khớp được mã ủng hộ thì là `unmatched_in`, trừ khi dùng địa chỉ riêng cho từng người góp. |
+
+**Import không có id.** Fingerprint không được dùng làm danh tính giao dịch, vì hai dòng sao kê khác nhau có thể trùng thời điểm, số tiền và nội dung, và `ON CONFLICT DO NOTHING` sẽ lặng lẽ bỏ mất một dòng. Thay vào đó:
+
+- Mỗi parser khai báo `hasStableRowId` và `hasRunningBalance`. Định dạng sao kê không có cả hai thì **không hỗ trợ import tự động**.
+- Mọi dòng được đưa vào hàng chờ `give.statement_import_rows (import_batch_id, row_no, parsed jsonb, group_key, occurrence, status)` trước khi thành `bank_transactions`. `group_key` = hash(account, booked_at, amount, description, balance_after); `occurrence` là thứ tự của dòng trong nhóm trùng `group_key` của cùng file.
+- `status` có các giá trị `ready`, `duplicate` (đã có trong một lần import trước với cùng `group_key` + `occurrence`, và số dư chạy khớp), `ambiguous`, `imported`.
+- Dòng bị đánh `ambiguous` khi: nhóm có hơn 1 dòng mà thiếu `balance_after`; hoặc lần import trùng khoảng thời gian cho ra số dòng trong nhóm khác lần trước; hoặc số dư chạy không liên tục. Admin xử lý tay từng dòng `ambiguous`, có ghi `audit_log`. Dòng `ambiguous` không bao giờ bị bỏ lặng lẽ.
 
 Kênh crypto nằm sau M4, nhưng schema đã có sẵn chỗ (`asset`, `vnd_equivalent`, `chain`, `address`) để không phải migration phá vỡ.
 
@@ -473,14 +527,14 @@ Give/  (pnpm + Turborepo, Node 24, theo mẫu các repo DOS)
 
 Mỗi mốc kết thúc bằng một luồng chạy thật trên **beta**, với dữ liệu thật, không mock. Mốc chỉ coi là xong khi các test tiền trong mục 8 thuộc mốc đó đã pass.
 
-| Mốc                            | Phạm vi                                                                                                                                                                                                                                       | Migration                   | Tiêu chí xong                                                                                                                    |
-| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **M0 – Nền móng**              | Tái cấu trúc repo; Next 16; đăng nhập DOS.Me; organizers, categories (seed 16 danh mục give/back), campaigns, milestones, media, updates, status events, audit_log, admins; editor tạo campaign; duyệt; trang discovery và chi tiết (port UI) | `give_foundation`           | Tạo nháp → gửi duyệt → admin duyệt → trang công khai hiện trên beta                                                              |
-| **M1 – Give (import sao kê)**  | receiving_accounts + xác minh; contributions; VietQR; inbound_events, bank_transactions, matches, ledger; parser sao kê cho 1–2 ngân hàng; trang sao kê công khai; giải trình chi; finalize cho từ thiện                                      | `give_money_core`           | Khách vãng lai donate → import sao kê → khớp tự động → số liệu và sao kê công khai đúng → chi tiền có giải trình → đóng campaign |
-| **M2 – Kênh tự động**          | `payos` (trên tài khoản người tổ chức) và/hoặc `bank_api` (nếu ngân hàng đã có API); webhook; Realtime "đã nhận"; reconcile job                                                                                                               | `give_channels` (Vault ref) | Giao dịch tự hiện trong vòng 1 phút; webhook lặp hoặc đến lệch thứ tự không làm sai số                                           |
-| **M3 – Back (AON)**            | reward_tiers; create/cancel pledge; finalize; payment_due, nhắc nhở, lapse; fulfillment_status; "Ủng hộ của tôi"                                                                                                                              | `give_rewards`              | Kịch bản đạt và không đạt đều chạy hết vòng; hai người tranh suất cuối thì chỉ một người được                                    |
-| **M4 – Kiểm duyệt & vận hành** | reports, suspend, outbox email, báo cáo tài chính xuất CSV, nhật ký admin                                                                                                                                                                     | `give_ops`                  | Báo cáo vi phạm → tạm dừng → mở lại có nhật ký; email đi qua outbox có retry                                                     |
-| Sau MVP                        | Kênh crypto, phí nền tảng, tổ chức (`public.organizations`), vận chuyển có tính phí, đa tiền tệ                                                                                                                                               | –                           | –                                                                                                                                |
+| Mốc                            | Phạm vi                                                                                                                                                                                                                                                                                             | Migration                   | Tiêu chí xong                                                                                                                    |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **M0 – Nền móng**              | Tái cấu trúc repo; Next 16; đăng nhập DOS.Me; organizers, categories (seed 16 danh mục give/back), campaigns, milestones, media, updates, status events, audit_log, admins; editor tạo campaign; duyệt; trang discovery và chi tiết (port UI)                                                       | `give_foundation`           | Tạo nháp → gửi duyệt → admin duyệt → trang công khai hiện trên beta                                                              |
+| **M1 – Give (import sao kê)**  | receiving_accounts + xác minh + account_bindings; contributions (kèm token trạng thái cho khách); VietQR; inbound_events, statement_import_rows, bank_transactions, matches, ledger (post/reversal); parser sao kê cho 1–2 ngân hàng; trang sao kê công khai; giải trình chi; finalize cho từ thiện | `give_money_core`           | Khách vãng lai donate → import sao kê → khớp tự động → số liệu và sao kê công khai đúng → chi tiền có giải trình → đóng campaign |
+| **M2 – Kênh tự động**          | `payos` (trên tài khoản người tổ chức) và/hoặc `bank_api` (nếu ngân hàng đã có API); webhook; Realtime "đã nhận"; reconcile job                                                                                                                                                                     | `give_channels` (Vault ref) | Giao dịch tự hiện trong vòng 1 phút; webhook lặp hoặc đến lệch thứ tự không làm sai số                                           |
+| **M3 – Back (AON)**            | reward_tiers; create/cancel pledge; finalize; payment_due, nhắc nhở, lapse; fulfillment_status; "Ủng hộ của tôi"                                                                                                                                                                                    | `give_rewards`              | Kịch bản đạt và không đạt đều chạy hết vòng; hai người tranh suất cuối thì chỉ một người được                                    |
+| **M4 – Kiểm duyệt & vận hành** | reports, suspend, outbox email, báo cáo tài chính xuất CSV, nhật ký admin                                                                                                                                                                                                                           | `give_ops`                  | Báo cáo vi phạm → tạm dừng → mở lại có nhật ký; email đi qua outbox có retry                                                     |
+| Sau MVP                        | Kênh crypto, phí nền tảng, tổ chức (`public.organizations`), vận chuyển có tính phí, đa tiền tệ                                                                                                                                                                                                     | –                           | –                                                                                                                                |
 
 M1 không phụ thuộc vào việc đàm phán với ngân hàng. M2 làm `payos` trước, rồi thêm `bank_api` khi có đối tác.
 
@@ -489,18 +543,24 @@ M1 không phụ thuộc vào việc đàm phán với ngân hàng. M2 làm `payo
 pgTAP (DB) và Vitest (adapter, parser):
 
 1. Cùng một webhook gửi 2 lần → 1 `bank_transactions`, 1 dòng ledger.
-2. Cùng một giao dịch đến qua webhook và qua import sao kê → không bị nhân đôi (dùng số bút toán hoặc fingerprint).
+2. Cùng một giao dịch đến qua webhook và qua import sao kê → không bị nhân đôi (dùng số bút toán).
 3. Mã ủng hộ của campaign A xuất hiện trong giao dịch vào tài khoản của campaign B → không khớp, ghi `unmatched_in` cho B.
 4. Số tiền thiếu hoặc thừa → trạng thái và `received_amount` đúng như mục 3.
 5. Tiền về sau khi QR hết hạn → vẫn `received`. Tiền về sau `closed` → có cờ và có thông báo.
 6. Hai `create_pledge` song song tranh suất cuối → đúng một cái thành công, `quantity_claimed ≤ limit`.
 7. `finalize_campaign` gọi đồng thời hoặc gọi lại → một kết quả duy nhất, ledger không đổi ở lần gọi sau.
-8. Hủy pledge đúng thời điểm `ends_at` → bị từ chối hoặc chấp nhận một cách nhất quán (so sánh `now()` trong transaction đã khóa).
-9. `lapse` → nhả suất và ledger `pledged` giảm đúng phần chưa trả.
+8. Hủy hoặc tạo pledge sau `ends_at` khi cron chưa finalize → bị từ chối. Hủy hoặc tạo chạy song song với `finalize_campaign` → kết quả nhất quán, vì cùng khóa dòng campaign.
+9. `lapse`: pledge chưa trả → `lapsed`, nhả suất, `pledged` giảm đúng `intended_amount`. Pledge đã trả một phần → `refund_due`; sau khi khoản hoàn được giải trình thì thành `refunded`, ledger có reversal `disbursed` + post `refunded`.
 10. Không thể UPDATE hay DELETE `ledger_entries`, kể cả với role `authenticated`.
 11. RLS: người tổ chức A không đọc được contribution và giao dịch của B; `guest_email` không bao giờ xuất hiện trong view công khai; tên ẩn danh không lộ.
 12. Webhook sai chữ ký → bị ghi lại với `signature_valid=false` và không tạo giao dịch.
 13. Parser sao kê: bộ file mẫu của từng ngân hàng (đã xóa dữ liệu cá nhân) cho ra đúng số dòng, số tiền và chiều giao dịch.
+14. Khớp tay một giao dịch `unmatched_in` → có đúng một reversal và một post `received`; tổng "đã thanh toán" không đổi; khớp tay lần hai bị từ chối.
+15. Giao dịch `out` không bao giờ đi vào `match_transaction`, không tạo `received` hay `unmatched_in`.
+16. Tạo donation cho campaign `back`, pledge cho campaign `give`, hoặc pledge với tier của campaign khác → bị từ chối, cả qua RPC lẫn insert thẳng (trigger).
+17. Tài khoản nhận không được gắn cho campaign mới khi campaign cũ còn pledge `payment_due`/`refund_due`; giao dịch của campaign cũ vẫn mang `campaign_id` cũ sau khi tài khoản được dùng lại.
+18. Token xem trạng thái của khách: đúng token → thấy trạng thái; sai hoặc hết hạn → 404; role `anon` vẫn không đọc thẳng được `contributions`.
+19. Import sao kê có hai dòng giống hệt nhau mà không có số dư chạy → cả hai thành `ambiguous`, không dòng nào bị bỏ.
 
 ## 9. Câu hỏi còn mở
 
