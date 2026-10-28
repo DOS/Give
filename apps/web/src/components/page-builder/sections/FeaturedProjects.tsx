@@ -41,8 +41,8 @@ export default function FeaturedProjects({ data }: FeaturesSectionProps) {
                   Smart Project Analytics
                 </h3>
                 <p className="mb-6 max-w-lg text-gray-600">
-                  Track your project's performance with real-time analytics and
-                  insights that help you make data-driven decisions.
+                  Track your project&apos;s performance with real-time analytics
+                  and insights that help you make data-driven decisions.
                 </p>
               </div>
 

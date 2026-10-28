@@ -1,4 +1,5 @@
-import { PrivateStrapiClient } from "../strapi-client"
+import { PrivateStrapiClient } from "@/lib/strapi-api"
+
 import { StrapiResponse } from "../types"
 
 export interface Category {

@@ -125,7 +125,7 @@ export default async function CategoriesPage() {
           <li>
             Set environment variable:{" "}
             <code className="rounded bg-gray-200 px-2 py-1">
-              $env:STRAPI_API_TOKEN="your-token"
+              $env:STRAPI_API_TOKEN=&quot;your-token&quot;
             </code>
           </li>
           <li>

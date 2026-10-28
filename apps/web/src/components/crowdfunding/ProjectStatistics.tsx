@@ -45,7 +45,7 @@ interface TopBacker {
   date: string
 }
 
-interface ProjectStatistics {
+interface ProjectStatisticsData {
   projectId: number
   statistics: {
     totalRaised: number
@@ -73,7 +73,9 @@ export function ProjectStatistics({
   currency = "USD",
   refreshInterval = 60,
 }: ProjectStatisticsProps) {
-  const [statistics, setStatistics] = useState<ProjectStatistics | null>(null)
+  const [statistics, setStatistics] = useState<ProjectStatisticsData | null>(
+    null
+  )
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 

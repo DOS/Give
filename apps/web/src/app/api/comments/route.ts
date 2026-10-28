@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server"
-
 import { env } from "@/env.mjs"
 
 const STRAPI_URL = process.env.STRAPI_URL || "http://localhost:1338"

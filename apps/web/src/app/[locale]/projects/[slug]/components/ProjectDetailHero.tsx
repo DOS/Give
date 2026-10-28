@@ -136,6 +136,7 @@ export function ProjectDetailHero({ project }: ProjectDetailHeroProps) {
                             className="h-full w-full object-cover"
                             poster={currentMedia.alternativeText}
                           >
+                            <track kind="captions" />
                             Your browser does not support the video tag.
                           </video>
                         )
