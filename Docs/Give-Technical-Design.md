@@ -8,29 +8,30 @@
 
 Thiết kế cũ đã tách 2 loại campaign, và bản này giữ nguyên tên gọi đó:
 
-| Thiết kế cũ (`dev`) | Bản này |
-|---|---|
-| `Project.Type`: `give` (từ thiện) và `back` (dự án sáng tạo, có reward). Badge "❤️ Give" / "🚀 Back". | Giữ nguyên: `campaigns.type IN ('give','back')`. `give` = GoFundMe, `back` = Kickstarter. |
+| Thiết kế cũ (`dev`)                                                                                                                                                                                                                                                                                                   | Bản này                                                                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Project.Type`: `give` (từ thiện) và `back` (dự án sáng tạo, có reward). Badge "❤️ Give" / "🚀 Back".                                                                                                                                                                                                                 | Giữ nguyên: `campaigns.type IN ('give','back')`. `give` = GoFundMe, `back` = Kickstarter.                                                                                        |
 | `Category.Type`: `Give` / `Back` / `Both`. Bộ danh mục riêng: 8 cho Give (Disaster Relief, Poverty Alleviation, Healthcare, Education, Environment, Animal Welfare, Community Development, Humanitarian Aid) và 8 cho Back (Technology, Arts, Film & Video, Games, Music, Publishing, Food & Craft, Design & Fashion) | Giữ nguyên: `categories.applies_to IN ('give','back','both')`; seed lại 16 danh mục này (dịch tiếng Việt). Form tạo campaign lọc danh mục theo loại, như `CreateProjectForm` cũ. |
-| Lời kêu gọi khác nhau: "Support"/donation cho Give, "Back this project"/backing cho Back | Giữ. Copy UI tách theo `type`. |
-| `GoalMilestones` (mốc trong mục tiêu), `EnableStretchGoals` + `StretchGoal` | Giữ: bảng `give.campaign_milestones` (dùng cho cả hai loại). Stretch goal chỉ áp dụng cho `back`. |
-| `MinimumDonation`, `ShowProgressBar`, `ShowBackersCount`, `ShowTimeRemaining` | Giữ: `min_contribution` và `display_options jsonb`. |
-| Comment có thread, cập nhật dự án, hồ sơ người dùng, analytics cho chủ campaign | Giữ ở mức nghiệp vụ. Port UI từ `apps/web` của `dev`. |
-| **Thanh toán:** Stripe thu ngay cho cả hai loại. Webhook cộng dồn `CurrentFunding` bằng cách đọc rồi ghi lại, và cả `checkout.session.completed` lẫn `payment_intent.succeeded` đều cộng tiền. | **Không giữ.** Cách này có thể đếm một khoản hai lần và dính race condition. Không có all-or-nothing. Không dùng Stripe ở VN. Thay bằng mục 3–5. |
+| Lời kêu gọi khác nhau: "Support"/donation cho Give, "Back this project"/backing cho Back                                                                                                                                                                                                                              | Giữ. Copy UI tách theo `type`.                                                                                                                                                   |
+| `GoalMilestones` (mốc trong mục tiêu), `EnableStretchGoals` + `StretchGoal`                                                                                                                                                                                                                                           | Giữ: bảng `give.campaign_milestones` (dùng cho cả hai loại). Stretch goal chỉ áp dụng cho `back`.                                                                                |
+| `MinimumDonation`, `ShowProgressBar`, `ShowBackersCount`, `ShowTimeRemaining`                                                                                                                                                                                                                                         | Giữ: `min_contribution` và `display_options jsonb`.                                                                                                                              |
+| Comment có thread, cập nhật dự án, hồ sơ người dùng, analytics cho chủ campaign                                                                                                                                                                                                                                       | Giữ ở mức nghiệp vụ. Port UI từ `apps/web` của `dev`.                                                                                                                            |
+| **Thanh toán:** Stripe thu ngay cho cả hai loại. Webhook cộng dồn `CurrentFunding` bằng cách đọc rồi ghi lại, và cả `checkout.session.completed` lẫn `payment_intent.succeeded` đều cộng tiền.                                                                                                                        | **Không giữ.** Cách này có thể đếm một khoản hai lần và dính race condition. Không có all-or-nothing. Không dùng Stripe ở VN. Thay bằng mục 3–5.                                 |
 
 ## 0. Quyết định đã chốt và giả định
 
-| # | Nội dung | Nguồn |
-|---|---|---|
-| D1 | Sản phẩm = GoFundMe (từ thiện, flexible) + Kickstarter (reward, all-or-nothing). Equity, cho vay, chia lợi nhuận nằm ngoài phạm vi. | Handoff |
-| D2 | Thị trường đầu tiên là Việt Nam, đơn vị tiền VND. | JOY |
-| D3 | **Nền tảng không giữ tiền.** Tiền đi thẳng vào tài khoản nhận của từng campaign. Give chỉ ghi nhận, đối soát và công khai. | JOY |
-| D4 | Mỗi campaign từ thiện có một tài khoản nhận riêng. Ưu tiên tài khoản minh bạch của ngân hàng đối tác. Nếu ngân hàng không cấp API thì dùng tài khoản thường kèm import sao kê, hoặc ví crypto. JOY tự xử lý phần pháp lý. | JOY |
-| D5 | Dùng chung Supabase của DOS, schema riêng `give`. Mọi DDL là migration idempotent trong `DOS.Me/supabase/migrations/`, đi qua CI preview → beta → prod. | JOY + `DOS.Me/AGENTS.md` |
-| D6 | Stack: Next.js 16 (App Router) + `@supabase/supabase-js` + đăng nhập first-party của DOS.Me, triển khai trên Vercel. **Bỏ Strapi.** Từ repo cũ chỉ port UI (ProjectCard, bộ lọc, layout trang chi tiết). | Đề xuất, chưa phản đối |
-| D7 | All-or-nothing ở VN dùng **phương án A: cam kết trước, đạt mục tiêu mới thanh toán**. Lý do: thanh toán QR không lưu được phương thức thanh toán, và theo D3 nền tảng không giữ tiền. | Đề xuất |
+| #   | Nội dung                                                                                                                                                                                                                  | Nguồn                    |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| D1  | Sản phẩm = GoFundMe (từ thiện, flexible) + Kickstarter (reward, all-or-nothing). Equity, cho vay, chia lợi nhuận nằm ngoài phạm vi.                                                                                       | Handoff                  |
+| D2  | Thị trường đầu tiên là Việt Nam, đơn vị tiền VND.                                                                                                                                                                         | JOY                      |
+| D3  | **Nền tảng không giữ tiền.** Tiền đi thẳng vào tài khoản nhận của từng campaign. Give chỉ ghi nhận, đối soát và công khai.                                                                                                | JOY                      |
+| D4  | Mỗi campaign từ thiện có một tài khoản nhận riêng. Ưu tiên tài khoản minh bạch của ngân hàng đối tác. Nếu ngân hàng không cấp API thì dùng tài khoản thường kèm import sao kê, hoặc ví crypto. JOY tự xử lý phần pháp lý. | JOY                      |
+| D5  | Dùng chung Supabase của DOS, schema riêng `give`. Mọi DDL là migration idempotent trong `DOS.Me/supabase/migrations/`, đi qua CI preview → beta → prod.                                                                   | JOY + `DOS.Me/AGENTS.md` |
+| D6  | Stack: Next.js 16 (App Router) + `@supabase/supabase-js` + đăng nhập first-party của DOS.Me, triển khai trên Vercel. **Bỏ Strapi.** Từ repo cũ chỉ port UI (ProjectCard, bộ lọc, layout trang chi tiết).                  | Đề xuất, chưa phản đối   |
+| D7  | All-or-nothing ở VN dùng **phương án A: cam kết trước, đạt mục tiêu mới thanh toán**. Lý do: thanh toán QR không lưu được phương thức thanh toán, và theo D3 nền tảng không giữ tiền.                                     | Đề xuất                  |
 
 Giả định cần xác minh:
+
 - **G1.** Nghị định 93/2021 yêu cầu cá nhân vận động mở tài khoản riêng cho từng cuộc vận động, và không nhận thêm tiền sau khi hết hạn. Nguồn mới chỉ là báo chí, chưa đọc văn bản gốc.
 - **G2.** Gửi tiền crypto làm phương tiện thanh toán ở VN có rủi ro pháp lý. Kênh crypto chỉ bật sau khi JOY chốt pháp lý.
 - **G3.** Giới hạn độ dài nội dung chuyển khoản, nên mã ủng hộ phải ngắn: tối đa 10 ký tự, chỉ chữ in hoa và số.
@@ -50,6 +51,7 @@ Người dùng ──► Give web (Next 16, Vercel)
 ```
 
 Nguyên tắc:
+
 1. **Mọi thao tác thay đổi tiền hay trạng thái tiền đều là một hàm Postgres chạy trong một transaction.** Code Next chỉ gọi RPC. Nhờ vậy tính nguyên tử, khóa dòng và tính idempotent được bảo đảm ở một chỗ, và test được bằng pgTAP.
 2. **Sổ cái chỉ ghi thêm** (`give.ledger_entries`), có trigger chặn UPDATE và DELETE. Mọi số tổng hiển thị đều tính ra từ sổ cái, không lưu counter sửa tay.
 3. **Dữ liệu ngân hàng là nguồn sự thật.** `give.bank_transactions` là bản sao sao kê của tài khoản nhận. Give không bao giờ coi một khoản là "đã nhận" chỉ vì người dùng bấm "tôi đã chuyển".
@@ -58,6 +60,7 @@ Nguyên tắc:
 ## 2. Schema `give`
 
 Quy ước:
+
 - Tiền là `bigint`, đơn vị nhỏ nhất của tài sản: đồng với VND, đơn vị cơ sở của token với crypto. Kèm cột `asset` (mặc định `'VND'`).
 - Trạng thái dùng `text` + `CHECK`, không dùng kiểu ENUM, để migration sau dễ thêm giá trị.
 - Bảng nào cũng có `created_at` và `updated_at`. Khóa chính là `uuid`, sinh bằng `gen_random_uuid()`.
@@ -145,6 +148,7 @@ give.receiving_accounts (
 ```
 
 Cách xác minh quyền sở hữu tài khoản trong MVP:
+
 1. Tên chủ tài khoản phải khớp `organizers.legal_name`.
 2. Người tổ chức chuyển một khoản thử từ chính tài khoản đó, với mã xác minh do Give sinh ra.
 3. Admin duyệt.
@@ -251,14 +255,15 @@ give.ledger_entries (                    -- chỉ ghi thêm; trigger chặn UPDA
 
 Bốn con số mà handoff yêu cầu, áp dụng cho mô hình không giữ tiền:
 
-| Con số | Tính từ | Ghi chú |
-|---|---|---|
-| Cam kết | `SUM(pledged)` | Chỉ có ở back |
-| Đã thanh toán | `SUM(received)` + `SUM(unmatched_in)` | Tiền đã vào tài khoản nhận |
+| Con số              | Tính từ                                                                                 | Ghi chú                                                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Cam kết             | `SUM(pledged)`                                                                          | Chỉ có ở back                                                                                                          |
+| Đã thanh toán       | `SUM(received)` + `SUM(unmatched_in)`                                                   | Tiền đã vào tài khoản nhận                                                                                             |
 | Được phép giải ngân | give: bằng "đã thanh toán". back: bằng "đã thanh toán", vì chỉ thu sau khi đạt mục tiêu | Tiền đã nằm trong tài khoản của người tổ chức, Give không chặn được. Con số này để công khai, không phải để kiểm soát. |
-| Đã chi / đã hoàn | `SUM(disbursed)`, `SUM(refunded)` | Kèm phần chưa giải trình: các khoản chi chưa có dòng trong `disbursements` |
+| Đã chi / đã hoàn    | `SUM(disbursed)`, `SUM(refunded)`                                                       | Kèm phần chưa giải trình: các khoản chi chưa có dòng trong `disbursements`                                             |
 
 View công khai (client chỉ được đọc các view này):
+
 - `give.public_campaigns`: campaign ở trạng thái `live` trở về sau, kèm các tổng ở trên.
 - `give.public_contributions`: tên đã che theo `is_anonymous`, không có email.
 - `give.public_statement`: giao dịch vào và ra, số tài khoản đối ứng đã che. Tên đối ứng chỉ hiện khi giao dịch khớp với một contribution không ẩn danh.
@@ -288,19 +293,20 @@ give.admins (user_id PK, role ('moderator','finance','admin'))       -- hoặc d
 
 ## 3. Hàm Postgres cho nghiệp vụ tiền
 
-| Hàm | Việc chính | Chống lỗi |
-|---|---|---|
-| `give.transition_campaign(campaign, to, actor, reason)` | Đổi trạng thái theo bảng chuyển hợp lệ, ghi `campaign_status_events` và `audit_log` | `FOR UPDATE` dòng campaign; chuyển không hợp lệ thì `RAISE` |
-| `give.create_donation(campaign, amount, contributor/guest, …)` | Tạo contribution `awaiting_transfer` và sinh `reference_code` | Chỉ cho campaign `live`; sinh lại mã nếu trùng |
-| `give.create_pledge(campaign, tier, amount, user, address)` | Khóa tier, kiểm tra còn suất, tăng `quantity_claimed`, ghi ledger `pledged +amount` | `FOR UPDATE` tier; `amount ≥ min_amount`; campaign phải `live` và `now() < ends_at` |
-| `give.cancel_pledge(contribution, user)` | Hoàn suất, ghi ledger `pledged −amount` | Chỉ khi campaign còn `live` |
-| `give.record_bank_transaction(normalized_tx)` | Upsert `bank_transactions`, rồi gọi `match_transaction` | `ON CONFLICT (receiving_account_id, provider_tx_id) DO NOTHING`; gọi lại nhiều lần vẫn an toàn |
-| `give.match_transaction(tx, contribution?, actor?)` | Tìm mã ủng hộ trong `description`, kiểm tra mã thuộc **đúng campaign của tài khoản này**, ghi `transaction_matches` và ledger `received`, cập nhật `received_amount` và `status` | `UNIQUE (bank_transaction_id)`; không có mã thì ghi `unmatched_in` |
-| `give.finalize_campaign(campaign)` | back: tổng `pledged` ≥ mục tiêu thì `succeeded` và mọi pledge sang `payment_due`, có `payment_due_at`. Ngược lại thì `failed`, pledge sang `cancelled` và hoàn suất. give: `closed`. | `FOR UPDATE`; chỉ chạy khi `now() ≥ ends_at` và đang `live`/`settling`; gọi lần hai không làm gì |
-| `give.lapse_overdue_pledges()` | Pledge `payment_due` hoặc `partially_paid` quá hạn sang `lapsed`, hoàn suất, ghi ledger `pledged −(phần chưa trả)` | Xử lý theo lô, có khóa |
-| `give.record_disbursement(tx, purpose, …)` | Giải trình một khoản chi; nếu là hoàn tiền thì ghi `refunded` thay cho `disbursed` | Chỉ người tổ chức của campaign, hoặc finance |
+| Hàm                                                            | Việc chính                                                                                                                                                                           | Chống lỗi                                                                                        |
+| -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `give.transition_campaign(campaign, to, actor, reason)`        | Đổi trạng thái theo bảng chuyển hợp lệ, ghi `campaign_status_events` và `audit_log`                                                                                                  | `FOR UPDATE` dòng campaign; chuyển không hợp lệ thì `RAISE`                                      |
+| `give.create_donation(campaign, amount, contributor/guest, …)` | Tạo contribution `awaiting_transfer` và sinh `reference_code`                                                                                                                        | Chỉ cho campaign `live`; sinh lại mã nếu trùng                                                   |
+| `give.create_pledge(campaign, tier, amount, user, address)`    | Khóa tier, kiểm tra còn suất, tăng `quantity_claimed`, ghi ledger `pledged +amount`                                                                                                  | `FOR UPDATE` tier; `amount ≥ min_amount`; campaign phải `live` và `now() < ends_at`              |
+| `give.cancel_pledge(contribution, user)`                       | Hoàn suất, ghi ledger `pledged −amount`                                                                                                                                              | Chỉ khi campaign còn `live`                                                                      |
+| `give.record_bank_transaction(normalized_tx)`                  | Upsert `bank_transactions`, rồi gọi `match_transaction`                                                                                                                              | `ON CONFLICT (receiving_account_id, provider_tx_id) DO NOTHING`; gọi lại nhiều lần vẫn an toàn   |
+| `give.match_transaction(tx, contribution?, actor?)`            | Tìm mã ủng hộ trong `description`, kiểm tra mã thuộc **đúng campaign của tài khoản này**, ghi `transaction_matches` và ledger `received`, cập nhật `received_amount` và `status`     | `UNIQUE (bank_transaction_id)`; không có mã thì ghi `unmatched_in`                               |
+| `give.finalize_campaign(campaign)`                             | back: tổng `pledged` ≥ mục tiêu thì `succeeded` và mọi pledge sang `payment_due`, có `payment_due_at`. Ngược lại thì `failed`, pledge sang `cancelled` và hoàn suất. give: `closed`. | `FOR UPDATE`; chỉ chạy khi `now() ≥ ends_at` và đang `live`/`settling`; gọi lần hai không làm gì |
+| `give.lapse_overdue_pledges()`                                 | Pledge `payment_due` hoặc `partially_paid` quá hạn sang `lapsed`, hoàn suất, ghi ledger `pledged −(phần chưa trả)`                                                                   | Xử lý theo lô, có khóa                                                                           |
+| `give.record_disbursement(tx, purpose, …)`                     | Giải trình một khoản chi; nếu là hoàn tiền thì ghi `refunded` thay cho `disbursed`                                                                                                   | Chỉ người tổ chức của campaign, hoặc finance                                                     |
 
 Quy tắc khớp mã ủng hộ:
+
 - **Chuẩn hóa nội dung chuyển khoản:** bỏ dấu, viết in hoa, bỏ ký tự không phải chữ hoặc số. Mã có dạng `GV` + 6 ký tự base32 không gây nhầm lẫn (bỏ `0`, `O`, `1`, `I`, `L`). Có thể thêm một ký tự kiểm tra.
 - **Tiền về khác số dự định:**
   - Thiếu: donation vẫn là `received` (người góp được quyền góp ít hơn); pledge sang `partially_paid`.
@@ -359,12 +365,12 @@ Chính sách còn mở (P1): nếu sau hạn thanh toán, số **đã thanh toá
 ### 5.1 Interface (TypeScript, `apps/web/src/server/channels/`)
 
 ```ts
-type ChannelKind = 'bank_api' | 'payos' | 'statement_import' | 'crypto'
+type ChannelKind = "bank_api" | "payos" | "statement_import" | "crypto"
 
 interface NormalizedTx {
-  providerTxId: string          // bắt buộc; nếu kênh không có id thì là fingerprint ổn định
-  direction: 'in' | 'out'
-  asset: string                 // 'VND' | 'USDT' …
+  providerTxId: string // bắt buộc; nếu kênh không có id thì là fingerprint ổn định
+  direction: "in" | "out"
+  asset: string // 'VND' | 'USDT' …
   amount: bigint
   bookedAt: Date
   description: string
@@ -375,8 +381,15 @@ interface NormalizedTx {
 }
 
 interface PaymentInstruction {
-  kind: 'vietqr' | 'checkout_url' | 'crypto_address'
-  vietqr?: { emvPayload: string; bankBin: string; accountNumber: string; accountName: string; amount: bigint; addInfo: string }
+  kind: "vietqr" | "checkout_url" | "crypto_address"
+  vietqr?: {
+    emvPayload: string
+    bankBin: string
+    accountNumber: string
+    accountName: string
+    amount: bigint
+    addInfo: string
+  }
   checkoutUrl?: string
   crypto?: { chain: string; address: string; asset: string; memo?: string }
   expiresAt?: Date
@@ -384,11 +397,20 @@ interface PaymentInstruction {
 
 interface PaymentChannel {
   kind: ChannelKind
-  buildInstruction(account: ReceivingAccount, c: Contribution): Promise<PaymentInstruction>
+  buildInstruction(
+    account: ReceivingAccount,
+    c: Contribution
+  ): Promise<PaymentInstruction>
   /** Webhook: kiểm tra chữ ký TRƯỚC, rồi trả về dedupeKey và danh sách giao dịch đã chuẩn hóa */
-  parseWebhook?(req: Request, account?: ReceivingAccount): Promise<{ dedupeKey: string; txs: NormalizedTx[] }>
+  parseWebhook?(
+    req: Request,
+    account?: ReceivingAccount
+  ): Promise<{ dedupeKey: string; txs: NormalizedTx[] }>
   /** Đối soát chủ động */
-  fetchTransactions?(account: ReceivingAccount, since: Date): Promise<NormalizedTx[]>
+  fetchTransactions?(
+    account: ReceivingAccount,
+    since: Date
+  ): Promise<NormalizedTx[]>
   /** Import file sao kê (xlsx/csv) */
   parseStatement?(file: ArrayBuffer, bankBin: string): Promise<NormalizedTx[]>
 }
@@ -406,26 +428,26 @@ Webhook trả 200 ngay sau khi đã ghi `inbound_events`. Việc xử lý thất
 
 ### 5.2 Các kênh
 
-| Kênh | Dùng khi | `buildInstruction` | Nhận giao dịch | Ghi chú |
-|---|---|---|---|---|
-| `statement_import` | **Mặc định cho MVP**, hợp với mọi ngân hàng | VietQR sinh tại chỗ theo chuẩn EMVCo/NAPAS (không gọi dịch vụ ngoài) | Người tổ chức hoặc admin tải file sao kê lên; parser theo từng ngân hàng | Fingerprint = hash(account, booked_at, amount, description, balance_after). Trên các ngân hàng có số bút toán thì ưu tiên dùng số đó. |
-| `bank_api` | Khi ngân hàng đối tác cấp API hoặc webhook biến động số dư | VietQR | Webhook có chữ ký + `fetchTransactions` để đối soát hằng ngày | Mỗi ngân hàng một implementation. Các bước giữ nguyên. |
-| `payos` | Người tổ chức có tài khoản PayOS của riêng họ, tiền vào tài khoản của họ | `createPaymentLink`, `orderCode` = số nguyên duy nhất ánh xạ tới contribution | Webhook PayOS (HMAC-SHA256 bằng checksum key), sau đó **gọi API lấy thông tin đơn để xác nhận** rồi mới ghi | Key của người tổ chức lưu trong Supabase Vault. Không dùng API chi hộ (payouts), vì nền tảng không giữ tiền. Giới hạn độ dài `description` cần xác minh. |
-| `crypto` | Chỉ bật sau khi JOY chốt pháp lý (G2) | Địa chỉ ví của campaign và token được chấp nhận (ví dụ USDT trên một chain cố định) | Indexer, ví dụ webhook của một dịch vụ theo dõi địa chỉ, sau đó đọc lại từ RPC để xác nhận đủ số block | `providerTxId` = `txHash:logIndex`. Ghi `vnd_equivalent` theo tỷ giá lúc ghi nhận. Không khớp được mã ủng hộ thì là `unmatched_in`, trừ khi dùng địa chỉ riêng cho từng người góp. |
+| Kênh               | Dùng khi                                                                 | `buildInstruction`                                                                  | Nhận giao dịch                                                                                              | Ghi chú                                                                                                                                                                            |
+| ------------------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `statement_import` | **Mặc định cho MVP**, hợp với mọi ngân hàng                              | VietQR sinh tại chỗ theo chuẩn EMVCo/NAPAS (không gọi dịch vụ ngoài)                | Người tổ chức hoặc admin tải file sao kê lên; parser theo từng ngân hàng                                    | Fingerprint = hash(account, booked_at, amount, description, balance_after). Trên các ngân hàng có số bút toán thì ưu tiên dùng số đó.                                              |
+| `bank_api`         | Khi ngân hàng đối tác cấp API hoặc webhook biến động số dư               | VietQR                                                                              | Webhook có chữ ký + `fetchTransactions` để đối soát hằng ngày                                               | Mỗi ngân hàng một implementation. Các bước giữ nguyên.                                                                                                                             |
+| `payos`            | Người tổ chức có tài khoản PayOS của riêng họ, tiền vào tài khoản của họ | `createPaymentLink`, `orderCode` = số nguyên duy nhất ánh xạ tới contribution       | Webhook PayOS (HMAC-SHA256 bằng checksum key), sau đó **gọi API lấy thông tin đơn để xác nhận** rồi mới ghi | Key của người tổ chức lưu trong Supabase Vault. Không dùng API chi hộ (payouts), vì nền tảng không giữ tiền. Giới hạn độ dài `description` cần xác minh.                           |
+| `crypto`           | Chỉ bật sau khi JOY chốt pháp lý (G2)                                    | Địa chỉ ví của campaign và token được chấp nhận (ví dụ USDT trên một chain cố định) | Indexer, ví dụ webhook của một dịch vụ theo dõi địa chỉ, sau đó đọc lại từ RPC để xác nhận đủ số block      | `providerTxId` = `txHash:logIndex`. Ghi `vnd_equivalent` theo tỷ giá lúc ghi nhận. Không khớp được mã ủng hộ thì là `unmatched_in`, trừ khi dùng địa chỉ riêng cho từng người góp. |
 
 Kênh crypto nằm sau M4, nhưng schema đã có sẵn chỗ (`asset`, `vnd_equivalent`, `chain`, `address`) để không phải migration phá vỡ.
 
 ### 5.3 Job định kỳ (Vercel Cron → route handler có secret → RPC)
 
-| Job | Tần suất | Việc |
-|---|---|---|
-| `activate-scheduled` | 5 phút | `approved` → `live` khi tới `starts_at` |
-| `finalize-ended` | 5 phút | `finalize_campaign` cho các campaign đã quá `ends_at` |
-| `lapse-pledges` | 1 giờ | `lapse_overdue_pledges` |
-| `reprocess-inbound` | 5 phút | Xử lý lại `inbound_events` còn treo |
-| `reconcile-accounts` | 1 ngày | `fetchTransactions` cho các kênh có hỗ trợ; báo lệch khi số dư không khớp |
-| `send-outbox` | 1 phút | Gửi email/thông báo, có retry và backoff |
-| `remind-unexplained` | 1 ngày | Nhắc người tổ chức giải trình các khoản chi |
+| Job                  | Tần suất | Việc                                                                      |
+| -------------------- | -------- | ------------------------------------------------------------------------- |
+| `activate-scheduled` | 5 phút   | `approved` → `live` khi tới `starts_at`                                   |
+| `finalize-ended`     | 5 phút   | `finalize_campaign` cho các campaign đã quá `ends_at`                     |
+| `lapse-pledges`      | 1 giờ    | `lapse_overdue_pledges`                                                   |
+| `reprocess-inbound`  | 5 phút   | Xử lý lại `inbound_events` còn treo                                       |
+| `reconcile-accounts` | 1 ngày   | `fetchTransactions` cho các kênh có hỗ trợ; báo lệch khi số dư không khớp |
+| `send-outbox`        | 1 phút   | Gửi email/thông báo, có retry và backoff                                  |
+| `remind-unexplained` | 1 ngày   | Nhắc người tổ chức giải trình các khoản chi                               |
 
 Mọi job đều idempotent. Nếu một lần chạy bị trùng hoặc bị bỏ lỡ, lần chạy sau sửa lại được.
 
@@ -451,14 +473,14 @@ Give/  (pnpm + Turborepo, Node 24, theo mẫu các repo DOS)
 
 Mỗi mốc kết thúc bằng một luồng chạy thật trên **beta**, với dữ liệu thật, không mock. Mốc chỉ coi là xong khi các test tiền trong mục 8 thuộc mốc đó đã pass.
 
-| Mốc | Phạm vi | Migration | Tiêu chí xong |
-|---|---|---|---|
-| **M0 – Nền móng** | Tái cấu trúc repo; Next 16; đăng nhập DOS.Me; organizers, categories (seed 16 danh mục give/back), campaigns, milestones, media, updates, status events, audit_log, admins; editor tạo campaign; duyệt; trang discovery và chi tiết (port UI) | `give_foundation` | Tạo nháp → gửi duyệt → admin duyệt → trang công khai hiện trên beta |
-| **M1 – Give (import sao kê)** | receiving_accounts + xác minh; contributions; VietQR; inbound_events, bank_transactions, matches, ledger; parser sao kê cho 1–2 ngân hàng; trang sao kê công khai; giải trình chi; finalize cho từ thiện | `give_money_core` | Khách vãng lai donate → import sao kê → khớp tự động → số liệu và sao kê công khai đúng → chi tiền có giải trình → đóng campaign |
-| **M2 – Kênh tự động** | `payos` (trên tài khoản người tổ chức) và/hoặc `bank_api` (nếu ngân hàng đã có API); webhook; Realtime "đã nhận"; reconcile job | `give_channels` (Vault ref) | Giao dịch tự hiện trong vòng 1 phút; webhook lặp hoặc đến lệch thứ tự không làm sai số |
-| **M3 – Back (AON)** | reward_tiers; create/cancel pledge; finalize; payment_due, nhắc nhở, lapse; fulfillment_status; "Ủng hộ của tôi" | `give_rewards` | Kịch bản đạt và không đạt đều chạy hết vòng; hai người tranh suất cuối thì chỉ một người được |
-| **M4 – Kiểm duyệt & vận hành** | reports, suspend, outbox email, báo cáo tài chính xuất CSV, nhật ký admin | `give_ops` | Báo cáo vi phạm → tạm dừng → mở lại có nhật ký; email đi qua outbox có retry |
-| Sau MVP | Kênh crypto, phí nền tảng, tổ chức (`public.organizations`), vận chuyển có tính phí, đa tiền tệ | – | – |
+| Mốc                            | Phạm vi                                                                                                                                                                                                                                       | Migration                   | Tiêu chí xong                                                                                                                    |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| **M0 – Nền móng**              | Tái cấu trúc repo; Next 16; đăng nhập DOS.Me; organizers, categories (seed 16 danh mục give/back), campaigns, milestones, media, updates, status events, audit_log, admins; editor tạo campaign; duyệt; trang discovery và chi tiết (port UI) | `give_foundation`           | Tạo nháp → gửi duyệt → admin duyệt → trang công khai hiện trên beta                                                              |
+| **M1 – Give (import sao kê)**  | receiving_accounts + xác minh; contributions; VietQR; inbound_events, bank_transactions, matches, ledger; parser sao kê cho 1–2 ngân hàng; trang sao kê công khai; giải trình chi; finalize cho từ thiện                                      | `give_money_core`           | Khách vãng lai donate → import sao kê → khớp tự động → số liệu và sao kê công khai đúng → chi tiền có giải trình → đóng campaign |
+| **M2 – Kênh tự động**          | `payos` (trên tài khoản người tổ chức) và/hoặc `bank_api` (nếu ngân hàng đã có API); webhook; Realtime "đã nhận"; reconcile job                                                                                                               | `give_channels` (Vault ref) | Giao dịch tự hiện trong vòng 1 phút; webhook lặp hoặc đến lệch thứ tự không làm sai số                                           |
+| **M3 – Back (AON)**            | reward_tiers; create/cancel pledge; finalize; payment_due, nhắc nhở, lapse; fulfillment_status; "Ủng hộ của tôi"                                                                                                                              | `give_rewards`              | Kịch bản đạt và không đạt đều chạy hết vòng; hai người tranh suất cuối thì chỉ một người được                                    |
+| **M4 – Kiểm duyệt & vận hành** | reports, suspend, outbox email, báo cáo tài chính xuất CSV, nhật ký admin                                                                                                                                                                     | `give_ops`                  | Báo cáo vi phạm → tạm dừng → mở lại có nhật ký; email đi qua outbox có retry                                                     |
+| Sau MVP                        | Kênh crypto, phí nền tảng, tổ chức (`public.organizations`), vận chuyển có tính phí, đa tiền tệ                                                                                                                                               | –                           | –                                                                                                                                |
 
 M1 không phụ thuộc vào việc đàm phán với ngân hàng. M2 làm `payos` trước, rồi thêm `bank_api` khi có đối tác.
 
@@ -482,12 +504,12 @@ pgTAP (DB) và Vitest (adapter, parser):
 
 ## 9. Câu hỏi còn mở
 
-| # | Câu hỏi | Ảnh hưởng | Cần trước |
-|---|---|---|---|
-| P1 | Back: số đã thanh toán < mục tiêu sau hạn thì xử lý thế nào | Điều khoản, `finalize` | M3 |
-| P2 | Phí nền tảng: không giữ tiền thì thu bằng cách nào (tip riêng cho DOS, hay xuất hóa đơn cho người tổ chức) | Thêm bảng phí | Sau MVP |
-| P3 | Ngân hàng đối tác và định dạng sao kê ưu tiên | Parser ở M1 | M1 |
-| P4 | Xác nhận pháp lý: Nghị định 93 (G1), crypto (G2), tài khoản thường | Bật kênh nào | M1 / crypto |
-| P5 | Vận chuyển trong MVP: đề xuất chỉ thu địa chỉ, không tính phí ship | `requires_shipping` | M3 |
-| P6 | Tên miền (ví dụ give.dos.me) và luồng đăng nhập first-party cụ thể theo `DOS.Me/docs/platform/DOS-ARCHITECTURE.md` | Cấu hình auth | M0 |
-| P7 | Quyền admin: tạo `give.admins` riêng hay dùng hệ role chung của DOS | RLS admin | M0 |
+| #   | Câu hỏi                                                                                                            | Ảnh hưởng              | Cần trước   |
+| --- | ------------------------------------------------------------------------------------------------------------------ | ---------------------- | ----------- |
+| P1  | Back: số đã thanh toán < mục tiêu sau hạn thì xử lý thế nào                                                        | Điều khoản, `finalize` | M3          |
+| P2  | Phí nền tảng: không giữ tiền thì thu bằng cách nào (tip riêng cho DOS, hay xuất hóa đơn cho người tổ chức)         | Thêm bảng phí          | Sau MVP     |
+| P3  | Ngân hàng đối tác và định dạng sao kê ưu tiên                                                                      | Parser ở M1            | M1          |
+| P4  | Xác nhận pháp lý: Nghị định 93 (G1), crypto (G2), tài khoản thường                                                 | Bật kênh nào           | M1 / crypto |
+| P5  | Vận chuyển trong MVP: đề xuất chỉ thu địa chỉ, không tính phí ship                                                 | `requires_shipping`    | M3          |
+| P6  | Tên miền (ví dụ give.dos.me) và luồng đăng nhập first-party cụ thể theo `DOS.Me/docs/platform/DOS-ARCHITECTURE.md` | Cấu hình auth          | M0          |
+| P7  | Quyền admin: tạo `give.admins` riêng hay dùng hệ role chung của DOS                                                | RLS admin              | M0          |
