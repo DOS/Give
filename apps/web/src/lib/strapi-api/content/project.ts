@@ -152,9 +152,12 @@ export async function fetchProjects({
 
     // Filters
     if (filters.type) queryParams["filters[Type][$eq]"] = filters.type
-    if (filters.category) queryParams["filters[Category][$eq]"] = filters.category
-    if (filters.projectStatus) queryParams["filters[ProjectStatus][$eq]"] = filters.projectStatus
-    if (filters.featured !== undefined) queryParams["filters[Featured][$eq]"] = filters.featured
+    if (filters.category)
+      queryParams["filters[Category][$eq]"] = filters.category
+    if (filters.projectStatus)
+      queryParams["filters[ProjectStatus][$eq]"] = filters.projectStatus
+    if (filters.featured !== undefined)
+      queryParams["filters[Featured][$eq]"] = filters.featured
     if (filters.locale) queryParams["locale"] = filters.locale
 
     // Sort

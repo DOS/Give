@@ -31,7 +31,16 @@ export function YouTubePlayer({
     return (
       <div
         className={`group relative aspect-video cursor-pointer overflow-hidden rounded-lg bg-gray-100 ${className}`}
+        role="button"
+        tabIndex={0}
+        aria-label={`Play ${title}`}
         onClick={handlePlay}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault()
+            handlePlay()
+          }
+        }}
       >
         <img
           src={getYouTubeThumbnail(videoId, "high")}

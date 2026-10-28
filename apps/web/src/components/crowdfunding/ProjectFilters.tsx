@@ -234,7 +234,7 @@ export function ProjectFilters({
             )}
             {currentSearch && (
               <Badge variant="secondary" className="text-xs">
-                "{currentSearch}"
+                &ldquo;{currentSearch}&rdquo;
                 <button
                   onClick={() => updateFilters("search", null)}
                   className="ml-1 hover:text-red-600"

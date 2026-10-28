@@ -252,9 +252,10 @@ export function ProjectDetailContent({ project }: ProjectDetailContentProps) {
             <CardContent>
               <p className="text-gray-700">
                 As with any innovative project, we face certain challenges.
-                We've identified potential risks and have contingency plans in
-                place. Our experienced team and thorough planning help mitigate
-                these risks, but we believe in transparency with our backers.
+                We&apos;ve identified potential risks and have contingency plans
+                in place. Our experienced team and thorough planning help
+                mitigate these risks, but we believe in transparency with our
+                backers.
               </p>
             </CardContent>
           </Card>

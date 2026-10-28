@@ -145,7 +145,8 @@ export default function CreateCampaignPage() {
                 <CardHeader>
                   <CardTitle>Campaign Details</CardTitle>
                   <CardDescription>
-                    Tell us about your project and what you're trying to achieve
+                    Tell us about your project and what you&apos;re trying to
+                    achieve
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">

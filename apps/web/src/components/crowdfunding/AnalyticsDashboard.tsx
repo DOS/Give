@@ -18,8 +18,8 @@ import {
   Users,
 } from "lucide-react"
 import {
-  Area,
   AreaChart,
+  Area as AreaSeries,
   Bar,
   BarChart,
   CartesianGrid,
@@ -447,7 +447,7 @@ export function AnalyticsDashboard({
                     <XAxis dataKey="hour" />
                     <YAxis />
                     <Tooltip />
-                    <Area
+                    <AreaSeries
                       type="monotone"
                       dataKey="amount"
                       stroke="#3b82f6"

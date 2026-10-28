@@ -173,7 +173,8 @@ export default function ProjectUpdates({
             No updates yet
           </h3>
           <p className="text-gray-600">
-            The project creator hasn't posted any updates yet. Check back later!
+            The project creator hasn&apos;t posted any updates yet. Check back
+            later!
           </p>
         </CardContent>
       </Card>

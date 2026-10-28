@@ -284,7 +284,7 @@ export default function DonationHistory({
                     </p>
                     {donation.message && (
                       <p className="text-muted-foreground text-sm italic">
-                        "{donation.message}"
+                        &ldquo;{donation.message}&rdquo;
                       </p>
                     )}
                   </div>

@@ -169,7 +169,7 @@ export default function DonationsList({
                     <div className="mt-2 flex items-start space-x-2">
                       <MessageSquare className="text-muted-foreground mt-0.5 h-4 w-4" />
                       <p className="text-muted-foreground text-sm italic">
-                        "{donation.attributes.Message}"
+                        &ldquo;{donation.attributes.Message}&rdquo;
                       </p>
                     </div>
                   )}

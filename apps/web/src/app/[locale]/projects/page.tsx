@@ -1,11 +1,11 @@
 import { AppLocale } from "@/types/general"
 
+import { fetchProjects as strapiApiFetchProjects } from "@/lib/strapi-api/content/project"
 import { Container } from "@/components/catalyst/container"
 import FiltersSheet from "@/components/crowdfunding/FiltersSheet"
 import FiltersSidebar from "@/components/crowdfunding/FiltersSidebar"
 import ProjectCard from "@/components/crowdfunding/ProjectCard"
 import ProjectsTopControls from "@/components/crowdfunding/ProjectsTopControls"
-import { fetchProjects as strapiApiFetchProjects } from "@/lib/strapi-api/content/project"
 
 interface ProjectsPageProps {
   params: Promise<{ locale: AppLocale }>
