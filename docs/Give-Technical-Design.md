@@ -517,7 +517,7 @@ Give/  (pnpm + Turborepo, Node 24, theo mẫu các repo DOS)
 │   ├── src/app/api/cron/       [job]/route.ts
 │   └── src/server/             channels/, rpc wrappers, vietqr/, statement-parsers/
 ├── packages/ui                 port từ apps/web trên nhánh dev (ProjectCard, TypeBadge, CreateProjectForm, DonationForm, filters…)
-└── Docs/
+└── docs/
 (DDL và pgTAP nằm ở DOS.Me/supabase/{migrations,tests/database})
 ```
 
