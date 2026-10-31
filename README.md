@@ -102,6 +102,7 @@ schedule.
 | `/me/campaigns/[id]`                            | the organizer      | Editor: content, milestones, cover, submit, cancel, delete draft, updates.               |
 | `/admin`                                        | moderators, admins | Review queue (approve, request changes) and organizer verification.                      |
 | `/api/cron/activate`                            | Vercel Cron        | Activates scheduled campaigns.                                                           |
+| `/media/public/...`, `/media/private/...`       | –                  | Cover images from the private `give-media` bucket, after a visibility check.             |
 | `/auth/login`, `/auth/callback`, `/auth/logout` | –                  | DOS.Me login flow.                                                                       |
 
 ## Security model
@@ -110,16 +111,23 @@ schedule.
   in `src/lib/supabase.ts`); PostgREST verifies the token and RLS decides what
   each person can read and write. Status changes go only through
   `give.transition_campaign()`.
-- The service role (`dbService()`) is used in two places: storing a cover image
-  and its `campaign_media` row after the caller's ownership was checked under
-  RLS (the cover itself is then set with the caller's token), and the cron
-  route.
+- Clients may select every `give.campaigns` column except `organizer_id` and
+  `review_note`; the organizer and staff read full rows through the
+  `give.managed_campaigns()` RPC (`src/lib/campaigns.ts`).
+- The service role (`dbService()`) is used in three places: storing a cover
+  image and its `campaign_media` row after the caller's ownership was checked
+  under RLS (the cover itself is then set with the caller's token), serving a
+  cover after the viewer's own query found its `campaign_media` row, and the
+  cron route.
 - Uploaded files are checked by their bytes (JPEG, PNG, WebP; at most 4 MB),
   not by name or browser-sent type, then re-encoded to WebP with `sharp`, which
   drops EXIF metadata such as GPS position before the image is public.
-- The `give-media` bucket is public, so a draft's cover is reachable by URL
-  before review. Moving draft media to a private bucket needs a DOS-Me
-  migration.
+- The `give-media` bucket is private. Covers are served by `/media/public/...`
+  (only when an anonymous visitor could see the campaign; cacheable, and the
+  only image URLs the optimizer accepts) and `/media/private/...` (the
+  organizer and staff, from their session, never cached), see
+  `src/lib/cover-urls.ts`. A draft's cover is not reachable by URL before
+  review.
 - Campaign stories are Markdown rendered without raw HTML or images.
 
 ## Repository

@@ -32,6 +32,25 @@ export function campaignMediaPrefix(campaignId: string): string {
   return `campaigns/${campaignId}`
 }
 
+const MEDIA_PATH =
+  /^campaigns\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(jpg|png|webp)$/
+
+const MEDIA_TYPES: Record<ImageType["ext"], ImageType["mime"]> = {
+  jpg: "image/jpeg",
+  png: "image/png",
+  webp: "image/webp",
+}
+
+/**
+ * The storage key a /media/... URL names, or null unless it has exactly the
+ * shape mediaPath() produces (so no traversal or other buckets' keys).
+ */
+export function parseMediaPath(segments: readonly string[]): { path: string; mime: ImageType["mime"] } | null {
+  const path = segments.join("/")
+  const match = MEDIA_PATH.exec(path)
+  return match ? { path, mime: MEDIA_TYPES[match[1] as ImageType["ext"]] } : null
+}
+
 const COVER_MAX_EDGE = 2400
 
 /**

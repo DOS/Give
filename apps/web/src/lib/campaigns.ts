@@ -7,6 +7,12 @@ import type { SupabaseClient } from "@supabase/supabase-js"
  * Every query takes the client it runs with, so the caller decides whose
  * rights apply: `dbAs()` for an anonymous visitor, `dbAs(token)` for the
  * signed-in user under RLS. Nothing here uses the service role.
+ *
+ * anon and authenticated may select every campaign column except
+ * `organizer_id` and `review_note` (DOS-Me
+ * `20261101090000_give_campaign_read_hardening.sql`); a `select=*` on the
+ * table fails. Organizers and staff read full rows through the
+ * `give.managed_campaigns()` RPC instead.
  */
 
 // The client is created without generated types, so rows come back untyped
@@ -263,9 +269,8 @@ const REFS =
 const CAMPAIGN_WITH_REFS = `*, ${REFS}`
 
 /**
- * Public pages never ask for the organizer's user id or the review note.
- * This keeps them out of rendered data only; the schema still grants anon
- * table-wide SELECT, so hiding them for real needs column grants in DOS-Me.
+ * Every column anon and authenticated may select from the table: all but the
+ * organizer's user id and the review note.
  */
 const PUBLIC_CAMPAIGN_WITH_REFS = `id, slug, type, funding_model, category_id, title, summary, story, beneficiary_name,
   beneficiary_relation, cover_media_id, asset, goal_amount, min_contribution, stretch_goal_amount, display_options,
@@ -312,8 +317,18 @@ export async function getCampaignBySlug(db: Db, slug: string): Promise<PublicCam
   return data as unknown as PublicCampaign | null
 }
 
+/**
+ * Full rows (organizer id and review note included) of the campaigns the
+ * caller organizes, plus every campaign for staff. Filters and embeds apply
+ * to the RPC result like to the table.
+ */
+function managedCampaigns(db: Db, campaignId?: string) {
+  return db.rpc("managed_campaigns", campaignId ? { p_campaign_id: campaignId } : {})
+}
+
+/** A campaign the caller organizes or, for staff, any campaign. */
 export async function getCampaignById(db: Db, id: string): Promise<CampaignWithRefs | null> {
-  const { data, error } = await db.from("campaigns").select(CAMPAIGN_WITH_REFS).eq("id", id).maybeSingle()
+  const { data, error } = await managedCampaigns(db, id).select(CAMPAIGN_WITH_REFS).maybeSingle()
   if (error) throw error
   return data as CampaignWithRefs | null
 }
@@ -361,8 +376,7 @@ export async function getOrganizer(db: Db, userId: string): Promise<Organizer | 
 }
 
 export async function listMyCampaigns(db: Db, userId: string): Promise<CampaignWithRefs[]> {
-  const { data, error } = await db
-    .from("campaigns")
+  const { data, error } = await managedCampaigns(db)
     .select(CAMPAIGN_WITH_REFS)
     .eq("organizer_id", userId)
     .order("created_at", { ascending: false })
@@ -394,8 +408,7 @@ export interface ReviewItem extends CampaignWithRefs {
 
 /** Campaigns waiting for review, oldest submission first (staff only under RLS). */
 export async function listReviewQueue(db: Db): Promise<ReviewItem[]> {
-  const { data, error } = await db
-    .from("campaigns")
+  const { data, error } = await managedCampaigns(db)
     .select(`${CAMPAIGN_WITH_REFS}, organizer:organizers(user_id, kind, legal_name, display_name, verification_status)`)
     .eq("status", "in_review")
     .order("submitted_at", { ascending: true })

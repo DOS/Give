@@ -19,8 +19,8 @@ export function fakeDb(handler: Handler, log: Call[] = []) {
     return Promise.resolve({ data: result.data ?? null, error: result.error ?? null })
   }
 
-  const chain = (target: string) => {
-    const call: Call = { target, ops: [] }
+  const chain = (target: string, ops: Call["ops"] = []) => {
+    const call: Call = { target, ops }
     const builder: Record<string, unknown> = {}
     for (const op of ["select", "insert", "update", "delete", "eq", "in", "not", "or", "order", "limit"]) {
       builder[op] = (...args: unknown[]) => {
@@ -41,7 +41,7 @@ export function fakeDb(handler: Handler, log: Call[] = []) {
 
   return {
     from: (table: string) => chain(table),
-    rpc: (fn: string, args: unknown) => run({ target: `rpc:${fn}`, ops: [["args", args]] }),
+    rpc: (fn: string, args: unknown) => chain(`rpc:${fn}`, [["args", args]]),
     storage: {
       from: (bucket: string) => ({
         upload: (path: string, body: unknown, options: unknown) =>
@@ -49,6 +49,7 @@ export function fakeDb(handler: Handler, log: Call[] = []) {
         remove: (paths: string[]) => run({ target: `storage:${bucket}`, ops: [["remove", paths]] }),
         list: (prefix: string, options: unknown) =>
           run({ target: `storage:${bucket}`, ops: [["list", prefix, options]] }),
+        download: (path: string) => run({ target: `storage:${bucket}`, ops: [["download", path]] }),
       }),
     },
   }

@@ -5,10 +5,11 @@ import { TypeBadge } from "@/components/badges"
 import { ProgressBar } from "@/components/ProgressBar"
 import type { PublicCampaign } from "@/lib/campaigns"
 import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
-import { mediaUrl } from "@/lib/supabase"
+import { publicCoverUrl } from "@/lib/cover-urls"
 
 /**
- * Campaign card for discovery, ported from the old ProjectCard. Money totals
+ * Campaign card for discovery (public campaigns only: the cover goes through
+ * the public media route), ported from the old ProjectCard. Money totals
  * arrive with M1 (ledger); until then the card shows the goal and 0 raised.
  */
 export function CampaignCard({ campaign }: { campaign: PublicCampaign }) {
@@ -23,7 +24,7 @@ export function CampaignCard({ campaign }: { campaign: PublicCampaign }) {
         <div className="relative aspect-[4/3] overflow-hidden bg-gray-100">
           {campaign.cover?.storage_path ? (
             <Image
-              src={mediaUrl(campaign.cover.storage_path)}
+              src={publicCoverUrl(campaign.cover.storage_path)}
               alt={campaign.cover.alt ?? campaign.title}
               fill
               sizes="(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw"
