@@ -110,12 +110,16 @@ export function encodeVietQr(fields: VietQrFields): string {
 
 /** Letters every Give donation code starts with, so it cannot match digit runs banks add to the content. */
 export const DONATION_CODE_PREFIX = "GV"
-/** Assumption G3 (docs/Give-Technical-Design.md): at most 10 characters, uppercase letters and digits only. */
-export const DONATION_CODE_MAX_LENGTH = 10
-
-const DONATION_CODE = new RegExp(
-  `^${DONATION_CODE_PREFIX}[A-Z0-9]{1,${DONATION_CODE_MAX_LENGTH - DONATION_CODE_PREFIX.length}}$`
-)
+/** Uppercase letters and digits without the look-alikes 0, O, 1, I and L. */
+export const DONATION_CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+/**
+ * A donation code (docs/Give-Technical-Design.md, matching rules): "GV", six
+ * characters from the alphabet and an optional check character. The fixed
+ * length lets the matcher cut the code out of statement text that has lost
+ * its separators, and at 8-9 characters it fits G3 (at most 10) and payOS's
+ * 9-character description for non-linked accounts.
+ */
+export const DONATION_CODE = new RegExp(`^${DONATION_CODE_PREFIX}[${DONATION_CODE_ALPHABET}]{6,7}$`)
 
 /** True for a donation reference code Give can put in the transfer content. */
 export function isDonationCode(value: unknown): value is string {
@@ -135,7 +139,7 @@ export function buildDonationPayload(input: DonationQrInput): string {
   if (!isDonationCode(input.addInfo)) {
     throw new VietQrError(
       "VIETQR_ADD_INFO_INVALID",
-      `Reference code must be "${DONATION_CODE_PREFIX}" plus uppercase letters or digits, at most ${DONATION_CODE_MAX_LENGTH} characters`
+      `Reference code must be "${DONATION_CODE_PREFIX}" plus 6 or 7 characters from ${DONATION_CODE_ALPHABET}`
     )
   }
   return encodeVietQr({

@@ -4,7 +4,8 @@ export { crc16, hasValidCrc } from "./crc16"
 export {
   buildDonationPayload,
   consumerAccountInformation,
-  DONATION_CODE_MAX_LENGTH,
+  DONATION_CODE,
+  DONATION_CODE_ALPHABET,
   DONATION_CODE_PREFIX,
   encodeVietQr,
   formatAmount,

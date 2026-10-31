@@ -4,7 +4,7 @@ import {
   buildDonationPayload,
   consumerAccountInformation,
   crc16,
-  DONATION_CODE_MAX_LENGTH,
+  DONATION_CODE_ALPHABET,
   encodeVietQr,
   formatAmount,
   hasValidCrc,
@@ -40,9 +40,10 @@ const NAPAS_DYNAMIC_ACCOUNT =
 const NAPAS_DYNAMIC_CARD =
   "00020101021238600010A00000072701300006970403011697040311012345670208QRIBFTTC530370454061800005802VN62340107NPS68690819thanh toan don hang6304A203"
 
-// NAPAS 6.1.1: static QR to an account, exactly as printed. Its consumer ID
-// sub-field reads "0112" for a 13-character value (6.1.3 has "0113"), so it
-// is not well formed and only checks the CRC.
+// NAPAS 6.1.1: static QR to an account, exactly as printed. The headline
+// payload and the CRC step give the consumer ID sub-field as "0112" for a
+// 13-character value, while the example's own field table shows "0113". The
+// printed payload is not well formed, so it only checks the CRC.
 const NAPAS_STATIC_ACCOUNT_AS_PRINTED =
   "00020101021138570010A00000072701270006970403011200110123456780208QRIBFTTA53037045802VN6304F4E5"
 
@@ -196,18 +197,25 @@ describe("buildDonationPayload", () => {
     expect(hasValidCrc(payload)).toBe(true)
   })
 
-  it("accepts codes up to the G3 limit", () => {
-    expect(DONATION_CODE_MAX_LENGTH).toBe(10)
-    expect(isDonationCode("GV1")).toBe(true)
-    expect(isDonationCode("GVABCD1234")).toBe(true)
-    expect(buildDonationPayload({ ...input, addInfo: "GVABCD1234" })).toContain("0810GVABCD1234")
+  it("accepts codes of the design format, within G3 and payOS limits", () => {
+    expect(DONATION_CODE_ALPHABET).toHaveLength(31)
+    expect(isDonationCode("GV23456Z")).toBe(true)
+    expect(isDonationCode("GV7K2M9QX")).toBe(true)
+    expect(buildDonationPayload({ ...input, addInfo: "GV7K2M9QX" })).toContain("0809GV7K2M9QX")
   })
 
-  it("rejects reference codes outside the G3 format", () => {
+  it("rejects reference codes outside the design format", () => {
     for (const addInfo of [
       "",
       "GV",
-      "GVABCD12345",
+      "GV7K2M9",
+      "GV7K2M9QXY",
+      "GVABCD1234",
+      "GV7K2M0Q",
+      "GV7K2MOQ",
+      "GV7K2M1Q",
+      "GV7K2MIQ",
+      "GV7K2MLQ",
       "gv7k2m9q",
       "Gv7K2M9Q",
       "7K2M9Q",
@@ -244,7 +252,13 @@ describe("renderVietQrSvg", () => {
   })
 
   it("refuses a payload that is not VietQR or has a wrong CRC", () => {
-    for (const payload of ["", "hello", NAPAS_DYNAMIC_ACCOUNT.replace("180000", "190000"), EMVCO_APPENDIX_A.slice(2)]) {
+    for (const payload of [
+      "",
+      "hello",
+      NAPAS_DYNAMIC_ACCOUNT.replace("180000", "190000"),
+      EMVCO_APPENDIX_A,
+      "0002016304" + crc16("0002016304"),
+    ]) {
       expect(
         codeOf(() => renderVietQrSvg(payload)),
         payload
