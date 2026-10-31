@@ -123,3 +123,7 @@ radiant-ts/*.js
 **/.env.development
 **/.env.production
 .tmp*
+
+# next.js generated types
+next-env.d.ts
+*.tsbuildinfo

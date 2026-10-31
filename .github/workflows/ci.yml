@@ -16,81 +16,39 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  STRAPI_REST_READONLY_API_KEY: random-value-just-for-build
+  # Build-time placeholders only; nothing is contacted during the build.
+  NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+  NEXT_PUBLIC_SITE_URL: http://localhost:3000
 
 jobs:
   lint:
     name: Lint
     timeout-minutes: 15
-    runs-on: ubuntu-latest 
+    runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 2
-
-      - name: Cache turbo build setup
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: '${{ runner.os }}-turbo-${{ github.sha }}'
-          restore-keys: |
-            ${{ runner.os }}-turbo-
-
-      - name: Setup Node.js environment
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: yarn
-
-      - name: Install dependencies
-        run: yarn
-
-      - name: Prepare Environment Variables
-        run: |
-          cp apps/strapi/.env.example apps/strapi/.env
-          cp apps/web/.env.local.example apps/web/.env.local
-
-      - name: yarn format:check
-        run: yarn format:check
-
-      - name: yarn lint
-        run: yarn lint
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
 
   build:
     name: Build all apps
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 2
-
-      - name: Cache turbo build setup
-        uses: actions/cache@v4
-        with:
-          path: .turbo
-          key: '${{ runner.os }}-turbo-${{ github.sha }}'
-          restore-keys: |
-            ${{ runner.os }}-turbo-
-
-      - name: Setup Node.js environment
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: yarn
-
-      - name: Install dependencies
-        run: yarn
-      
-      - name: Prepare Environment Variables
-        run: |
-          cp apps/strapi/.env.example apps/strapi/.env
-          cp apps/web/.env.local.example apps/web/.env.local
-
-      - name: Build Web
-        run: yarn build:web
-
-      - name: Build Strapi
-        run: yarn build:strapi
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
