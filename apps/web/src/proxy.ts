@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 
 import { cookieName, cookieOptions, REFRESH_TTL_SECONDS, SESSION_ACCESS, SESSION_REFRESH } from "@/lib/auth/cookies"
 import { loadOidcConfig, refreshTokens } from "@/lib/auth/oidc"
+import { appOrigin } from "@/lib/auth/origin"
 import { needsRefresh } from "@/lib/auth/token"
 
 /**
@@ -19,7 +20,7 @@ export async function proxy(request: NextRequest) {
   if (!refresh || !needsRefresh(access)) return NextResponse.next()
 
   try {
-    const tokens = await refreshTokens(loadOidcConfig(request.nextUrl.origin), refresh)
+    const tokens = await refreshTokens(loadOidcConfig(appOrigin(request.nextUrl.origin)), refresh)
     request.cookies.set(accessName, tokens.access_token)
     const response = NextResponse.next({ request })
     response.cookies.set(accessName, tokens.access_token, cookieOptions(hostname, tokens.expires_in))

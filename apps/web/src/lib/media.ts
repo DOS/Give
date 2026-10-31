@@ -31,3 +31,20 @@ export function mediaPath(campaignId: string, objectId: string, ext: ImageType["
 export function campaignMediaPrefix(campaignId: string): string {
   return `campaigns/${campaignId}`
 }
+
+const COVER_MAX_EDGE = 2400
+
+/**
+ * Re-encodes a cover to WebP: applies the EXIF orientation, then drops all
+ * metadata (GPS position, device, owner) that the original may carry, and
+ * caps the longer edge. Throws if the bytes are not a decodable image.
+ */
+export async function reencodeCover(bytes: Uint8Array): Promise<Uint8Array> {
+  const { default: sharp } = await import("sharp")
+  const output = await sharp(bytes, { limitInputPixels: 50_000_000 })
+    .rotate()
+    .resize({ width: COVER_MAX_EDGE, height: COVER_MAX_EDGE, fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 85 })
+    .toBuffer()
+  return new Uint8Array(output)
+}

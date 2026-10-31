@@ -11,13 +11,15 @@ export function formatVnd(amount: number | bigint | string): string {
 
 /**
  * Parses what a person types into a money field ("1.500.000", "1,500,000",
- * "1500000 đ") into whole đồng. Returns null for anything that is not a
- * positive whole number.
+ * "1 500 000", "1500000 đ") into whole đồng. Separators must split groups of
+ * exactly three digits, so a decimal such as "1,5" (triệu) is rejected rather
+ * than read as 15. Returns null for anything that is not a positive whole
+ * number.
  */
 export function parseVnd(input: string): number | null {
-  const digits = input.replace(/[.,\s₫đĐ]/g, "")
-  if (!/^[0-9]+$/.test(digits)) return null
-  const value = Number(digits)
+  const text = input.trim().replace(/\s*[₫đĐ]$/, "")
+  if (!/^\d+$/.test(text) && !/^\d{1,3}([.,\s]\d{3})+$/.test(text)) return null
+  const value = Number(text.replace(/[.,\s]/g, ""))
   if (!Number.isSafeInteger(value) || value <= 0) return null
   return value
 }

@@ -296,7 +296,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             )}
           </div>
           {editable && (
-            <ActionForm action={uploadCover.bind(null, campaign.id)} className="space-y-3">
+            <ActionForm action={uploadCover.bind(null, campaign.id)} resetOnSuccess className="space-y-3">
               <div>
                 <label htmlFor="cover" className="label">
                   Chọn ảnh
@@ -347,7 +347,11 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
           <p className="mb-6 text-sm text-gray-500">Chưa có mốc nào. Mốc giúp người ủng hộ thấy tiền sẽ làm được gì.</p>
         )}
         {editable && (
-          <ActionForm action={addMilestone.bind(null, campaign.id)} className="grid gap-3 sm:grid-cols-2">
+          <ActionForm
+            action={addMilestone.bind(null, campaign.id)}
+            resetOnSuccess
+            className="grid gap-3 sm:grid-cols-2"
+          >
             <div>
               <label htmlFor="milestone_title" className="label">
                 Tên mốc
@@ -378,6 +382,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
           <h2 className="mb-4 text-lg font-semibold">Cập nhật cho người ủng hộ</h2>
           <ActionForm
             action={postUpdate.bind(null, campaign.id)}
+            resetOnSuccess
             className="space-y-3"
             confirm="Cập nhật sẽ công khai ngay và không sửa được. Đăng?"
           >

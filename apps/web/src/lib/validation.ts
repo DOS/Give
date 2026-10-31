@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { parseVnd } from "./format"
+import { parseVnd, toVietnamLocalInput } from "./format"
 
 const optionalText = (max: number) =>
   z
@@ -35,7 +35,13 @@ const optionalLocalDate = z.string().transform((value, ctx) => {
     ctx.addIssue({ code: "custom", message: "Ngày giờ không hợp lệ" })
     return z.NEVER
   }
-  return new Date(`${value}:00+07:00`).toISOString()
+  const date = new Date(`${value}:00+07:00`)
+  // Rejects impossible dates ("2026-13-01") and ones that roll over ("02-31").
+  if (Number.isNaN(date.getTime()) || toVietnamLocalInput(date.toISOString()) !== value) {
+    ctx.addIssue({ code: "custom", message: "Ngày giờ không hợp lệ" })
+    return z.NEVER
+  }
+  return date.toISOString()
 })
 
 export const organizerSchema = z.object({
@@ -80,7 +86,7 @@ export const campaignContentSchema = z
       .pipe(z.uuid().nullable()),
     beneficiary_name: optionalText(120),
     beneficiary_relation: optionalText(120),
-    goal_amount: money,
+    goal_amount: money.refine((v) => v >= MIN_GOAL, "Mục tiêu tối thiểu là 10.000 ₫"),
     min_contribution: money,
     stretch_goal_amount: optionalMoney,
     starts_at: optionalLocalDate,

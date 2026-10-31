@@ -14,7 +14,7 @@ import {
   isPublicStatus,
   listMilestones,
   listPublishedUpdates,
-  type CampaignWithRefs,
+  type PublicCampaign,
   type Db,
 } from "@/lib/campaigns"
 import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
@@ -27,7 +27,7 @@ import { dbAs, mediaUrl } from "@/lib/supabase"
  * campaign that is not public yet (RLS decides).
  */
 const loadCampaign = cache(
-  async (slug: string): Promise<{ campaign: CampaignWithRefs; db: Db; preview: boolean } | null> => {
+  async (slug: string): Promise<{ campaign: PublicCampaign; db: Db; preview: boolean } | null> => {
     if (!SLUG_PATTERN.test(slug) || slug.length > 80) return null
     const anon = dbAs()
     const published = await getCampaignBySlug(anon, slug)

@@ -56,19 +56,20 @@ values.
 Set these in `apps/web/.env.local` locally and in the Vercel project for
 deployed environments. Never commit real values.
 
-| Variable                        | Where       | What                                                                                             |
-| ------------------------------- | ----------- | ------------------------------------------------------------------------------------------------ |
-| `NEXT_PUBLIC_SUPABASE_URL`      | public      | The DOS Supabase project URL.                                                                    |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public      | The project's anon (publishable) key. Every user query runs under RLS with the user's own token. |
-| `NEXT_PUBLIC_SITE_URL`          | public      | This app's origin, e.g. `http://localhost:3000`.                                                 |
-| `SUPABASE_SERVICE_ROLE_KEY`     | server only | Used only for cover uploads (after an RLS ownership check) and the cron route. Never expose it.  |
-| `OIDC_ISSUER`                   | server only | `https://<project-ref>.supabase.co/auth/v1`, the Supabase OAuth 2.1 server.                      |
-| `OIDC_CLIENT_ID`                | server only | The OAuth client registered for Give.                                                            |
-| `OIDC_CLIENT_SECRET`            | server only | That client's secret (confidential client, `client_secret_basic`).                               |
-| `CRON_SECRET`                   | server only | At least 16 random characters. Vercel Cron sends it as `Authorization: Bearer <CRON_SECRET>`.    |
+| Variable                        | Where       | What                                                                                                                                                                                                                      |
+| ------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | public      | The DOS Supabase project URL.                                                                                                                                                                                             |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | public      | The project's anon (publishable) key. Every user query runs under RLS with the user's own token.                                                                                                                          |
+| `NEXT_PUBLIC_SITE_URL`          | public      | The canonical origin, e.g. `http://localhost:3000`. Login always runs here and the OAuth `redirect_uri` is built from it, never from the Host header. Leave it unset on Vercel previews to use each preview's own origin. |
+| `SUPABASE_SERVICE_ROLE_KEY`     | server only | Used only for cover uploads (after an RLS ownership check) and the cron route. Never expose it.                                                                                                                           |
+| `OIDC_ISSUER`                   | server only | `https://<project-ref>.supabase.co/auth/v1`, the Supabase OAuth 2.1 server.                                                                                                                                               |
+| `OIDC_CLIENT_ID`                | server only | The OAuth client registered for Give.                                                                                                                                                                                     |
+| `OIDC_CLIENT_SECRET`            | server only | That client's secret (confidential client, `client_secret_basic`).                                                                                                                                                        |
+| `CRON_SECRET`                   | server only | At least 16 random characters. Vercel Cron sends it as `Authorization: Bearer <CRON_SECRET>`.                                                                                                                             |
 
 The OAuth client needs the redirect URI `<origin>/auth/callback` for every
-origin that signs in (localhost, previews, Production). Without the OIDC
+origin that signs in (localhost, previews, Production); with
+`NEXT_PUBLIC_SITE_URL` set, that is `${NEXT_PUBLIC_SITE_URL}/auth/callback`. Without the OIDC
 values the site still renders, and "Đăng nhập" reports that login is not
 configured.
 
@@ -113,7 +114,11 @@ schedule.
   RLS (the cover itself is then set with the caller's token), and the cron
   route.
 - Uploaded files are checked by their bytes (JPEG, PNG, WebP; at most 4 MB),
-  not by name or browser-sent type.
+  not by name or browser-sent type, then re-encoded to WebP with `sharp`, which
+  drops EXIF metadata such as GPS position before the image is public.
+- The `give-media` bucket is public, so a draft's cover is reachable by URL
+  before review. Moving draft media to a private bucket needs a DOS-Me
+  migration.
 - Campaign stories are Markdown rendered without raw HTML or images.
 
 ## Repository

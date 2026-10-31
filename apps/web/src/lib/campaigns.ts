@@ -83,6 +83,9 @@ export interface CampaignWithRefs extends Campaign {
   cover: Pick<Media, "storage_path" | "alt"> | null
 }
 
+/** What public pages load: no organizer user id, no review note. */
+export type PublicCampaign = Omit<CampaignWithRefs, "organizer_id" | "review_note">
+
 export interface Milestone {
   id: string
   campaign_id: string
@@ -254,8 +257,16 @@ export function discoveryHref(filters: Partial<DiscoveryFilters>): string {
 // Queries
 // ---------------------------------------------------------------------------
 
-const CAMPAIGN_WITH_REFS =
-  "*, category:categories(id, slug, name, icon, color), cover:campaign_media!campaigns_cover_media_fk(storage_path, alt)"
+const REFS =
+  "category:categories(id, slug, name, icon, color), cover:campaign_media!campaigns_cover_media_fk(storage_path, alt)"
+
+const CAMPAIGN_WITH_REFS = `*, ${REFS}`
+
+/** Public pages never ask for the organizer's user id or the review note. */
+const PUBLIC_CAMPAIGN_WITH_REFS = `id, slug, type, funding_model, category_id, title, summary, story, beneficiary_name,
+  beneficiary_relation, cover_media_id, asset, goal_amount, min_contribution, stretch_goal_amount, display_options,
+  starts_at, ends_at, payment_window_days, status, submitted_at, approved_at, outcome_at, created_at, updated_at,
+  ${REFS}`.replace(/\s+/g, " ")
 
 export async function listCategories(db: Db): Promise<Category[]> {
   const { data, error } = await db
@@ -273,8 +284,8 @@ export async function listPublicCampaigns(
   filters: DiscoveryFilters,
   categories: readonly Category[],
   limit = 24
-): Promise<CampaignWithRefs[]> {
-  let query = db.from("campaigns").select(CAMPAIGN_WITH_REFS).eq("status", "live")
+): Promise<PublicCampaign[]> {
+  let query = db.from("campaigns").select(PUBLIC_CAMPAIGN_WITH_REFS).eq("status", "live")
   if (filters.type) query = query.eq("type", filters.type)
   if (filters.category) {
     const category = categories.find((c) => c.slug === filters.category)
@@ -284,17 +295,17 @@ export async function listPublicCampaigns(
   if (filters.q) query = query.or(searchFilter(filters.q))
   const { data, error } = await query.order("approved_at", { ascending: false, nullsFirst: false }).limit(limit)
   if (error) throw error
-  return (data ?? []) as CampaignWithRefs[]
+  return (data ?? []) as unknown as PublicCampaign[]
 }
 
 /**
  * A campaign by slug, as far as the client may see it: anonymous clients only
  * get public statuses, the organizer and staff also see unpublished ones.
  */
-export async function getCampaignBySlug(db: Db, slug: string): Promise<CampaignWithRefs | null> {
-  const { data, error } = await db.from("campaigns").select(CAMPAIGN_WITH_REFS).eq("slug", slug).maybeSingle()
+export async function getCampaignBySlug(db: Db, slug: string): Promise<PublicCampaign | null> {
+  const { data, error } = await db.from("campaigns").select(PUBLIC_CAMPAIGN_WITH_REFS).eq("slug", slug).maybeSingle()
   if (error) throw error
-  return data as CampaignWithRefs | null
+  return data as unknown as PublicCampaign | null
 }
 
 export async function getCampaignById(db: Db, id: string): Promise<CampaignWithRefs | null> {
@@ -388,12 +399,15 @@ export async function listReviewQueue(db: Db): Promise<ReviewItem[]> {
   return (data ?? []) as ReviewItem[]
 }
 
-/** Organizers who are not verified yet, oldest first (staff only under RLS). */
+/**
+ * Organizers who are not verified, oldest first (staff only under RLS).
+ * Rejected ones stay listed so a moderator can verify them once fixed.
+ */
 export async function listOrganizersToVerify(db: Db, limit = 50): Promise<Organizer[]> {
   const { data, error } = await db
     .from("organizers")
     .select("user_id, kind, legal_name, display_name, phone, verification_status, verified_at, created_at")
-    .in("verification_status", ["unverified", "pending"])
+    .in("verification_status", ["unverified", "pending", "rejected"])
     .order("created_at", { ascending: true })
     .limit(limit)
   if (error) throw error

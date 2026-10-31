@@ -100,7 +100,7 @@ export default async function AdminPage() {
                       >
                         <SubmitButton>Duyệt</SubmitButton>
                       </ActionForm>
-                      <ActionForm action={requestChanges.bind(null, campaign.id)} className="space-y-2">
+                      <ActionForm action={requestChanges.bind(null, campaign.id)} resetOnSuccess className="space-y-2">
                         <label htmlFor={`reason-${campaign.id}`} className="label">
                           Yêu cầu chỉnh sửa
                         </label>

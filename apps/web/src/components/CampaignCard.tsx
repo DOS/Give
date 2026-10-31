@@ -3,7 +3,7 @@ import Link from "next/link"
 
 import { TypeBadge } from "@/components/badges"
 import { ProgressBar } from "@/components/ProgressBar"
-import type { CampaignWithRefs } from "@/lib/campaigns"
+import type { PublicCampaign } from "@/lib/campaigns"
 import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
 import { mediaUrl } from "@/lib/supabase"
 
@@ -11,7 +11,7 @@ import { mediaUrl } from "@/lib/supabase"
  * Campaign card for discovery, ported from the old ProjectCard. Money totals
  * arrive with M1 (ledger); until then the card shows the goal and 0 raised.
  */
-export function CampaignCard({ campaign }: { campaign: CampaignWithRefs }) {
+export function CampaignCard({ campaign }: { campaign: PublicCampaign }) {
   const raised = 0
   const percent = progressPercent(raised, campaign.goal_amount)
   const days = daysLeft(campaign.ends_at)

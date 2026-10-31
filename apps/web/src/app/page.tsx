@@ -22,7 +22,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     <>
       {loginError && (
         <div role="alert" className="bg-red-50 px-4 py-3 text-center text-sm text-red-800">
-          {LOGIN_ERRORS[loginError] ?? LOGIN_ERRORS.exchange}
+          {Object.hasOwn(LOGIN_ERRORS, loginError) ? LOGIN_ERRORS[loginError] : LOGIN_ERRORS.exchange}
         </div>
       )}
 

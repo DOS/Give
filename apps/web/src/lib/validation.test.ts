@@ -74,6 +74,18 @@ describe("campaignContentSchema", () => {
     ).toBe(false)
   })
 
+  it("rejects impossible dates instead of throwing or rolling over", () => {
+    expect(campaignContentSchema.safeParse(content({ ends_at: "2026-13-01T09:00" })).success).toBe(false)
+    expect(campaignContentSchema.safeParse(content({ ends_at: "2026-02-31T09:00" })).success).toBe(false)
+    expect(campaignContentSchema.safeParse(content({ ends_at: "2026-02-28T25:00" })).success).toBe(false)
+  })
+
+  it("applies the same minimum goal as new campaigns", () => {
+    expect(campaignContentSchema.safeParse(content({ goal_amount: "1.000", min_contribution: "1.000" })).success).toBe(
+      false
+    )
+  })
+
   it("rejects a bad category id and payment window", () => {
     expect(campaignContentSchema.safeParse(content({ category_id: "not-a-uuid" })).success).toBe(false)
     expect(campaignContentSchema.safeParse(content({ payment_window_days: "31" })).success).toBe(false)

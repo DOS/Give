@@ -10,11 +10,21 @@ import {
   FLOW_VERIFIER,
 } from "@/lib/auth/cookies"
 import { buildAuthorizeUrl, loadOidcConfig, randomToken } from "@/lib/auth/oidc"
+import { appOrigin } from "@/lib/auth/origin"
 import { safeReturnPath } from "@/lib/return-path"
 
 export async function GET(request: NextRequest) {
   const { hostname, origin } = request.nextUrl
   const returnPath = safeReturnPath(request.nextUrl.searchParams.get("return_path"))
+
+  // Run the flow on the canonical origin so the flow cookies and the
+  // registered redirect_uri share one host.
+  const canonical = appOrigin(origin)
+  if (canonical !== origin) {
+    const url = new URL("/auth/login", canonical)
+    url.searchParams.set("return_path", returnPath)
+    return NextResponse.redirect(url)
+  }
 
   let cfg
   try {

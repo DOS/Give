@@ -30,6 +30,9 @@ const PG_MESSAGES: Record<string, string> = {
   "23505": "Dữ liệu bị trùng. Hãy thử lại.",
   "23514": "Dữ liệu không hợp lệ.",
   "42501": "Bạn không có quyền thực hiện thao tác này.",
+  // PostgREST rejected the access token (invalid or expired).
+  PGRST301: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+  PGRST303: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
 }
 
 export interface DbErrorLike {

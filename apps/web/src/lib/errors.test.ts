@@ -24,8 +24,9 @@ describe("dbErrorMessage", () => {
     expect(dbErrorMessage({ code: "42501", message: "GIVE_CAMPAIGN_NOT_EDITABLE: in_review" })).toContain("bản nháp")
   })
 
-  it("falls back to the Postgres error code", () => {
+  it("falls back to the Postgres or PostgREST error code", () => {
     expect(dbErrorMessage({ code: "42501", message: "permission denied for table campaigns" })).toContain("quyền")
+    expect(dbErrorMessage({ code: "PGRST303", message: "JWT expired" })).toContain("đăng nhập lại")
   })
 
   it("never echoes unknown internals", () => {

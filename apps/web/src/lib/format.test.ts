@@ -18,7 +18,7 @@ describe("parseVnd", () => {
   })
 
   it("rejects anything that is not a positive whole number", () => {
-    for (const input of ["", "0", "-5", "abc", "1e6", "12.5k", "9".repeat(20)]) {
+    for (const input of ["", "0", "-5", "abc", "1e6", "12.5k", "9".repeat(20), "1,5", "1.5", "1.50.000", "1.500.00"]) {
       expect(parseVnd(input), input).toBeNull()
     }
   })

@@ -26,13 +26,20 @@ export async function approveCampaign(
   if (!isUuid(campaignId)) return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_NOT_FOUND" }))
   const db = dbAs(session.accessToken)
 
+  const { data } = await db.from("campaigns").select("slug, starts_at, ends_at").eq("id", campaignId).maybeSingle()
+  const campaign = data as { slug: string; starts_at: string | null; ends_at: string | null } | null
+  if (!campaign) return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_NOT_FOUND" }))
+  // transition_campaign does not check dates on approval, and an approved
+  // campaign past its end date would never go live; send it back instead.
+  if (campaign.ends_at && new Date(campaign.ends_at) <= new Date()) {
+    return fail("Chiến dịch đã quá ngày kết thúc. Hãy yêu cầu người tổ chức sửa ngày thay vì duyệt.")
+  }
+
   const approved = await db.rpc("transition_campaign", { p_campaign_id: campaignId, p_to_status: "approved" })
   if (approved.error) return fail(dbErrorMessage(approved.error))
 
-  const { data } = await db.from("campaigns").select("slug, starts_at").eq("id", campaignId).maybeSingle()
-  const campaign = data as { slug: string; starts_at: string | null } | null
   let message = "Đã duyệt. Chiến dịch sẽ tự mở khi tới ngày bắt đầu."
-  if (campaign && (!campaign.starts_at || new Date(campaign.starts_at) <= new Date())) {
+  if (!campaign.starts_at || new Date(campaign.starts_at) <= new Date()) {
     const live = await db.rpc("transition_campaign", { p_campaign_id: campaignId, p_to_status: "live" })
     message = live.error
       ? `Đã duyệt, nhưng chưa mở được: ${dbErrorMessage(live.error)}`

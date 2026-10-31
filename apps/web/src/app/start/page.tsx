@@ -149,7 +149,7 @@ function OrganizerForm({ organizer }: { organizer: Organizer | null }) {
         <input id="phone" name="phone" type="tel" className="field" defaultValue={organizer?.phone ?? ""} />
         <p className="hint">Không công khai. Kiểm duyệt viên dùng để liên hệ khi cần.</p>
       </div>
-      {organizer && organizer.verification_status !== "unverified" && (
+      {(organizer?.verification_status === "verified" || organizer?.verification_status === "pending") && (
         <p className="text-sm text-amber-800">Đổi tên hoặc loại hồ sơ sẽ cần xác minh lại.</p>
       )}
       <SubmitButton>{organizer ? "Lưu hồ sơ" : "Tạo hồ sơ"}</SubmitButton>

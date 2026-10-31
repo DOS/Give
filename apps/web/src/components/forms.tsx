@@ -1,38 +1,58 @@
 "use client"
 
-import { useActionState, type ReactNode } from "react"
-import { useFormStatus } from "react-dom"
+import { createContext, startTransition, useActionState, useContext, useEffect, useRef, type ReactNode } from "react"
 
 import type { ActionResult } from "@/lib/errors"
 
 type FormAction = (state: ActionResult, formData: FormData) => Promise<ActionResult>
 
+const PendingContext = createContext(false)
+
 /**
  * A form bound to a server action that returns an ActionResult; shows the
  * action's message under the fields.
+ *
+ * It submits through startTransition instead of the `action` prop: React 19
+ * resets uncontrolled fields after every `action` submission, which would
+ * throw away what the person typed when the server rejects it. Fields keep
+ * their values unless `resetOnSuccess` is set and the action succeeded.
  */
 export function ActionForm({
   action,
   children,
   className,
   confirm,
+  resetOnSuccess,
 }: {
   action: FormAction
   children: ReactNode
   className?: string
   /** Asks the person before submitting (for irreversible actions). */
   confirm?: string
+  /** Clears the fields after a successful submission (for "add" forms). */
+  resetOnSuccess?: boolean
 }) {
-  const [state, formAction] = useActionState(action, null)
+  const [state, formAction, pending] = useActionState(action, null)
+  const formRef = useRef<HTMLFormElement>(null)
+
+  useEffect(() => {
+    if (resetOnSuccess && state?.ok) formRef.current?.reset()
+  }, [state, resetOnSuccess])
+
   return (
     <form
-      action={formAction}
+      ref={formRef}
       className={className}
       onSubmit={(event) => {
-        if (confirm && !window.confirm(confirm)) event.preventDefault()
+        event.preventDefault()
+        if (pending) return
+        if (confirm && !window.confirm(confirm)) return
+        const submitter = (event.nativeEvent as SubmitEvent).submitter
+        const formData = new FormData(event.currentTarget, submitter)
+        startTransition(() => formAction(formData))
       }}
     >
-      {children}
+      <PendingContext.Provider value={pending}>{children}</PendingContext.Provider>
       {state?.message && (
         <p
           role={state.ok ? "status" : "alert"}
@@ -56,7 +76,7 @@ export function SubmitButton({
   name?: string
   value?: string
 }) {
-  const { pending } = useFormStatus()
+  const pending = useContext(PendingContext)
   return (
     <button type="submit" className={className} disabled={pending} name={name} value={value}>
       {pending ? "Đang xử lý…" : children}

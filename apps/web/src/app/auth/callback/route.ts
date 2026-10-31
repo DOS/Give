@@ -12,6 +12,7 @@ import {
   SESSION_REFRESH,
 } from "@/lib/auth/cookies"
 import { exchangeCode, loadOidcConfig, verifyIdToken } from "@/lib/auth/oidc"
+import { appOrigin } from "@/lib/auth/origin"
 import { safeReturnPath } from "@/lib/return-path"
 
 export async function GET(request: NextRequest) {
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const cfg = loadOidcConfig(origin)
+    const cfg = loadOidcConfig(appOrigin(origin))
     const tokens = await exchangeCode(cfg, code, verifier)
     if (!tokens.id_token || !tokens.refresh_token) return fail("tokens")
     await verifyIdToken(cfg, tokens.id_token, nonce)
