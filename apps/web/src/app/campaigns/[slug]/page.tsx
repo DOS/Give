@@ -19,7 +19,8 @@ import {
 } from "@/lib/campaigns"
 import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
 import { SLUG_PATTERN } from "@/lib/slug"
-import { dbAs, mediaUrl } from "@/lib/supabase"
+import { privateCoverUrl, publicCoverUrl } from "@/lib/cover-urls"
+import { dbAs } from "@/lib/supabase"
 
 /**
  * Public campaigns load as an anonymous visitor. If that finds nothing and
@@ -49,7 +50,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     title: campaign.title,
     description: campaign.summary ?? undefined,
     robots: preview ? { index: false, follow: false } : undefined,
-    openGraph: campaign.cover?.storage_path ? { images: [mediaUrl(campaign.cover.storage_path)] } : undefined,
+    openGraph:
+      campaign.cover?.storage_path && !preview ? { images: [publicCoverUrl(campaign.cover.storage_path)] } : undefined,
   }
 }
 
@@ -100,7 +102,10 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
           <div className="relative aspect-[16/9] overflow-hidden rounded-lg bg-gray-100">
             {campaign.cover?.storage_path ? (
               <Image
-                src={mediaUrl(campaign.cover.storage_path)}
+                src={
+                  preview ? privateCoverUrl(campaign.cover.storage_path) : publicCoverUrl(campaign.cover.storage_path)
+                }
+                unoptimized={preview}
                 alt={campaign.cover.alt ?? campaign.title}
                 fill
                 priority

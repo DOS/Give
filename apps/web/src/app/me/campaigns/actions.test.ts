@@ -106,6 +106,16 @@ describe("saveContent", () => {
     expect(values).toMatchObject({ beneficiary_name: null, stretch_goal_amount: 80_000_000, payment_window_days: 14 })
   })
 
+  it("loads the campaign through managed_campaigns, which returns organizer_id", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle") ? { data: owned() } : op(call, "update") ? { data: [{ id: CAMPAIGN }] } : undefined
+    await saveContent(CAMPAIGN, null, contentForm())
+    const load = state.userCalls[0]
+    expect(load.target).toBe("rpc:managed_campaigns")
+    expect(op(load, "args")).toEqual([{ p_campaign_id: CAMPAIGN }])
+    expect(op(load, "select")?.[0]).toContain("organizer_id")
+  })
+
   it("refuses campaigns the caller does not organize, without writing", async () => {
     state.userHandler = (call) =>
       op(call, "maybeSingle") ? { data: owned({ organizer_id: "someone-else" }) } : undefined

@@ -19,7 +19,8 @@ import {
 } from "@/lib/campaigns"
 import { formatDate, formatVnd, toVietnamLocalInput } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
-import { dbAs, mediaUrl } from "@/lib/supabase"
+import { privateCoverUrl } from "@/lib/cover-urls"
+import { dbAs } from "@/lib/supabase"
 
 import {
   addMilestone,
@@ -285,7 +286,8 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
           <div className="relative aspect-[16/9] overflow-hidden rounded-md bg-gray-100">
             {campaign.cover?.storage_path ? (
               <Image
-                src={mediaUrl(campaign.cover.storage_path)}
+                src={privateCoverUrl(campaign.cover.storage_path)}
+                unoptimized
                 alt={campaign.cover.alt ?? campaign.title}
                 fill
                 sizes="(min-width: 640px) 50vw, 100vw"

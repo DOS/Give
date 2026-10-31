@@ -26,9 +26,11 @@ interface OwnedCampaign {
 }
 
 /**
- * Loads a campaign through RLS with the caller's own token and checks that
- * the caller organizes it. PostgREST verifies the token, so a forged one
- * fails here before anything else runs.
+ * Loads a campaign with the caller's own token through
+ * give.managed_campaigns() (the table hides organizer_id from clients) and
+ * checks that the caller organizes it: staff see every campaign there.
+ * PostgREST verifies the token, so a forged one fails here before anything
+ * else runs.
  */
 async function ownedCampaign(
   session: Session,
@@ -36,9 +38,8 @@ async function ownedCampaign(
 ): Promise<{ campaign: OwnedCampaign; error: null } | { campaign: null; error: string }> {
   if (!isUuid(campaignId)) return { campaign: null, error: NOT_FOUND }
   const { data, error } = await dbAs(session.accessToken)
-    .from("campaigns")
+    .rpc("managed_campaigns", { p_campaign_id: campaignId })
     .select("id, slug, type, status, organizer_id, cover_media_id")
-    .eq("id", campaignId)
     .maybeSingle()
   if (error) return { campaign: null, error: dbErrorMessage(error) }
   const campaign = data as OwnedCampaign | null

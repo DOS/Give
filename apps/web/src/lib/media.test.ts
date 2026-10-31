@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { detectImageType, mediaPath } from "./media"
+import { detectImageType, mediaPath, parseMediaPath } from "./media"
 
 const bytes = (...values: number[]) => new Uint8Array(values)
 
@@ -26,5 +26,27 @@ describe("detectImageType", () => {
 describe("mediaPath", () => {
   it("keeps objects under the campaign's prefix", () => {
     expect(mediaPath("c1", "m1", "png")).toBe("campaigns/c1/m1.png")
+  })
+})
+
+describe("parseMediaPath", () => {
+  const campaign = "22222222-2222-4222-8222-222222222222"
+  const object = "33333333-3333-4333-8333-333333333333"
+
+  it("accepts keys shaped like mediaPath()", () => {
+    expect(parseMediaPath(mediaPath(campaign, object, "webp").split("/"))).toEqual({
+      path: `campaigns/${campaign}/${object}.webp`,
+      mime: "image/webp",
+    })
+    expect(parseMediaPath(["campaigns", campaign, `${object}.jpg`])?.mime).toBe("image/jpeg")
+  })
+
+  it("rejects traversal, other prefixes, extra segments and other types", () => {
+    expect(parseMediaPath(["campaigns", campaign, "..", `${object}.webp`])).toBeNull()
+    expect(parseMediaPath(["..", "other-bucket", `${object}.webp`])).toBeNull()
+    expect(parseMediaPath(["campaigns", campaign, object, `${object}.webp`])).toBeNull()
+    expect(parseMediaPath(["campaigns", campaign, `${object}.svg`])).toBeNull()
+    expect(parseMediaPath(["campaigns", "ABCDEF12-2222-4222-8222-222222222222", `${object}.webp`])).toBeNull()
+    expect(parseMediaPath([])).toBeNull()
   })
 })

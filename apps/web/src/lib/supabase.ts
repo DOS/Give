@@ -33,8 +33,5 @@ export function dbService() {
   return createClient(env("NEXT_PUBLIC_SUPABASE_URL"), env("SUPABASE_SERVICE_ROLE_KEY"), clientOptions)
 }
 
+/** Private bucket: objects are served only through the /media routes. */
 export const MEDIA_BUCKET = "give-media"
-
-export function mediaUrl(storagePath: string): string {
-  return `${env("NEXT_PUBLIC_SUPABASE_URL")}/storage/v1/object/public/${MEDIA_BUCKET}/${storagePath}`
-}

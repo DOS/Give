@@ -2,11 +2,15 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import type { ReactNode } from "react"
 
+import { siteOrigin } from "@/lib/auth/origin"
 import { getSession } from "@/lib/auth/session"
 
 import "./globals.css"
 
 export const metadata: Metadata = {
+  // Absolute base for Open Graph images such as /media/public/... covers; an
+  // unset or malformed NEXT_PUBLIC_SITE_URL leaves Next's default.
+  metadataBase: ((origin) => (origin ? new URL(origin) : undefined))(siteOrigin()),
   title: { default: "Give – Gây quỹ minh bạch", template: "%s · Give" },
   description: "Gây quỹ từ thiện và dự án sáng tạo, minh bạch từng đồng. Một sản phẩm của DOS.",
 }

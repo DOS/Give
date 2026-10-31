@@ -5,11 +5,16 @@
  * Vercel previews) to use the request origin.
  */
 export function appOrigin(requestOrigin: string, siteUrl = process.env.NEXT_PUBLIC_SITE_URL): string {
-  if (!siteUrl) return requestOrigin
+  return siteOrigin(siteUrl) ?? requestOrigin
+}
+
+/** The configured site origin, or undefined when it is unset or not an http(s) URL. */
+export function siteOrigin(siteUrl = process.env.NEXT_PUBLIC_SITE_URL): string | undefined {
+  if (!siteUrl) return undefined
   try {
     const url = new URL(siteUrl)
-    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : requestOrigin
+    return url.protocol === "https:" || url.protocol === "http:" ? url.origin : undefined
   } catch {
-    return requestOrigin
+    return undefined
   }
 }

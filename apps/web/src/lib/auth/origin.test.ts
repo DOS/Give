@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { appOrigin } from "./origin"
+import { appOrigin, siteOrigin } from "./origin"
 
 describe("appOrigin", () => {
   it("prefers the configured site URL over the request host", () => {
@@ -12,6 +12,15 @@ describe("appOrigin", () => {
     expect(appOrigin("https://preview.vercel.app", "")).toBe("https://preview.vercel.app")
     expect(appOrigin("https://preview.vercel.app", "not a url")).toBe("https://preview.vercel.app")
     expect(appOrigin("https://preview.vercel.app", "javascript:alert(1)")).toBe("https://preview.vercel.app")
+  })
+})
+
+describe("siteOrigin", () => {
+  it("returns the configured origin or nothing", () => {
+    expect(siteOrigin("https://give.dos.me/path")).toBe("https://give.dos.me")
+    expect(siteOrigin("")).toBeUndefined()
+    expect(siteOrigin("give.dos.me")).toBeUndefined()
+    expect(siteOrigin("javascript:alert(1)")).toBeUndefined()
   })
 })
 
