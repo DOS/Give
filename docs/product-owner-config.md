@@ -52,13 +52,15 @@ Ready. WIP limit: In progress per line never exceeds `sub_sessions_max`.
 
 Lines follow risk and ownership, not campaign type: give (charity) and back
 (rewards) share most screens and code, while money handling needs its own
-stricter review and legal track.
+stricter review and legal track. One PO session, `Give Product Owner`, runs
+all three lines (JOY, 2026-10-31), because the owner approves in one chat
+and approvals do not carry between PO sessions.
 
-| Line                                                   | Label            | Product Line option id | PO session                                |
-| ------------------------------------------------------ | ---------------- | ---------------------- | ----------------------------------------- |
-| Campaigns                                              | `line:campaigns` | `ef952ffb`             | `Campaigns Product Owner`                 |
-| Money                                                  | `line:money`     | `2640fb7c`             | `Money Product Owner`                     |
-| Platform (CI, release, auth, infra, DOS.Me migrations) | `line:platform`  | `9a434f49`             | none; the Campaigns Product Owner decides |
+| Line                                                   | Label            | Product Line option id | PO session                           |
+| ------------------------------------------------------ | ---------------- | ---------------------- | ------------------------------------ |
+| Campaigns                                              | `line:campaigns` | `ef952ffb`             | `Give Product Owner`                 |
+| Money                                                  | `line:money`     | `2640fb7c`             | none; the Give Product Owner decides |
+| Platform (CI, release, auth, infra, DOS.Me migrations) | `line:platform`  | `9a434f49`             | none; the Give Product Owner decides |
 
 - Campaigns: organizer onboarding, campaign editor and review, discovery,
   campaign pages, updates, milestones, reward tiers and fulfillment status,
@@ -130,6 +132,7 @@ stricter review and legal track.
 
 - JOY (2026-10-29): "Làm liên tục đi"
 - JOY (2026-10-31): "setup sao cho nó có scrumban đi, có time box á"
+- JOY (2026-10-31), on PO lines: "Nếu như chia gặp vấn đề thì 1 PO thôi"
 - JOY (2026-10-31), on branches: "DOS.Me lên main là lên prod mà. Chỉ là
   phải PR dev thôi. Hiện chưa có gì thì làm trên dev rồi PR main luôn nhỉ?"
 
