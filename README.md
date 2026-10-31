@@ -54,7 +54,8 @@ values.
 ## Environment
 
 Set these in `apps/web/.env.local` locally and in the Vercel project for
-deployed environments. Never commit real values.
+deployed environments. Never commit real values. `NEXT_PUBLIC_*` values are
+inlined at build time, so changing one needs a rebuild.
 
 | Variable                        | Where       | What                                                                                                                                                                                                                      |
 | ------------------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

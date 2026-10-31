@@ -18,11 +18,13 @@ export async function GET(request: NextRequest) {
   const returnPath = safeReturnPath(request.nextUrl.searchParams.get("return_path"))
 
   // Run the flow on the canonical origin so the flow cookies and the
-  // registered redirect_uri share one host.
+  // registered redirect_uri share one host. Redirect there at most once: a
+  // proxy that hides the public origin from the app must not cause a loop.
   const canonical = appOrigin(origin)
-  if (canonical !== origin) {
+  if (canonical !== origin && !request.nextUrl.searchParams.has("canonical")) {
     const url = new URL("/auth/login", canonical)
     url.searchParams.set("return_path", returnPath)
+    url.searchParams.set("canonical", "1")
     return NextResponse.redirect(url)
   }
 

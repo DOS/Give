@@ -262,7 +262,11 @@ const REFS =
 
 const CAMPAIGN_WITH_REFS = `*, ${REFS}`
 
-/** Public pages never ask for the organizer's user id or the review note. */
+/**
+ * Public pages never ask for the organizer's user id or the review note.
+ * This keeps them out of rendered data only; the schema still grants anon
+ * table-wide SELECT, so hiding them for real needs column grants in DOS-Me.
+ */
 const PUBLIC_CAMPAIGN_WITH_REFS = `id, slug, type, funding_model, category_id, title, summary, story, beneficiary_name,
   beneficiary_relation, cover_media_id, asset, goal_amount, min_contribution, stretch_goal_amount, display_options,
   starts_at, ends_at, payment_window_days, status, submitted_at, approved_at, outcome_at, created_at, updated_at,

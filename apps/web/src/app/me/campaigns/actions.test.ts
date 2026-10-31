@@ -15,7 +15,12 @@ const state = vi.hoisted(() => ({
 }))
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
-vi.mock("next/navigation", () => ({ redirect: vi.fn() }))
+// Like Next's redirect(), stop the action where it is called.
+vi.mock("next/navigation", () => ({
+  redirect: vi.fn((url: string) => {
+    throw new Error(`NEXT_REDIRECT ${url}`)
+  }),
+}))
 vi.mock("@/lib/auth/session", () => ({
   getSession: vi.fn(async () => ({ user: { id: USER, email: null, name: null }, accessToken: "token" })),
 }))
@@ -25,7 +30,7 @@ vi.mock("@/lib/supabase", () => ({
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
 }))
 
-const { deleteMilestone, saveContent, uploadCover } = await import("./actions")
+const { deleteDraft, deleteMilestone, saveContent, uploadCover } = await import("./actions")
 
 function owned(overrides: Record<string, unknown> = {}) {
   return {
@@ -134,6 +139,39 @@ describe("deleteMilestone", () => {
     state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : { data: [] })
     const result = await deleteMilestone(CAMPAIGN, "44444444-4444-4444-8444-444444444444", null, new FormData())
     expect(result?.ok).toBe(false)
+  })
+})
+
+describe("deleteDraft", () => {
+  it("deletes under RLS, then removes everything under the campaign's prefix", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle") ? { data: owned() } : op(call, "delete") ? { data: [{ id: CAMPAIGN }] } : undefined
+    state.serviceHandler = (call) => (op(call, "list") ? { data: [{ name: "a.webp" }, { name: "b.webp" }] } : undefined)
+    await expect(deleteDraft(CAMPAIGN, null, new FormData())).rejects.toThrow("NEXT_REDIRECT /me/campaigns")
+    expect(
+      op(
+        state.serviceCalls.find((c) => op(c, "list")),
+        "list"
+      )?.[0]
+    ).toBe(`campaigns/${CAMPAIGN}`)
+    expect(
+      op(
+        state.serviceCalls.find((c) => op(c, "remove")),
+        "remove"
+      )?.[0]
+    ).toEqual([`campaigns/${CAMPAIGN}/a.webp`, `campaigns/${CAMPAIGN}/b.webp`])
+  })
+
+  it("leaves storage alone when RLS deleted nothing", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : { data: [] })
+    expect((await deleteDraft(CAMPAIGN, null, new FormData()))?.ok).toBe(false)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("refuses submitted campaigns", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "in_review" }) } : undefined)
+    expect((await deleteDraft(CAMPAIGN, null, new FormData()))?.ok).toBe(false)
+    expect(state.userCalls.some((c) => op(c, "delete"))).toBe(false)
   })
 })
 

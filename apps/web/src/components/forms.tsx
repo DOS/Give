@@ -12,10 +12,13 @@ const PendingContext = createContext(false)
  * A form bound to a server action that returns an ActionResult; shows the
  * action's message under the fields.
  *
- * It submits through startTransition instead of the `action` prop: React 19
- * resets uncontrolled fields after every `action` submission, which would
- * throw away what the person typed when the server rejects it. Fields keep
- * their values unless `resetOnSuccess` is set and the action succeeded.
+ * Once hydrated, it submits through startTransition and prevents the default
+ * submit: React 19 resets uncontrolled fields after every submission it runs
+ * from the `action` prop, which would throw away what the person typed when
+ * the server rejects it, and React skips that path when the default was
+ * prevented. The `action` prop stays so a submit before hydration still
+ * posts to the server action instead of a GET with the fields in the URL.
+ * Fields keep their values unless `resetOnSuccess` is set and it succeeded.
  */
 export function ActionForm({
   action,
@@ -42,6 +45,7 @@ export function ActionForm({
   return (
     <form
       ref={formRef}
+      action={formAction}
       className={className}
       onSubmit={(event) => {
         event.preventDefault()

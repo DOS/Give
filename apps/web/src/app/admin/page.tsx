@@ -147,17 +147,19 @@ export default async function AdminPage() {
                   </p>
                 </div>
                 {organizer.user_id !== session.user.id && (
-                  <ActionForm action={setVerification.bind(null, organizer.user_id)} className="flex flex-wrap gap-2">
-                    <input type="hidden" name="expected_legal_name" value={organizer.legal_name} />
-                    <input type="hidden" name="expected_display_name" value={organizer.display_name} />
-                    <input type="hidden" name="expected_kind" value={organizer.kind} />
-                    <SubmitButton name="status" value="verified">
-                      Xác minh
-                    </SubmitButton>
-                    <SubmitButton name="status" value="rejected" className="btn-danger">
-                      Từ chối
-                    </SubmitButton>
-                  </ActionForm>
+                  <div className="flex flex-wrap gap-2">
+                    {(["verified", "rejected"] as const).map((status) => (
+                      <ActionForm key={status} action={setVerification.bind(null, organizer.user_id)}>
+                        <input type="hidden" name="status" value={status} />
+                        <input type="hidden" name="expected_legal_name" value={organizer.legal_name} />
+                        <input type="hidden" name="expected_display_name" value={organizer.display_name} />
+                        <input type="hidden" name="expected_kind" value={organizer.kind} />
+                        <SubmitButton className={status === "verified" ? "btn-primary" : "btn-danger"}>
+                          {status === "verified" ? "Xác minh" : "Từ chối"}
+                        </SubmitButton>
+                      </ActionForm>
+                    ))}
+                  </div>
                 )}
               </li>
             ))}
