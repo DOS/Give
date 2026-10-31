@@ -50,9 +50,23 @@ export const organizerSchema = z.object({
     .transform((v) => (v === "" ? null : v)),
 })
 
+/** The default min_contribution (10.000 đ) caps how small a goal can be. */
+export const MIN_GOAL = 10_000
+
 export const newCampaignSchema = z.object({
-  type: z.enum(["give", "back"]),
+  type: z.enum(["give", "back"], { message: "Chọn loại chiến dịch" }),
   title: z.string().trim().min(5, "Tiêu đề cần ít nhất 5 ký tự").max(120),
+  goal_amount: money.refine((v) => v >= MIN_GOAL, "Mục tiêu tối thiểu là 10.000 ₫"),
+})
+
+const paymentWindowDays = z.string().transform((value, ctx) => {
+  if (value.trim() === "") return 7
+  const days = Number(value)
+  if (!Number.isInteger(days) || days < 1 || days > 30) {
+    ctx.addIssue({ code: "custom", message: "Số ngày thanh toán phải từ 1 đến 30" })
+    return z.NEVER
+  }
+  return days
 })
 
 export const campaignContentSchema = z
@@ -71,6 +85,7 @@ export const campaignContentSchema = z
     stretch_goal_amount: optionalMoney,
     starts_at: optionalLocalDate,
     ends_at: optionalLocalDate,
+    payment_window_days: paymentWindowDays,
   })
   .refine((v) => v.min_contribution <= v.goal_amount, {
     message: "Mức góp tối thiểu không được lớn hơn mục tiêu",
@@ -86,7 +101,7 @@ export const campaignContentSchema = z
   })
 
 export const milestoneSchema = z.object({
-  title: z.string().trim().min(2).max(120),
+  title: z.string().trim().min(2, "Tên mốc cần ít nhất 2 ký tự").max(120),
   target_amount: money,
   description: optionalText(2000),
 })

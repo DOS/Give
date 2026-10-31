@@ -5,6 +5,11 @@ const supabaseHost = process.env.NEXT_PUBLIC_SUPABASE_URL
   : undefined
 
 const nextConfig: NextConfig = {
+  experimental: {
+    // Cover uploads go through a server action: 4 MB image (lib/media.ts)
+    // plus multipart overhead, under Vercel's 4.5 MB request limit.
+    serverActions: { bodySizeLimit: "4.5mb" },
+  },
   images: {
     remotePatterns: [
       ...(supabaseHost

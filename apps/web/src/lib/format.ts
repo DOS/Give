@@ -39,3 +39,23 @@ export function daysLeft(iso: string | null | undefined, now = new Date()): numb
   const ms = new Date(iso).getTime() - now.getTime()
   return Math.max(0, Math.ceil(ms / 86_400_000))
 }
+
+const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000
+
+/**
+ * The value a datetime-local input needs ("2026-11-01T09:00") for an ISO
+ * time, shown in Vietnam time (UTC+7, no daylight saving). Inverse of the
+ * form parser in validation.ts.
+ */
+export function toVietnamLocalInput(iso: string | null | undefined): string {
+  if (!iso) return ""
+  const ms = new Date(iso).getTime()
+  if (Number.isNaN(ms)) return ""
+  return new Date(ms + VIETNAM_OFFSET_MS).toISOString().slice(0, 16)
+}
+
+/** Percent of goal reached, rounded down and capped at 100. */
+export function progressPercent(raised: number, goal: number): number {
+  if (!(goal > 0) || !(raised > 0)) return 0
+  return Math.min(100, Math.floor((raised / goal) * 100))
+}
