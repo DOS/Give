@@ -7,6 +7,8 @@ import { getSession } from "@/lib/auth/session"
 import "./globals.css"
 
 export const metadata: Metadata = {
+  // Absolute base for Open Graph images such as /media/public/... covers.
+  metadataBase: process.env.NEXT_PUBLIC_SITE_URL ? new URL(process.env.NEXT_PUBLIC_SITE_URL) : undefined,
   title: { default: "Give – Gây quỹ minh bạch", template: "%s · Give" },
   description: "Gây quỹ từ thiện và dự án sáng tạo, minh bạch từng đồng. Một sản phẩm của DOS.",
 }

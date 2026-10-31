@@ -11,6 +11,9 @@ const nextConfig: NextConfig = {
     // bucket). Only public covers may be optimized and cached; private ones
     // (src/lib/cover-urls.ts) are rendered unoptimized.
     localPatterns: [{ pathname: "/media/public/**", search: "" }],
+    // Match the route's own cache time, so a cover stops being served soon
+    // after its campaign is suspended or cancelled.
+    minimumCacheTTL: 300,
     remotePatterns: [{ protocol: "https", hostname: "i.ytimg.com", pathname: "/vi/**" }],
   },
   async headers() {

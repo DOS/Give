@@ -112,10 +112,10 @@ export interface Media {
   sort_order: number
 }
 
+/** author_id is withheld from clients: it is always the campaign's organizer. */
 export interface CampaignUpdate {
   id: string
   campaign_id: string
-  author_id: string
   title: string
   body: string
   visibility: "public" | "backers"
@@ -348,7 +348,7 @@ export async function listMilestones(db: Db, campaignId: string): Promise<Milest
 export async function listPublishedUpdates(db: Db, campaignId: string): Promise<CampaignUpdate[]> {
   const { data, error } = await db
     .from("campaign_updates")
-    .select("id, campaign_id, author_id, title, body, visibility, published_at, created_at")
+    .select("id, campaign_id, title, body, visibility, published_at, created_at")
     .eq("campaign_id", campaignId)
     .eq("visibility", "public")
     .not("published_at", "is", null)
@@ -388,7 +388,7 @@ export async function listMyCampaigns(db: Db, userId: string): Promise<CampaignW
 export async function listAllUpdates(db: Db, campaignId: string): Promise<CampaignUpdate[]> {
   const { data, error } = await db
     .from("campaign_updates")
-    .select("id, campaign_id, author_id, title, body, visibility, published_at, created_at")
+    .select("id, campaign_id, title, body, visibility, published_at, created_at")
     .eq("campaign_id", campaignId)
     .order("created_at", { ascending: false })
   if (error) throw error
