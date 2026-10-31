@@ -44,8 +44,16 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.redirect(new URL(safeReturnPath(read(FLOW_RETURN)), request.url))
     response.headers.set("Cache-Control", "no-store")
     clearFlow(response, hostname)
-    response.cookies.set(cookieName(SESSION_ACCESS, hostname), tokens.access_token, cookieOptions(hostname, tokens.expires_in))
-    response.cookies.set(cookieName(SESSION_REFRESH, hostname), tokens.refresh_token, cookieOptions(hostname, REFRESH_TTL_SECONDS))
+    response.cookies.set(
+      cookieName(SESSION_ACCESS, hostname),
+      tokens.access_token,
+      cookieOptions(hostname, tokens.expires_in)
+    )
+    response.cookies.set(
+      cookieName(SESSION_REFRESH, hostname),
+      tokens.refresh_token,
+      cookieOptions(hostname, REFRESH_TTL_SECONDS)
+    )
     return response
   } catch {
     return fail("exchange")

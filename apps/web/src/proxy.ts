@@ -1,12 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server"
 
-import {
-  cookieName,
-  cookieOptions,
-  REFRESH_TTL_SECONDS,
-  SESSION_ACCESS,
-  SESSION_REFRESH,
-} from "@/lib/auth/cookies"
+import { cookieName, cookieOptions, REFRESH_TTL_SECONDS, SESSION_ACCESS, SESSION_REFRESH } from "@/lib/auth/cookies"
 import { loadOidcConfig, refreshTokens } from "@/lib/auth/oidc"
 import { needsRefresh } from "@/lib/auth/token"
 

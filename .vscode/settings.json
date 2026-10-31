@@ -1,12 +1,6 @@
 {
   "eslint.workingDirectories": ["./apps/ui", "./apps/strapi"],
-  "tailwindCSS.classAttributes": [
-    "class",
-    "className",
-    "ngClass",
-    ".*Styles*",
-    ".*ClassName*"
-  ],
+  "tailwindCSS.classAttributes": ["class", "className", "ngClass", ".*Styles*", ".*ClassName*"],
   "npm.packageManager": "yarn",
   "editor.formatOnSave": true,
   // "[json]": {

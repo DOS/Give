@@ -631,14 +631,14 @@ yarn install                      # Reinstall
 
 ```tsx
 // Single shadow using ::before pseudo-element
-<div className="group relative before:content-[''] before:absolute before:inset-0 before:rounded-lg hover:before:bottom-[-96px] hover:before:shadow-xl before:pointer-events-none before:-z-10 before:transition-all before:duration-300 hover:z-50">
+<div className="group relative before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:rounded-lg before:transition-all before:duration-300 before:content-[''] hover:z-50 hover:before:bottom-[-96px] hover:before:shadow-xl">
   {/* Main card - remove shadow on hover */}
-  <div className="relative bg-white rounded-lg shadow-sm group-hover:shadow-none transition-shadow duration-300">
+  <div className="relative rounded-lg bg-white shadow-sm transition-shadow duration-300 group-hover:shadow-none">
     {/* Card content */}
   </div>
 
   {/* Expanded content - absolute overlay */}
-  <div className="absolute top-full left-0 right-0 bg-white rounded-b-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300">
+  <div className="invisible absolute top-full right-0 left-0 rounded-b-lg bg-white opacity-0 transition-all duration-300 group-hover:visible group-hover:opacity-100">
     {/* Description and tags */}
   </div>
 </div>
@@ -736,29 +736,14 @@ yarn install                      # Reinstall
 **Complete Technical Implementation**:
 
 ```tsx
-<div
-  className="group relative 
-  before:content-[''] before:absolute before:inset-0 before:rounded-lg 
-  hover:before:bottom-[-96px] hover:before:shadow-xl 
-  before:pointer-events-none before:-z-10 
-  before:transition-all before:duration-300 hover:z-50"
->
+<div className="group relative before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:rounded-lg before:transition-all before:duration-300 before:content-[''] hover:z-50 hover:before:bottom-[-96px] hover:before:shadow-xl">
   {/* Main card - consistent sizing */}
-  <div
-    className="relative bg-white rounded-lg shadow-sm 
-    border-2 border-transparent hover:border-blue-500
-    group-hover:shadow-none transition-all duration-300"
-  >
+  <div className="relative rounded-lg border-2 border-transparent bg-white shadow-sm transition-all duration-300 group-hover:shadow-none hover:border-blue-500">
     {/* Card content */}
   </div>
 
   {/* Expanded content - absolute overlay */}
-  <div
-    className="absolute top-full left-0 right-0 bg-white rounded-b-lg 
-    opacity-0 invisible group-hover:opacity-100 group-hover:visible 
-    transition-all duration-300 border-2 border-transparent 
-    group-hover:border-blue-500 border-t-0"
-  >
+  <div className="invisible absolute top-full right-0 left-0 rounded-b-lg border-2 border-t-0 border-transparent bg-white opacity-0 transition-all duration-300 group-hover:visible group-hover:border-blue-500 group-hover:opacity-100">
     {/* Description và tags */}
   </div>
 </div>

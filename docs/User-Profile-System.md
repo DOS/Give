@@ -85,12 +85,7 @@ interface UserProfile {
 interface SocialLink {
   id: string
   platform:
-    | "twitter"
-    | "facebook"
-    | "linkedin"
-    | "instagram"
-    | "youtube"
-    | "website"
+    "twitter" | "facebook" | "linkedin" | "instagram" | "youtube" | "website"
   url: string
   isVerified: boolean
 }
