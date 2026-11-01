@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { fakeDb } from "@/test/fake-db"
 
-import { describeChange, isStaffRole, listStaff, roleLabel } from "./staff"
+import { describeChange, isStaffRole, listRoleChanges, listStaff, roleLabel } from "./staff"
 
 describe("isStaffRole", () => {
   it("accepts only the three staff roles", () => {
@@ -39,5 +39,7 @@ describe("listStaff", () => {
     const db = fakeDb(() => ({ error: { code: "42501", message: "GIVE_ADMIN_REQUIRED" } }))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await expect(listStaff(db as any)).rejects.toThrow("GIVE_ADMIN_REQUIRED")
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(listRoleChanges(db as any)).rejects.toThrow("GIVE_ADMIN_REQUIRED")
   })
 })

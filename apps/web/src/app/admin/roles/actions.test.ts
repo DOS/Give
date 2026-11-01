@@ -8,12 +8,13 @@ const state = vi.hoisted(() => ({
   handler: (() => undefined) as Handler,
   calls: [] as Call[],
   signedIn: true,
+  self: "28ad0000-0000-4000-8000-00000000000a",
 }))
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/lib/auth/session", () => ({
   getSession: vi.fn(async () =>
-    state.signedIn ? { user: { id: "admin", email: null, name: null }, accessToken: "token" } : null
+    state.signedIn ? { user: { id: state.self, email: "toi@vidu.com", name: null }, accessToken: "token" } : null
   ),
 }))
 vi.mock("@/lib/supabase", () => ({ dbAs: () => fakeDb((call) => state.handler(call), state.calls) }))
@@ -48,6 +49,30 @@ describe("grantRole", () => {
     const result = await grantRole(null, form({ user: MEMBER, role: "finance" }))
     expect(result).toEqual({ ok: true, message: "Đã cấp quyền Tài chính." })
     expect(op(state.calls[0], "args")?.[0]).toEqual({ p_user: MEMBER, p_role: "finance", p_reason: null })
+  })
+
+  it("refuses demoting yourself from the grant form", async () => {
+    for (const user of [state.self, "TOI@vidu.com"]) {
+      const result = await grantRole(null, form({ user, role: "moderator" }))
+      expect(result?.ok).toBe(false)
+      expect(result?.message).toContain("chính mình")
+    }
+    expect(state.calls).toHaveLength(0)
+  })
+
+  it("lets you demote yourself from your own confirmed row", async () => {
+    expect((await grantRole(null, form({ user: state.self, role: "finance", confirm_self: "yes" })))?.ok).toBe(true)
+    expect(state.calls.map((c) => c.target)).toEqual(["rpc:grant_admin_role"])
+  })
+
+  it.each([
+    ["GIVE_ROLE_UNCHANGED", "đã có quyền này"],
+    ["GIVE_USER_NOT_FOUND", "Không tìm thấy tài khoản"],
+    ["GIVE_USER_INELIGIBLE", "chưa xác nhận email"],
+    ["GIVE_USER_AMBIGUOUS", "nhiều tài khoản"],
+  ])("explains %s", async (code, text) => {
+    state.handler = () => ({ error: { code: "23514", message: code } })
+    expect((await grantRole(null, form({ user: "ban@vidu.com", role: "moderator" })))?.message).toContain(text)
   })
 
   it("refuses an unknown role without calling the database", async () => {

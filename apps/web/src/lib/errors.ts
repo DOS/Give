@@ -29,7 +29,7 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ROLE_UNCHANGED: "Người này đã có quyền này rồi.",
   GIVE_USER_NOT_FOUND: "Không tìm thấy tài khoản DOS.Me với email hoặc mã này.",
   GIVE_USER_INELIGIBLE:
-    "Tài khoản này chưa xác nhận email, đã bị khóa hoặc đã xóa nên không thể nhận quyền. Nếu chắc chắn đúng người, hãy nhập mã người dùng.",
+    "Tài khoản này đã bị khóa, đã xóa hoặc chưa xác nhận email nên không thể nhận quyền. Nếu chỉ là chưa xác nhận email, hãy nhập mã người dùng thay cho email.",
   GIVE_USER_AMBIGUOUS: "Có nhiều tài khoản dùng email này. Hãy nhập mã người dùng thay cho email.",
   GIVE_ADMIN_NOT_FOUND: "Người này không còn quyền nào để thu.",
   GIVE_LAST_ADMIN: "Không thể thu hoặc hạ quyền quản trị viên cuối cùng. Hãy cấp quyền quản trị cho người khác trước.",

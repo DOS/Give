@@ -95,8 +95,17 @@ export default async function StaffRolesPage() {
                   <p className="mt-1 font-mono text-xs break-all text-gray-400">{member.user_id}</p>
                 </div>
                 <div className="flex flex-wrap items-start gap-2">
-                  <ActionForm action={grantRole} className="flex items-start gap-2">
+                  <ActionForm
+                    action={grantRole}
+                    className="flex items-start gap-2"
+                    confirm={
+                      self
+                        ? "Đổi quyền của chính bạn? Nếu hạ quyền, bạn sẽ mất quyền truy cập trang này ngay."
+                        : undefined
+                    }
+                  >
                     <input type="hidden" name="user" value={member.user_id} />
+                    {self && <input type="hidden" name="confirm_self" value="yes" />}
                     <label htmlFor={`role-${member.user_id}`} className="sr-only">
                       Đổi quyền của {name}
                     </label>
@@ -140,8 +149,8 @@ export default async function StaffRolesPage() {
             {changes.map((change) => (
               <li key={change.id} className="p-4">
                 <p>
-                  <span className="font-semibold">{describeChange(change)}</span> cho{" "}
-                  {change.user_email ?? change.user_id}
+                  <span className="font-semibold">{describeChange(change)}</span>{" "}
+                  {change.action === "admin.revoke" ? "của" : "cho"} {change.user_email ?? change.user_id}
                 </p>
                 <p className="text-gray-600">
                   {formatDate(change.created_at)} · bởi {change.actor_email ?? change.actor_id ?? "hệ thống"}

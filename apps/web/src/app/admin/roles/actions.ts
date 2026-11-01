@@ -32,6 +32,13 @@ export async function grantRole(_state: ActionResult, form: FormData): Promise<A
   if (!user || user.length > 320) return fail("Nhập email hoặc mã người dùng DOS.Me.")
   const role = String(form.get("role") ?? "")
   if (!isStaffRole(role)) return fail(dbErrorMessage({ message: "GIVE_ROLE_INVALID" }))
+  // Demoting yourself locks you out of this page at once; only the
+  // confirmed change form on your own row may do it.
+  const self =
+    user === session.user.id || (!!session.user.email && user.toLowerCase() === session.user.email.toLowerCase())
+  if (self && role !== "admin" && form.get("confirm_self") !== "yes") {
+    return fail("Bạn đang hạ quyền của chính mình. Hãy dùng nút “Đổi quyền” ở dòng của bạn để xác nhận.")
+  }
 
   const { error } = await dbAs(session.accessToken).rpc("grant_admin_role", {
     p_user: user,
