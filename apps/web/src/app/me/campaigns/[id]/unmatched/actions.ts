@@ -62,7 +62,8 @@ export async function matchTransaction(
   let tx, campaign, contribution, before
   try {
     tx = await getIncoming(db, transactionId)
-    if (!tx || tx.direction !== "in") return fail(TX_NOT_FOUND)
+    if (!tx) return fail(TX_NOT_FOUND)
+    if (tx.direction !== "in") return fail(MATCH_MESSAGES.GIVE_TRANSACTION_NOT_INBOUND)
     if (!tx.campaign_id) return fail(MATCH_MESSAGES.GIVE_TRANSACTION_UNATTRIBUTED)
     campaign = await getCampaignById(db, tx.campaign_id)
     // The account's owner may read the transaction too; matching is for the

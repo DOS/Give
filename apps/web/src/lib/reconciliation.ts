@@ -58,19 +58,20 @@ const TX_COLUMNS =
 export async function listUnmatched(
   db: Db,
   { campaignId, limit = 100 }: { campaignId?: string; limit?: number } = {}
-): Promise<UnmatchedTransaction[]> {
+): Promise<{ transactions: UnmatchedTransaction[]; total: number }> {
   let query = db
     .from("bank_transactions")
-    .select(`${TX_COLUMNS}, transaction_matches(bank_transaction_id)`)
+    .select(`${TX_COLUMNS}, transaction_matches(bank_transaction_id)`, { count: "exact" })
     .eq("direction", "in")
     .not("campaign_id", "is", null)
     .is("transaction_matches", null)
   if (campaignId) query = query.eq("campaign_id", campaignId)
-  const { data, error } = await query.order("booked_at", { ascending: false }).limit(limit)
+  const { data, error, count } = await query.order("booked_at", { ascending: false }).limit(limit)
   if (error) throw error
-  return ((data ?? []) as unknown as (UnmatchedTransaction & { transaction_matches?: unknown })[]).map(
+  const transactions = ((data ?? []) as unknown as (UnmatchedTransaction & { transaction_matches?: unknown })[]).map(
     ({ transaction_matches: _match, ...tx }) => ({ ...tx, amount: Number(tx.amount) })
   )
+  return { transactions, total: count ?? transactions.length }
 }
 
 /** One incoming transaction the caller may read, with its match if any. */
@@ -151,7 +152,11 @@ export async function findContribution(
 export function candidateLabel(c: MatchCandidate): string {
   const name = c.public_name ?? c.guest_name ?? (c.is_anonymous ? "Ẩn danh" : null)
   const status = CONTRIBUTION_STATUS_LABELS[c.status] ?? c.status
-  return [c.reference_code, formatVnd(c.intended_amount), name, status].filter(Boolean).join(" · ")
+  const amount =
+    c.received_amount > 0
+      ? `${formatVnd(c.intended_amount)} (đã nhận ${formatVnd(c.received_amount)})`
+      : formatVnd(c.intended_amount)
+  return [c.reference_code, amount, name, status].filter(Boolean).join(" · ")
 }
 
 /** Reference codes as donors type them: "gv 7k2m 9qx" -> "GV7K2M9QX". */
@@ -186,22 +191,27 @@ const MAX_LEDGER_ROWS = 50_000
 export async function paidBreakdown(db: Db, campaignId: string): Promise<PaidBreakdown | null> {
   let received = 0
   let unmatched = 0
-  for (let from = 0; ; from += PAGE) {
-    if (from >= MAX_LEDGER_ROWS) return null
+  // Keyset pages: the ledger is append-only, so an entry added meanwhile
+  // cannot shift a page and be read twice or skipped among those read.
+  let after = 0
+  for (let read = 0; ; read += PAGE) {
+    if (read >= MAX_LEDGER_ROWS) return null
     const { data, error } = await db
       .from("ledger_entries")
       .select("id, bucket, amount")
       .eq("campaign_id", campaignId)
       .in("bucket", ["received", "unmatched_in"])
+      .gt("id", after)
       .order("id", { ascending: true })
-      .range(from, from + PAGE - 1)
+      .limit(PAGE)
     if (error) throw error
-    const rows = (data ?? []) as { bucket: string; amount: number | string }[]
+    const rows = (data ?? []) as { id: number | string; bucket: string; amount: number | string }[]
     for (const row of rows) {
       if (row.bucket === "received") received += Number(row.amount)
       else unmatched += Number(row.amount)
     }
     if (rows.length < PAGE) break
+    after = Number(rows[rows.length - 1].id)
   }
   return { received, unmatched, paid: received + unmatched }
 }

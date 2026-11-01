@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache"
 import { getSession } from "@/lib/auth/session"
 import type { ActionResult } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
-import { importSummary, MAX_UPLOAD_BYTES, uploadErrorMessage } from "@/lib/statement-import"
+import { importSummary, isUploadCode, MAX_UPLOAD_BYTES, uploadErrorMessage } from "@/lib/statement-import"
 import { dbAs, dbService } from "@/lib/supabase"
 import { importStatementFile, StatementImportError } from "@/server/channels/statement-import"
 import { statementParsers } from "@/server/statement-parsers"
@@ -72,10 +72,14 @@ export async function uploadStatement(_state: UploadResult, form: FormData): Pro
         `${again}Sao kê không nhập được. ${reason}${reason.endsWith(".") ? "" : "."} Hãy sửa file rồi tải lại.`
       )
     }
-    case "pending":
+    case "pending": {
+      // A known refusal that may pass later (the database's date lags near
+      // midnight) is worth naming; timeouts and outages are not.
+      const reason = isUploadCode(result.code) ? ` Lần thử vừa rồi: ${uploadErrorMessage(result.code, result.row)}` : ""
       return {
         ok: true,
-        message: `${again}Đã nhận file, Give đang xử lý tiếp. Hãy tải lại trang sau vài phút để xem kết quả.`,
+        message: `${again}Đã nhận file, Give đang xử lý tiếp. Hãy tải lại trang sau vài phút để xem kết quả.${reason}`,
       }
+    }
   }
 }

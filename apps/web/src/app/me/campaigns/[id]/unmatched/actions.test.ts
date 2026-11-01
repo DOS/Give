@@ -198,7 +198,9 @@ describe("matchTransaction", () => {
 
   it("refuses outgoing and unattributed transactions", async () => {
     state.responses.bank_transactions = { data: { ...tx().data, direction: "out" } }
-    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.ok).toBe(false)
+    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toBe(
+      "Chỉ khớp được các khoản tiền vào."
+    )
     state.responses.bank_transactions = { data: { ...tx().data, campaign_id: null } }
     expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toContain(
       "chưa thuộc chiến dịch nào"

@@ -143,6 +143,15 @@ describe("uploadStatement", () => {
     expect(result?.message).toContain("Give đang xử lý tiếp")
   })
 
+  it("names a known reason when the recorded upload waits for a retry", async () => {
+    state.serviceResponses["rpc:stage_statement_import"] = {
+      error: { code: "P0001", message: "GIVE_IMPORT_PERIOD_INVALID" },
+    }
+    const result = await upload()
+    expect(result?.ok).toBe(true)
+    expect(result?.message).toContain("Lần thử vừa rồi: Khoảng thời gian của sao kê không hợp lệ")
+  })
+
   it("refuses an account the uploader cannot read", async () => {
     state.userHandler = () => ({ data: null })
     const result = await upload()

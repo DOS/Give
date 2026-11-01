@@ -7,7 +7,9 @@ import {
   accountLabel,
   ambiguousReasonLabel,
   AMBIGUOUS_REASON_LABELS,
+  countWaitingRows,
   importSummary,
+  listAmbiguousRows,
   listBatchRows,
   listDuplicateTargets,
   listUploadAccounts,
@@ -94,6 +96,40 @@ describe("listUploadAccounts", () => {
   })
 })
 
+describe("countWaitingRows", () => {
+  it("counts each batch's waiting rows exactly, without listing them", async () => {
+    const calls: Call[] = []
+    const db = fakeDb((call) => ({ count: op(call, "eq")?.[1] === "b1" ? 1200 : 0 }), calls) as unknown as Db
+    const counts = await countWaitingRows(db, ["b1", "b2"])
+    expect([...counts]).toEqual([
+      ["b1", 1200],
+      ["b2", 0],
+    ])
+    expect(op(calls[0], "select")).toEqual(["id", { count: "exact", head: true }])
+    expect(calls[0].ops).toEqual(expect.arrayContaining([["eq", "status", "ambiguous"]]))
+  })
+})
+
+describe("listAmbiguousRows", () => {
+  it("lists the oldest waiting rows with their batch, and the total waiting", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({ data: [{ id: "r", amount: "50000", balance_after: "1000", batch: { id: "b" } }], count: 75 }),
+      calls
+    ) as unknown as Db
+    const { rows, total } = await listAmbiguousRows(db, 1)
+    expect(total).toBe(75)
+    expect(rows[0]).toMatchObject({ amount: 50000, balance_after: 1000, batch: { id: "b" } })
+    expect(String(op(calls[0], "select")?.[0])).toContain("batch:statement_import_batches(")
+    expect(calls[0].ops).toEqual(
+      expect.arrayContaining([
+        ["eq", "status", "ambiguous"],
+        ["limit", 1],
+      ])
+    )
+  })
+})
+
 describe("listBatchRows", () => {
   it("reads every page of a batch in file order", async () => {
     const calls: Call[] = []
@@ -119,10 +155,46 @@ describe("listBatchRows", () => {
 })
 
 describe("listDuplicateTargets", () => {
+  const ROW = { direction: "in" as const, amount: 50000, booked_at: "2026-10-15T00:00:00Z" }
+  const tx = (id: string, day: number) => ({
+    id,
+    booked_at: `2026-10-${String(day).padStart(2, "0")}T00:00:00Z`,
+    amount: "50000",
+  })
+
+  it("shows the transactions closest to the row first, and how many there are", async () => {
+    // 25 transactions from 1 to 25 October, oldest first as the database returns them.
+    const all = Array.from({ length: 25 }, (_, i) => tx(`t${i + 1}`, i + 1))
+    const db = fakeDb(() => ({ data: all, count: 25 })) as unknown as Db
+    const targets = await listDuplicateTargets(db, ROW, ACCOUNT)
+    expect(targets.total).toBe(25)
+    expect(targets.shown).toHaveLength(20)
+    expect(targets.shown[0]).toMatchObject({ id: "t15", amount: 50000 })
+    expect(targets.shown.map((t) => t.id)).not.toContain("t1")
+  })
+
+  it("always shows the transaction of the earlier row the queued row lines up with", async () => {
+    const all = Array.from({ length: 25 }, (_, i) => tx(`t${i + 1}`, i + 1))
+    const calls: Call[] = []
+    const db = fakeDb(
+      (call) => (op(call, "maybeSingle") ? { data: tx("t1", 1) } : { data: all, count: 25 }),
+      calls
+    ) as unknown as Db
+    const targets = await listDuplicateTargets(db, ROW, ACCOUNT, "t1")
+    expect(targets.shown[0].id).toBe("t1")
+    expect(targets.shown).toHaveLength(20)
+    expect(calls[1].ops).toEqual(
+      expect.arrayContaining([
+        ["eq", "id", "t1"],
+        ["eq", "receiving_account_id", ACCOUNT],
+      ])
+    )
+  })
+
   it("looks for the account's transactions of the same direction and amount around the row", async () => {
     const calls: Call[] = []
     const db = fakeDb(() => ({ data: [] }), calls) as unknown as Db
-    await listDuplicateTargets(db, { direction: "in", amount: 50000, booked_at: "2026-10-15T00:00:00Z" }, ACCOUNT)
+    await listDuplicateTargets(db, ROW, ACCOUNT)
     expect(calls[0].ops).toEqual(
       expect.arrayContaining([
         ["eq", "receiving_account_id", ACCOUNT],

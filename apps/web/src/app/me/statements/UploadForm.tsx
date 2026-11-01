@@ -20,12 +20,16 @@ export interface UploadChoice {
 export function UploadForm({
   action,
   accounts,
+  maxBytes,
 }: {
   action: (state: UploadResult, form: FormData) => Promise<UploadResult>
   accounts: UploadChoice[]
+  /** Larger files never reach the action: the request body limit refuses them first. */
+  maxBytes: number
 }) {
   const [state, formAction, pending] = useActionState(action, null)
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "")
+  const [tooLarge, setTooLarge] = useState(false)
   const parsers = accounts.find((a) => a.id === accountId)?.parsers ?? []
 
   return (
@@ -37,6 +41,10 @@ export function UploadForm({
         event.preventDefault()
         if (pending) return
         const data = new FormData(event.currentTarget)
+        const file = data.get("file")
+        const large = file instanceof File && file.size > maxBytes
+        setTooLarge(large)
+        if (large) return
         startTransition(() => formAction(data))
       }}
     >
@@ -94,15 +102,24 @@ export function UploadForm({
         </>
       )}
 
-      {state?.message && (
-        <div role={state.ok ? "status" : "alert"} className={`text-sm ${state.ok ? "text-green-700" : "text-red-700"}`}>
-          <p>{state.message}</p>
-          {state.batchId && (
-            <Link href={`/me/statements/${state.batchId}`} className="mt-1 inline-block font-medium text-brand-600">
-              Xem từng dòng của sao kê →
-            </Link>
-          )}
-        </div>
+      {tooLarge ? (
+        <p role="alert" className="text-sm text-red-700">
+          File quá lớn (tối đa {Math.floor(maxBytes / 1024 / 1024)} MB). Hãy xuất sao kê theo khoảng thời gian ngắn hơn.
+        </p>
+      ) : (
+        state?.message && (
+          <div
+            role={state.ok ? "status" : "alert"}
+            className={`text-sm ${state.ok ? "text-green-700" : "text-red-700"}`}
+          >
+            <p>{state.message}</p>
+            {state.batchId && (
+              <Link href={`/me/statements/${state.batchId}`} className="mt-1 inline-block font-medium text-brand-600">
+                Xem từng dòng của sao kê →
+              </Link>
+            )}
+          </div>
+        )
       )}
     </form>
   )

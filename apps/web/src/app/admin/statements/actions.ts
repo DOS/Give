@@ -66,6 +66,19 @@ export async function resolveStatementRow(rowId: string, _state: ActionResult, f
   revalidatePath("/admin/statements")
   revalidatePath("/admin/unmatched")
   revalidatePath("/me/statements", "layout")
+  // The same resolution again returns the stored outcome without writing
+  // this reviewer's note or an audit row: say so, rather than report a check
+  // of theirs that was not recorded.
+  const stored = await dbAs(session.accessToken)
+    .from("statement_import_rows")
+    .select("resolution_note")
+    .eq("id", rowId)
+    .maybeSingle()
+  if (!stored.error && stored.data && (stored.data as { resolution_note: string | null }).resolution_note !== note) {
+    return done(
+      "Dòng này đã được xử lý trước đó theo cùng cách (có thể bởi người khác); ghi chú của bạn không được lưu. Hãy tải lại trang."
+    )
+  }
   const status = (data as { status?: string } | null)?.status
   if (resolution === "duplicate")
     return done("Đã đánh dấu dòng là giao dịch đã ghi; không có giao dịch mới nào được tạo.")
@@ -73,6 +86,6 @@ export async function resolveStatementRow(rowId: string, _state: ActionResult, f
     return done("Dòng này vừa được ghi bởi một nguồn khác với cùng mã giao dịch, nên không tạo giao dịch mới.")
   }
   return done(
-    "Đã nhập dòng thành giao dịch. Nếu giao dịch tiền vào không có mã ủng hộ hợp lệ, nó nằm trong danh sách giao dịch chưa khớp."
+    "Đã nhập dòng thành giao dịch. Tiền vào của chiến dịch mà không có mã ủng hộ hợp lệ sẽ nằm trong danh sách giao dịch chưa khớp; giao dịch ngoài thời gian tài khoản gắn với chiến dịch thì không thuộc chiến dịch nào."
   )
 }

@@ -104,6 +104,11 @@ const UPLOAD_MESSAGES: Record<string, string> = {
   GIVE_IMPORT_ROW_OUTSIDE_PERIOD: "Có dòng giao dịch nằm ngoài khoảng thời gian ghi trên sao kê.",
 }
 
+/** True for a code the upload messages word (not a timeout or an unknown failure). */
+export function isUploadCode(code: string): boolean {
+  return Object.hasOwn(UPLOAD_MESSAGES, code)
+}
+
 /** A refused upload in words, with the file's row number when one row is at fault. */
 export function uploadErrorMessage(code: string, row?: number): string {
   const text = Object.hasOwn(UPLOAD_MESSAGES, code) ? UPLOAD_MESSAGES[code] : dbErrorMessage({ message: code })
@@ -274,21 +279,23 @@ export async function listBatchRows(db: Db, batchId: string): Promise<StatementR
   return rows
 }
 
-/** How many rows of each batch still wait for staff. */
+/**
+ * How many rows of each batch still wait for staff: one exact count per
+ * batch, since a single row list would stop at PostgREST's row cap.
+ */
 export async function countWaitingRows(db: Db, batchIds: readonly string[]): Promise<Map<string, number>> {
-  const counts = new Map<string, number>()
-  if (batchIds.length === 0) return counts
-  const { data, error } = await db
-    .from("statement_import_rows")
-    .select("import_batch_id")
-    .in("import_batch_id", [...batchIds])
-    .eq("status", "ambiguous")
-    .limit(5000)
-  if (error) throw error
-  for (const row of (data ?? []) as { import_batch_id: string }[]) {
-    counts.set(row.import_batch_id, (counts.get(row.import_batch_id) ?? 0) + 1)
-  }
-  return counts
+  const counts = await Promise.all(
+    batchIds.map(async (id) => {
+      const { count, error } = await db
+        .from("statement_import_rows")
+        .select("id", { count: "exact", head: true })
+        .eq("import_batch_id", id)
+        .eq("status", "ambiguous")
+      if (error) throw error
+      return [id, count ?? 0] as const
+    })
+  )
+  return new Map(counts)
 }
 
 export interface QueueRow extends StatementRowView {
@@ -297,17 +304,21 @@ export interface QueueRow extends StatementRowView {
 
 const QUEUE_COLUMNS = `${ROW_COLUMNS}, batch:statement_import_batches(${BATCH_COLUMNS})`
 
-/** Rows waiting for staff, oldest batch first (finance/admin; owners see their own). */
-export async function listAmbiguousRows(db: Db, limit = 50): Promise<QueueRow[]> {
-  const { data, error } = await db
+/**
+ * Rows waiting for staff, oldest batch first (finance/admin; owners see their
+ * own), and how many wait in all.
+ */
+export async function listAmbiguousRows(db: Db, limit = 50): Promise<{ rows: QueueRow[]; total: number }> {
+  const { data, error, count } = await db
     .from("statement_import_rows")
-    .select(QUEUE_COLUMNS)
+    .select(QUEUE_COLUMNS, { count: "exact" })
     .eq("status", "ambiguous")
     .order("created_at", { ascending: true })
     .order("row_no", { ascending: true })
     .limit(limit)
   if (error) throw error
-  return ((data ?? []) as unknown as QueueRow[]).map((row) => ({ ...toRow(row), batch: row.batch }))
+  const rows = ((data ?? []) as unknown as QueueRow[]).map((row) => ({ ...toRow(row), batch: row.batch }))
+  return { rows, total: count ?? rows.length }
 }
 
 /** Rows staff resolved, most recent first. */
@@ -349,30 +360,64 @@ export interface RecordedTransaction {
 /** How far around a queued row to look for the transaction it may repeat (the database's orphan window). */
 export const DUPLICATE_WINDOW_DAYS = 31
 
+/** How many duplicate targets the queue shows per row. */
+export const DUPLICATE_TARGETS_SHOWN = 20
+
+const TARGET_COLUMNS = "id, provider_tx_id, booked_at, booked_date_only, amount, description, counterparty_name, source"
+
+export interface DuplicateTargets {
+  /** Closest to the row's date first; the candidate's transaction always among them. */
+  shown: RecordedTransaction[]
+  /** All transactions in the window, shown or not. */
+  total: number
+}
+
 /**
  * Transactions of the row's account with its direction and amount, booked
  * within DUPLICATE_WINDOW_DAYS of it: what give.resolve_statement_import_row
- * accepts as the transaction a duplicate repeats (it checks again).
+ * accepts as the transaction a duplicate repeats (it checks again). Common
+ * amounts give many, so the closest in time come first, and the transaction
+ * of the earlier row the queued row lines up with (`includeId`) is always
+ * shown.
  */
 export async function listDuplicateTargets(
   db: Db,
   row: Pick<StatementRowView, "direction" | "amount" | "booked_at">,
-  accountId: string
-): Promise<RecordedTransaction[]> {
+  accountId: string,
+  includeId: string | null = null
+): Promise<DuplicateTargets> {
   const day = 86_400_000
   const at = new Date(row.booked_at).getTime()
-  const { data, error } = await db
+  const { data, error, count } = await db
     .from("bank_transactions")
-    .select("id, provider_tx_id, booked_at, booked_date_only, amount, description, counterparty_name, source")
+    .select(TARGET_COLUMNS, { count: "exact" })
     .eq("receiving_account_id", accountId)
     .eq("direction", row.direction)
     .eq("amount", row.amount)
     .gte("booked_at", new Date(at - DUPLICATE_WINDOW_DAYS * day).toISOString())
     .lte("booked_at", new Date(at + DUPLICATE_WINDOW_DAYS * day).toISOString())
     .order("booked_at", { ascending: true })
-    .limit(20)
+    .limit(PAGE)
   if (error) throw error
-  return ((data ?? []) as RecordedTransaction[]).map((tx) => ({ ...tx, amount: Number(tx.amount) }))
+  const distance = (tx: RecordedTransaction) => Math.abs(new Date(tx.booked_at).getTime() - at)
+  const all = ((data ?? []) as RecordedTransaction[]).map((tx) => ({ ...tx, amount: Number(tx.amount) }))
+  let shown = all.sort((a, b) => distance(a) - distance(b)).slice(0, DUPLICATE_TARGETS_SHOWN)
+  if (includeId && !shown.some((tx) => tx.id === includeId)) {
+    const extra = await db
+      .from("bank_transactions")
+      .select(TARGET_COLUMNS)
+      .eq("id", includeId)
+      .eq("receiving_account_id", accountId)
+      .eq("direction", row.direction)
+      .eq("amount", row.amount)
+      .maybeSingle()
+    if (extra.error) throw extra.error
+    if (extra.data) {
+      const tx = extra.data as RecordedTransaction
+      shown = [{ ...tx, amount: Number(tx.amount) }, ...shown.slice(0, DUPLICATE_TARGETS_SHOWN - 1)]
+    }
+  }
+  return { shown, total: Math.max(count ?? all.length, shown.length) }
 }
 
 /** "+200.000 ₫" or "−50.000 ₫" */

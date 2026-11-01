@@ -19,7 +19,7 @@ export default async function AdminUnmatchedPage() {
   // Finance and admin staff only; others get a 404.
   if (!(await isStaff(db, FINANCE_ROLES))) notFound()
 
-  const [unmatched, matches] = await Promise.all([listUnmatched(db), listManualMatches(db)])
+  const [{ transactions: unmatched, total }, matches] = await Promise.all([listUnmatched(db), listManualMatches(db)])
   const campaignIds = [...new Set(unmatched.map((tx) => tx.campaign_id))]
   const [refs, candidateLists] = await Promise.all([
     campaignRefs(db, [...campaignIds, ...matches.map((m) => m.tx.campaign_id)]),
@@ -44,7 +44,9 @@ export default async function AdminUnmatchedPage() {
       </div>
 
       <section>
-        <h2 className="mb-4 text-xl font-bold">Chờ khớp ({unmatched.length})</h2>
+        <h2 className="mb-4 text-xl font-bold">
+          Chờ khớp ({total > unmatched.length ? `${unmatched.length} mới nhất / ${total}` : total})
+        </h2>
         {unmatched.length === 0 ? (
           <p className="card p-6 text-gray-600">Không có giao dịch nào chờ khớp.</p>
         ) : (

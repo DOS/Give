@@ -22,7 +22,7 @@ export default async function UnmatchedPage({ params }: { params: Promise<{ id: 
   const campaign = await getCampaignById(db, id)
   if (!campaign || campaign.organizer_id !== session.user.id) notFound()
 
-  const [unmatched, breakdown, matches, candidates] = await Promise.all([
+  const [{ transactions: unmatched, total }, breakdown, matches, candidates] = await Promise.all([
     listUnmatched(db, { campaignId: campaign.id }),
     paidBreakdown(db, campaign.id),
     listManualMatches(db, { campaignId: campaign.id }),
@@ -47,7 +47,9 @@ export default async function UnmatchedPage({ params }: { params: Promise<{ id: 
       {breakdown && <PaidBreakdownCard breakdown={breakdown} />}
 
       <section>
-        <h2 className="mb-4 text-xl font-bold">Chờ khớp ({unmatched.length})</h2>
+        <h2 className="mb-4 text-xl font-bold">
+          Chờ khớp ({total > unmatched.length ? `${unmatched.length} mới nhất / ${total}` : total})
+        </h2>
         {unmatched.length === 0 ? (
           <p className="card p-6 text-gray-600">Không có giao dịch nào chờ khớp.</p>
         ) : (

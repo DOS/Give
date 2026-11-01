@@ -5,7 +5,14 @@ import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
 import { formatDate, formatDateTime } from "@/lib/format"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
-import { accountLabel, countWaitingRows, listBatches, listUploadAccounts } from "@/lib/statement-import"
+import {
+  accountLabel,
+  accountLabels,
+  countWaitingRows,
+  listBatches,
+  listUploadAccounts,
+  MAX_UPLOAD_BYTES,
+} from "@/lib/statement-import"
 import { dbAs } from "@/lib/supabase"
 import { statementParsers } from "@/server/statement-parsers"
 
@@ -23,11 +30,16 @@ export default async function StatementsPage() {
   const db = dbAs(session.accessToken)
   const staff = await isStaff(db, FINANCE_ROLES)
   const [accounts, batches] = await Promise.all([listUploadAccounts(db, session.user.id, staff), listBatches(db)])
-  const waiting = await countWaitingRows(
-    db,
-    batches.map((b) => b.id)
-  )
-  const labels = new Map(accounts.map((a) => [a.id, accountLabel(a)]))
+  const [waiting, labels] = await Promise.all([
+    countWaitingRows(
+      db,
+      batches.map((b) => b.id)
+    ),
+    accountLabels(
+      db,
+      batches.map((b) => b.receiving_account_id)
+    ),
+  ])
   const choices: UploadChoice[] = accounts.map((account) => ({
     id: account.id,
     label: `${accountLabel(account)}${account.owner_user_id === session.user.id ? "" : " (của người tổ chức khác)"}`,
@@ -61,7 +73,7 @@ export default async function StatementsPage() {
             </Link>
           </p>
         ) : (
-          <UploadForm action={uploadStatement} accounts={choices} />
+          <UploadForm action={uploadStatement} accounts={choices} maxBytes={MAX_UPLOAD_BYTES} />
         )}
       </section>
 

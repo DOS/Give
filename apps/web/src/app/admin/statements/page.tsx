@@ -23,7 +23,7 @@ import {
   signedAmount,
   type AuditEntry,
   type QueueRow,
-  type RecordedTransaction,
+  type DuplicateTargets,
   type StatementRowView,
 } from "@/lib/statement-import"
 import { dbAs } from "@/lib/supabase"
@@ -42,17 +42,26 @@ export default async function AdminStatementsPage() {
   // Finance and admin staff only; others get a 404.
   if (!(await isStaff(db, FINANCE_ROLES))) notFound()
 
-  const [queue, resolved, isAdmin] = await Promise.all([
+  const [{ rows: queue, total }, resolved, isAdmin] = await Promise.all([
     listAmbiguousRows(db),
     listResolvedRows(db),
     isStaff(db, ["admin"]),
   ])
-  const [candidates, targets, labels, audit, staff] = await Promise.all([
-    getRows(
-      db,
-      queue.map((row) => row.candidate_row_id).filter((id): id is string => Boolean(id))
+  const candidates = await getRows(
+    db,
+    queue.map((row) => row.candidate_row_id).filter((id): id is string => Boolean(id))
+  )
+  const [targets, labels, audit, staff] = await Promise.all([
+    Promise.all(
+      queue.map((row) =>
+        listDuplicateTargets(
+          db,
+          row,
+          row.batch.receiving_account_id,
+          row.candidate_row_id ? (candidates.get(row.candidate_row_id)?.bank_transaction_id ?? null) : null
+        )
+      )
     ),
-    Promise.all(queue.map((row) => listDuplicateTargets(db, row, row.batch.receiving_account_id))),
     accountLabels(
       db,
       [...queue, ...resolved].map((row) => row.batch.receiving_account_id)
@@ -88,7 +97,9 @@ export default async function AdminStatementsPage() {
       </div>
 
       <section>
-        <h2 className="mb-4 text-xl font-bold">Chờ xử lý ({queue.length})</h2>
+        <h2 className="mb-4 text-xl font-bold">
+          Chờ xử lý ({total > queue.length ? `${queue.length} đầu tiên / ${total}` : total})
+        </h2>
         {queue.length === 0 ? (
           <p className="card p-6 text-gray-600">Không có dòng sao kê nào chờ xử lý.</p>
         ) : (
@@ -161,7 +172,7 @@ function QueueCard({
   row: QueueRow
   account: string | undefined
   candidate: StatementRowView | undefined
-  targets: RecordedTransaction[]
+  targets: DuplicateTargets
 }) {
   const candidateTx = candidate?.bank_transaction_id ?? null
   return (
@@ -194,7 +205,7 @@ function QueueCard({
         >
           <input type="hidden" name="resolution" value="duplicate" />
           <p className="label">{RESOLUTION_LABELS.duplicate}</p>
-          {targets.length === 0 ? (
+          {targets.shown.length === 0 ? (
             <p className="text-sm text-gray-600">
               Không có giao dịch đã ghi nào cùng chiều, cùng số tiền trong vòng {DUPLICATE_WINDOW_DAYS} ngày.
             </p>
@@ -202,7 +213,7 @@ function QueueCard({
             <>
               <fieldset className="space-y-1 text-sm">
                 <legend className="sr-only">Giao dịch mà dòng này lặp lại</legend>
-                {targets.map((tx) => (
+                {targets.shown.map((tx) => (
                   <label key={tx.id} className="flex items-start gap-2">
                     <input
                       type="radio"
@@ -223,6 +234,12 @@ function QueueCard({
                   </label>
                 ))}
               </fieldset>
+              {targets.total > targets.shown.length && (
+                <p className="text-sm text-amber-800">
+                  Còn {targets.total - targets.shown.length} giao dịch khác cùng số tiền xa ngày hơn không hiện ở đây.
+                  Nếu không thấy đúng giao dịch, đừng chọn đại một giao dịch.
+                </p>
+              )}
               <NoteField id={`dup-note-${row.id}`} />
               <SubmitButton className="btn-secondary">Là giao dịch đã ghi</SubmitButton>
             </>
@@ -239,10 +256,13 @@ function QueueCard({
           <p className="text-sm text-gray-600">
             Chỉ chọn khi bạn đã thấy giao dịch này trên sao kê của ngân hàng và nó chưa được ghi.
           </p>
-          {candidate && (
+          {row.candidate_row_id && (
             <label className="flex items-start gap-2 text-sm">
               <input type="checkbox" name="override_candidate" required className="mt-1" />
-              <span>Tôi đã đối chiếu: đây là giao dịch khác với dòng {candidate.row_no} của lần tải trước.</span>
+              <span>
+                Tôi đã đối chiếu: đây là giao dịch khác với dòng {candidate ? `${candidate.row_no} ` : ""}của lần tải
+                trước.
+              </span>
             </label>
           )}
           <NoteField id={`import-note-${row.id}`} />
