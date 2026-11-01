@@ -9,6 +9,8 @@ export async function POST(request: NextRequest) {
   const { hostname, origin } = request.nextUrl
   const from = request.headers.get("origin")
   if (from && from !== origin) return new NextResponse(null, { status: 403 })
+  const site = request.headers.get("sec-fetch-site")
+  if (site && site !== "same-origin") return new NextResponse(null, { status: 403 })
 
   const accessName = cookieName(SESSION_ACCESS, hostname)
   const refreshName = cookieName(SESSION_REFRESH, hostname)
@@ -17,7 +19,7 @@ export async function POST(request: NextRequest) {
   await endIssuerSession(appOrigin(origin), {
     access: request.cookies.get(accessName)?.value,
     refresh: request.cookies.get(refreshName)?.value,
-  })
+  }).catch(() => "failed")
 
   const response = NextResponse.redirect(new URL("/", request.url), 303)
   response.headers.set("Cache-Control", "no-store")

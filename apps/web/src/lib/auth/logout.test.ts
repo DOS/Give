@@ -49,6 +49,8 @@ describe("endIssuerSession", () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe(`${ISSUER}/logout?scope=local`)
     expect(init?.method).toBe("POST")
+    expect(init?.redirect).toBe("error")
+    expect(init?.signal).toBeInstanceOf(AbortSignal)
     expect(init?.headers).toEqual({ Authorization: `Bearer ${freshAccess}`, apikey: "anon-key" })
     expect(warn).not.toHaveBeenCalled()
   })
@@ -67,6 +69,8 @@ describe("endIssuerSession", () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe(`${ISSUER}/oauth/token`)
     expect(String(fetchMock.mock.calls[0][1]?.body)).toContain("grant_type=refresh_token")
+    // One deadline covers both calls.
+    expect(fetchMock.mock.calls[0][1]?.signal).toBe(fetchMock.mock.calls[1][1]?.signal)
     expect(fetchMock.mock.calls[1][0]).toBe(`${ISSUER}/logout?scope=local`)
     expect(fetchMock.mock.calls[1][1]?.headers).toMatchObject({ Authorization: `Bearer ${newAccess}` })
   })
@@ -77,11 +81,56 @@ describe("endIssuerSession", () => {
     await expect(endIssuerSession("https://give.example", { access: freshAccess })).resolves.toBe("revoked")
   })
 
-  it("skips when the issuer already rejects the refresh token", async () => {
-    fetchMock.mockResolvedValueOnce(new Response(null, { status: 400 }))
+  it("skips when the issuer says the refresh token is already dead", async () => {
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ code: 400, error_code: "refresh_token_not_found" }, { status: 400 })
+    )
 
     await expect(endIssuerSession("https://give.example", { refresh: "rt-dead" })).resolves.toBe("skipped")
     expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it("logs a refresh rejected for another reason, such as bad client credentials", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ error: "invalid_client" }, { status: 400 }))
+
+    await expect(endIssuerSession("https://give.example", { refresh: "rt-1" })).resolves.toBe("failed")
+    expect(warn).toHaveBeenCalledWith("auth.logout.revoke_failed", {
+      reason: "refresh_400_invalid_client",
+      error: "TokenRequestError",
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("logs a refresh the issuer could not serve", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("bad gateway", { status: 502 }))
+
+    await expect(endIssuerSession("https://give.example", { refresh: "rt-1" })).resolves.toBe("failed")
+    expect(warn).toHaveBeenCalledWith("auth.logout.revoke_failed", {
+      reason: "refresh_502_unknown",
+      error: "TokenRequestError",
+    })
+    expect(loggedText()).not.toContain("rt-1")
+  })
+
+  it("gives up when the issuer stalls", async () => {
+    const deadline = new AbortController()
+    vi.spyOn(AbortSignal, "timeout").mockReturnValueOnce(deadline.signal)
+    fetchMock.mockImplementationOnce(
+      (_url, init) =>
+        new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal?.reason)))
+    )
+
+    const result = endIssuerSession("https://give.example", { refresh: "rt-1" })
+    deadline.abort(new DOMException("The operation timed out.", "TimeoutError"))
+
+    await expect(result).resolves.toBe("failed")
+    expect(warn).toHaveBeenCalledWith("auth.logout.revoke_failed", { reason: "refresh", error: "TimeoutError" })
+  })
+
+  it("fails when the access token expired and there is no refresh token", async () => {
+    await expect(endIssuerSession("https://give.example", { access: expiredAccess })).resolves.toBe("failed")
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it("skips when there is no session cookie at all", async () => {

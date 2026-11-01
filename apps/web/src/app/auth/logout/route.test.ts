@@ -40,6 +40,22 @@ describe("POST /auth/logout", () => {
     expect(response.cookies.get("__Host-give_rt")?.value).toBe("")
   })
 
+  it("still clears the cookies if revocation throws", async () => {
+    endIssuerSession.mockRejectedValueOnce(new Error("unexpected"))
+
+    const response = await POST(logoutRequest())
+
+    expect(response.status).toBe(303)
+    expect(response.cookies.get("__Host-give_rt")?.value).toBe("")
+  })
+
+  it("rejects a request the browser marks as cross-site", async () => {
+    const response = await POST(logoutRequest({ "sec-fetch-site": "cross-site" }))
+
+    expect(response.status).toBe(403)
+    expect(endIssuerSession).not.toHaveBeenCalled()
+  })
+
   it("rejects a cross-site request without touching the session", async () => {
     const response = await POST(logoutRequest({ origin: "https://evil.example" }))
 

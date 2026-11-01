@@ -134,13 +134,15 @@ schedule.
   working. The Supabase OAuth server publishes no RFC 7009
   `revocation_endpoint`, so Give calls Supabase Auth's
   `POST <OIDC_ISSUER>/logout?scope=local` with the session's access token
-  (refreshed first if it has expired) and the anon key. That deletes only
-  this login's session and its refresh tokens; the user stays signed in to
-  other DOS apps. A token without a `session_id` claim is never sent, because
-  Supabase would then sign the user out everywhere. If the call fails, the
-  cookies are still cleared and the failure is logged as
+  (refreshed first if it has expired or is about to) and the anon key. That
+  deletes only this login's session and its refresh tokens; the user stays
+  signed in to other DOS apps. A token without a `session_id` claim is never
+  sent, because Supabase would then sign the user out everywhere. Both calls
+  share a 5-second deadline and never follow redirects. If revocation fails,
+  the cookies are still cleared and the failure is logged as
   `auth.logout.revoke_failed` with a reason, never a token
-  (`src/lib/auth/logout.ts`).
+  (`src/lib/auth/logout.ts`). A refresh token the issuer reports as already
+  dead counts as nothing to revoke.
 
 ## Repository
 
