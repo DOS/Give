@@ -129,6 +129,18 @@ schedule.
   `src/lib/cover-urls.ts`. A draft's cover is not reachable by URL before
   review.
 - Campaign stories are Markdown rendered without raw HTML or images.
+- Logout (`POST /auth/logout`, same-origin only) ends the session at the
+  issuer before it clears Give's cookies, so a copied refresh token stops
+  working. The Supabase OAuth server publishes no RFC 7009
+  `revocation_endpoint`, so Give calls Supabase Auth's
+  `POST <OIDC_ISSUER>/logout?scope=local` with the session's access token
+  (refreshed first if it has expired) and the anon key. That deletes only
+  this login's session and its refresh tokens; the user stays signed in to
+  other DOS apps. A token without a `session_id` claim is never sent, because
+  Supabase would then sign the user out everywhere. If the call fails, the
+  cookies are still cleared and the failure is logged as
+  `auth.logout.revoke_failed` with a reason, never a token
+  (`src/lib/auth/logout.ts`).
 
 ## Repository
 
