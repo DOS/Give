@@ -48,6 +48,16 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_AMOUNT_BELOW_MINIMUM: "Số tiền thấp hơn mức ủng hộ tối thiểu của chiến dịch.",
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau.",
   GIVE_CONTRIBUTION_TYPE_MISMATCH: "Chiến dịch này không nhận ủng hộ trực tiếp.",
+  // Staff roles.
+  GIVE_ADMIN_REQUIRED: "Chỉ quản trị viên mới được cấp hoặc thu quyền.",
+  GIVE_ROLE_INVALID: "Quyền không hợp lệ.",
+  GIVE_ROLE_UNCHANGED: "Người này đã có quyền này rồi.",
+  GIVE_USER_NOT_FOUND: "Không tìm thấy tài khoản DOS.Me với email hoặc mã này.",
+  GIVE_USER_INELIGIBLE:
+    "Tài khoản này đã bị khóa, đã xóa hoặc chưa xác nhận email nên không thể nhận quyền. Nếu chỉ là chưa xác nhận email, hãy nhập mã người dùng thay cho email.",
+  GIVE_USER_AMBIGUOUS: "Có nhiều tài khoản dùng email này. Hãy nhập mã người dùng thay cho email.",
+  GIVE_ADMIN_NOT_FOUND: "Người này không còn quyền nào để thu.",
+  GIVE_LAST_ADMIN: "Không thể thu hoặc hạ quyền quản trị viên cuối cùng. Hãy cấp quyền quản trị cho người khác trước.",
 }
 
 const PG_MESSAGES: Record<string, string> = {

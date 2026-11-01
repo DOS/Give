@@ -25,17 +25,28 @@ export default async function AdminPage() {
     notFound()
   }
 
-  const [queue, organizers] = await Promise.all([listReviewQueue(db), listOrganizersToVerify(db)])
+  const [queue, organizers, canManageRoles] = await Promise.all([
+    listReviewQueue(db),
+    listOrganizersToVerify(db),
+    isStaff(db, ["admin"]),
+  ])
 
   return (
     <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-3xl font-bold">Kiểm duyệt</h1>
-        {reviewsAccounts && (
-          <Link href="/admin/accounts" className="btn-secondary">
-            Xác minh tài khoản nhận
-          </Link>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {reviewsAccounts && (
+            <Link href="/admin/accounts" className="btn-secondary">
+              Xác minh tài khoản nhận
+            </Link>
+          )}
+          {canManageRoles && (
+            <Link href="/admin/roles" className="btn-secondary">
+              Phân quyền nhân sự
+            </Link>
+          )}
+        </div>
       </div>
 
       <section>
