@@ -139,7 +139,6 @@ describe("proxy session refresh", () => {
     const pending = proxy(pageRequest())
     deadline.abort(new DOMException("The operation timed out.", "TimeoutError"))
     const response = await pending
-    timeout.mockRestore()
 
     expect(timeout).toHaveBeenCalledWith(5000)
     expect(fetchMock.mock.calls[0][1]?.signal).toBe(deadline.signal)
@@ -149,6 +148,7 @@ describe("proxy session refresh", () => {
       code: undefined,
       error: "TimeoutError",
     })
+    timeout.mockRestore()
   })
 
   it("keeps the cookies on a network error without logging its message", async () => {
