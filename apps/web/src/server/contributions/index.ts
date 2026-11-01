@@ -1,8 +1,8 @@
 import "server-only"
 
-import { createHash } from "node:crypto"
+import { createHash, timingSafeEqual } from "node:crypto"
 
-import { isLocalhost } from "@/lib/auth/cookies"
+import { cookieName, isLocalhost } from "@/lib/auth/cookies"
 import type { Db } from "@/lib/campaigns"
 import { isStatusToken, type ContributionStatus } from "@/lib/contributions"
 
@@ -13,7 +13,10 @@ import { isStatusToken, type ContributionStatus } from "@/lib/contributions"
  *
  * Who reads what:
  * - Guests have no database identity. Their status token is checked by
- *   give.get_contribution_status() or by its sha256 under the service role.
+ *   give.get_contribution_status() (API callers that hold the token) or, for
+ *   the payment page and its polling, against the stored sha256 under the
+ *   service role. The hash is compared here, so it never goes into a query
+ *   string.
  * - Signed-in donors read their own contributions with their own token under
  *   RLS (contributions_read).
  * - The campaign's receiving account is readable only by its owner and
@@ -40,36 +43,65 @@ export function statusTokenHash(token: string): string {
 }
 
 /**
- * The cookie that keeps a guest's status token for one donation, so the
- * payment page survives a reload. It is sent only to that donation's page.
- * Deployed hosts use the `__Secure-` prefix (`__Host-` would force Path=/).
+ * The cookie that keeps a guest's status token for one donation, so its
+ * payment page survives a reload and can poll its status without the token
+ * ever reaching page script. `__Host-` on deployed hosts stops a sibling
+ * subdomain from planting one (it requires Path=/).
  */
 export function donationCookie(code: string, hostname: string) {
-  const local = isLocalhost(hostname)
   return {
-    name: `${local ? "" : "__Secure-"}give_dn_${code}`,
-    options: { httpOnly: true, secure: !local, sameSite: "lax" as const, path: `/donations/${code}` },
+    name: cookieName(`give_dn_${code}`, hostname),
+    options: { httpOnly: true, secure: !isLocalhost(hostname), sameSite: "lax" as const, path: "/" },
   }
 }
+
+/** The status token in a guest's cookie for this donation, if it looks like one. */
+export function donationCookieToken(
+  cookies: { get(name: string): { value: string } | undefined },
+  code: string,
+  hostname: string
+): string | null {
+  const value = cookies.get(donationCookie(code, hostname).name)?.value
+  return isStatusToken(value) ? value : null
+}
+
+interface GuestRow extends PaymentContribution {
+  status_token_hash: string | null
+  status_token_expires_at: string | null
+}
+
+// PostgREST returns bytea as a backslash, "x" and the hex digits.
+const BYTEA_SHA256 = /^\\x([0-9a-f]{64})$/
 
 /** A guest's donation by reference code, if the status token belongs to it and has not expired. */
 export async function guestContribution(
   service: Db,
   code: string,
-  token: string | undefined,
+  token: string | null | undefined,
   now = new Date()
 ): Promise<PaymentContribution | null> {
   if (!isStatusToken(token)) return null
   const { data, error } = await service
     .from("contributions")
-    .select(PAYMENT_COLUMNS)
+    .select(`${PAYMENT_COLUMNS}, status_token_hash, status_token_expires_at`)
     .eq("reference_code", code)
     .eq("kind", "donation")
-    .eq("status_token_hash", `\\x${statusTokenHash(token)}`)
-    .gt("status_token_expires_at", now.toISOString())
+    .is("contributor_user_id", null)
     .maybeSingle()
   if (error) throw error
-  return data as PaymentContribution | null
+  const row = data as GuestRow | null
+  const stored = BYTEA_SHA256.exec(row?.status_token_hash ?? "")?.[1]
+  if (!row || !stored || !row.status_token_expires_at || new Date(row.status_token_expires_at) <= now) return null
+  if (!timingSafeEqual(Buffer.from(stored, "hex"), Buffer.from(statusTokenHash(token), "hex"))) return null
+  return {
+    id: row.id,
+    campaign_id: row.campaign_id,
+    intended_amount: row.intended_amount,
+    received_amount: row.received_amount,
+    reference_code: row.reference_code,
+    status: row.status,
+    created_at: row.created_at,
+  }
 }
 
 /** A signed-in donor's own donation by reference code (RLS also lets organizers read, so match the user). */
@@ -108,6 +140,12 @@ export async function ownStatus(db: Db, userId: string, code: string): Promise<C
   return data as ContributionStatus | null
 }
 
+/** PostgREST rejected the session token (expired or invalid). */
+export function isSessionRejected(error: unknown): boolean {
+  const code = (error as { code?: string } | null)?.code
+  return code === "PGRST301" || code === "PGRST303"
+}
+
 export interface PaymentCampaign {
   id: string
   slug: string
@@ -128,7 +166,7 @@ export async function paymentCampaign(service: Db, campaignId: string): Promise<
   return data as PaymentCampaign | null
 }
 
-/** Mirrors the checks in give.create_donation: a live give campaign inside its dates. */
+/** Mirrors the campaign checks in give.create_donation: a live give campaign inside its dates. */
 export function acceptsDonations(
   campaign: Pick<PaymentCampaign, "type" | "status" | "starts_at" | "ends_at">,
   now = new Date()
@@ -156,18 +194,44 @@ interface BindingRow {
     account_name: string | null
     verification_status: string
   } | null
+  campaign: { organizer: { verification_status: string; legal_name: string } | null } | null
 }
 
 /**
- * The bank account a donor pays into: the campaign's oldest active binding to
- * a verified bank account. give.create_donation also checks the organizer and
- * the account name; this only decides what to show.
+ * give.normalize_person_name in TypeScript: drop Vietnamese tones and other
+ * accents, map đ/Đ to D, upper-case, and keep letters and digits separated by
+ * single spaces. The service role may not execute the database function.
+ */
+export function normalizePersonName(name: string): string | null {
+  const normalized = name
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim()
+  return normalized === "" ? null : normalized
+}
+
+/** give.account_name_matches: both names normalise to the same non-empty value. */
+export function accountNameMatches(accountName: string | null, legalName: string | null): boolean {
+  const a = normalizePersonName(accountName ?? "")
+  return a !== null && a === normalizePersonName(legalName ?? "")
+}
+
+/**
+ * The bank account a donor pays into, under the rule give.create_donation
+ * applies: an active binding to a verified bank account whose name matches
+ * the verified organizer's legal name. The oldest such binding wins. When
+ * none qualifies Give shows no payment details at all, also for donations
+ * created earlier.
  */
 export async function paymentAccount(service: Db, campaignId: string): Promise<PaymentAccount | null> {
   const { data, error } = await service
     .from("account_bindings")
     .select(
-      "bound_at, account:receiving_accounts(channel, bank_bin, account_number, account_name, verification_status)"
+      "bound_at, account:receiving_accounts(channel, bank_bin, account_number, account_name, verification_status), campaign:campaigns(organizer:organizers(verification_status, legal_name))"
     )
     .eq("campaign_id", campaignId)
     .is("released_at", null)
@@ -175,7 +239,16 @@ export async function paymentAccount(service: Db, campaignId: string): Promise<P
   if (error) throw error
   for (const row of (data ?? []) as unknown as BindingRow[]) {
     const a = row.account
-    if (a && a.channel !== "crypto" && a.verification_status === "verified" && a.bank_bin && a.account_number) {
+    const organizer = row.campaign?.organizer
+    if (
+      a &&
+      organizer?.verification_status === "verified" &&
+      a.channel !== "crypto" &&
+      a.verification_status === "verified" &&
+      a.bank_bin &&
+      a.account_number &&
+      accountNameMatches(a.account_name, organizer.legal_name)
+    ) {
       return { bank_bin: a.bank_bin, account_number: a.account_number, account_name: a.account_name ?? "" }
     }
   }

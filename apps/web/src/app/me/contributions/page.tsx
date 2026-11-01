@@ -84,7 +84,7 @@ export default async function MyContributionsPage() {
               </div>
               {c.status !== "received" && (
                 <Link href={`/donations/${c.reference_code}`} className="btn-secondary">
-                  Xem cách chuyển khoản
+                  {c.status === "awaiting_transfer" ? "Xem cách chuyển khoản" : "Xem trạng thái"}
                 </Link>
               )}
             </li>

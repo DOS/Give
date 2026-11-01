@@ -5,6 +5,9 @@ import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 const USER = "11111111-1111-4111-8111-111111111111"
 const TOKEN = "a".repeat(64)
+const COOKIE_TOKEN = "0123456789abcdef".repeat(4)
+// sha256(decode(COOKIE_TOKEN, 'hex')), as Postgres computes it.
+const COOKIE_TOKEN_SHA256 = "4884fdaafea47c29fea7159d0daddd9c085d6200e1359e85bb81736af6b7c837"
 
 const state = vi.hoisted(() => ({
   session: null as { user: { id: string; email: null; name: null }; accessToken: string } | null,
@@ -27,10 +30,12 @@ vi.mock("@/lib/supabase", () => ({
 
 const { GET } = await import("./route")
 
-function request(options: { token?: string; code?: string } = {}) {
+function request(options: { token?: string; code?: string; cookie?: string } = {}) {
   const url = new URL("http://localhost/api/contributions/status")
   if (options.code) url.searchParams.set("code", options.code)
-  const headers = options.token !== undefined ? { "x-give-status-token": options.token } : undefined
+  const headers: Record<string, string> = {}
+  if (options.token !== undefined) headers["x-give-status-token"] = options.token
+  if (options.cookie !== undefined) headers.cookie = options.cookie
   return new NextRequest(url, { headers })
 }
 
@@ -134,5 +139,45 @@ describe("GET /api/contributions/status (signed in)", () => {
     state.session = { user: { id: USER, email: null, name: null }, accessToken: "jwt" }
     state.userHandler = () => ({ error: { code: "PGRST301", message: "JWT expired" } })
     expect((await GET(request({ code: "GVABCDEFG" }))).status).toBe(401)
+  })
+})
+
+describe("GET /api/contributions/status (guest cookie from the payment page)", () => {
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    data: {
+      id: "33333333-3333-4333-8333-333333333333",
+      campaign_id: "22222222-2222-4222-8222-222222222222",
+      intended_amount: 200000,
+      received_amount: 150000,
+      reference_code: "GVABCDEFG",
+      status: "received",
+      created_at: "2026-11-01T00:00:00.000Z",
+      status_token_hash: `\\x${COOKIE_TOKEN_SHA256}`,
+      status_token_expires_at: "2999-01-01T00:00:00.000Z",
+      ...overrides,
+    },
+  })
+
+  it("returns only status and received amount when the cookie token matches the code", async () => {
+    state.serviceHandler = () => row()
+    const response = await GET(request({ code: "GVABCDEFG", cookie: `give_dn_GVABCDEFG=${COOKIE_TOKEN}` }))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status: "received", received_amount: 150000 })
+    expect(state.anonCalls).toHaveLength(0)
+  })
+
+  it("gives 404 for a cookie set for another code, without asking the database", async () => {
+    const response = await GET(request({ code: "GVABCDEFG", cookie: `give_dn_GVABCDEFH=${COOKIE_TOKEN}` }))
+    expect(response.status).toBe(404)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it.each([
+    ["a token that is not this donation's", { status_token_hash: `\\x${"0".repeat(64)}` }],
+    ["an expired token", { status_token_expires_at: "2000-01-01T00:00:00.000Z" }],
+  ])("gives 404 for %s", async (_name, overrides) => {
+    state.serviceHandler = () => row(overrides)
+    const response = await GET(request({ code: "GVABCDEFG", cookie: `give_dn_GVABCDEFG=${COOKIE_TOKEN}` }))
+    expect(response.status).toBe(404)
   })
 })

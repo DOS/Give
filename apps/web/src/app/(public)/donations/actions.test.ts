@@ -86,13 +86,13 @@ describe("donate", () => {
     ])
     expect(state.cookies).toEqual([
       [
-        "__Secure-give_dn_GVABCDEFG",
+        "__Host-give_dn_GVABCDEFG",
         TOKEN,
         {
           httpOnly: true,
           secure: true,
           sameSite: "lax",
-          path: "/donations/GVABCDEFG",
+          path: "/",
           expires: new Date("2026-11-08T00:00:00.000Z"),
         },
       ],

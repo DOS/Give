@@ -1,44 +1,91 @@
-import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
 
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
-import { acceptsDonations, donationCookie, guestContribution, paymentAccount, statusTokenHash } from "."
+import {
+  acceptsDonations,
+  accountNameMatches,
+  donationCookie,
+  donationCookieToken,
+  guestContribution,
+  normalizePersonName,
+  paymentAccount,
+  statusTokenHash,
+} from "."
 
 const TOKEN = "0123456789abcdef".repeat(4)
+// encode(sha256(decode(TOKEN, 'hex')), 'hex') computed by Postgres.
+const TOKEN_SHA256 = "4884fdaafea47c29fea7159d0daddd9c085d6200e1359e85bb81736af6b7c837"
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
 
 describe("statusTokenHash", () => {
-  it("hashes the token's bytes like sha256(decode(token, 'hex')) in create_donation", () => {
-    expect(statusTokenHash(TOKEN)).toBe(createHash("sha256").update(Buffer.from(TOKEN, "hex")).digest("hex"))
-    expect(statusTokenHash(TOKEN)).not.toBe(createHash("sha256").update(TOKEN).digest("hex"))
+  it("matches sha256(decode(token, 'hex')) in create_donation", () => {
+    expect(statusTokenHash(TOKEN)).toBe(TOKEN_SHA256)
   })
 })
 
 describe("donationCookie", () => {
-  it("is scoped to the donation's page and Secure on deployed hosts", () => {
+  it("is a __Host- cookie on deployed hosts", () => {
     expect(donationCookie("GVABCDEFG", "give.dos.me")).toEqual({
-      name: "__Secure-give_dn_GVABCDEFG",
-      options: { httpOnly: true, secure: true, sameSite: "lax", path: "/donations/GVABCDEFG" },
+      name: "__Host-give_dn_GVABCDEFG",
+      options: { httpOnly: true, secure: true, sameSite: "lax", path: "/" },
     })
     expect(donationCookie("GVABCDEFG", "localhost").name).toBe("give_dn_GVABCDEFG")
     expect(donationCookie("GVABCDEFG", "localhost").options.secure).toBe(false)
   })
+
+  it("only yields a well-formed token for that code", () => {
+    const jar = new Map([["__Host-give_dn_GVABCDEFG", { value: TOKEN }]])
+    expect(donationCookieToken(jar, "GVABCDEFG", "give.dos.me")).toBe(TOKEN)
+    expect(donationCookieToken(jar, "GVABCDEFH", "give.dos.me")).toBeNull()
+    expect(donationCookieToken(new Map([["give_dn_GVABCDEFG", { value: "x" }]]), "GVABCDEFG", "localhost")).toBeNull()
+  })
 })
 
 describe("guestContribution", () => {
-  it("matches code, token hash and expiry, listing its columns", async () => {
+  const now = new Date("2026-11-01T00:00:00.000Z")
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    id: "33333333-3333-4333-8333-333333333333",
+    campaign_id: CAMPAIGN,
+    intended_amount: 200000,
+    received_amount: 0,
+    reference_code: "GVABCDEFG",
+    status: "awaiting_transfer",
+    created_at: "2026-10-31T23:00:00.000Z",
+    status_token_hash: `\\x${TOKEN_SHA256}`,
+    status_token_expires_at: "2026-11-07T23:00:00.000Z",
+    ...overrides,
+  })
+
+  it("returns the donation when the token's hash matches, without the token columns", async () => {
     const calls: Call[] = []
-    const db = fakeDb(() => ({ data: { id: "x" } }), calls)
-    const now = new Date("2026-11-01T00:00:00.000Z")
-    await guestContribution(db as never, "GVABCDEFG", TOKEN, now)
+    const result = await guestContribution(fakeDb(() => ({ data: row() }), calls) as never, "GVABCDEFG", TOKEN, now)
+    expect(result).toEqual({
+      id: "33333333-3333-4333-8333-333333333333",
+      campaign_id: CAMPAIGN,
+      intended_amount: 200000,
+      received_amount: 0,
+      reference_code: "GVABCDEFG",
+      status: "awaiting_transfer",
+      created_at: "2026-10-31T23:00:00.000Z",
+    })
     const call = calls[0]
     expect(call.target).toBe("contributions")
     expect(String(op(call, "select")?.[0])).not.toContain("*")
-    expect(String(op(call, "select")?.[0])).not.toContain("status_token")
     expect(call.ops).toContainEqual(["eq", "reference_code", "GVABCDEFG"])
-    expect(call.ops).toContainEqual(["eq", "status_token_hash", `\\x${statusTokenHash(TOKEN)}`])
-    expect(call.ops).toContainEqual(["gt", "status_token_expires_at", now.toISOString()])
+    expect(call.ops).toContainEqual(["is", "contributor_user_id", null])
+    // The hash is compared in the app, never sent as a filter.
+    expect(JSON.stringify(call.ops)).not.toContain(TOKEN_SHA256)
+  })
+
+  it.each([
+    ["another donation's token", { status_token_hash: `\\x${"0".repeat(64)}` }],
+    ["an expired token", { status_token_expires_at: "2026-11-01T00:00:00.000Z" }],
+    ["no stored token", { status_token_hash: null, status_token_expires_at: null }],
+  ])("refuses %s", async (_name, overrides) => {
+    expect(
+      await guestContribution(fakeDb(() => ({ data: row(overrides) })) as never, "GVABCDEFG", TOKEN, now)
+    ).toBeNull()
   })
 
   it("does not query for a malformed token", async () => {
@@ -48,8 +95,26 @@ describe("guestContribution", () => {
   })
 })
 
+describe("normalizePersonName", () => {
+  // Expected values computed by give.normalize_person_name in Postgres.
+  it.each([
+    ["Nguyễn Thị Đào-Müller  ß", "NGUYEN THI DAO MULLER SS"],
+    [" trần  văn   ơn ", "TRAN VAN ON"],
+    ["NGUYEN VAN AN", "NGUYEN VAN AN"],
+  ])("normalises %j like the database", (input, expected) => {
+    expect(normalizePersonName(input)).toBe(expected)
+  })
+
+  it("treats names with nothing left as no match", () => {
+    expect(normalizePersonName(" - ")).toBeNull()
+    expect(accountNameMatches("", "")).toBe(false)
+    expect(accountNameMatches("NGUYEN VAN AN", "Nguyễn Văn An")).toBe(true)
+    expect(accountNameMatches("NGUYEN VAN ANH", "Nguyễn Văn An")).toBe(false)
+  })
+})
+
 describe("paymentAccount", () => {
-  const account = (overrides: Record<string, unknown> = {}) => ({
+  const binding = (account: Record<string, unknown> = {}, organizer: Record<string, unknown> = {}) => ({
     bound_at: "2026-11-01T00:00:00Z",
     account: {
       channel: "statement_import",
@@ -57,14 +122,21 @@ describe("paymentAccount", () => {
       account_number: "0123456789",
       account_name: "NGUYEN VAN A",
       verification_status: "verified",
-      ...overrides,
+      ...account,
     },
+    campaign: { organizer: { verification_status: "verified", legal_name: "Nguyễn Văn A", ...organizer } },
   })
 
-  it("picks the first active binding to a verified bank account", async () => {
+  it("picks the first active binding that create_donation would accept", async () => {
     const calls: Call[] = []
     const db = fakeDb(
-      () => ({ data: [account({ verification_status: "disabled" }), account({ account_number: "999888777" })] }),
+      () => ({
+        data: [
+          binding({ verification_status: "disabled" }),
+          binding({ account_name: "TRAN THI B", account_number: "111" }),
+          binding({ account_number: "999888777" }),
+        ],
+      }),
       calls
     )
     expect(await paymentAccount(db as never, CAMPAIGN)).toEqual({
@@ -76,9 +148,13 @@ describe("paymentAccount", () => {
     expect(calls[0].ops).toContainEqual(["is", "released_at", null])
   })
 
-  it("returns null when nothing usable is bound", async () => {
-    const db = fakeDb(() => ({ data: [account({ verification_status: "pending" }), { bound_at: "x", account: null }] }))
-    expect(await paymentAccount(db as never, CAMPAIGN)).toBeNull()
+  it.each([
+    ["the organizer is no longer verified", [binding({}, { verification_status: "pending" })]],
+    ["the account is pending", [binding({ verification_status: "pending" })]],
+    ["the account name no longer matches the legal name", [binding({}, { legal_name: "Nguyễn Văn Bình" })]],
+    ["the account row is missing", [{ bound_at: "x", account: null, campaign: null }]],
+  ])("shows nothing when %s", async (_name, rows) => {
+    expect(await paymentAccount(fakeDb(() => ({ data: rows })) as never, CAMPAIGN)).toBeNull()
   })
 })
 
