@@ -10,11 +10,16 @@ import type { Db } from "@/lib/campaigns"
  * payload into money facts through the money RPCs (record_bank_transaction,
  * match_transaction), and give.complete_inbound_event records the outcome.
  * An error leaves the event pending; the reprocess-inbound cron retries it.
+ * A channel's inline path should call processInboundEvent too, so both paths
+ * record outcomes the same way.
  *
  * A processor must be safe to run again on the same event, including at the
- * same time as another run: the money RPCs are idempotent per (account,
- * provider transaction id), and complete_inbound_event is final once an event
- * is processed. That is what makes a duplicate cron run harmless.
+ * same time as another run (a provider redelivery, a duplicate cron call):
+ * the money RPCs are idempotent per (account, provider transaction id), and
+ * complete_inbound_event is final once an event is processed. That is what
+ * makes a duplicate cron run harmless. Side effects outside the database
+ * (notices, emails) are not covered by that and must be deduplicated by the
+ * processor itself.
  */
 
 export type InboundChannel = "bank_api" | "payos" | "statement_import" | "crypto"
@@ -27,8 +32,11 @@ export interface InboundEvent {
   payload: unknown
 }
 
-/** Does the money work for one event; throws when it could not. */
-export type InboundProcessor = (db: Db, event: InboundEvent) => Promise<void>
+/**
+ * Does the money work for one event; throws when it could not. It should stop
+ * when `signal` aborts: the attempt is then recorded as timed out.
+ */
+export type InboundProcessor = (db: Db, event: InboundEvent, signal: AbortSignal) => Promise<void>
 
 export type InboundProcessors = Partial<Record<InboundChannel, InboundProcessor>>
 
@@ -40,16 +48,64 @@ export type InboundProcessors = Partial<Record<InboundChannel, InboundProcessor>
 export const inboundProcessors: InboundProcessors = {}
 
 /**
- * Events younger than this are left to the request that recorded them, which
- * processes them inline, so the cron does not race it.
+ * A failure a processor reports with a stable code. Only codes are stored on
+ * the event and logged: messages from SDKs or built from a payload can carry
+ * tokens or unmasked account numbers.
  */
-export const REPROCESS_GRACE_MS = 2 * 60 * 1000
+export class InboundError extends Error {
+  constructor(readonly code: string) {
+    super(code)
+    this.name = "InboundError"
+  }
+}
+
+/**
+ * Events younger than this are left to the request that recorded them, which
+ * processes them inline. An inline route's maxDuration must stay below it so
+ * the cron does not start on an event that request is still processing.
+ */
+export const REPROCESS_GRACE_MS = 10 * 60 * 1000
 /** Events per run; the rest wait for the next run. */
 export const REPROCESS_BATCH = 50
-/** A run stops taking new events after this long, well inside the function limit. */
+/** Longest a processor may take on one event. */
+export const PROCESSOR_TIMEOUT_MS = 15 * 1000
+/**
+ * A run starts no new event after this long, so the last one, with its
+ * timeout and outcome write, still ends inside the route's 60 s maxDuration.
+ */
 export const REPROCESS_BUDGET_MS = 40 * 1000
 
-const EVENT_COLUMNS = "id, channel, dedupe_key, received_at, payload"
+const CODE = /^[A-Z][A-Z0-9_]{2,63}$/
+const GIVE_CODE = /^GIVE_[A-Z0-9_]{1,59}/
+
+/**
+ * What is stored in inbound_events.error for a failure: the code of an
+ * InboundError, the GIVE_* code a money RPC raised, or a generic code.
+ */
+export function failureCode(err: unknown): string {
+  if (err instanceof InboundError && CODE.test(err.code)) return err.code
+  const message =
+    typeof err === "object" && err !== null && "message" in err && typeof err.message === "string" ? err.message : ""
+  return GIVE_CODE.exec(message.trim())?.[0] ?? "processing_failed"
+}
+
+class Timeout extends Error {}
+
+async function runWithTimeout(db: Db, event: InboundEvent, processor: InboundProcessor): Promise<void> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(new Timeout())
+    }, PROCESSOR_TIMEOUT_MS)
+  })
+  try {
+    await Promise.race([processor(db, event, controller.signal), timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
 
 /**
  * Runs the event's processor and records the outcome. Returns true when the
@@ -58,16 +114,16 @@ const EVENT_COLUMNS = "id, channel, dedupe_key, received_at, payload"
 export async function processInboundEvent(db: Db, event: InboundEvent, processor: InboundProcessor): Promise<boolean> {
   let failure: string | null = null
   try {
-    await processor(db, event)
+    await runWithTimeout(db, event, processor)
   } catch (err) {
-    failure = (err instanceof Error ? err.message : String(err)).trim() || "processing_failed"
+    failure = err instanceof Timeout ? "processing_timeout" : failureCode(err)
   }
   const { data, error } = await db.rpc("complete_inbound_event", {
     p_inbound_event_id: event.id,
     p_error: failure,
   })
   if (error) {
-    console.error("complete_inbound_event failed", event.id, error.code, error.message)
+    console.error("complete_inbound_event failed", event.id, error.code)
     return false
   }
   if (failure) console.warn("inbound event still pending", event.id, event.channel, failure)
@@ -83,28 +139,40 @@ export interface ReprocessResult {
   waiting: number
 }
 
+export interface ReprocessOptions {
+  processors?: InboundProcessors
+  now?: () => number
+  random?: () => number
+}
+
+type EventHead = Pick<InboundEvent, "id" | "channel" | "received_at">
+
 /**
- * The reprocess-inbound cron: retries pending authentic events, oldest first,
- * with never-tried events ahead of ones that already failed, so events that
- * keep failing cannot starve new ones. Forged events are stored as
- * processed, so they are never picked.
+ * The reprocess-inbound cron: retries pending authentic events. Never-tried
+ * events go first, oldest first. Events that already failed fill the rest of
+ * the batch from a random window, so a set of events that keep failing
+ * cannot keep newer failures from being retried. Forged events are stored as
+ * processed, so they are never picked. Payloads (up to 1 MiB each) are
+ * loaded one event at a time.
  */
 export async function reprocessPendingInboundEvents(
   db: Db,
-  processors: InboundProcessors = inboundProcessors,
-  now: () => number = Date.now
+  { processors = inboundProcessors, now = Date.now, random = Math.random }: ReprocessOptions = {}
 ): Promise<ReprocessResult> {
   const started = now()
   const cutoff = new Date(started - REPROCESS_GRACE_MS).toISOString()
   const handled = (Object.keys(processors) as InboundChannel[]).filter((channel) => processors[channel])
   const result: ReprocessResult = { processed: 0, failed: 0, waiting: 0 }
 
-  let waitingQuery = db
-    .from("inbound_events")
-    .select("id", { count: "exact", head: true })
-    .is("processed_at", null)
-    .eq("signature_valid", true)
-    .lt("received_at", cutoff)
+  const pending = (columns: string, options?: { count: "exact"; head: true }) =>
+    db
+      .from("inbound_events")
+      .select(columns, options)
+      .is("processed_at", null)
+      .eq("signature_valid", true)
+      .lt("received_at", cutoff)
+
+  let waitingQuery = pending("id", { count: "exact", head: true })
   if (handled.length > 0) waitingQuery = waitingQuery.not("channel", "in", `(${handled.join(",")})`)
   const waiting = await waitingQuery
   if (waiting.error) throw new Error(`inbound_events count failed: ${waiting.error.message}`)
@@ -112,31 +180,44 @@ export async function reprocessPendingInboundEvents(
 
   if (handled.length === 0) return result
 
-  const pending = (failedBefore: boolean, limit: number) => {
-    const query = db
-      .from("inbound_events")
-      .select(EVENT_COLUMNS)
-      .is("processed_at", null)
-      .eq("signature_valid", true)
-      .lt("received_at", cutoff)
-      .in("channel", handled)
-    return (failedBefore ? query.not("error", "is", null) : query.is("error", null))
-      .order("received_at", { ascending: true })
-      .limit(limit)
-  }
-  const fresh = await pending(false, REPROCESS_BATCH)
+  const fresh = await pending("id, channel, received_at")
+    .in("channel", handled)
+    .is("error", null)
+    .order("received_at", { ascending: true })
+    .limit(REPROCESS_BATCH)
   if (fresh.error) throw new Error(`inbound_events read failed: ${fresh.error.message}`)
-  const events = (fresh.data ?? []) as InboundEvent[]
-  if (events.length < REPROCESS_BATCH) {
-    const retry = await pending(true, REPROCESS_BATCH - events.length)
-    if (retry.error) throw new Error(`inbound_events read failed: ${retry.error.message}`)
-    events.push(...((retry.data ?? []) as InboundEvent[]))
+  const events = (fresh.data ?? []) as unknown as EventHead[]
+
+  const slots = REPROCESS_BATCH - events.length
+  if (slots > 0) {
+    const failedCount = await pending("id", { count: "exact", head: true })
+      .in("channel", handled)
+      .not("error", "is", null)
+    if (failedCount.error) throw new Error(`inbound_events count failed: ${failedCount.error.message}`)
+    const total = failedCount.count ?? 0
+    if (total > 0) {
+      const offset = total > slots ? Math.floor(random() * (total - slots + 1)) : 0
+      const retry = await pending("id, channel, received_at")
+        .in("channel", handled)
+        .not("error", "is", null)
+        .order("received_at", { ascending: true })
+        .range(offset, offset + slots - 1)
+      if (retry.error) throw new Error(`inbound_events read failed: ${retry.error.message}`)
+      events.push(...((retry.data ?? []) as unknown as EventHead[]))
+    }
   }
 
-  for (const event of events) {
+  for (const head of events) {
     if (now() - started > REPROCESS_BUDGET_MS) break
-    const processor = processors[event.channel]
+    const processor = processors[head.channel]
     if (!processor) continue
+    const body = await db.from("inbound_events").select("dedupe_key, payload").eq("id", head.id).maybeSingle()
+    if (body.error || !body.data) {
+      console.error("inbound event could not be loaded", head.id, body.error?.code)
+      result.failed += 1
+      continue
+    }
+    const event = { ...head, ...(body.data as Pick<InboundEvent, "dedupe_key" | "payload">) }
     if (await processInboundEvent(db, event, processor)) result.processed += 1
     else result.failed += 1
   }

@@ -54,6 +54,13 @@ describe("GET /api/cron/reprocess-inbound", () => {
     expect(state.calls).toHaveLength(0)
   })
 
+  it("refuses every request when CRON_SECRET is too short to be one", async () => {
+    vi.stubEnv("CRON_SECRET", "short")
+    const response = await GET(request("Bearer short"))
+    expect(response.status).toBe(401)
+    expect(state.calls).toHaveLength(0)
+  })
+
   it("with no channel processor yet, only counts pending events and writes nothing", async () => {
     state.handler = () => ({ count: 4 })
     for (let run = 0; run < 2; run += 1) {

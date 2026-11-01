@@ -51,6 +51,13 @@ describe("GET /api/cron/finalize-ended", () => {
     expect(state.calls).toHaveLength(0)
   })
 
+  it("refuses every request when CRON_SECRET is too short to be one", async () => {
+    vi.stubEnv("CRON_SECRET", "short")
+    const response = await GET(request("Bearer short"))
+    expect(response.status).toBe(401)
+    expect(state.calls).toHaveLength(0)
+  })
+
   it("closes ended campaigns once; a second run changes nothing", async () => {
     // give.finalize_ended_campaigns closes live give campaigns past ends_at.
     const campaigns = [
