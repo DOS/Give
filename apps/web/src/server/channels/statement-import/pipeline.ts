@@ -1,0 +1,218 @@
+import "server-only"
+
+import { createHash } from "node:crypto"
+
+import { z } from "zod"
+
+import type { Db } from "@/lib/campaigns"
+import { failureCode, processInboundEvent, type InboundEvent, type InboundProcessor } from "@/server/inbound"
+import { statementParsers, type ParserRegistry } from "@/server/statement-parsers"
+import { PARSER_NAME } from "@/server/statement-parsers/registry"
+
+import { StatementImportError } from "./errors"
+import { MAX_ROWS, normalizeStatement, type StagedStatement } from "./normalize"
+import { importStatementBatch, recordStatementEvent, stageStatementImport, type ImportResult } from "./rpc"
+
+/**
+ * The statement_import channel's pipeline (design sections 5.1 and 5.2):
+ *
+ *   file -> parser -> normalizeStatement -> give.record_inbound_event
+ *        -> give.stage_statement_import -> give.import_statement_batch
+ *
+ * The inbound event's payload holds the normalized statement, so the
+ * reprocess-inbound cron can finish an upload whose request died, without the
+ * file or the parser. Everything after the event is idempotent per event.
+ * Ambiguous rows wait in the staging queue for finance/admin staff
+ * (give.resolve_statement_import_row).
+ */
+
+/** Largest file accepted; real exports of one account are far smaller. */
+export const MAX_FILE_BYTES = 10 * 1024 * 1024
+/**
+ * Largest payload, as JSON. give.inbound_events.payload holds at most 1 MiB of
+ * jsonb text, which prints a space after every colon and comma, so the margin
+ * covers that. A larger statement is split by period.
+ */
+export const MAX_PAYLOAD_BYTES = 900_000
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+const BALANCE = /^-?\d{1,15}$/
+
+const rowSchema = z.object({
+  booked_at: z.string().min(10).max(40),
+  booked_date_only: z.boolean(),
+  direction: z.enum(["in", "out"]),
+  amount: z.string().regex(/^\d{1,13}$/),
+  description: z.string().nullable(),
+  counterparty_name: z.string().nullable(),
+  counterparty_account: z.string().nullable(),
+  balance_after: z.string().regex(BALANCE).nullable(),
+  provider_tx_id: z.string().nullable(),
+  raw: z.record(z.string(), z.unknown()).nullable(),
+})
+
+const payloadSchema = z.object({
+  version: z.literal(1),
+  account_id: z.string().regex(UUID),
+  actor_id: z.string().regex(UUID),
+  parser: z.string().regex(PARSER_NAME),
+  has_stable_row_id: z.boolean(),
+  has_running_balance: z.boolean(),
+  period_from: z.string().regex(DAY).nullable(),
+  period_to: z.string().regex(DAY).nullable(),
+  opening_balance: z.string().regex(BALANCE).nullable(),
+  closing_balance: z.string().regex(BALANCE).nullable(),
+  exported_at: z.string().nullable(),
+  rows: z.array(rowSchema).min(1).max(MAX_ROWS),
+})
+
+/** What a statement upload's inbound event holds. */
+export type StatementPayload = z.infer<typeof payloadSchema>
+
+export function statementPayload(accountId: string, actorId: string, staged: StagedStatement): StatementPayload {
+  return { version: 1, account_id: accountId, actor_id: actorId, ...staged }
+}
+
+/** One event per file and account: the same file uploaded again replays it. */
+export function statementDedupeKey(accountId: string, file: Uint8Array): string {
+  return `v1:${accountId.toLowerCase()}:${createHash("sha256").update(file).digest("hex")}`
+}
+
+export interface StatementBatchOutcome extends ImportResult {
+  importBatchId: string
+  /** False when the batch was staged by an earlier attempt or upload. */
+  created: boolean
+}
+
+/** Stages the event's statement and imports its ready rows. */
+export async function runStatementEvent(
+  db: Db,
+  event: Pick<InboundEvent, "id" | "payload">,
+  signal?: AbortSignal
+): Promise<StatementBatchOutcome> {
+  const parsed = payloadSchema.safeParse(event.payload)
+  if (!parsed.success) throw new StatementImportError("STATEMENT_PAYLOAD_INVALID")
+  const { version: _version, account_id, actor_id, ...staged } = parsed.data
+  const batch = await stageStatementImport(
+    db,
+    { ...staged, accountId: account_id, actorId: actor_id, inboundEventId: event.id },
+    signal
+  )
+  signal?.throwIfAborted()
+  const counts = await importStatementBatch(db, batch.importBatchId, signal)
+  return { importBatchId: batch.importBatchId, created: batch.created, ...counts }
+}
+
+/** The statement_import channel's processor for the reprocess-inbound cron. */
+export const statementImportProcessor: InboundProcessor = async (db, event, signal) => {
+  await runStatementEvent(db, event, signal)
+}
+
+export interface StatementUpload {
+  receivingAccountId: string
+  /** The signed-in user whose token `user` carries. */
+  actorId: string
+  /** Name of the parser the uploader picked. */
+  parser: string
+  file: Uint8Array
+}
+
+export interface StatementImportDeps {
+  /** dbAs(the actor's token): proves the actor may read the account (its owner, or finance/admin staff). */
+  user: Db
+  /** dbService(): the RPCs are granted to service_role only. */
+  service: Db
+  parsers?: ParserRegistry
+  now?: Date
+}
+
+export type StatementImportResult =
+  | ({ status: "imported"; inboundEventId: string } & StatementBatchOutcome)
+  /**
+   * The file is recorded but could not be staged or imported yet; the
+   * reprocess-inbound cron retries it. `code` says why (a GIVE_* code from
+   * the database, or a generic one).
+   */
+  | { status: "pending"; inboundEventId: string; code: string; row?: number }
+
+/**
+ * Imports one uploaded statement file for a statement_import account. A
+ * file is checked and parsed before anything is recorded; problems found then
+ * throw StatementImportError (with the row number when one row is at fault).
+ * Once recorded, the upload is processed inline, and a failure leaves it
+ * pending for the cron. Uploading the same file again is safe.
+ *
+ * The caller's route must keep its maxDuration below REPROCESS_GRACE_MS.
+ */
+export async function importStatementFile(
+  upload: StatementUpload,
+  { user, service, parsers = statementParsers, now = new Date() }: StatementImportDeps
+): Promise<StatementImportResult> {
+  if (!(upload.file instanceof Uint8Array) || upload.file.byteLength === 0 || upload.file.byteLength > MAX_FILE_BYTES) {
+    throw new StatementImportError("STATEMENT_FILE_INVALID")
+  }
+  if (!UUID.test(upload.receivingAccountId) || !UUID.test(upload.actorId)) {
+    throw new StatementImportError("STATEMENT_ACCOUNT_NOT_FOUND")
+  }
+
+  // Under the actor's own RLS: only the owner and finance/admin staff see the
+  // account. give.stage_statement_import checks the actor again.
+  const { data, error } = await user
+    .from("receiving_accounts")
+    .select("id, channel, bank_bin")
+    .eq("id", upload.receivingAccountId)
+    .maybeSingle()
+  if (error) throw new Error(`receiving_accounts read failed: ${error.code ?? "unknown"}`)
+  const account = data as { id: string; channel: string; bank_bin: string | null } | null
+  if (!account) throw new StatementImportError("STATEMENT_ACCOUNT_NOT_FOUND")
+  if (account.channel !== "statement_import") throw new StatementImportError("STATEMENT_CHANNEL_NOT_SUPPORTED")
+
+  const parser = parsers.get(upload.parser)
+  if (!parser) throw new StatementImportError("STATEMENT_PARSER_UNKNOWN")
+  if (!account.bank_bin || !parser.bankBins.includes(account.bank_bin)) {
+    throw new StatementImportError("STATEMENT_PARSER_WRONG_BANK")
+  }
+
+  let statement
+  try {
+    statement = await parser.parse(upload.file)
+  } catch (err) {
+    if (err instanceof StatementImportError) throw err
+    throw new StatementImportError("STATEMENT_PARSE_FAILED")
+  }
+  const payload = statementPayload(account.id, upload.actorId, normalizeStatement(parser, statement, now))
+  if (Buffer.byteLength(JSON.stringify(payload), "utf8") > MAX_PAYLOAD_BYTES) {
+    throw new StatementImportError("STATEMENT_TOO_LARGE")
+  }
+
+  const dedupeKey = statementDedupeKey(account.id, upload.file)
+  const recorded = await recordStatementEvent(service, dedupeKey, payload)
+  const event: InboundEvent = {
+    id: recorded.inboundEventId,
+    channel: "statement_import",
+    dedupe_key: dedupeKey,
+    received_at: now.toISOString(),
+    payload,
+  }
+
+  // processInboundEvent records the outcome on the event and never throws;
+  // the wrapper keeps the counts and the failure for the uploader.
+  let outcome: StatementBatchOutcome | undefined
+  let failure: unknown
+  await processInboundEvent(service, event, async (db, ev, signal) => {
+    try {
+      outcome = await runStatementEvent(db, ev, signal)
+    } catch (err) {
+      failure = err
+      throw err
+    }
+  })
+  if (outcome) return { status: "imported", inboundEventId: event.id, ...outcome }
+  return {
+    status: "pending",
+    inboundEventId: event.id,
+    code: failure === undefined ? "processing_timeout" : failureCode(failure),
+    ...(failure instanceof StatementImportError && failure.row !== undefined ? { row: failure.row } : {}),
+  }
+}

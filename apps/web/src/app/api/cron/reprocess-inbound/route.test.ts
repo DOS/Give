@@ -61,17 +61,20 @@ describe("GET /api/cron/reprocess-inbound", () => {
     expect(state.calls).toHaveLength(0)
   })
 
-  it("with no channel processor yet, only counts pending events and writes nothing", async () => {
-    state.handler = () => ({ count: 4 })
+  it("runs the statement_import processor and counts other channels' events as waiting", async () => {
+    // Four pending events of channels without a processor; none of statement_import.
+    state.handler = (call) => (op(call, "select")?.[1] ? { count: 4 } : { data: [] })
     for (let run = 0; run < 2; run += 1) {
       const response = await GET(request(`Bearer ${SECRET}`))
       expect(response.status).toBe(200)
       expect(await response.json()).toEqual({ processed: 0, failed: 0, waiting: 4 })
     }
-    expect(state.calls.map((c) => c.target)).toEqual(["inbound_events", "inbound_events"])
+    expect(state.calls.every((c) => c.target === "inbound_events")).toBe(true)
     expect(op(state.calls[0], "select")).toEqual(["id", { count: "exact", head: true }])
     expect(op(state.calls[0], "is")).toEqual(["processed_at", null])
     expect(op(state.calls[0], "eq")).toEqual(["signature_valid", true])
+    expect(op(state.calls[0], "not")).toEqual(["channel", "in", "(statement_import)"])
+    expect(op(state.calls[1], "in")).toEqual(["channel", ["statement_import"]])
   })
 
   it("answers 500 without details when the events cannot be read", async () => {
