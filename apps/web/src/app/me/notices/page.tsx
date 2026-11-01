@@ -4,7 +4,7 @@ import Link from "next/link"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { requireSession } from "@/lib/auth/session"
 import { formatDateTime } from "@/lib/format"
-import { describeNotice, listNotices } from "@/lib/notices"
+import { countUnreadNotices, describeNotice, listNotices, NOTICE_PAGE_SIZE } from "@/lib/notices"
 import { dbAs } from "@/lib/supabase"
 
 import { markAllNoticesRead, markNoticeRead } from "./actions"
@@ -14,21 +14,29 @@ export const metadata: Metadata = { title: "Thông báo", robots: { index: false
 /** The signed-in user's notices, read with their own token under RLS. */
 export default async function MyNoticesPage() {
   const session = await requireSession("/me/notices")
-  const notices = await listNotices(dbAs(session.accessToken), session.user.id)
-  const unread = notices.filter((n) => !n.read_at).length
+  const db = dbAs(session.accessToken)
+  // The unread count covers every notice, like the header badge, not only
+  // the newest page: "mark all" must stay reachable while any is unread.
+  const [notices, unread] = await Promise.all([
+    listNotices(db, session.user.id),
+    countUnreadNotices(db, session.user.id),
+  ])
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-3xl font-bold">Thông báo</h1>
-        {unread > 0 && (
+        {unread > 0 && notices.length > 0 && (
           <ActionForm action={markAllNoticesRead}>
+            {/* Only what this page showed: a notice that arrives later stays unread. */}
+            <input type="hidden" name="before" value={notices[0].created_at} />
             <SubmitButton className="btn-secondary">Đánh dấu tất cả đã đọc</SubmitButton>
           </ActionForm>
         )}
       </div>
       <p className="mt-2 text-sm text-gray-600">
         {unread > 0 ? `Bạn có ${unread} thông báo chưa đọc.` : "Bạn đã đọc hết thông báo."}
+        {notices.length >= NOTICE_PAGE_SIZE && ` Trang này hiện ${NOTICE_PAGE_SIZE} thông báo mới nhất.`}
       </p>
 
       {notices.length === 0 ? (

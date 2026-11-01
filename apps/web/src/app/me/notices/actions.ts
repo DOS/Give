@@ -31,15 +31,26 @@ export async function markNoticeRead(noticeId: string, _state: ActionResult, _fo
   return done("Đã đánh dấu là đã đọc.")
 }
 
-export async function markAllNoticesRead(_state: ActionResult, _form: FormData): Promise<ActionResult> {
+/**
+ * Marks every unread notice created up to `before`, the newest notice the page
+ * showed, so one that arrived after the page loaded stays unread. The value is
+ * passed back to the database as is: parsing it into a Date would drop the
+ * microseconds and leave that newest notice unread.
+ */
+export async function markAllNoticesRead(_state: ActionResult, form: FormData): Promise<ActionResult> {
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
+  const before = form.get("before")
+  if (typeof before !== "string" || before.length > 40 || Number.isNaN(Date.parse(before))) {
+    return fail("Hãy tải lại trang rồi thử lại.")
+  }
 
   const { error } = await dbAs(session.accessToken)
     .from("notices")
     .update({ read_at: new Date().toISOString() })
     .eq("user_id", session.user.id)
     .is("read_at", null)
+    .lte("created_at", before)
   if (error) return fail(dbErrorMessage(error))
   revalidatePath("/", "layout")
   return done("Đã đánh dấu tất cả là đã đọc.")

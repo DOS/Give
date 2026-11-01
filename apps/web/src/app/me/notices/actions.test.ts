@@ -73,19 +73,38 @@ describe("markNoticeRead", () => {
 })
 
 describe("markAllNoticesRead", () => {
-  it("marks every unread notice of the signed-in user and nothing else", async () => {
-    const result = await markAllNoticesRead(null, form())
+  // PostgREST returns microseconds; the cutoff must reach the database unchanged.
+  const NEWEST_SHOWN = "2026-11-02T02:00:00.123456+00:00"
+
+  function allForm(before: string | null = NEWEST_SHOWN) {
+    const f = form()
+    if (before !== null) f.set("before", before)
+    return f
+  }
+
+  it("marks the user's unread notices up to the newest one the page showed, and nothing else", async () => {
+    const result = await markAllNoticesRead(null, allForm())
     expect(result).toEqual({ ok: true, message: "Đã đánh dấu tất cả là đã đọc." })
     const [call] = state.calls
     expect(call.target).toBe("notices")
     expect(call.ops.filter(([name]) => name === "eq")).toEqual([["eq", "user_id", USER]])
     expect(op(call, "is")).toEqual(["read_at", null])
+    expect(op(call, "lte")).toEqual(["created_at", NEWEST_SHOWN])
     expect(state.serviceUsed).toBe(false)
+  })
+
+  it.each([
+    ["no cutoff", null],
+    ["a cutoff that is not a time", "yesterday-ish"],
+    ["an oversized cutoff", `${NEWEST_SHOWN}${"0".repeat(40)}`],
+  ])("refuses %s without a query", async (_name, before) => {
+    expect((await markAllNoticesRead(null, allForm(before)))?.ok).toBe(false)
+    expect(state.calls).toHaveLength(0)
   })
 
   it("asks a signed-out visitor to sign in again", async () => {
     state.session = null
-    expect((await markAllNoticesRead(null, form()))?.ok).toBe(false)
+    expect((await markAllNoticesRead(null, allForm()))?.ok).toBe(false)
     expect(state.calls).toHaveLength(0)
   })
 })
