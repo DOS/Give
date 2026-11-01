@@ -2,6 +2,7 @@ import Link from "next/link"
 
 import { CampaignCard } from "@/components/CampaignCard"
 import { categoriesFor, discoveryHref, listCategories, listPublicCampaigns } from "@/lib/campaigns"
+import { listMoneyTotals, raisedAmount } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
 const LOGIN_ERRORS: Record<string, string> = {
@@ -17,6 +18,10 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const db = dbAs()
   const categories = await listCategories(db)
   const campaigns = await listPublicCampaigns(db, { type: null, category: null, q: null }, categories, 6)
+  const totals = await listMoneyTotals(
+    db,
+    campaigns.map((c) => c.id)
+  )
 
   return (
     <>
@@ -56,7 +61,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         {campaigns.length > 0 ? (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {campaigns.map((campaign) => (
-              <CampaignCard key={campaign.id} campaign={campaign} />
+              <CampaignCard
+                key={campaign.id}
+                campaign={campaign}
+                raised={raisedAmount(totals.get(campaign.id), campaign.type)}
+              />
             ))}
           </div>
         ) : (

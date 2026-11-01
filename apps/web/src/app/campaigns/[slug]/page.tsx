@@ -6,6 +6,7 @@ import { cache } from "react"
 
 import { StatusBadge, TypeBadge, VerificationBadge } from "@/components/badges"
 import { Markdown } from "@/components/Markdown"
+import { MoneyTotals } from "@/components/MoneyTotals"
 import { ProgressBar } from "@/components/ProgressBar"
 import { getSession } from "@/lib/auth/session"
 import {
@@ -20,6 +21,7 @@ import {
 import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
 import { SLUG_PATTERN } from "@/lib/slug"
 import { privateCoverUrl, publicCoverUrl } from "@/lib/cover-urls"
+import { getMoneyTotals, raisedAmount, statementHref } from "@/lib/statement"
 import { dbAs, dbService } from "@/lib/supabase"
 import { acceptsDonations, paymentAccount } from "@/server/contributions"
 
@@ -65,12 +67,14 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
 
   const isGive = campaign.type === "give"
   const donationsOpen = !preview && acceptsDonations(campaign)
-  const [milestones, updates, organizer, account, session] = await Promise.all([
+  const [milestones, updates, organizer, account, session, totals] = await Promise.all([
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
     preview ? Promise.resolve(null) : getPublicOrganizer(db, campaign.id),
     donationsOpen ? paymentAccount(dbService(), campaign.id).catch(() => null) : Promise.resolve(null),
     getSession(),
+    // Public views only: a preview has no public totals yet.
+    preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
   ])
   const canDonate = donationsOpen && account !== null
   const closedNote =
@@ -80,7 +84,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
         ? "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau."
         : "Chiến dịch không còn nhận ủng hộ."
 
-  const raised = 0
+  const raised = raisedAmount(totals, campaign.type)
   const percent = progressPercent(raised, campaign.goal_amount)
   const days = daysLeft(campaign.ends_at)
   const options = campaign.display_options
@@ -194,6 +198,12 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                   <dd className="font-semibold">{days > 0 ? `${days} ngày` : "Đã hết hạn"}</dd>
                 </div>
               )}
+              {options.backers_count !== false && totals && (
+                <div>
+                  <dt className="text-gray-500">{isGive ? "Người ủng hộ" : "Người đồng hành"}</dt>
+                  <dd className="font-semibold">{totals.supporters_count}</dd>
+                </div>
+              )}
               <div>
                 <dt className="text-gray-500">Góp tối thiểu</dt>
                 <dd className="font-semibold">{formatVnd(campaign.min_contribution)}</dd>
@@ -226,6 +236,8 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               </p>
             )}
           </div>
+
+          {totals && <MoneyTotals totals={totals} statementHref={statementHref(campaign.slug, "all")} />}
 
           {(organizer || (isGive && campaign.beneficiary_name)) && (
             <div className="space-y-3 card p-6 text-sm">
