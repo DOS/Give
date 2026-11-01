@@ -2,7 +2,7 @@ import "server-only"
 
 import { decodeJwt } from "jose"
 
-import { errorCode, loadOidcConfig, refreshTokens, TokenRequestError } from "./oidc"
+import { errorCode, isDeadRefreshToken, loadOidcConfig, refreshTokens, TokenRequestError } from "./oidc"
 import { needsRefresh } from "./token"
 
 /**
@@ -23,16 +23,6 @@ const TIMEOUT_MS = 5000
 // Refresh only a token that would expire before /logout verifies it.
 const EXPIRY_SKEW_SECONDS = 5
 const NIL_UUID = "00000000-0000-0000-0000-000000000000"
-// Supabase error codes for a refresh token that can no longer be used, so
-// there is nothing left to revoke. Anything else (bad client credentials, a
-// misconfigured grant) is a failure worth logging.
-const DEAD_REFRESH_CODES = new Set([
-  "refresh_token_not_found",
-  "refresh_token_already_used",
-  "session_not_found",
-  "session_expired",
-  "user_banned",
-])
 
 export async function endIssuerSession(
   origin: string,
@@ -56,7 +46,8 @@ export async function endIssuerSession(
     try {
       access = (await refreshTokens(cfg, tokens.refresh, signal)).access_token
     } catch (error) {
-      if (error instanceof TokenRequestError && error.code && DEAD_REFRESH_CODES.has(error.code)) return "skipped"
+      // A dead refresh token means there is nothing left to revoke.
+      if (isDeadRefreshToken(error)) return "skipped"
       const reason =
         error instanceof TokenRequestError ? `refresh_${error.status}_${error.code ?? "unknown"}` : "refresh"
       return fail(reason, error)

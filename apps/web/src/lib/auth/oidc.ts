@@ -27,9 +27,17 @@ export interface TokenResponse {
   token_type: string
 }
 
+/** A required OIDC environment variable is unset. Only its name is kept, so it is safe to log. */
+export class OidcConfigError extends Error {
+  constructor(readonly variable: string) {
+    super(`OIDC config error: ${variable} is not set`)
+    this.name = "OidcConfigError"
+  }
+}
+
 function requireEnv(name: string): string {
   const value = process.env[name]
-  if (!value) throw new Error(`OIDC config error: ${name} is not set`)
+  if (!value) throw new OidcConfigError(name)
   return value
 }
 
@@ -73,7 +81,53 @@ export class TokenRequestError extends Error {
   }
 }
 
-async function tokenRequest(cfg: OidcConfig, body: URLSearchParams, signal?: AbortSignal): Promise<TokenResponse> {
+// Error codes for a refresh token that can never be used again. The Supabase
+// OAuth server answers a dead refresh token with its own codes, not OAuth's
+// `invalid_grant` (`internal/tokens/service.go`, RefreshTokenGrant); both
+// count. Anything else, such as `invalid_client` from a wrong or rotated
+// client secret, is a fault on our side, not a session that ended.
+const DEAD_REFRESH_CODES = new Set([
+  "invalid_grant",
+  "refresh_token_not_found",
+  "refresh_token_already_used",
+  "session_not_found",
+  "session_expired",
+  "user_banned",
+])
+
+/** True when the issuer rejected the refresh token itself, so the session is over. */
+export function isDeadRefreshToken(error: unknown): boolean {
+  return (
+    error instanceof TokenRequestError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.code !== undefined &&
+    DEAD_REFRESH_CODES.has(error.code)
+  )
+}
+
+/**
+ * The fields of a failed token request that are safe to log: the HTTP
+ * status, the sanitized error code, a missing variable's name and the
+ * error's name. Never the message, which could echo a token.
+ */
+export function tokenFailureLog(error: unknown) {
+  return {
+    status: error instanceof TokenRequestError ? error.status : undefined,
+    code: error instanceof TokenRequestError ? error.code : undefined,
+    ...(error instanceof OidcConfigError ? { variable: error.variable } : {}),
+    error: error instanceof Error ? error.name : undefined,
+  }
+}
+
+/** Deadline for a token request when the caller gives none, so a slow issuer cannot stall a request. */
+export const TOKEN_TIMEOUT_MS = 5000
+
+async function tokenRequest(
+  cfg: OidcConfig,
+  body: URLSearchParams,
+  signal: AbortSignal = AbortSignal.timeout(TOKEN_TIMEOUT_MS)
+): Promise<TokenResponse> {
   const basic = Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString("base64")
   const res = await fetch(`${cfg.issuer}/oauth/token`, {
     method: "POST",
