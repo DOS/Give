@@ -93,11 +93,18 @@ async function tokenRequest(cfg: OidcConfig, body: URLSearchParams, signal?: Abo
   return (await res.json()) as TokenResponse
 }
 
+/**
+ * The error code of a failed response: Supabase's `x-sb-error-code` header
+ * (sent by every API version), else `error_code` or OAuth's `error` in the
+ * body. Only plain snake_case codes are returned, so they are safe to log.
+ */
 export async function errorCode(res: Response): Promise<string | undefined> {
+  const safe = (code: unknown) => (typeof code === "string" && /^[a-z_]{1,64}$/.test(code) ? code : undefined)
+  const header = safe(res.headers.get("x-sb-error-code"))
+  if (header) return header
   try {
     const body = (await res.json()) as { error_code?: unknown; error?: unknown }
-    const code = body.error_code ?? body.error
-    return typeof code === "string" ? code : undefined
+    return safe(body.error_code ?? body.error)
   } catch {
     return undefined
   }

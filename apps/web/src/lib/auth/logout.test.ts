@@ -91,6 +91,25 @@ describe("endIssuerSession", () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
+  it("reads the dead-token code from Supabase's error header too", async () => {
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ code: "session_expired" }, { status: 400, headers: { "x-sb-error-code": "session_expired" } })
+    )
+
+    await expect(endIssuerSession("https://give.example", { refresh: "rt-dead" })).resolves.toBe("skipped")
+  })
+
+  it("never logs an error code that is not plain snake_case", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ error: "rt-1 is invalid" }, { status: 400 }))
+
+    await expect(endIssuerSession("https://give.example", { refresh: "rt-1" })).resolves.toBe("failed")
+    expect(warn).toHaveBeenCalledWith("auth.logout.revoke_failed", {
+      reason: "refresh_400_unknown",
+      error: "TokenRequestError",
+    })
+    expect(loggedText()).not.toContain("rt-1")
+  })
+
   it("logs a refresh rejected for another reason, such as bad client credentials", async () => {
     fetchMock.mockResolvedValueOnce(Response.json({ error: "invalid_client" }, { status: 400 }))
 
