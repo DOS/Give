@@ -155,19 +155,36 @@ describe("public statement", () => {
   })
 
   it("labels the counterparty without guessing why a name is missing", () => {
-    expect(counterpartyLabel({ direction: "in", matched: true, counterparty_name: "Lan", recipient: null })).toBe("Lan")
-    expect(counterpartyLabel({ direction: "in", matched: true, counterparty_name: null, recipient: null })).toBe(
-      "Người ủng hộ (không hiện tên)"
-    )
-    expect(counterpartyLabel({ direction: "in", matched: false, counterparty_name: null, recipient: null })).toBe(
-      "Chưa khớp với lượt ủng hộ nào"
-    )
     expect(
-      counterpartyLabel({ direction: "out", matched: false, counterparty_name: null, recipient: "Nhà sách B" })
+      counterpartyLabel({ direction: "in", matched: true, counterparty_name: "Lan", recipient: null, explained: null })
+    ).toBe("Lan")
+    expect(
+      counterpartyLabel({ direction: "in", matched: true, counterparty_name: null, recipient: null, explained: null })
+    ).toBe("Người ủng hộ (không hiện tên)")
+    expect(
+      counterpartyLabel({ direction: "in", matched: false, counterparty_name: null, recipient: null, explained: null })
+    ).toBe("Chưa khớp với lượt ủng hộ nào")
+    expect(
+      counterpartyLabel({
+        direction: "out",
+        matched: false,
+        counterparty_name: null,
+        recipient: "Nhà sách B",
+        explained: true,
+      })
     ).toBe("Nhà sách B")
-    expect(counterpartyLabel({ direction: "out", matched: false, counterparty_name: null, recipient: null })).toBe(
-      "Không công khai"
-    )
+    expect(
+      counterpartyLabel({ direction: "out", matched: false, counterparty_name: null, recipient: null, explained: true })
+    ).toBe("Không công khai")
+    expect(
+      counterpartyLabel({
+        direction: "out",
+        matched: false,
+        counterparty_name: null,
+        recipient: null,
+        explained: false,
+      })
+    ).toBe("Chưa rõ người nhận")
   })
 })
 

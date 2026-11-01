@@ -194,9 +194,12 @@ export async function listStatement(
  * never reveals why it is missing.
  */
 export function counterpartyLabel(
-  row: Pick<StatementRow, "direction" | "matched" | "counterparty_name" | "recipient">
+  row: Pick<StatementRow, "direction" | "matched" | "counterparty_name" | "recipient" | "explained">
 ): string {
-  if (row.direction === "out") return row.recipient ?? row.counterparty_name ?? "Không công khai"
+  if (row.direction === "out") {
+    if (!row.explained) return "Chưa rõ người nhận"
+    return row.recipient ?? row.counterparty_name ?? "Không công khai"
+  }
   if (row.counterparty_name) return row.counterparty_name
   return row.matched ? "Người ủng hộ (không hiện tên)" : "Chưa khớp với lượt ủng hộ nào"
 }
