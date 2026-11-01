@@ -29,7 +29,8 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ACCOUNT_NAME_MISMATCH:
     "Tên chủ tài khoản phải trùng với tên pháp lý trong hồ sơ người tổ chức (không phân biệt dấu và hoa thường).",
   GIVE_ACCOUNT_ALREADY_REGISTERED: "Tài khoản ngân hàng này đã được khai báo trên Give.",
-  GIVE_CODE_GENERATION_FAILED: "Chưa tạo được mã xác minh. Hãy thử lại.",
+  // Raised for both account verification codes and donation reference codes.
+  GIVE_CODE_GENERATION_FAILED: "Chưa tạo được mã. Hãy thử lại.",
   GIVE_ACCOUNT_NOT_FOUND: "Không tìm thấy tài khoản nhận, hoặc bạn không có quyền với tài khoản này.",
   GIVE_SELF_REVIEW: "Không thể tự xác minh tài khoản nhận của chính mình.",
   GIVE_ORGANIZER_NOT_VERIFIED: "Người tổ chức chưa được xác minh danh tính, nên chưa thể xác minh tài khoản nhận.",
@@ -42,6 +43,11 @@ const GIVE_MESSAGES: Record<string, string> = {
     "Tài khoản nhận chưa được xác minh, hoặc hồ sơ người tổ chức chưa được xác minh hay đã đổi tên pháp lý.",
   GIVE_ACCOUNT_ALREADY_BOUND:
     "Tài khoản này đang gắn với một chiến dịch khác. Tài khoản chỉ được nhả khi chiến dịch đó đã xong hẳn phần tiền.",
+  // Donations.
+  GIVE_CAMPAIGN_NOT_ACCEPTING: "Chiến dịch này hiện không nhận ủng hộ.",
+  GIVE_AMOUNT_BELOW_MINIMUM: "Số tiền thấp hơn mức ủng hộ tối thiểu của chiến dịch.",
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau.",
+  GIVE_CONTRIBUTION_TYPE_MISMATCH: "Chiến dịch này không nhận ủng hộ trực tiếp.",
 }
 
 const PG_MESSAGES: Record<string, string> = {

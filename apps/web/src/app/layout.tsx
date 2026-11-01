@@ -38,6 +38,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                   <Link href="/me/campaigns" className="text-sm font-medium text-gray-700 hover:text-gray-900">
                     Chiến dịch của tôi
                   </Link>
+                  <Link href="/me/contributions" className="text-sm font-medium text-gray-700 hover:text-gray-900">
+                    Ủng hộ của tôi
+                  </Link>
                   <Link href="/me/accounts" className="text-sm font-medium text-gray-700 hover:text-gray-900">
                     Tài khoản nhận
                   </Link>
