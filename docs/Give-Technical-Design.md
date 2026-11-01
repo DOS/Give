@@ -419,6 +419,7 @@ interface NormalizedTx {
   asset: string // 'VND' | 'USDT' …
   amount: bigint
   bookedAt: Date
+  bookedDateOnly: boolean // sao kê chỉ có ngày, không có giờ (#10)
   description: string
   counterpartyName?: string
   counterpartyAccountMasked?: string
@@ -457,8 +458,8 @@ interface PaymentChannel {
     account: ReceivingAccount,
     since: Date
   ): Promise<NormalizedTx[]>
-  /** Import file sao kê (xlsx/csv) */
-  parseStatement?(file: ArrayBuffer, bankBin: string): Promise<NormalizedTx[]>
+  // File sao kê không đi qua interface này: nó còn mang kỳ sao kê, số dư và cờ định dạng,
+  // nên đi qua `src/server/statement-parsers/` và pipeline `statement_import` (#16).
 }
 ```
 

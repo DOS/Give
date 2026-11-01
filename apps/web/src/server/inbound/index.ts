@@ -41,13 +41,6 @@ export type InboundProcessor = (db: Db, event: InboundEvent, signal: AbortSignal
 export type InboundProcessors = Partial<Record<InboundChannel, InboundProcessor>>
 
 /**
- * The processor of each channel. Empty until the first channel lands (the
- * statement-import pipeline, then PayOS in M2); events of a channel without
- * one stay pending and are counted as waiting.
- */
-export const inboundProcessors: InboundProcessors = {}
-
-/**
  * A failure a processor reports with a stable code. Only codes are stored on
  * the event and logged: messages from SDKs or built from a payload can carry
  * tokens or unmasked account numbers.
@@ -140,7 +133,8 @@ export interface ReprocessResult {
 }
 
 export interface ReprocessOptions {
-  processors?: InboundProcessors
+  /** The channels' processors: inboundProcessors from ./processors. */
+  processors: InboundProcessors
   now?: () => number
   random?: () => number
 }
@@ -157,7 +151,7 @@ type EventHead = Pick<InboundEvent, "id" | "channel" | "received_at">
  */
 export async function reprocessPendingInboundEvents(
   db: Db,
-  { processors = inboundProcessors, now = Date.now, random = Math.random }: ReprocessOptions = {}
+  { processors, now = Date.now, random = Math.random }: ReprocessOptions
 ): Promise<ReprocessResult> {
   const started = now()
   const cutoff = new Date(started - REPROCESS_GRACE_MS).toISOString()

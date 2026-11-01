@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server"
 import { isAuthorizedCron } from "@/lib/cron"
 import { dbService } from "@/lib/supabase"
 import { reprocessPendingInboundEvents } from "@/server/inbound"
+import { inboundProcessors } from "@/server/inbound/processors"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -18,7 +19,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
   try {
-    const result = await reprocessPendingInboundEvents(dbService())
+    const result = await reprocessPendingInboundEvents(dbService(), { processors: inboundProcessors })
     if (result.waiting > 0) console.warn("inbound events waiting for a channel processor", result.waiting)
     return NextResponse.json(result)
   } catch (err) {

@@ -37,6 +37,7 @@ export function fakeDb(handler: Handler, log: Call[] = []) {
       "order",
       "limit",
       "range",
+      "abortSignal",
     ]) {
       builder[op] = (...args: unknown[]) => {
         call.ops.push([op, ...args])
