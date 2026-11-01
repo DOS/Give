@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 
 import { getSession, type Session } from "@/lib/auth/session"
+import { checkSubmitAccount } from "@/lib/campaign-account"
 import { canPostUpdate, isEditableStatus, type CampaignStatus, type CampaignType } from "@/lib/campaigns"
 import { dbErrorMessage, done, fail, SUBMIT_MESSAGES, type ActionResult } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
@@ -248,6 +249,17 @@ export async function submitForReview(
   if (!session) return fail(SIGNED_OUT)
   const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
+  // A charity campaign needs a usable bound account before review (DOS/Give#32);
+  // give.transition_campaign re-checks it under its locks (DOS/Give#38).
+  if (campaign.type === "give") {
+    let problem
+    try {
+      problem = await checkSubmitAccount(dbAs(session.accessToken), campaign.id, session.user.id)
+    } catch (error) {
+      return fail(dbErrorMessage(error as { message?: string; code?: string }))
+    }
+    if (problem) return fail(problem)
+  }
   const failed = await transition(session, campaign, "in_review")
   if (failed) return failed
   refresh(campaign)

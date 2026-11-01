@@ -3,11 +3,15 @@ import Image from "next/image"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
-import { StatusBadge, TypeBadge } from "@/components/badges"
+import { AccountStatusBadge, StatusBadge, TypeBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { requireSession } from "@/lib/auth/session"
+import { bankLabel } from "@/lib/banks"
+import { canPickAccount, loadEditorAccounts, type EditorAccounts } from "@/lib/campaign-account"
 import {
   canPostUpdate,
+  type CampaignStatus,
+  type CampaignType,
   categoriesFor,
   getCampaignById,
   isEditableStatus,
@@ -20,8 +24,11 @@ import {
 import { formatDate, formatVnd, toVietnamLocalInput } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { privateCoverUrl } from "@/lib/cover-urls"
+import { canAskRelease } from "@/lib/receiving-accounts"
 import { getMoneyTotals } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
+
+import { bindAccount, releaseAccount } from "../../accounts/actions"
 
 import {
   addMilestone,
@@ -44,14 +51,16 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   const campaign = await getCampaignById(db, id)
   if (!campaign || campaign.organizer_id !== session.user.id) notFound()
 
-  const [categories, milestones, updates, totals] = await Promise.all([
+  const isGive = campaign.type === "give"
+  const [categories, milestones, updates, totals, accounts] = await Promise.all([
     listCategories(db),
     listMilestones(db, campaign.id),
     listAllUpdates(db, campaign.id),
     isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
+    isGive ? loadEditorAccounts(db, session.user.id, campaign.id) : Promise.resolve(null),
   ])
   const editable = isEditableStatus(campaign.status)
-  const isGive = campaign.type === "give"
+  const submitBlocked = accounts?.submitBlocked ?? null
   const showUpdates = canPostUpdate(campaign.status) && !editable && campaign.status !== "in_review"
 
   return (
@@ -442,6 +451,15 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
         </section>
       )}
 
+      {accounts && (
+        <ReceivingAccountSection
+          campaignId={campaign.id}
+          status={campaign.status}
+          type={campaign.type}
+          accounts={accounts}
+        />
+      )}
+
       <section className="space-y-4 card p-6">
         <h2 className="text-lg font-semibold">Trạng thái</h2>
         {editable && (
@@ -451,16 +469,22 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               câu chuyện ít nhất 100 ký tự, ngày kết thúc
               {isGive ? " và người thụ hưởng" : ""}.
             </p>
-            {isGive && (
-              <p className="mb-3 text-sm text-gray-600">
-                Chiến dịch từ thiện còn cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch (
-                <Link href="/me/accounts" className="underline">
+            {submitBlocked && (
+              <p role="alert" className="mb-3 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                Chưa gửi duyệt được: chiến dịch từ thiện cần gắn một tài khoản nhận tiền đã xác minh, đứng tên bạn,{" "}
+                {accounts?.bound ? "và tài khoản đang gắn phải còn dùng được" : "và chiến dịch này chưa gắn tài khoản"}.
+                Chọn tài khoản trong mục{" "}
+                <a href="#receiving-account" className="underline">
+                  Tài khoản nhận tiền
+                </a>{" "}
+                ở trên, hoặc khai báo và xác minh tài khoản tại trang{" "}
+                <Link href="/me/accounts" className="font-medium underline">
                   Tài khoản nhận tiền
                 </Link>
-                ).
+                .
               </p>
             )}
-            <SubmitButton>Gửi duyệt</SubmitButton>
+            <SubmitButton disabled={Boolean(submitBlocked)}>Gửi duyệt</SubmitButton>
           </ActionForm>
         )}
         {organizerCanCancel(campaign.status) && (
@@ -492,6 +516,106 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
         )}
       </section>
     </div>
+  )
+}
+
+const BIND_CONFIRM =
+  "Gắn tài khoản này với chiến dịch? Sau khi gửi duyệt, tài khoản chỉ được nhả khi chiến dịch đã xong hẳn phần tiền, hoặc khi chiến dịch từ thiện được yêu cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào."
+
+/** The give campaign's receiving account: the bound one with a release, or a picker (DOS/Give#32). */
+function ReceivingAccountSection({
+  campaignId,
+  status,
+  type,
+  accounts,
+}: {
+  campaignId: string
+  status: CampaignStatus
+  type: CampaignType
+  accounts: EditorAccounts
+}) {
+  const { bound, boundUnusable, choices } = accounts
+  return (
+    <section id="receiving-account" className="space-y-4 card p-6">
+      <div>
+        <h2 className="text-lg font-semibold">Tài khoản nhận tiền</h2>
+        <p className="text-sm text-gray-600">
+          Người ủng hộ chuyển khoản thẳng vào tài khoản này qua mã VietQR. Chiến dịch từ thiện cần gắn một tài khoản đã
+          xác minh, đứng tên bạn, trước khi gửi duyệt. Khai báo và xác minh tài khoản tại trang{" "}
+          <Link href="/me/accounts" className="font-medium text-brand-600">
+            Tài khoản nhận tiền
+          </Link>
+          .
+        </p>
+      </div>
+
+      {bound ? (
+        <div className="space-y-3 rounded-md border border-gray-200 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3 text-sm">
+            <div>
+              {/* The owner's own page: the full number (RLS keeps other users out). */}
+              <p className="font-semibold">
+                {bankLabel(bound.bank_bin)} · {bound.account_number}
+              </p>
+              <p className="text-gray-600">{bound.account_name}</p>
+            </div>
+            <AccountStatusBadge status={bound.verification_status} />
+          </div>
+          {boundUnusable && (
+            <p className="text-sm text-amber-800">
+              Tài khoản đang gắn tạm không dùng được: {boundUnusable} Chiến dịch không nhận được tiền qua tài khoản này.
+            </p>
+          )}
+          {canAskRelease(status, type) ? (
+            <ActionForm
+              action={releaseAccount.bind(null, bound.id)}
+              confirm="Nhả tài khoản này khỏi chiến dịch? Chiến dịch sẽ không có tài khoản nhận cho đến khi bạn gắn tài khoản khác."
+            >
+              <SubmitButton className="btn-secondary">Nhả tài khoản</SubmitButton>
+            </ActionForm>
+          ) : (
+            <p className="text-sm text-gray-600">
+              Sau khi gửi duyệt, tài khoản chỉ được nhả khi chiến dịch đã xong hẳn phần tiền.
+            </p>
+          )}
+        </div>
+      ) : !canPickAccount(status, bound) ? (
+        <p className="text-sm text-gray-600">Chiến dịch chưa gắn tài khoản nhận tiền.</p>
+      ) : choices.length === 0 ? (
+        <p className="text-sm text-gray-600">
+          Bạn chưa có tài khoản nhận tiền nào.{" "}
+          <Link href="/me/accounts" className="font-medium text-brand-600">
+            Khai báo tài khoản
+          </Link>{" "}
+          rồi chuyển khoản xác minh; khi tài khoản đã được xác minh, quay lại đây để gắn.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {choices.map(({ account, blockedReason }) => (
+            <li
+              key={account.id}
+              className="flex flex-wrap items-start justify-between gap-3 rounded-md border border-gray-200 p-4 text-sm"
+            >
+              <div className="min-w-0">
+                <p className="font-semibold">
+                  {bankLabel(account.bank_bin)} · {account.account_number}
+                </p>
+                <p className="text-gray-600">{account.account_name}</p>
+                {blockedReason && <p className="mt-1 text-amber-800">{blockedReason}</p>}
+              </div>
+              {blockedReason ? (
+                <AccountStatusBadge status={account.verification_status} />
+              ) : (
+                <ActionForm action={bindAccount.bind(null, account.id)} confirm={BIND_CONFIRM}>
+                  <input type="hidden" name="campaign_id" value={campaignId} />
+                  <SubmitButton className="btn-secondary">Gắn vào chiến dịch</SubmitButton>
+                </ActionForm>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }
 

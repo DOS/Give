@@ -1,6 +1,7 @@
 import sharp from "sharp"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { SUBMIT_NO_ACCOUNT, submitUnusableAccount } from "@/lib/campaign-account"
 import { SUBMIT_MESSAGES } from "@/lib/errors"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
@@ -146,13 +147,96 @@ describe("saveContent", () => {
 })
 
 describe("submitForReview", () => {
-  it("explains that a give campaign needs a bound verified account (DOS/Give#38)", async () => {
+  const ACCOUNT = "55555555-5555-4555-8555-555555555555"
+  const organizer = { user_id: USER, legal_name: "Nguyễn Thị Đào", verification_status: "verified" }
+  const account = (overrides: Record<string, unknown> = {}) => ({
+    id: ACCOUNT,
+    owner_user_id: USER,
+    account_name: "NGUYEN THI DAO",
+    verification_status: "verified",
+    bindings: [{ id: "b", campaign_id: CAMPAIGN, bound_at: "2026-11-01T00:00:00Z", released_at: null }],
+    ...overrides,
+  })
+
+  /** User-token reads: the campaign, its active binding, the bound account and the organizer. */
+  function reads(
+    { bindings = [{ id: "b", receiving_account_id: ACCOUNT }], acct = account(), campaign = owned() } = {} as {
+      bindings?: unknown[]
+      acct?: unknown
+      campaign?: unknown
+    },
+    transition: Handler = () => undefined
+  ): Handler {
+    return (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaign }
+      if (call.target === "account_bindings") return { data: bindings }
+      if (call.target === "receiving_accounts") return { data: acct }
+      if (call.target === "organizers") return { data: organizer }
+      if (call.target === "rpc:transition_campaign") return transition(call)
+      return undefined
+    }
+  }
+
+  const transitioned = () => state.userCalls.some((c) => c.target === "rpc:transition_campaign")
+
+  it("refuses a give campaign with no bound account before asking the database (DOS/Give#32)", async () => {
+    state.userHandler = reads({ bindings: [] })
+    expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({ ok: false, message: SUBMIT_NO_ACCOUNT })
+    expect(transitioned()).toBe(false)
+    const bindingRead = state.userCalls.find((c) => c.target === "account_bindings")
+    expect(op(bindingRead, "eq")).toEqual(["campaign_id", CAMPAIGN])
+    expect(op(bindingRead, "is")).toEqual(["released_at", null])
+  })
+
+  it("refuses a give campaign whose bound account is no longer verified", async () => {
+    state.userHandler = reads({ acct: account({ verification_status: "disabled" }) })
+    expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({
+      ok: false,
+      message: submitUnusableAccount("Tài khoản chưa được xác minh."),
+    })
+    expect(transitioned()).toBe(false)
+  })
+
+  it("treats a bound account the caller cannot read as missing", async () => {
+    state.userHandler = reads({ acct: null })
+    expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({ ok: false, message: SUBMIT_NO_ACCOUNT })
+    expect(transitioned()).toBe(false)
+  })
+
+  it("reports a failed account read", async () => {
+    const base = reads()
     state.userHandler = (call) =>
-      op(call, "maybeSingle")
-        ? { data: owned() }
-        : call.target === "rpc:transition_campaign"
-          ? { error: { code: "23514", message: "GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT" } }
-          : undefined
+      call.target === "account_bindings" ? { error: { code: "42501", message: "permission denied" } } : base(call)
+    const result = await submitForReview(CAMPAIGN, null, new FormData())
+    expect(result?.ok).toBe(false)
+    expect(transitioned()).toBe(false)
+  })
+
+  it("submits a give campaign with a usable bound account", async () => {
+    state.userHandler = reads()
+    expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({
+      ok: true,
+      message: "Đã gửi duyệt. Kiểm duyệt viên sẽ xem chiến dịch của bạn.",
+    })
+    expect(transitioned()).toBe(true)
+  })
+
+  it("resubmits a give campaign sent back for changes under the same check", async () => {
+    state.userHandler = reads({ bindings: [], campaign: owned({ status: "changes_requested" }) })
+    expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({ ok: false, message: SUBMIT_NO_ACCOUNT })
+    expect(transitioned()).toBe(false)
+  })
+
+  it("leaves back campaigns alone: no account reads", async () => {
+    state.userHandler = reads({ bindings: [], campaign: owned({ type: "back" }) })
+    expect((await submitForReview(CAMPAIGN, null, new FormData()))?.ok).toBe(true)
+    expect(state.userCalls.map((c) => c.target)).toEqual(["rpc:managed_campaigns", "rpc:transition_campaign"])
+  })
+
+  it("explains that a give campaign needs a bound verified account (DOS/Give#38)", async () => {
+    state.userHandler = reads({}, () => ({
+      error: { code: "23514", message: "GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT" },
+    }))
     expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({
       ok: false,
       message: SUBMIT_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT,
@@ -162,12 +246,7 @@ describe("submitForReview", () => {
   })
 
   it("keeps the other submission errors as they were", async () => {
-    state.userHandler = (call) =>
-      op(call, "maybeSingle")
-        ? { data: owned() }
-        : call.target === "rpc:transition_campaign"
-          ? { error: { code: "23514", message: "GIVE_BENEFICIARY_REQUIRED" } }
-          : undefined
+    state.userHandler = reads({}, () => ({ error: { code: "23514", message: "GIVE_BENEFICIARY_REQUIRED" } }))
     expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({
       ok: false,
       message: "Chiến dịch từ thiện cần ghi tên người thụ hưởng.",
