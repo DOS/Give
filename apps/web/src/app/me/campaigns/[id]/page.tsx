@@ -86,9 +86,14 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               <p className="text-sm text-gray-600">Các khoản tiền ra từ tài khoản nhận của chiến dịch.</p>
             )}
           </div>
-          <Link href={`/me/campaigns/${campaign.id}/disbursements`} className="btn-secondary">
-            Giải trình khoản chi
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/me/campaigns/${campaign.id}/unmatched`} className="btn-secondary">
+              Khớp tiền vào chưa có mã
+            </Link>
+            <Link href={`/me/campaigns/${campaign.id}/disbursements`} className="btn-secondary">
+              Giải trình khoản chi
+            </Link>
+          </div>
         </section>
       )}
 

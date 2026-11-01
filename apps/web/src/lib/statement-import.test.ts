@@ -1,0 +1,231 @@
+import { describe, expect, it } from "vitest"
+
+import { fakeDb, op, type Call } from "@/test/fake-db"
+
+import type { Db } from "./campaigns"
+import {
+  accountLabel,
+  ambiguousReasonLabel,
+  AMBIGUOUS_REASON_LABELS,
+  countWaitingRows,
+  importSummary,
+  listAmbiguousRows,
+  listBatchRows,
+  listDuplicateTargets,
+  listUploadAccounts,
+  rowStatusLabel,
+  uploadErrorMessage,
+} from "./statement-import"
+
+const USER = "11111111-1111-4111-8111-111111111111"
+const ACCOUNT = "33333333-3333-4333-8333-333333333333"
+
+describe("labels", () => {
+  it("words every ambiguous reason the database can give", () => {
+    // statement_import_rows_reason_values in the DOS-Me migration.
+    expect(Object.keys(AMBIGUOUS_REASON_LABELS).sort()).toEqual(
+      [
+        "provider_id_repeated",
+        "provider_id_conflict",
+        "overlap_mismatch",
+        "group_without_balance",
+        "format_without_identity",
+        "balance_break",
+        "file_mismatch",
+        "possible_recorded",
+      ].sort()
+    )
+    expect(ambiguousReasonLabel("balance_break")).toContain("Số dư chạy")
+    expect(ambiguousReasonLabel("something_new")).toBe("something_new")
+    expect(rowStatusLabel("ambiguous")).toBe("Chờ nhân viên tài chính")
+  })
+
+  it("words upload refusals, with the row when one is at fault", () => {
+    expect(uploadErrorMessage("STATEMENT_PARSER_UNKNOWN")).toBe("Định dạng sao kê này chưa được hỗ trợ.")
+    expect(uploadErrorMessage("GIVE_IMPORT_ROW_INVALID", 7)).toBe(
+      "Có một dòng giao dịch không hợp lệ (số tiền, ngày hoặc mã giao dịch) (dòng 7 của file)."
+    )
+    expect(uploadErrorMessage("GIVE_NOT_ALLOWED")).toBe("Bạn không có quyền thực hiện thao tác này.")
+    expect(uploadErrorMessage("processing_failed")).toBe("Có lỗi xảy ra. Hãy thử lại sau.")
+  })
+
+  it("sums up a batch", () => {
+    expect(importSummary({ imported: 3, duplicate: 1, ambiguous: 0, ready: 0 })).toBe(
+      "3 giao dịch được ghi, 1 dòng trùng đã bỏ qua"
+    )
+    expect(importSummary({ imported: 0, duplicate: 0, ambiguous: 2, ready: 1 })).toBe(
+      "0 giao dịch được ghi, 0 dòng trùng đã bỏ qua, 2 dòng chờ nhân viên tài chính xem, 1 dòng chưa nhập xong"
+    )
+  })
+
+  it("labels an account without its full number", () => {
+    expect(accountLabel({ bank_bin: "970436", account_number: "0011012345678", account_name: "NGUYEN THI DAO" })).toBe(
+      "Vietcombank · ****5678 · NGUYEN THI DAO"
+    )
+  })
+})
+
+describe("listUploadAccounts", () => {
+  it("lists the caller's own statement accounts", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(() => ({ data: [] }), calls) as unknown as Db
+    await listUploadAccounts(db, USER, false)
+    expect(calls[0].ops).toEqual(
+      expect.arrayContaining([
+        ["eq", "channel", "statement_import"],
+        ["neq", "verification_status", "rejected"],
+        ["eq", "owner_user_id", USER],
+      ])
+    )
+  })
+
+  it("adds every verified account for finance staff, own accounts first", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: [
+          { id: "a", owner_user_id: "other", verification_status: "verified" },
+          { id: "b", owner_user_id: USER, verification_status: "pending" },
+        ],
+      }),
+      calls
+    ) as unknown as Db
+    const accounts = await listUploadAccounts(db, USER, true)
+    expect(accounts.map((a) => a.id)).toEqual(["b", "a"])
+    expect(op(calls[0], "or")).toEqual([`owner_user_id.eq.${USER},verification_status.eq.verified`])
+  })
+})
+
+describe("countWaitingRows", () => {
+  it("counts each batch's waiting rows exactly, without listing them", async () => {
+    const calls: Call[] = []
+    const db = fakeDb((call) => ({ count: op(call, "eq")?.[1] === "b1" ? 1200 : 0 }), calls) as unknown as Db
+    const counts = await countWaitingRows(db, ["b1", "b2"])
+    expect([...counts]).toEqual([
+      ["b1", 1200],
+      ["b2", 0],
+    ])
+    expect(op(calls[0], "select")).toEqual(["id", { count: "exact", head: true }])
+    expect(calls[0].ops).toEqual(expect.arrayContaining([["eq", "status", "ambiguous"]]))
+  })
+})
+
+describe("listAmbiguousRows", () => {
+  it("lists the oldest waiting rows with their batch, and the total waiting", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({ data: [{ id: "r", amount: "50000", balance_after: "1000", batch: { id: "b" } }], count: 75 }),
+      calls
+    ) as unknown as Db
+    const { rows, total } = await listAmbiguousRows(db, 1)
+    expect(total).toBe(75)
+    expect(rows[0]).toMatchObject({ amount: 50000, balance_after: 1000, batch: { id: "b" } })
+    expect(String(op(calls[0], "select")?.[0])).toContain("batch:statement_import_batches(")
+    expect(calls[0].ops).toEqual(
+      expect.arrayContaining([
+        ["eq", "status", "ambiguous"],
+        ["limit", 1],
+      ])
+    )
+  })
+})
+
+describe("listBatchRows", () => {
+  it("reads every page of a batch in file order", async () => {
+    const calls: Call[] = []
+    let page = 0
+    const db = fakeDb(() => {
+      page += 1
+      return {
+        data: Array.from({ length: page === 1 ? 1000 : 2 }, (_, i) => ({
+          row_no: i + 1,
+          amount: "1000",
+          balance_after: null,
+        })),
+      }
+    }, calls) as unknown as Db
+    const rows = await listBatchRows(db, "batch")
+    expect(rows).toHaveLength(1002)
+    expect(rows[0]).toMatchObject({ amount: 1000, balance_after: null })
+    expect(calls.map((c) => op(c, "range"))).toEqual([
+      [0, 999],
+      [1000, 1999],
+    ])
+  })
+})
+
+describe("listDuplicateTargets", () => {
+  const ROW = { direction: "in" as const, amount: 50000, booked_at: "2026-10-15T00:00:00Z" }
+  const tx = (id: string, day: number) => ({
+    id,
+    booked_at: new Date(Date.UTC(2026, 9, day)).toISOString(),
+    amount: "50000",
+  })
+
+  /** Answers the three window queries (and the candidate lookup) the way PostgREST would over `all`. */
+  function windowDb(all: ReturnType<typeof tx>[], calls: Call[] = [], extra?: ReturnType<typeof tx>) {
+    return fakeDb((call) => {
+      if (op(call, "maybeSingle")) return { data: extra ?? null }
+      let rows = all.filter((t) =>
+        call.ops.every(([name, column, value]) => {
+          if (column !== "booked_at") return true
+          if (name === "gte") return t.booked_at >= String(value)
+          if (name === "lte") return t.booked_at <= String(value)
+          if (name === "gt") return t.booked_at > String(value)
+          return true
+        })
+      )
+      if ((op(call, "select")?.[1] as { head?: boolean } | undefined)?.head) return { count: rows.length }
+      const ascending = (op(call, "order")?.[1] as { ascending: boolean }).ascending
+      rows = [...rows].sort((a, b) => (ascending ? 1 : -1) * a.booked_at.localeCompare(b.booked_at))
+      return { data: rows.slice(0, op(call, "limit")?.[0] as number) }
+    }, calls) as unknown as Db
+  }
+
+  it("shows the transactions closest to the row on both sides, and how many there are", async () => {
+    // 60 transactions, one a day from 16 September to 14 November.
+    const all = Array.from({ length: 60 }, (_, i) => tx(`t${i}`, i - 14))
+    const targets = await listDuplicateTargets(windowDb(all), ROW, ACCOUNT)
+    expect(targets.total).toBe(60)
+    expect(targets.shown).toHaveLength(20)
+    expect(targets.shown[0]).toMatchObject({ id: "t29", amount: 50000 })
+    const days = targets.shown.map((t) => new Date(t.booked_at).getTime())
+    const distance = (ms: number) => Math.abs(ms - Date.parse(ROW.booked_at))
+    expect(Math.max(...days.map(distance))).toBeLessThanOrEqual(10 * 86_400_000)
+  })
+
+  it("always shows the transaction of the earlier row the queued row lines up with", async () => {
+    const all = Array.from({ length: 60 }, (_, i) => tx(`t${i}`, i - 14))
+    const calls: Call[] = []
+    const targets = await listDuplicateTargets(windowDb(all, calls, all[0]), ROW, ACCOUNT, "t0")
+    expect(targets.shown[0].id).toBe("t0")
+    expect(targets.shown).toHaveLength(20)
+    expect(targets.total).toBe(60)
+    expect(calls.at(-1)?.ops).toEqual(
+      expect.arrayContaining([
+        ["eq", "id", "t0"],
+        ["eq", "receiving_account_id", ACCOUNT],
+      ])
+    )
+  })
+
+  it("looks for the account's transactions of the same direction and amount around the row", async () => {
+    const calls: Call[] = []
+    await listDuplicateTargets(windowDb([], calls), ROW, ACCOUNT)
+    for (const call of calls) {
+      expect(call.ops).toEqual(
+        expect.arrayContaining([
+          ["eq", "receiving_account_id", ACCOUNT],
+          ["eq", "direction", "in"],
+          ["eq", "amount", 50000],
+        ])
+      )
+    }
+    expect(calls[2].ops).toEqual(
+      expect.arrayContaining([
+        ["gte", "booked_at", "2026-09-14T00:00:00.000Z"],
+        ["lte", "booked_at", "2026-11-15T00:00:00.000Z"],
+      ])
+    )
+  })
+})

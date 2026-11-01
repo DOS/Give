@@ -63,7 +63,12 @@ export default async function MyAccountsPage() {
   return (
     <div className="mx-auto max-w-4xl space-y-10 px-4 py-10">
       <div>
-        <h1 className="text-3xl font-bold">Tài khoản nhận tiền</h1>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h1 className="text-3xl font-bold">Tài khoản nhận tiền</h1>
+          <Link href="/me/statements" className="btn-secondary">
+            Tải sao kê
+          </Link>
+        </div>
         <p className="mt-2 text-gray-600">
           Tiền ủng hộ đi thẳng vào tài khoản ngân hàng của bạn; Give không giữ tiền. Mỗi tài khoản cần được xác minh là
           của bạn, rồi gắn với một chiến dịch.

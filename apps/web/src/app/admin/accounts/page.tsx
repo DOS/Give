@@ -46,7 +46,17 @@ export default async function AdminAccountsPage() {
         <Link href="/admin" className="text-sm text-gray-600 hover:text-gray-900">
           ← Kiểm duyệt
         </Link>
-        <h1 className="mt-2 text-3xl font-bold">Xác minh tài khoản nhận</h1>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
+          <h1 className="text-3xl font-bold">Xác minh tài khoản nhận</h1>
+          <div className="flex flex-wrap gap-2">
+            <Link href="/admin/statements" className="btn-secondary">
+              Đối soát sao kê
+            </Link>
+            <Link href="/admin/unmatched" className="btn-secondary">
+              Giao dịch chưa khớp
+            </Link>
+          </div>
+        </div>
         <p className="mt-2 text-sm text-gray-600">
           Xác minh khi đã thấy, từ một nguồn do ngân hàng phát hành (sao kê trên trang của chính ngân hàng, hoặc biên
           lai và sao kê đã đối chiếu với ngân hàng), một giao dịch chuyển đi {formatVnd(VERIFICATION_TRANSFER_AMOUNT)}{" "}
