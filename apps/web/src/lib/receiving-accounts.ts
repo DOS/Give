@@ -72,14 +72,20 @@ export const VERIFICATION_TRANSFER_AMOUNT = 10_000
 /**
  * Accounts an organizer may have waiting for verification at once, so one
  * person cannot squat many account numbers or flood the finance queue.
+ * give.register_receiving_account enforces the same cap
+ * (GIVE_TOO_MANY_PENDING_ACCOUNTS); the app checks first for a clearer message.
  */
 export const MAX_PENDING_ACCOUNTS = 3
 
 /** Staff roles that may read and review receiving accounts (RLS and give.review_receiving_account). */
 export const FINANCE_ROLES = ["finance", "admin"] as const
 
-/** Statuses give.bind_receiving_account accepts: a deletable draft never holds a binding. */
-export const BINDABLE_STATUSES: readonly CampaignStatus[] = ["in_review", "changes_requested", "approved", "live"]
+/**
+ * Statuses give.bind_receiving_account accepts. A draft may hold a binding so
+ * the editor can require an account before submission; deleting the draft
+ * deletes its binding.
+ */
+export const BINDABLE_STATUSES: readonly CampaignStatus[] = ["draft", "in_review", "changes_requested", "approved", "live"]
 
 export function isBindableStatus(status: CampaignStatus): boolean {
   return BINDABLE_STATUSES.includes(status)
@@ -174,7 +180,6 @@ export function accountUnusableReason(
 
 /** Why a campaign cannot take an account now, or null when it can. */
 export function bindRefusalReason(status: CampaignStatus, hasAccount: boolean): string | null {
-  if (status === "draft") return "bản nháp, cần gửi duyệt trước"
   if (!isBindableStatus(status)) return "trạng thái không cho gắn tài khoản"
   if (hasAccount) return "đã có tài khoản nhận"
   return null

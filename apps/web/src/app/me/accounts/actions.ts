@@ -121,10 +121,10 @@ export async function bindAccount(accountId: string, _state: ActionResult, form:
   if (holder && holder.campaign_id !== campaign.id) {
     return fail(dbErrorMessage({ message: "GIVE_ACCOUNT_ALREADY_BOUND" }))
   }
-  // The database allows several accounts on one campaign; one is enough to
-  // receive, and a second would split the statement across accounts.
+  // One account per campaign: a second would split the statement across
+  // accounts. The database refuses it too (GIVE_CAMPAIGN_ALREADY_BOUND).
   if (campaignBindings.some((b) => b.receiving_account_id !== account.id)) {
-    return fail("Chiến dịch này đã có tài khoản nhận khác.")
+    return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_ALREADY_BOUND" }))
   }
 
   const { error } = await dbService().rpc("bind_receiving_account", {

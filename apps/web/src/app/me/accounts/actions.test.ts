@@ -162,6 +162,14 @@ describe("registerAccount", () => {
     const result = await registerAccount(null, registerForm())
     expect(result).toEqual({ ok: false, message: "Tài khoản ngân hàng này đã được khai báo trên Give." })
   })
+
+  it("explains the database's pending cap when a registration raced past the app check", async () => {
+    state.userHandler = registerReads()
+    state.serviceHandler = () => ({ error: { code: "23514", message: "GIVE_TOO_MANY_PENDING_ACCOUNTS: at most 3" } })
+    const result = await registerAccount(null, registerForm())
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toContain("3 tài khoản chờ xác minh")
+  })
 })
 
 describe("bindAccount", () => {
@@ -176,12 +184,27 @@ describe("bindAccount", () => {
     expect(op(rpc, "args")).toEqual([{ p_receiving_account_id: ACCOUNT, p_campaign_id: CAMPAIGN, p_actor_id: USER }])
   })
 
-  it("explains that a draft cannot hold a binding yet", async () => {
+  it("binds an account to the organizer's draft", async () => {
     state.userHandler = bindReads({ camp: campaign({ status: "draft" }) })
+    state.serviceHandler = () => ({ data: "binding-id" })
+    const result = await bindAccount(ACCOUNT, null, bindForm())
+    expect(result?.ok).toBe(true)
+    expect(state.serviceCalls.some((c) => c.target === "rpc:bind_receiving_account")).toBe(true)
+  })
+
+  it("refuses a closed campaign before calling the database", async () => {
+    state.userHandler = bindReads({ camp: campaign({ status: "closed" }) })
     const result = await bindAccount(ACCOUNT, null, bindForm())
     expect(result?.ok).toBe(false)
-    expect(result?.message).toContain("đã gửi duyệt")
+    expect(result?.message).toContain("bản nháp")
     expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("passes the database's refusal through when the campaign took another account meanwhile", async () => {
+    state.userHandler = bindReads()
+    state.serviceHandler = () => ({ error: { code: "23505", message: "GIVE_CAMPAIGN_ALREADY_BOUND" } })
+    const result = await bindAccount(ACCOUNT, null, bindForm())
+    expect(result).toEqual({ ok: false, message: "Chiến dịch này đã có tài khoản nhận khác." })
   })
 
   it("explains when the account is still bound to another campaign", async () => {
