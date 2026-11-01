@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 const endIssuerSession = vi.hoisted(() => vi.fn())
 vi.mock("@/lib/auth/logout", () => ({ endIssuerSession }))
@@ -14,7 +14,13 @@ function logoutRequest(headers: Record<string, string> = {}) {
 }
 
 describe("POST /auth/logout", () => {
+  beforeEach(() => {
+    // CI sets a canonical site URL; these tests use the request origin.
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "")
+  })
+
   afterEach(() => {
+    vi.unstubAllEnvs()
     endIssuerSession.mockReset()
   })
 
