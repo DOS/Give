@@ -120,13 +120,19 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
                   refundCode={refundCodes.get(tx.disbursement.refund_contribution_id ?? "")}
                   hidden={hiddenEvidence}
                 />
-                {tx.disbursement.evidence.length < MAX_EVIDENCE_PER_TRANSACTION && (
+                {/* Hidden images do not count, so a redacted copy can always be uploaded. */}
+                {tx.disbursement.evidence.filter((e) => !hiddenEvidence.has(e.id)).length <
+                  MAX_EVIDENCE_PER_TRANSACTION && (
                   <ActionForm
                     action={addEvidence.bind(null, campaign.id, tx.id)}
                     className="mt-4 border-t border-gray-100 pt-4"
                     resetOnSuccess
                   >
-                    <EvidenceFields idPrefix={`add-${tx.id}`} label="Thêm chứng từ" />
+                    <EvidenceFields
+                      idPrefix={`add-${tx.id}`}
+                      label="Thêm chứng từ"
+                      refund={tx.disbursement.is_refund}
+                    />
                     <SubmitButton className="mt-3 btn-secondary">Tải chứng từ lên</SubmitButton>
                   </ActionForm>
                 )}
@@ -230,7 +236,11 @@ function ExplainForm({
   )
 }
 
-function EvidenceFields({ idPrefix, label }: { idPrefix: string; label: string }) {
+/**
+ * `refund`: true for evidence of a refund, which stays private (it would name
+ * the donor); undefined in the explain form, where the category is not chosen yet.
+ */
+function EvidenceFields({ idPrefix, label, refund }: { idPrefix: string; label: string; refund?: boolean }) {
   return (
     <div className="grid gap-4 sm:grid-cols-3">
       <div className="sm:col-span-2">
@@ -245,11 +255,18 @@ function EvidenceFields({ idPrefix, label }: { idPrefix: string; label: string }
           multiple
           className="field"
         />
-        <p className="mt-1 rounded bg-amber-50 p-2 text-sm text-amber-900" role="note">
-          Ảnh chứng từ được công khai cho mọi người xem. Trước khi tải lên, hãy che kín thông tin cá nhân của người
-          nhận: số CCCD, số điện thoại, địa chỉ, số tài khoản. Ai cũng có thể báo cáo ảnh lộ thông tin cá nhân, và Give
-          sẽ ẩn ảnh đó.
-        </p>
+        {refund ? (
+          <p className="mt-1 rounded bg-gray-50 p-2 text-sm text-gray-700" role="note">
+            Chứng từ của khoản hoàn tiền không được công khai: chỉ bạn và bộ phận tài chính của Give xem được.
+          </p>
+        ) : (
+          <p className="mt-1 rounded bg-amber-50 p-2 text-sm text-amber-900" role="note">
+            Ảnh chứng từ được công khai cho mọi người xem. Trước khi tải lên, hãy che kín thông tin cá nhân của người
+            nhận: số CCCD, số điện thoại, địa chỉ, số tài khoản. Ai cũng có thể báo cáo ảnh lộ thông tin cá nhân, và
+            Give sẽ ẩn ảnh đó.
+            {refund === undefined && " Riêng chứng từ của khoản hoàn tiền cho người ủng hộ thì không được công khai."}
+          </p>
+        )}
         <p className="hint">
           Tối đa {MAX_EVIDENCE_FILES} ảnh JPEG, PNG hoặc WebP, tổng 4 MB mỗi lần. Thông tin vị trí và thiết bị trong ảnh
           được xóa trước khi lưu.

@@ -74,7 +74,8 @@ export default async function StatementPage({
   const evidence = await listPublicEvidence(
     db,
     campaign.id,
-    rows.filter((row) => row.direction === "out" && row.explained).map((row) => row.id)
+    // Refund evidence is never public (it would name the donor); the view leaves it out too.
+    rows.filter((row) => row.direction === "out" && row.explained && !row.is_refund).map((row) => row.id)
   )
   const loginHref = `/auth/login?return_path=${encodeURIComponent(statementHref(campaign.slug, filter, page))}`
 
