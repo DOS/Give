@@ -122,13 +122,23 @@ export function dbErrorMessage(error: DbErrorLike | null | undefined, overrides:
  */
 export const SUBMIT_MESSAGES: Record<string, string> = {
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
-    "Chưa gửi duyệt được: chiến dịch từ thiện cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản. Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại.",
+    "Chưa gửi duyệt được: chiến dịch từ thiện cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác. Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại.",
 }
 
 /** The same code worded for a moderator approving or opening a campaign. */
 export const REVIEW_MESSAGES: Record<string, string> = {
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
     "Chiến dịch chưa có tài khoản nhận tiền dùng được: cần một tài khoản đã xác minh, đứng tên người tổ chức đã xác minh, đang gắn với chiến dịch (tài khoản có thể đã bị khóa, bị nhả, hoặc người tổ chức đã đổi tên pháp lý). Hãy yêu cầu người tổ chức chỉnh sửa.",
+}
+
+/**
+ * The same code when a just-approved campaign could not open: it stays
+ * approved (there is no way back to changes requested) and the cron opens it
+ * once the organizer binds a usable account.
+ */
+export const OPEN_MESSAGES: Record<string, string> = {
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
+    "chiến dịch không còn tài khoản nhận tiền dùng được. Chiến dịch vẫn ở trạng thái đã duyệt và sẽ tự mở khi người tổ chức gắn một tài khoản đã xác minh đứng tên họ.",
 }
 
 /** Result shape that form actions return to useActionState. */

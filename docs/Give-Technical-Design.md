@@ -122,7 +122,7 @@ live/approved → suspended (admin) → live | cancelled
 draft/in_review/approved → cancelled (người tổ chức)
 ```
 
-Với chiến dịch `give`, mọi bước chuyển sang `in_review`, `approved` hoặc `live` (gồm cả cron mở chiến dịch và mở lại sau tạm dừng) cần một tài khoản nhận dùng được: đang gắn với chiến dịch, đã xác minh, thuộc người tổ chức đã xác minh và đứng tên pháp lý của người đó. Thiếu thì hàm báo `GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT`; cron bỏ qua chiến dịch đó và để nó ở `approved` (DOS/Give#38). Chiến dịch `back` chỉ cần tài khoản khi thanh toán (M3).
+Với chiến dịch `give`, mọi bước chuyển sang `in_review`, `approved` hoặc `live` (gồm cả cron mở chiến dịch và mở lại sau tạm dừng) cần một tài khoản nhận dùng được: đang gắn với chiến dịch, đã xác minh, thuộc người tổ chức đã xác minh và đứng tên pháp lý của người đó. Thiếu thì hàm báo `GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT`; cron bỏ qua chiến dịch đó và để nó ở `approved` (DOS/Give#38). Nếu tài khoản hỏng sau khi gửi duyệt, kiểm duyệt viên trả chiến dịch về `changes_requested`; khi đó người tổ chức nhả được tài khoản chưa nhận giao dịch nào, gắn tài khoản khác rồi gửi duyệt lại. Chiến dịch `back` chỉ cần tài khoản khi thanh toán (M3).
 
 ### 2.2 Tài khoản nhận
 

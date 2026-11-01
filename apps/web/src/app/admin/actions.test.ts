@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { REVIEW_MESSAGES } from "@/lib/errors"
+import { OPEN_MESSAGES, REVIEW_MESSAGES } from "@/lib/errors"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
@@ -102,7 +102,7 @@ describe("approveCampaign without a usable receiving account (DOS/Give#38)", () 
           : undefined
     expect(await approveCampaign(CAMPAIGN, null, new FormData())).toEqual({
       ok: true,
-      message: `Đã duyệt, nhưng chưa mở được: ${REVIEW_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT}`,
+      message: `Đã duyệt, nhưng chưa mở được: ${OPEN_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT}`,
     })
   })
 })
