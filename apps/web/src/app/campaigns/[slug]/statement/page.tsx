@@ -1,6 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 import { cache } from "react"
 
 import { MoneyTotals } from "@/components/MoneyTotals"
@@ -60,6 +60,8 @@ export default async function StatementPage({
   ])
   if (!totals) notFound()
   const pages = Math.max(1, Math.ceil(total / STATEMENT_PAGE_SIZE))
+  // A stale link past the end (rows were explained since) goes to the last page.
+  if (page > pages) redirect(statementHref(campaign.slug, filter, pages))
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -69,8 +71,8 @@ export default async function StatementPage({
       <h1 className="mt-3 text-3xl font-bold tracking-tight">Sao kê chiến dịch</h1>
       <p className="mt-2 max-w-3xl text-gray-600">
         Đây là bản sao sao kê tài khoản nhận của chiến dịch. Give không giữ tiền và không sửa số liệu: mỗi khoản chi do
-        người tổ chức tự giải trình. Tên người ủng hộ chỉ hiện khi họ không chọn ẩn danh; số tài khoản chỉ hiện 4 số
-        cuối; nội dung chuyển khoản không được công khai.
+        người tổ chức tự giải trình. Tên chủ tài khoản chuyển tiền chỉ hiện khi khoản đó khớp với một lượt ủng hộ không
+        ẩn danh; số tài khoản chỉ hiện 4 số cuối; nội dung chuyển khoản không được công khai.
       </p>
 
       <div className="mt-8 grid gap-8 lg:grid-cols-3">
@@ -124,7 +126,7 @@ export default async function StatementPage({
                 <span />
               )}
               <span className="text-gray-500">
-                Trang {Math.min(page, pages)} / {pages}
+                Trang {page} / {pages}
               </span>
               {page < pages ? (
                 <Link href={statementHref(campaign.slug, filter, page + 1)} className="btn-secondary">

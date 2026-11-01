@@ -141,7 +141,7 @@ export const STATEMENT_FILTER_LABELS: Record<StatementFilter, string> = {
 }
 
 export const STATEMENT_PAGE_SIZE = 50
-/** PostgREST ranges past this are refused anyway; keeps ?page= bounded. */
+/** Keeps ?page= bounded. */
 const MAX_PAGE = 1000
 
 function firstParam(value: string | string[] | undefined): string {
@@ -168,21 +168,35 @@ export function statementHref(slug: string, filter: StatementFilter, page = 1): 
   return `/campaigns/${slug}/statement${query ? `?${query}` : ""}`
 }
 
-/** One page of a public campaign's statement, newest first, with the total row count. */
+function statementQuery(db: Db, campaignId: string, filter: StatementFilter, columns: string, head = false) {
+  let query = db.from("public_statement").select(columns, { count: "exact", head }).eq("campaign_id", campaignId)
+  if (filter === "in" || filter === "out") query = query.eq("direction", filter)
+  if (filter === "unexplained") query = query.eq("direction", "out").eq("explained", false)
+  return query
+}
+
+/**
+ * One page of a public campaign's statement, newest first, with the total
+ * row count. A page past the end (a stale link after rows were explained)
+ * returns no rows and the real total, so the page can send the visitor to
+ * the last page instead of failing.
+ */
 export async function listStatement(
   db: Db,
   campaignId: string,
   filter: StatementFilter = "all",
   page = 1
 ): Promise<{ rows: StatementRow[]; total: number }> {
-  let query = db.from("public_statement").select(STATEMENT_COLUMNS, { count: "exact" }).eq("campaign_id", campaignId)
-  if (filter === "in" || filter === "out") query = query.eq("direction", filter)
-  if (filter === "unexplained") query = query.eq("direction", "out").eq("explained", false)
   const from = (page - 1) * STATEMENT_PAGE_SIZE
-  const { data, error, count } = await query
+  const { data, error, count } = await statementQuery(db, campaignId, filter, STATEMENT_COLUMNS)
     .order("booked_at", { ascending: false })
     .order("id", { ascending: false })
     .range(from, from + STATEMENT_PAGE_SIZE - 1)
+  if (error?.code === "PGRST103") {
+    const counted = await statementQuery(db, campaignId, filter, "id", true)
+    if (counted.error) throw counted.error
+    return { rows: [], total: counted.count ?? 0 }
+  }
   if (error) throw error
   const rows = ((data ?? []) as unknown as StatementRow[]).map((row) => ({ ...row, amount: num(row.amount) }))
   return { rows, total: count ?? rows.length }
@@ -292,25 +306,28 @@ export interface OutgoingTransaction {
   counterparty_account_masked: string | null
 }
 
+export interface Evidence {
+  id: string
+  storage_path: string
+  kind: EvidenceKind
+  created_at: string
+}
+
 export interface Disbursement {
-  bank_transaction_id: string
   purpose: string
   category: string | null
   recipient: string | null
   is_refund: boolean
   refund_contribution_id: string | null
   explained_at: string
+  evidence: Evidence[]
 }
 
-export interface Evidence {
-  id: string
-  bank_transaction_id: string
-  storage_path: string
-  kind: EvidenceKind
-  created_at: string
+export interface ExplainedTransaction extends OutgoingTransaction {
+  disbursement: Disbursement
 }
 
-/** A contribution the organizer may refund: it has paid something in. */
+/** A contribution the organizer may still refund: it paid in more than was refunded. */
 export interface RefundableContribution {
   id: string
   kind: "donation" | "pledge"
@@ -318,102 +335,167 @@ export interface RefundableContribution {
   public_name: string | null
   is_anonymous: boolean
   received_amount: number
+  /** received_amount minus earlier refunds to it. */
+  refundable_amount: number
 }
 
 const OUTGOING_COLUMNS =
   "id, campaign_id, amount, asset, booked_at, booked_date_only, description, counterparty_name, counterparty_account_masked"
 
-/** Outgoing transactions of a campaign, newest first (organizer and finance staff under RLS). */
-export async function listOutgoing(db: Db, campaignId: string, limit = 200): Promise<OutgoingTransaction[]> {
+const DISBURSEMENT_COLUMNS =
+  "purpose, category, recipient, is_refund, refund_contribution_id, explained_at, " +
+  "evidence:disbursement_evidence(id, storage_path, kind, created_at)"
+
+/** At most this many evidence images per transaction, across submissions. */
+export const MAX_EVIDENCE_PER_TRANSACTION = 20
+/** Explained transactions shown on the organizer page; pending ones are all shown. */
+export const EXPLAINED_PAGE_LIMIT = 100
+
+function toOutgoing<T extends OutgoingTransaction>(tx: T): T {
+  return { ...tx, amount: num(tx.amount) }
+}
+
+/**
+ * Every unexplained outgoing transaction of a campaign, oldest first, so none
+ * can hide behind a page limit while it counts publicly as unexplained.
+ */
+export async function listPendingOutgoing(db: Db, campaignId: string): Promise<OutgoingTransaction[]> {
   const { data, error } = await db
     .from("bank_transactions")
-    .select(OUTGOING_COLUMNS)
+    .select(`${OUTGOING_COLUMNS}, disbursements(bank_transaction_id)`)
+    .eq("campaign_id", campaignId)
+    .eq("direction", "out")
+    .is("disbursements", null)
+    .order("booked_at", { ascending: true })
+  if (error) throw error
+  return ((data ?? []) as unknown as (OutgoingTransaction & { disbursements?: unknown })[]).map((row) => {
+    const { disbursements: _embed, ...tx } = row
+    return toOutgoing(tx)
+  })
+}
+
+/** Explained outgoing transactions with their explanation and evidence, newest first. */
+export async function listExplainedOutgoing(
+  db: Db,
+  campaignId: string,
+  limit = EXPLAINED_PAGE_LIMIT
+): Promise<ExplainedTransaction[]> {
+  const { data, error } = await db
+    .from("bank_transactions")
+    .select(`${OUTGOING_COLUMNS}, disbursement:disbursements!inner(${DISBURSEMENT_COLUMNS})`)
     .eq("campaign_id", campaignId)
     .eq("direction", "out")
     .order("booked_at", { ascending: false })
     .limit(limit)
   if (error) throw error
-  return ((data ?? []) as unknown as OutgoingTransaction[]).map((tx) => ({ ...tx, amount: num(tx.amount) }))
+  return ((data ?? []) as unknown as ExplainedTransaction[]).map(toOutgoing)
 }
 
-/** One outgoing transaction of the campaign, or null. */
+/** One outgoing transaction of the campaign with its explanation (null until explained), or null. */
 export async function getOutgoing(
   db: Db,
   campaignId: string,
   transactionId: string
-): Promise<OutgoingTransaction | null> {
+): Promise<(OutgoingTransaction & { disbursement: Disbursement | null }) | null> {
   const { data, error } = await db
     .from("bank_transactions")
-    .select(OUTGOING_COLUMNS)
+    .select(`${OUTGOING_COLUMNS}, disbursement:disbursements(${DISBURSEMENT_COLUMNS})`)
     .eq("id", transactionId)
     .eq("campaign_id", campaignId)
     .eq("direction", "out")
     .maybeSingle()
   if (error) throw error
-  const tx = data as unknown as OutgoingTransaction | null
-  return tx ? { ...tx, amount: num(tx.amount) } : null
-}
-
-export async function listDisbursements(db: Db, transactionIds: readonly string[]): Promise<Disbursement[]> {
-  if (transactionIds.length === 0) return []
-  const { data, error } = await db
-    .from("disbursements")
-    .select("bank_transaction_id, purpose, category, recipient, is_refund, refund_contribution_id, explained_at")
-    .in("bank_transaction_id", [...transactionIds])
-  if (error) throw error
-  return (data ?? []) as Disbursement[]
-}
-
-export async function listEvidence(db: Db, transactionIds: readonly string[]): Promise<Evidence[]> {
-  if (transactionIds.length === 0) return []
-  const { data, error } = await db
-    .from("disbursement_evidence")
-    .select("id, bank_transaction_id, storage_path, kind, created_at")
-    .in("bank_transaction_id", [...transactionIds])
-    .order("created_at")
-  if (error) throw error
-  return (data ?? []) as Evidence[]
+  const tx = data as unknown as (OutgoingTransaction & { disbursement: Disbursement | null }) | null
+  return tx ? toOutgoing(tx) : null
 }
 
 const REFUNDABLE_COLUMNS = "id, kind, reference_code, public_name, is_anonymous, received_amount"
 
-/** Contributions of the campaign that paid in, newest first (no guest name or email). */
-export async function listRefundable(db: Db, campaignId: string, limit = 500): Promise<RefundableContribution[]> {
-  const { data, error } = await db
-    .from("contributions")
-    .select(REFUNDABLE_COLUMNS)
+type ContributionRow = Omit<RefundableContribution, "refundable_amount">
+
+/** Earlier refunds per contribution of the campaign (ledger 'refunded' posts and reversals). */
+async function refundedByContribution(db: Db, campaignId: string, ids?: string[]): Promise<Map<string, number>> {
+  let query = db
+    .from("ledger_entries")
+    .select("contribution_id, amount")
     .eq("campaign_id", campaignId)
-    .gt("received_amount", 0)
-    .order("created_at", { ascending: false })
-    .limit(limit)
+    .eq("bucket", "refunded")
+  if (ids) query = query.in("contribution_id", ids)
+  const { data, error } = await query
   if (error) throw error
-  return ((data ?? []) as unknown as RefundableContribution[]).map((x) => ({
-    ...x,
-    received_amount: num(x.received_amount),
-  }))
+  const sums = new Map<string, number>()
+  for (const row of (data ?? []) as { contribution_id: string | null; amount: unknown }[]) {
+    if (row.contribution_id) sums.set(row.contribution_id, (sums.get(row.contribution_id) ?? 0) + num(row.amount))
+  }
+  return sums
 }
 
+function withRefundable(rows: ContributionRow[], refunded: Map<string, number>): RefundableContribution[] {
+  return rows
+    .map((x) => {
+      const received = num(x.received_amount)
+      return { ...x, received_amount: received, refundable_amount: received - (refunded.get(x.id) ?? 0) }
+    })
+    .filter((x) => x.refundable_amount > 0)
+}
+
+/** Contributions of the campaign that can still be refunded, newest first (no guest name or email). */
+export async function listRefundable(db: Db, campaignId: string, limit = 1000): Promise<RefundableContribution[]> {
+  const [{ data, error }, refunded] = await Promise.all([
+    db
+      .from("contributions")
+      .select(REFUNDABLE_COLUMNS)
+      .eq("campaign_id", campaignId)
+      .gt("received_amount", 0)
+      .order("created_at", { ascending: false })
+      .limit(limit),
+    refundedByContribution(db, campaignId),
+  ])
+  if (error) throw error
+  return withRefundable((data ?? []) as unknown as ContributionRow[], refunded)
+}
+
+/** One contribution of the campaign that can still be refunded, or null. */
 export async function getRefundable(
   db: Db,
   campaignId: string,
   contributionId: string
 ): Promise<RefundableContribution | null> {
+  const [{ data, error }, refunded] = await Promise.all([
+    db
+      .from("contributions")
+      .select(REFUNDABLE_COLUMNS)
+      .eq("id", contributionId)
+      .eq("campaign_id", campaignId)
+      .gt("received_amount", 0)
+      .maybeSingle(),
+    refundedByContribution(db, campaignId, [contributionId]),
+  ])
+  if (error) throw error
+  return data ? (withRefundable([data as unknown as ContributionRow], refunded)[0] ?? null) : null
+}
+
+/** Reference codes of the campaign's contributions, by id (to label explained refunds). */
+export async function listReferenceCodes(
+  db: Db,
+  campaignId: string,
+  contributionIds: readonly string[]
+): Promise<Map<string, string>> {
+  if (contributionIds.length === 0) return new Map()
   const { data, error } = await db
     .from("contributions")
-    .select(REFUNDABLE_COLUMNS)
-    .eq("id", contributionId)
+    .select("id, reference_code")
     .eq("campaign_id", campaignId)
-    .gt("received_amount", 0)
-    .maybeSingle()
+    .in("id", [...new Set(contributionIds)])
   if (error) throw error
-  const x = data as unknown as RefundableContribution | null
-  return x ? { ...x, received_amount: num(x.received_amount) } : null
+  return new Map(((data ?? []) as { id: string; reference_code: string }[]).map((x) => [x.id, x.reference_code]))
 }
 
 /** How a contribution appears in the organizer's refund picker. */
 export function refundOptionLabel(x: RefundableContribution, format: (amount: number) => string): string {
   const who = x.is_anonymous ? "ẩn danh" : (x.public_name ?? "không tên")
-  return `${x.reference_code} · ${who} · đã nhận ${format(x.received_amount)}`
+  const left = x.refundable_amount < x.received_amount ? `, còn hoàn được ${format(x.refundable_amount)}` : ""
+  return `${x.reference_code} · ${who} · đã nhận ${format(x.received_amount)}${left}`
 }
 
 const optionalText = (max: number, message: string) =>
@@ -425,7 +507,9 @@ const optionalText = (max: number, message: string) =>
 
 /**
  * The organizer's explanation of one outgoing transaction
- * (give.record_disbursement). Picking a contribution makes it a refund.
+ * (give.record_disbursement). A refund is the "refund" category together
+ * with the contribution it refunds; one without the other is refused, so
+ * the public label and the bucket the money counts in never disagree.
  */
 export const explainSchema = z
   .object({
@@ -438,6 +522,14 @@ export const explainSchema = z
       .refine((v) => v === "" || isUuid(v), "Lượt ủng hộ được hoàn không hợp lệ")
       .transform((v) => (v === "" ? null : v)),
     evidence_kind: z.string().refine(isEvidenceKind, "Chọn loại chứng từ"),
+  })
+  .refine((v) => v.category !== "refund" || v.refund_contribution_id !== null, {
+    message: "Khoản hoàn tiền cần chọn lượt ủng hộ được hoàn",
+    path: ["refund_contribution_id"],
+  })
+  .refine((v) => v.category === "refund" || v.refund_contribution_id === null, {
+    message: "Đã chọn lượt ủng hộ được hoàn, hãy chọn loại “Hoàn tiền cho người ủng hộ”",
+    path: ["category"],
   })
   .transform((v) => ({
     ...v,

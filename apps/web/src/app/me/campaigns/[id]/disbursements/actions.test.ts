@@ -38,22 +38,33 @@ const { addEvidence, explainDisbursement } = await import("./actions")
 const campaign = { id: CAMPAIGN, organizer_id: USER, slug: "quy-a", title: "Quỹ A", status: "live" }
 const tx = { id: TX, campaign_id: CAMPAIGN, amount: 300_000, asset: "VND", booked_at: "2026-11-01T02:00:00Z" }
 
+/** An explained transaction's embedded explanation, with `n` evidence rows. */
+const explained = (n = 0) => ({ purpose: "x", evidence: Array.from({ length: n }, (_, i) => ({ id: `e${i}` })) })
+
 function reads({
   camp = campaign as unknown,
   outgoing = tx as unknown,
-  explanations = [] as unknown[],
+  disbursement = null as unknown,
   contribution = null as unknown,
+  refunds = [] as unknown[],
   error = null as { code?: string; message?: string } | null,
 } = {}): Handler {
   return (call) => {
     if (error) return { error }
     if (call.target === "rpc:managed_campaigns") return { data: camp }
-    if (call.target === "bank_transactions") return { data: outgoing }
-    if (call.target === "disbursements") return { data: explanations }
+    if (call.target === "bank_transactions")
+      return { data: outgoing ? { ...(outgoing as object), disbursement } : null }
     if (call.target === "contributions") return { data: contribution }
+    if (call.target === "ledger_entries") return { data: refunds }
     return undefined
   }
 }
+
+/** Service role: every uploaded path in an evidence lookup counts as recorded. */
+const recordsAll: Handler = (call) =>
+  call.target === "disbursement_evidence"
+    ? { data: ((op(call, "in")?.[1] as string[]) ?? []).map((storage_path) => ({ storage_path })) }
+    : undefined
 
 function form(values: Record<string, string> = {}, files: File[] = []) {
   const f = new FormData()
@@ -83,7 +94,7 @@ beforeEach(() => {
   state.serviceCalls.length = 0
   state.signedIn = true
   state.userHandler = reads()
-  state.serviceHandler = () => undefined
+  state.serviceHandler = recordsAll
 })
 
 describe("explainDisbursement", () => {
@@ -108,8 +119,27 @@ describe("explainDisbursement", () => {
     })
     // The user's token was used for every read before the service role acted.
     expect(state.userCalls.map((c) => c.target)).toEqual(
-      expect.arrayContaining(["rpc:managed_campaigns", "bank_transactions", "disbursements"])
+      expect.arrayContaining(["rpc:managed_campaigns", "bank_transactions"])
     )
+    expect(removes()).toHaveLength(0)
+  })
+
+  it("removes images a repeated submission uploaded but the database did not record", async () => {
+    // record_disbursement's replay path returns success without inserting evidence.
+    state.serviceHandler = (call) => (call.target === "disbursement_evidence" ? { data: [] } : undefined)
+    const result = await explainDisbursement(CAMPAIGN, TX, null, form({}, [png()]))
+    expect(result?.message).toContain("đã được giải trình từ trước")
+    expect(op(removes()[0], "remove")?.[0]).toEqual([op(uploads()[0], "upload")![0]])
+  })
+
+  it("keeps the uploads when the call failed without a database answer (it may have committed)", async () => {
+    state.serviceHandler = (call) =>
+      call.target === "rpc:record_disbursement"
+        ? { error: { code: "", message: "TypeError: fetch failed" } }
+        : undefined
+    const result = await explainDisbursement(CAMPAIGN, TX, null, form({}, [png()]))
+    expect(result).toEqual({ ok: false, message: "Có lỗi xảy ra. Hãy thử lại sau." })
+    expect(removes()).toHaveLength(0)
   })
 
   it("records a refund to a contribution of the campaign", async () => {
@@ -130,18 +160,30 @@ describe("explainDisbursement", () => {
     })
   })
 
-  it("refuses a refund larger than what the contribution paid in", async () => {
+  it("refuses a refund larger than what is left to refund on the contribution", async () => {
     state.userHandler = reads({
-      contribution: { id: CONTRIBUTION, reference_code: "GVABCDEF2", received_amount: 100_000 },
+      contribution: { id: CONTRIBUTION, reference_code: "GVABCDEF2", received_amount: 500_000 },
+      refunds: [{ contribution_id: CONTRIBUTION, amount: 300_000 }],
     })
-    const result = await explainDisbursement(CAMPAIGN, TX, null, form({ refund_contribution_id: CONTRIBUTION }))
+    const result = await explainDisbursement(
+      CAMPAIGN,
+      TX,
+      null,
+      form({ category: "refund", refund_contribution_id: CONTRIBUTION })
+    )
     expect(result?.ok).toBe(false)
     expect(result?.message).toContain("GVABCDEF2")
+    expect(result?.message).toContain("200.000")
     expect(rpc("record_disbursement")).toBeUndefined()
   })
 
   it("refuses a refund to a contribution outside the campaign", async () => {
-    const result = await explainDisbursement(CAMPAIGN, TX, null, form({ refund_contribution_id: CONTRIBUTION }))
+    const result = await explainDisbursement(
+      CAMPAIGN,
+      TX,
+      null,
+      form({ category: "refund", refund_contribution_id: CONTRIBUTION })
+    )
     expect(result).toEqual({ ok: false, message: expect.stringContaining("không thuộc chiến dịch") })
     expect(rpc("record_disbursement")).toBeUndefined()
   })
@@ -168,7 +210,7 @@ describe("explainDisbursement", () => {
   })
 
   it("refuses a second explanation", async () => {
-    state.userHandler = reads({ explanations: [{ bank_transaction_id: TX }] })
+    state.userHandler = reads({ disbursement: explained() })
     const result = await explainDisbursement(CAMPAIGN, TX, null, form())
     expect(result?.message).toContain("đã được giải trình")
     expect(state.serviceCalls).toHaveLength(0)
@@ -220,7 +262,7 @@ describe("explainDisbursement", () => {
 
 describe("addEvidence", () => {
   it("adds images to an explained transaction", async () => {
-    state.userHandler = reads({ explanations: [{ bank_transaction_id: TX }] })
+    state.userHandler = reads({ disbursement: explained(1) })
     const result = await addEvidence(CAMPAIGN, TX, null, form({ evidence_kind: "photo" }, [png()]))
     expect(result).toEqual({ ok: true, message: "Đã thêm 1 ảnh chứng từ." })
     const args = op(rpc("add_disbursement_evidence"), "args")?.[0] as { p_actor_id: string; p_evidence: unknown[] }
@@ -230,13 +272,17 @@ describe("addEvidence", () => {
 
   it("needs an explanation first and at least one image", async () => {
     expect((await addEvidence(CAMPAIGN, TX, null, form({}, [png()])))?.message).toContain("chưa được giải trình")
-    state.userHandler = reads({ explanations: [{ bank_transaction_id: TX }] })
+    state.userHandler = reads({ disbursement: explained() })
     expect((await addEvidence(CAMPAIGN, TX, null, form()))?.message).toContain("ít nhất một ảnh")
+    state.userHandler = reads({ disbursement: explained(19) })
+    expect((await addEvidence(CAMPAIGN, TX, null, form({}, [png("a.png"), png("b.png")])))?.message).toContain(
+      "tối đa 20"
+    )
     expect(state.serviceCalls).toHaveLength(0)
   })
 
   it("removes the upload when the database refuses", async () => {
-    state.userHandler = reads({ explanations: [{ bank_transaction_id: TX }] })
+    state.userHandler = reads({ disbursement: explained() })
     state.serviceHandler = (call) =>
       call.target === "rpc:add_disbursement_evidence" ? { error: { message: "GIVE_EVIDENCE_INVALID" } } : undefined
     const result = await addEvidence(CAMPAIGN, TX, null, form({}, [png()]))

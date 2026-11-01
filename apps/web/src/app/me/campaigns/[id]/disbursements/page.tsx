@@ -13,16 +13,17 @@ import {
   EVIDENCE_KINDS,
   EXPLAIN_WITHIN_DAYS,
   evidenceUrl,
+  EXPLAINED_PAGE_LIMIT,
   explanationOverdue,
-  listDisbursements,
-  listEvidence,
-  listOutgoing,
+  listExplainedOutgoing,
+  listPendingOutgoing,
+  listReferenceCodes,
   listRefundable,
   MAX_EVIDENCE_FILES,
+  MAX_EVIDENCE_PER_TRANSACTION,
   refundOptionLabel,
   statementHref,
   type Disbursement,
-  type Evidence,
   type OutgoingTransaction,
   type RefundableContribution,
 } from "@/lib/statement"
@@ -45,17 +46,16 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
   const campaign = await getCampaignById(db, id)
   if (!campaign || campaign.organizer_id !== session.user.id) notFound()
 
-  const outgoing = await listOutgoing(db, campaign.id)
-  const ids = outgoing.map((tx) => tx.id)
-  const [explanations, evidence, refundable] = await Promise.all([
-    listDisbursements(db, ids),
-    listEvidence(db, ids),
+  const [pending, done, refundable] = await Promise.all([
+    listPendingOutgoing(db, campaign.id),
+    listExplainedOutgoing(db, campaign.id),
     listRefundable(db, campaign.id),
   ])
-  const byTx = new Map(explanations.map((d) => [d.bank_transaction_id, d]))
-  const pending = outgoing.filter((tx) => !byTx.has(tx.id))
-  const done = outgoing.filter((tx) => byTx.has(tx.id))
-  const refundCodes = new Map(refundable.map((x) => [x.id, x.reference_code]))
+  const refundCodes = await listReferenceCodes(
+    db,
+    campaign.id,
+    done.flatMap((tx) => (tx.disbursement.refund_contribution_id ? [tx.disbursement.refund_contribution_id] : []))
+  )
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 px-4 py-10">
@@ -97,7 +97,14 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
       </section>
 
       <section>
-        <h2 className="mb-4 text-xl font-semibold">Đã giải trình ({done.length})</h2>
+        <h2 className="mb-4 text-xl font-semibold">
+          Đã giải trình{done.length < EXPLAINED_PAGE_LIMIT ? ` (${done.length})` : ""}
+        </h2>
+        {done.length >= EXPLAINED_PAGE_LIMIT && (
+          <p className="mb-4 text-sm text-gray-500">
+            Hiện {EXPLAINED_PAGE_LIMIT} khoản gần nhất. Xem toàn bộ trên sao kê công khai.
+          </p>
+        )}
         {done.length === 0 ? (
           <p className="text-gray-500">Chưa có khoản chi nào được giải trình.</p>
         ) : (
@@ -106,18 +113,19 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
               <li key={tx.id} className="card p-6">
                 <TransactionHeader tx={tx} />
                 <Explanation
-                  disbursement={byTx.get(tx.id)!}
-                  evidence={evidence.filter((e) => e.bank_transaction_id === tx.id)}
-                  refundCode={refundCodes.get(byTx.get(tx.id)!.refund_contribution_id ?? "")}
+                  disbursement={tx.disbursement}
+                  refundCode={refundCodes.get(tx.disbursement.refund_contribution_id ?? "")}
                 />
-                <ActionForm
-                  action={addEvidence.bind(null, campaign.id, tx.id)}
-                  className="mt-4 border-t border-gray-100 pt-4"
-                  resetOnSuccess
-                >
-                  <EvidenceFields idPrefix={`add-${tx.id}`} label="Thêm chứng từ" />
-                  <SubmitButton className="mt-3 btn-secondary">Tải chứng từ lên</SubmitButton>
-                </ActionForm>
+                {tx.disbursement.evidence.length < MAX_EVIDENCE_PER_TRANSACTION && (
+                  <ActionForm
+                    action={addEvidence.bind(null, campaign.id, tx.id)}
+                    className="mt-4 border-t border-gray-100 pt-4"
+                    resetOnSuccess
+                  >
+                    <EvidenceFields idPrefix={`add-${tx.id}`} label="Thêm chứng từ" />
+                    <SubmitButton className="mt-3 btn-secondary">Tải chứng từ lên</SubmitButton>
+                  </ActionForm>
+                )}
               </li>
             ))}
           </ol>
@@ -188,14 +196,11 @@ function ExplainForm({
           <label htmlFor={`${p}-recipient`} className="label">
             Người nhận (công khai)
           </label>
-          <input
-            id={`${p}-recipient`}
-            name="recipient"
-            className="field"
-            maxLength={200}
-            defaultValue={tx.counterparty_name ?? ""}
-          />
-          <p className="hint">Với khoản hoàn tiền cho người ủng hộ ẩn danh, tên này sẽ không hiện công khai.</p>
+          <input id={`${p}-recipient`} name="recipient" className="field" maxLength={200} />
+          <p className="hint">
+            Tên này hiện công khai. Với cá nhân (người bệnh, trẻ em), cân nhắc chỉ ghi vai trò, ví dụ “gia đình em A”.
+            Khoản hoàn tiền cho người ủng hộ ẩn danh không hiện tên này.
+          </p>
         </div>
       </div>
       <div>
@@ -211,7 +216,7 @@ function ExplainForm({
           ))}
         </select>
         <p className="hint">
-          Chọn lượt ủng hộ nếu khoản này trả lại tiền cho người ủng hộ. Khoản đó được tính vào “đã hoàn lại” thay vì “đã
+          Chỉ chọn khi loại khoản chi là “Hoàn tiền cho người ủng hộ”. Khoản đó được tính vào “đã hoàn lại” thay vì “đã
           chi”.
         </p>
       </div>
@@ -257,16 +262,9 @@ function EvidenceFields({ idPrefix, label }: { idPrefix: string; label: string }
   )
 }
 
-function Explanation({
-  disbursement,
-  evidence,
-  refundCode,
-}: {
-  disbursement: Disbursement
-  evidence: Evidence[]
-  refundCode: string | undefined
-}) {
+function Explanation({ disbursement, refundCode }: { disbursement: Disbursement; refundCode: string | undefined }) {
   const category = categoryLabel(disbursement.category)
+  const evidence = disbursement.evidence
   return (
     <div className="mt-4 space-y-2 border-t border-gray-100 pt-4 text-sm">
       <p className="break-words">{disbursement.purpose}</p>

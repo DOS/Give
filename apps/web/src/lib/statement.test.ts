@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { formatVnd } from "@/lib/format"
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
 import {
@@ -11,12 +12,14 @@ import {
   explanationOverdue,
   getMoneyTotals,
   listMoneyTotals,
-  listOutgoing,
+  listExplainedOutgoing,
+  listPendingOutgoing,
   listRefundable,
   listStatement,
   parseEvidencePath,
   parseStatementParams,
   raisedAmount,
+  refundOptionLabel,
   STATEMENT_PAGE_SIZE,
   statementHref,
   type MoneyTotals,
@@ -118,11 +121,23 @@ describe("public statement", () => {
     for (const hidden of ["description", "raw", "reference_code", "guest", "email", "provider_tx_id"]) {
       expect(columns).not.toContain(hidden)
     }
-    expect(op(calls[0], "select")?.[1]).toEqual({ count: "exact" })
+    expect(op(calls[0], "select")?.[1]).toEqual({ count: "exact", head: false })
     expect(op(calls[0], "range")).toEqual([2 * STATEMENT_PAGE_SIZE, 3 * STATEMENT_PAGE_SIZE - 1])
     expect(op(calls[0], "order")).toEqual(["booked_at", { ascending: false }])
     expect(rows[0].amount).toBe(500_000)
     expect(total).toBe(120)
+  })
+
+  it("returns no rows and the real total for a page past the end", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      (call) =>
+        op(call, "range") ? { error: { code: "PGRST103", message: "Requested range not satisfiable" } } : { count: 7 },
+      calls
+    )
+    expect(await listStatement(db as never, CAMPAIGN, "unexplained", 3)).toEqual({ rows: [], total: 7 })
+    expect(op(calls[1], "select")).toEqual(["id", { count: "exact", head: true }])
+    expect(calls[1].ops).toContainEqual(["eq", "explained", false])
   })
 
   it("filters by direction and by unexplained outgoing rows", async () => {
@@ -189,25 +204,56 @@ describe("public statement", () => {
 })
 
 describe("organizer reads", () => {
-  it("lists outgoing transactions of the campaign only", async () => {
+  it("lists every unexplained outgoing transaction of the campaign, without a limit", async () => {
     const calls: Call[] = []
-    const db = fakeDb(() => ({ data: [{ id: TX, amount: "250000" }] }), calls)
-    const rows = await listOutgoing(db as never, CAMPAIGN)
+    const db = fakeDb(() => ({ data: [{ id: TX, amount: "250000", disbursements: null }] }), calls)
+    const rows = await listPendingOutgoing(db as never, CAMPAIGN)
     expect(calls[0].target).toBe("bank_transactions")
     expect(selected(calls[0])).not.toContain("raw")
     expect(calls[0].ops.filter(([n]) => n === "eq").map((o) => o.slice(1))).toEqual([
       ["campaign_id", CAMPAIGN],
       ["direction", "out"],
     ])
-    expect(rows[0].amount).toBe(250_000)
+    expect(op(calls[0], "is")).toEqual(["disbursements", null])
+    expect(op(calls[0], "limit")).toBeUndefined()
+    expect(rows).toEqual([{ id: TX, amount: 250_000 }])
   })
 
-  it("never selects guest names or emails for the refund picker", async () => {
+  it("lists explained transactions with their explanation and evidence in one query", async () => {
     const calls: Call[] = []
-    await listRefundable(fakeDb(() => ({ data: [] }), calls) as never, CAMPAIGN)
-    const columns = selected(calls[0])
-    expect(columns).not.toMatch(/guest|email|contributor_user_id/)
-    expect(op(calls[0], "gt")).toEqual(["received_amount", 0])
+    await listExplainedOutgoing(fakeDb(() => ({ data: [] }), calls) as never, CAMPAIGN)
+    expect(calls).toHaveLength(1)
+    expect(selected(calls[0])).toContain("disbursements!inner(")
+    expect(selected(calls[0])).toContain("disbursement_evidence(")
+  })
+
+  it("offers only what can still be refunded, and never selects guest names or emails", async () => {
+    const calls: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "contributions") {
+        return {
+          data: [
+            { id: "a", reference_code: "GVA", received_amount: 500_000 },
+            { id: "b", reference_code: "GVB", received_amount: 200_000 },
+          ],
+        }
+      }
+      // Ledger 'refunded' rows: 'a' was refunded 150k, 'b' fully (a post and a reversal net to 200k).
+      return {
+        data: [
+          { contribution_id: "a", amount: 150_000 },
+          { contribution_id: "b", amount: 250_000 },
+          { contribution_id: "b", amount: -50_000 },
+        ],
+      }
+    }, calls)
+    const rows = await listRefundable(db as never, CAMPAIGN)
+    const contributions = calls.find((c) => c.target === "contributions")
+    expect(selected(contributions)).not.toMatch(/guest|email|contributor_user_id/)
+    expect(op(contributions, "gt")).toEqual(["received_amount", 0])
+    expect(calls.find((c) => c.target === "ledger_entries")?.ops).toContainEqual(["eq", "bucket", "refunded"])
+    expect(rows.map((x) => [x.id, x.refundable_amount])).toEqual([["a", 350_000]])
+    expect(refundOptionLabel(rows[0], formatVnd)).toContain(`còn hoàn được ${formatVnd(350_000)}`)
   })
 
   it("flags explanations older than seven days", () => {
@@ -261,11 +307,20 @@ describe("explain form", () => {
     expect(parsed.refund_contribution_id).toBe(CONTRIBUTION)
   })
 
+  it("ties the refund category to a refunded contribution, both ways", () => {
+    expect(explainSchema.safeParse({ ...base, category: "refund" }).error?.issues[0].message).toBe(
+      "Khoản hoàn tiền cần chọn lượt ủng hộ được hoàn"
+    )
+    expect(explainSchema.safeParse({ ...base, refund_contribution_id: CONTRIBUTION }).success).toBe(false)
+  })
+
   it("rejects a missing purpose, unknown category or kind, and a forged contribution id", () => {
     expect(explainSchema.safeParse({ ...base, purpose: "  " }).success).toBe(false)
     expect(explainSchema.safeParse({ ...base, category: "bribes" }).success).toBe(false)
     expect(explainSchema.safeParse({ ...base, evidence_kind: "pdf" }).success).toBe(false)
-    expect(explainSchema.safeParse({ ...base, refund_contribution_id: "x' or 1=1" }).success).toBe(false)
+    expect(explainSchema.safeParse({ ...base, category: "refund", refund_contribution_id: "x' or 1=1" }).success).toBe(
+      false
+    )
     expect(explainSchema.safeParse({ ...base, purpose: "a".repeat(1001) }).success).toBe(false)
   })
 })

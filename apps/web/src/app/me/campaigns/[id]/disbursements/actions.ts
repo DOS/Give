@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache"
 
 import { getSession, type Session } from "@/lib/auth/session"
 import { getCampaignById, type CampaignWithRefs } from "@/lib/campaigns"
-import { dbErrorMessage, done, fail, type ActionResult, type DbErrorLike } from "@/lib/errors"
+import { dbErrorMessage, done, fail, giveErrorCode, type ActionResult, type DbErrorLike } from "@/lib/errors"
 import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { detectImageType, reencodeCover } from "@/lib/media"
@@ -16,9 +16,9 @@ import {
   getOutgoing,
   getRefundable,
   isEvidenceKind,
-  listDisbursements,
   MAX_EVIDENCE_BYTES,
   MAX_EVIDENCE_FILES,
+  MAX_EVIDENCE_PER_TRANSACTION,
   type EvidenceKind,
   type OutgoingTransaction,
 } from "@/lib/statement"
@@ -38,7 +38,7 @@ import { firstError, formFields } from "@/lib/validation"
 const SIGNED_OUT = "Phiên đăng nhập đã hết. Hãy đăng nhập lại."
 const TX_NOT_FOUND = dbErrorMessage({ message: "GIVE_TRANSACTION_NOT_FOUND" })
 
-type Loaded = { campaign: CampaignWithRefs; tx: OutgoingTransaction; explained: boolean }
+type Loaded = { campaign: CampaignWithRefs; tx: OutgoingTransaction; explained: boolean; evidenceCount: number }
 
 /** The organizer's own campaign and one of its outgoing transactions, read under RLS. */
 async function load(session: Session, campaignId: string, transactionId: string): Promise<Loaded | string> {
@@ -46,17 +46,17 @@ async function load(session: Session, campaignId: string, transactionId: string)
   if (!isUuid(transactionId)) return TX_NOT_FOUND
   const db = dbAs(session.accessToken)
   try {
-    const [campaign, tx, explanations] = await Promise.all([
+    const [campaign, tx] = await Promise.all([
       getCampaignById(db, campaignId),
       getOutgoing(db, campaignId, transactionId),
-      listDisbursements(db, [transactionId]),
     ])
     // Finance staff can read every campaign; explaining is the organizer's.
     if (!campaign || campaign.organizer_id !== session.user.id) {
       return dbErrorMessage({ message: "GIVE_CAMPAIGN_NOT_FOUND" })
     }
     if (!tx) return TX_NOT_FOUND
-    return { campaign, tx, explained: explanations.length > 0 }
+    const { disbursement, ...rest } = tx
+    return { campaign, tx: rest, explained: disbursement !== null, evidenceCount: disbursement?.evidence.length ?? 0 }
   } catch (error) {
     return dbErrorMessage(error as DbErrorLike)
   }
@@ -108,6 +108,31 @@ async function storeEvidence(
   return { evidence: paths.map((storage_path) => ({ storage_path, kind })), cleanup }
 }
 
+/**
+ * True when the database answered the RPC with a refusal (a GIVE_* code, a
+ * SQLSTATE or a PostgREST code), so nothing was written. A network error or
+ * timeout may come after the commit, so the uploads are kept then.
+ */
+function refusedByDatabase(error: DbErrorLike): boolean {
+  return giveErrorCode(error) !== null || /^([0-9A-Z]{5}|PGRST\d+)$/.test(error.code ?? "")
+}
+
+/**
+ * After a successful RPC, removes uploaded images that have no evidence row.
+ * That happens when a repeated submission hit record_disbursement's replay
+ * path, which returns success without inserting evidence.
+ */
+async function dropUnrecorded(paths: string[]): Promise<number> {
+  if (paths.length === 0) return 0
+  const service = dbService()
+  const { data, error } = await service.from("disbursement_evidence").select("storage_path").in("storage_path", paths)
+  if (error) return 0
+  const recorded = new Set(((data ?? []) as { storage_path: string }[]).map((row) => row.storage_path))
+  const orphans = paths.filter((path) => !recorded.has(path))
+  if (orphans.length) await service.storage.from(MEDIA_BUCKET).remove(orphans)
+  return orphans.length
+}
+
 function refresh(campaign: CampaignWithRefs) {
   revalidatePath(`/me/campaigns/${campaign.id}/disbursements`)
   revalidatePath(`/me/campaigns/${campaign.id}`)
@@ -142,10 +167,12 @@ export async function explainDisbursement(
     } catch (error) {
       return fail(dbErrorMessage(error as DbErrorLike))
     }
-    if (!contribution) return fail(dbErrorMessage({ message: "GIVE_REFUND_CONTRIBUTION_INVALID" }))
-    if (tx.amount > contribution.received_amount) {
+    if (!contribution) {
+      return fail("Lượt ủng hộ này không thuộc chiến dịch, hoặc đã được hoàn hết số tiền đã chuyển vào.")
+    }
+    if (tx.amount > contribution.refundable_amount) {
       return fail(
-        `Khoản hoàn ${formatVnd(tx.amount)} lớn hơn số lượt ủng hộ ${contribution.reference_code} đã chuyển vào (${formatVnd(contribution.received_amount)}).`
+        `Khoản hoàn ${formatVnd(tx.amount)} lớn hơn số còn hoàn được cho lượt ủng hộ ${contribution.reference_code} (${formatVnd(contribution.refundable_amount)}).`
       )
     }
   }
@@ -166,11 +193,14 @@ export async function explainDisbursement(
     p_evidence: stored.evidence,
   })
   if (error) {
-    await stored.cleanup()
+    if (refusedByDatabase(error)) await stored.cleanup()
     return fail(dbErrorMessage(error))
   }
+  const dropped = await dropUnrecorded(stored.evidence.map((e) => e.storage_path))
 
   refresh(campaign)
+  if (dropped > 0)
+    return done("Khoản chi này đã được giải trình từ trước. Ảnh vừa tải không được lưu, hãy thêm lại nếu cần.")
   return done(
     input.is_refund
       ? "Đã ghi khoản hoàn tiền. Sao kê công khai đã cập nhật."
@@ -198,6 +228,9 @@ export async function addEvidence(
   const images = await readEvidence(form)
   if (typeof images === "string") return fail(images)
   if (images.length === 0) return fail("Chọn ít nhất một ảnh chứng từ.")
+  if (loaded.evidenceCount + images.length > MAX_EVIDENCE_PER_TRANSACTION) {
+    return fail(`Mỗi khoản chi có tối đa ${MAX_EVIDENCE_PER_TRANSACTION} ảnh chứng từ (đã có ${loaded.evidenceCount}).`)
+  }
   const stored = await storeEvidence(campaign.id, tx.id, images, kind)
   if (typeof stored === "string") return fail(stored)
 
@@ -207,7 +240,7 @@ export async function addEvidence(
     p_evidence: stored.evidence,
   })
   if (error) {
-    await stored.cleanup()
+    if (refusedByDatabase(error)) await stored.cleanup()
     return fail(dbErrorMessage(error))
   }
 
