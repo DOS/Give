@@ -37,9 +37,14 @@ export default async function AdminPage() {
         <h1 className="text-3xl font-bold">Kiểm duyệt</h1>
         <div className="flex flex-wrap gap-2">
           {reviewsAccounts && (
-            <Link href="/admin/accounts" className="btn-secondary">
-              Xác minh tài khoản nhận
-            </Link>
+            <>
+              <Link href="/admin/accounts" className="btn-secondary">
+                Xác minh tài khoản nhận
+              </Link>
+              <Link href="/admin/statements" className="btn-secondary">
+                Đối soát sao kê
+              </Link>
+            </>
           )}
           {canManageRoles && (
             <Link href="/admin/roles" className="btn-secondary">
