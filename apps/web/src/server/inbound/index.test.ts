@@ -255,6 +255,61 @@ describe("reprocessPendingInboundEvents", () => {
     expect(rows.find((r) => r.id === "transient")!.processed_at).not.toBeNull()
   })
 
+  it("gives the newest failed event the same chance as the others", async () => {
+    const at = (minutes: number) => new Date(NOW - minutes * 60 * 1000).toISOString()
+    const total = 4 * REPROCESS_BATCH
+    rows = Array.from({ length: total }, (_, i) =>
+      row(`failed-${String(i).padStart(3, "0")}`, { received_at: at(1000 - i), error: "GIVE_ACCOUNT_NOT_FOUND" })
+    )
+    const newest = rows[total - 1].id
+    const picked = async (random: number) => {
+      const seen: string[] = []
+      await run(
+        {
+          statement_import: async (_db, event) => {
+            seen.push(event.id)
+            throw new Error("GIVE_ACCOUNT_NOT_FOUND")
+          },
+        },
+        { random: () => random }
+      )
+      return seen
+    }
+
+    // The window starts near the end and wraps around to the oldest events.
+    const wrapped = await picked((total - 10) / total)
+    expect(wrapped).toHaveLength(REPROCESS_BATCH)
+    expect(new Set(wrapped).size).toBe(REPROCESS_BATCH)
+    expect(wrapped).toContain(newest)
+    expect(wrapped).toContain(rows[0].id)
+
+    // Over all starting points the newest event is in exactly `slots` windows.
+    let windows = 0
+    for (let start = 0; start < total; start += 1) {
+      if ((await picked(start / total)).includes(newest)) windows += 1
+    }
+    expect(windows).toBe(REPROCESS_BATCH)
+  })
+
+  it("marks the attempt before loading the payload, so a killed run is not retried first", async () => {
+    rows = [row("1")]
+    const handler = (call: Call) => {
+      if (call.target === "inbound_events" && op(call, "maybeSingle")) return { error: { code: "57014" } }
+      if (call.target === "inbound_events") return select(call)
+      return complete(op(call, "args")![0] as { p_inbound_event_id: string; p_error: string | null })
+    }
+    const processor = vi.fn(async () => {})
+    const result = await reprocessPendingInboundEvents(fakeDb(handler, calls) as unknown as Db, {
+      processors: { statement_import: processor },
+      now: () => NOW,
+    })
+    expect(result).toEqual({ processed: 0, failed: 1, waiting: 0 })
+    expect(processor).not.toHaveBeenCalled()
+    expect(rows[0]).toMatchObject({ processed_at: null, error: "processing_started" })
+    const targets = calls.map((c) => c.target + (op(c, "maybeSingle") ? ":load" : ""))
+    expect(targets.indexOf("rpc:complete_inbound_event")).toBeLessThan(targets.indexOf("inbound_events:load"))
+  })
+
   it("stops taking new events once the time budget is spent", async () => {
     rows = [row("1"), row("2"), row("3")]
     let t = NOW
@@ -272,6 +327,7 @@ describe("reprocessPendingInboundEvents", () => {
       statement_import: async () => {
         // The other run completes the event while this one is failing.
         rows[0].processed_at = new Date(NOW).toISOString()
+        rows[0].error = null
         throw new Error("GIVE_TRANSACTION_CONFLICT")
       },
     }
@@ -292,6 +348,7 @@ describe("failureCode", () => {
     expect(failureCode({ code: "P0001", message: "GIVE_ACCOUNT_NOT_FOUND" })).toBe("GIVE_ACCOUNT_NOT_FOUND")
     expect(failureCode(new Error("fetch https://api.example/x?token=secret failed"))).toBe("processing_failed")
     expect(failureCode(new Error("account 0123456789 not found"))).toBe("processing_failed")
+    expect(failureCode(new Error("GIVE_ACCOUNT_0123456789"))).toBe("GIVE_ACCOUNT_")
     expect(failureCode(new InboundError("lower case with spaces"))).toBe("processing_failed")
     expect(failureCode("GIVE_X")).toBe("processing_failed")
     expect(failureCode(null)).toBe("processing_failed")

@@ -76,7 +76,7 @@ export const PROCESSOR_TIMEOUT_MS = 15 * 1000
 export const REPROCESS_BUDGET_MS = 40 * 1000
 
 const CODE = /^[A-Z][A-Z0-9_]{2,63}$/
-const GIVE_CODE = /^GIVE_[A-Z0-9_]{1,59}/
+const GIVE_CODE = /^GIVE_[A-Z_]{1,59}/
 
 /**
  * What is stored in inbound_events.error for a failure: the code of an
@@ -151,7 +151,7 @@ type EventHead = Pick<InboundEvent, "id" | "channel" | "received_at">
  * The reprocess-inbound cron: retries pending authentic events. Never-tried
  * events go first, oldest first. Events that already failed fill the rest of
  * the batch from a random window, so a set of events that keep failing
- * cannot keep newer failures from being retried. Forged events are stored as
+ * cannot keep other failures from being retried. Forged events are stored as
  * processed, so they are never picked. Payloads (up to 1 MiB each) are
  * loaded one event at a time.
  */
@@ -195,15 +195,23 @@ export async function reprocessPendingInboundEvents(
       .not("error", "is", null)
     if (failedCount.error) throw new Error(`inbound_events count failed: ${failedCount.error.message}`)
     const total = failedCount.count ?? 0
-    if (total > 0) {
-      const offset = total > slots ? Math.floor(random() * (total - slots + 1)) : 0
-      const retry = await pending("id, channel, received_at")
+    const failedPage = async (from: number, to: number) => {
+      const page = await pending("id, channel, received_at")
         .in("channel", handled)
         .not("error", "is", null)
         .order("received_at", { ascending: true })
-        .range(offset, offset + slots - 1)
-      if (retry.error) throw new Error(`inbound_events read failed: ${retry.error.message}`)
-      events.push(...((retry.data ?? []) as unknown as EventHead[]))
+        .range(from, to)
+      if (page.error) throw new Error(`inbound_events read failed: ${page.error.message}`)
+      events.push(...((page.data ?? []) as unknown as EventHead[]))
+    }
+    if (total > 0 && total <= slots) await failedPage(0, total - 1)
+    if (total > slots) {
+      // A window that wraps around the end of the list, so every failed
+      // event, the newest included, has the same chance (slots / total).
+      const offset = Math.min(total - 1, Math.floor(random() * total))
+      await failedPage(offset, Math.min(total, offset + slots) - 1)
+      const overflow = offset + slots - total
+      if (overflow > 0) await failedPage(0, overflow - 1)
     }
   }
 
@@ -211,6 +219,19 @@ export async function reprocessPendingInboundEvents(
     if (now() - started > REPROCESS_BUDGET_MS) break
     const processor = processors[head.channel]
     if (!processor) continue
+    // Marks the attempt before anything that can hang or crash the function,
+    // so an event whose attempt never finished joins the failed pool instead
+    // of staying first in the never-tried queue. A success clears it.
+    const mark = await db.rpc("complete_inbound_event", { p_inbound_event_id: head.id, p_error: "processing_started" })
+    if (mark.error) {
+      console.error("complete_inbound_event failed", head.id, mark.error.code)
+      result.failed += 1
+      continue
+    }
+    if (mark.data !== null) {
+      result.processed += 1 // another run processed it meanwhile
+      continue
+    }
     const body = await db.from("inbound_events").select("dedupe_key, payload").eq("id", head.id).maybeSingle()
     if (body.error || !body.data) {
       console.error("inbound event could not be loaded", head.id, body.error?.code)
