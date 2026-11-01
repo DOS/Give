@@ -1,6 +1,7 @@
 import sharp from "sharp"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { SUBMIT_MESSAGES } from "@/lib/errors"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 const USER = "11111111-1111-4111-8111-111111111111"
@@ -30,7 +31,7 @@ vi.mock("@/lib/supabase", () => ({
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
 }))
 
-const { deleteDraft, deleteMilestone, saveContent, uploadCover } = await import("./actions")
+const { deleteDraft, deleteMilestone, saveContent, submitForReview, uploadCover } = await import("./actions")
 
 function owned(overrides: Record<string, unknown> = {}) {
   return {
@@ -141,6 +142,36 @@ describe("saveContent", () => {
   it("rejects a tampered campaign id before querying", async () => {
     expect((await saveContent("x),id.neq.0", null, contentForm()))?.ok).toBe(false)
     expect(state.userCalls).toHaveLength(0)
+  })
+})
+
+describe("submitForReview", () => {
+  it("explains that a give campaign needs a bound verified account (DOS/Give#38)", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: owned() }
+        : call.target === "rpc:transition_campaign"
+          ? { error: { code: "23514", message: "GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT" } }
+          : undefined
+    expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({
+      ok: false,
+      message: SUBMIT_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT,
+    })
+    const submit = state.userCalls.find((c) => c.target === "rpc:transition_campaign")
+    expect(op(submit!, "args")).toEqual([{ p_campaign_id: CAMPAIGN, p_to_status: "in_review", p_reason: null }])
+  })
+
+  it("keeps the other submission errors as they were", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: owned() }
+        : call.target === "rpc:transition_campaign"
+          ? { error: { code: "23514", message: "GIVE_BENEFICIARY_REQUIRED" } }
+          : undefined
+    expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({
+      ok: false,
+      message: "Chiến dịch từ thiện cần ghi tên người thụ hưởng.",
+    })
   })
 })
 

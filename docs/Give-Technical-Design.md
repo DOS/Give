@@ -122,6 +122,8 @@ live/approved → suspended (admin) → live | cancelled
 draft/in_review/approved → cancelled (người tổ chức)
 ```
 
+Với chiến dịch `give`, mọi bước chuyển sang `in_review`, `approved` hoặc `live` (gồm cả cron mở chiến dịch và mở lại sau tạm dừng) cần một tài khoản nhận dùng được: đang gắn với chiến dịch, đã xác minh, thuộc người tổ chức đã xác minh và đứng tên pháp lý của người đó. Thiếu thì hàm báo `GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT`; cron bỏ qua chiến dịch đó và để nó ở `approved` (DOS/Give#38). Nếu tài khoản hỏng sau khi gửi duyệt, kiểm duyệt viên trả chiến dịch về `changes_requested`; khi đó người tổ chức nhả được tài khoản chưa nhận giao dịch nào, gắn tài khoản khác rồi gửi duyệt lại. Chiến dịch `back` chỉ cần tài khoản khi thanh toán (M3).
+
 ### 2.2 Tài khoản nhận
 
 ```sql
@@ -152,9 +154,10 @@ give.account_bindings (
 CREATE UNIQUE INDEX ... ON give.account_bindings(receiving_account_id) WHERE released_at IS NULL;
 ```
 
-Chỉ hàm `give.release_account_binding()` được nhả binding, và chỉ khi campaign đã xong hẳn phần tiền:
+Chỉ hàm `give.release_account_binding()` được nhả binding, và chỉ khi campaign đã xong hẳn phần tiền, trừ khi binding chưa nhận giao dịch nào:
 
-- `give`: đã `closed` ít nhất 30 ngày, và mọi giao dịch của tài khoản trong thời gian binding đã được khớp hoặc giải trình.
+- `draft`, và với `give` cả `changes_requested` (DOS/Give#38) hay `cancelled`: nhả ngay nếu tài khoản chưa nhận giao dịch nào trong binding đó.
+- `give`: đã `closed` (hoặc `cancelled`) ít nhất 30 ngày, và mọi giao dịch của tài khoản trong thời gian binding đã được khớp hoặc giải trình.
 - `back`: `failed` hoặc `cancelled`, hoặc `succeeded` và không còn contribution nào ở `payment_due`, `partially_paid` hay `refund_due`.
 
 Mỗi giao dịch được gắn `campaign_id` theo binding đang hiệu lực tại lúc ghi nhận, và không bao giờ đổi sau đó (mục 2.4). Nhờ vậy, khi tài khoản được dùng lại cho campaign sau, sao kê, tiền chưa khớp và báo cáo chi của campaign cũ vẫn tách bạch.
@@ -332,7 +335,7 @@ give.admins (user_id PK, role ('moderator','finance','admin'))       -- hoặc d
 
 | Hàm                                                            | Việc chính                                                                                                                                                                                                                                                                                   | Chống lỗi                                                                                                                                                      |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `give.transition_campaign(campaign, to, actor, reason)`        | Đổi trạng thái theo bảng chuyển hợp lệ, ghi `campaign_status_events` và `audit_log`                                                                                                                                                                                                          | `FOR UPDATE` dòng campaign; chuyển không hợp lệ thì `RAISE`                                                                                                    |
+| `give.transition_campaign(campaign, to, actor, reason)`        | Đổi trạng thái theo bảng chuyển hợp lệ, ghi `campaign_status_events` và `audit_log`                                                                                                                                                                                                          | `FOR NO KEY UPDATE` dòng campaign; chuyển không hợp lệ thì `RAISE`                                                                                             |
 | `give.create_donation(campaign, amount, contributor/guest, …)` | Tạo contribution `awaiting_transfer`, sinh `reference_code`; với khách vãng lai sinh thêm token xem trạng thái và trả về đúng một lần                                                                                                                                                        | Campaign phải `type='give'` và `live`; sinh lại mã nếu trùng                                                                                                   |
 | `give.create_pledge(campaign, tier, amount, user, address)`    | Khóa campaign rồi khóa tier, kiểm tra còn suất, tăng `quantity_claimed`, ghi ledger `pledged +amount`                                                                                                                                                                                        | `FOR UPDATE` campaign **rồi** tier; kiểm tra lại dưới khóa: `type='back'`, `status='live'`, `now() < ends_at`, tier thuộc đúng campaign, `amount ≥ min_amount` |
 | `give.cancel_pledge(contribution, user)`                       | Hoàn suất, ghi ledger `pledged −amount`                                                                                                                                                                                                                                                      | `FOR UPDATE` campaign rồi tier; kiểm tra lại dưới khóa `status='live'` **và** `now() < ends_at`. Nếu cron chưa kịp finalize thì vẫn từ chối sau `ends_at`.     |

@@ -47,10 +47,10 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ACCOUNT_NOT_VERIFIED:
     "Tài khoản nhận chưa được xác minh, hoặc hồ sơ người tổ chức chưa được xác minh hay đã đổi tên pháp lý.",
   GIVE_ACCOUNT_ALREADY_BOUND:
-    "Tài khoản này đang gắn với một chiến dịch khác. Hãy nhả tài khoản khỏi chiến dịch đó trước: bản nháp nhả được ngay, chiến dịch đã gửi duyệt chỉ nhả được khi đã xong hẳn phần tiền.",
+    "Tài khoản này đang gắn với một chiến dịch khác. Hãy nhả tài khoản khỏi chiến dịch đó trước: bản nháp, hay chiến dịch từ thiện được yêu cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào, nhả được ngay; các chiến dịch khác đã gửi duyệt chỉ nhả được khi đã xong hẳn phần tiền.",
   GIVE_BINDING_NOT_FOUND: "Tài khoản này hiện không gắn với chiến dịch nào.",
   GIVE_BINDING_NOT_RELEASABLE:
-    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, đã hủy mà chưa có giao dịch nào, hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày).",
+    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, chiến dịch từ thiện được yêu cầu chỉnh sửa, hoặc đã hủy, mà tài khoản chưa nhận giao dịch nào; hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày). Tài khoản đã nhận giao dịch là lịch sử tiền của chiến dịch nên không nhả sớm được.",
   GIVE_BINDING_HAS_OPEN_TRANSACTIONS:
     "Chưa nhả được tài khoản: còn giao dịch của chiến dịch chưa được đối chiếu hoặc chưa được giải trình.",
   GIVE_CAMPAIGN_ALREADY_BOUND: "Chiến dịch này đã có tài khoản nhận khác.",
@@ -113,6 +113,33 @@ export function dbErrorMessage(error: DbErrorLike | null | undefined, overrides:
   if (code && GIVE_MESSAGES[code]) return GIVE_MESSAGES[code]
   if (error?.code && PG_MESSAGES[error.code]) return PG_MESSAGES[error.code]
   return "Có lỗi xảy ra. Hãy thử lại sau."
+}
+
+/**
+ * GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT worded for the organizer submitting a
+ * campaign. The database raises it when a give campaign has no active binding
+ * to a verified account in the verified organizer's own name.
+ */
+export const SUBMIT_MESSAGES: Record<string, string> = {
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
+    "Chưa gửi duyệt được: chiến dịch từ thiện cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác. Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại.",
+}
+
+/** The same code worded for a moderator approving or opening a campaign. */
+export const REVIEW_MESSAGES: Record<string, string> = {
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
+    "Chiến dịch chưa có tài khoản nhận tiền dùng được: cần một tài khoản đã xác minh, đứng tên người tổ chức đã xác minh, đang gắn với chiến dịch (tài khoản có thể đã bị khóa, bị nhả, hoặc người tổ chức đã đổi tên pháp lý). Hãy yêu cầu người tổ chức chỉnh sửa.",
+}
+
+/**
+ * The same code when a just-approved campaign could not open: it stays
+ * approved (there is no way back to changes requested, and its binding can be
+ * neither released nor replaced yet, DOS/Give#64) and the cron opens it once
+ * the bound account is usable again.
+ */
+export const OPEN_MESSAGES: Record<string, string> = {
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
+    "tài khoản nhận tiền đang gắn không còn dùng được. Chiến dịch vẫn ở trạng thái đã duyệt và sẽ tự mở khi tài khoản đó dùng được trở lại (bộ phận tài chính mở lại tài khoản, hoặc hồ sơ người tổ chức được xác minh lại); nếu không, hãy hủy chiến dịch.",
 }
 
 /** Result shape that form actions return to useActionState. */

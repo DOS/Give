@@ -1,7 +1,7 @@
 import { z } from "zod"
 
 import { bankByBin } from "./banks"
-import type { CampaignStatus, Db, Organizer } from "./campaigns"
+import type { CampaignStatus, CampaignType, Db, Organizer } from "./campaigns"
 
 /**
  * Receiving accounts and their bindings to campaigns (design section 2.2;
@@ -102,11 +102,15 @@ export function isBindableStatus(status: CampaignStatus): boolean {
  * to free the account: a draft at once (to change its account), an ended
  * campaign once the database's terms hold (no transaction for a draft
  * cancelled without submission; otherwise 30 days and every transaction
- * matched or explained). The database decides and explains a refusal.
+ * matched or explained). A give campaign sent back for changes also releases
+ * at once when no transaction reached the account, so the organizer can
+ * replace an account that stopped being usable (DOS/Give#38). The database
+ * decides and explains a refusal.
  */
 export const RELEASE_STATUSES: readonly CampaignStatus[] = ["draft", "cancelled", "closed", "failed", "succeeded"]
 
-export function canAskRelease(status: CampaignStatus | undefined): boolean {
+export function canAskRelease(status: CampaignStatus | undefined, type?: CampaignType): boolean {
+  if (status === "changes_requested") return type === "give"
   return status !== undefined && RELEASE_STATUSES.includes(status)
 }
 

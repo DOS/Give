@@ -6,7 +6,7 @@ import { redirect } from "next/navigation"
 
 import { getSession, type Session } from "@/lib/auth/session"
 import { canPostUpdate, isEditableStatus, type CampaignStatus, type CampaignType } from "@/lib/campaigns"
-import { dbErrorMessage, done, fail, type ActionResult } from "@/lib/errors"
+import { dbErrorMessage, done, fail, SUBMIT_MESSAGES, type ActionResult } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
 import { campaignMediaPrefix, detectImageType, MAX_COVER_BYTES, mediaPath, reencodeCover } from "@/lib/media"
 import { dbAs, dbService, MEDIA_BUCKET } from "@/lib/supabase"
@@ -236,7 +236,7 @@ async function transition(
     p_to_status: toStatus,
     p_reason: reason ?? null,
   })
-  return error ? fail(dbErrorMessage(error)) : null
+  return error ? fail(dbErrorMessage(error, SUBMIT_MESSAGES)) : null
 }
 
 export async function submitForReview(

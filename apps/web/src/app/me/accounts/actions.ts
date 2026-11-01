@@ -141,9 +141,10 @@ export async function bindAccount(accountId: string, _state: ActionResult, form:
 }
 
 /**
- * Frees one of the organizer's accounts from its campaign: a draft's account
- * at once, so the organizer can pick another one, and an ended campaign's
- * account on give.release_account_binding's terms.
+ * Frees one of the organizer's accounts from its campaign: a draft's account,
+ * or that of a give campaign sent back for changes, at once when no
+ * transaction reached it, so the organizer can pick another one, and an ended
+ * campaign's account on give.release_account_binding's terms.
  */
 export async function releaseAccount(accountId: string, _state: ActionResult, _form: FormData): Promise<ActionResult> {
   const session = await getSession()
@@ -169,7 +170,8 @@ export async function releaseAccount(accountId: string, _state: ActionResult, _f
   } catch (error) {
     return fail(dbErrorMessage(error as { message?: string; code?: string }))
   }
-  if (!canAskRelease(campaign?.status)) return fail(dbErrorMessage({ message: "GIVE_BINDING_NOT_RELEASABLE" }))
+  if (!canAskRelease(campaign?.status, campaign?.type))
+    return fail(dbErrorMessage({ message: "GIVE_BINDING_NOT_RELEASABLE" }))
 
   const { error } = await dbService().rpc("release_account_binding", {
     p_receiving_account_id: account.id,

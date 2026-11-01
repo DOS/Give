@@ -103,7 +103,7 @@ export default async function MyAccountsPage() {
                 account={account}
                 organizer={organizer}
                 boundTitle={(id) => campaignById.get(id)?.title ?? "Chiến dịch"}
-                boundReleasable={(id) => canAskRelease(campaignById.get(id)?.status)}
+                boundReleasable={(id) => canAskRelease(campaignById.get(id)?.status, campaignById.get(id)?.type)}
                 bindChoices={bindChoices}
               />
             ))}
@@ -268,8 +268,9 @@ function AccountItem({
           <Link href={`/me/campaigns/${holder.campaign_id}`} className="font-medium text-brand-600">
             {boundTitle(holder.campaign_id)}
           </Link>{" "}
-          từ ngày {formatDate(holder.bound_at)}. Khi chiến dịch còn là bản nháp, bạn có thể nhả tài khoản để đổi tài
-          khoản khác; sau khi gửi duyệt, tài khoản chỉ được nhả khi chiến dịch đó đã xong hẳn phần tiền.
+          từ ngày {formatDate(holder.bound_at)}. Khi chiến dịch còn là bản nháp, hoặc là chiến dịch từ thiện được yêu
+          cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào, bạn có thể nhả tài khoản để đổi tài khoản khác; ngoài ra,
+          sau khi gửi duyệt, tài khoản chỉ được nhả khi chiến dịch đó đã xong hẳn phần tiền.
           {(account.verification_status === "disabled" || unusable) && (
             <span className="font-semibold text-red-700">
               {" "}
@@ -300,7 +301,7 @@ function AccountItem({
         ) : (
           <ActionForm
             action={bindAccount.bind(null, account.id)}
-            confirm="Gắn tài khoản này với chiến dịch đã chọn? Khi chiến dịch đã gửi duyệt, tài khoản chỉ được nhả khi chiến dịch đó đã xong hẳn phần tiền."
+            confirm="Gắn tài khoản này với chiến dịch đã chọn? Sau khi gửi duyệt, tài khoản chỉ được nhả khi chiến dịch đã xong hẳn phần tiền, hoặc khi chiến dịch từ thiện được yêu cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào."
             className="space-y-2 border-t border-gray-100 pt-4"
           >
             <label htmlFor={`campaign-${account.id}`} className="label">
