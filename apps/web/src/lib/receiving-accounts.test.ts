@@ -123,7 +123,9 @@ describe("binding helpers", () => {
 
   it("lets the owner ask for a release of a draft's or an ended campaign's account", () => {
     expect(canAskRelease("draft")).toBe(true)
-    expect(canAskRelease("changes_requested")).toBe(true)
+    expect(canAskRelease("changes_requested", "give")).toBe(true)
+    expect(canAskRelease("changes_requested", "back")).toBe(false)
+    expect(canAskRelease("changes_requested")).toBe(false)
     expect(canAskRelease("cancelled")).toBe(true)
     expect(canAskRelease("closed")).toBe(true)
     expect(canAskRelease("in_review")).toBe(false)

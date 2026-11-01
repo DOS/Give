@@ -283,6 +283,38 @@ describe("releaseAccount", () => {
     expect(op(rpc, "args")).toEqual([{ p_receiving_account_id: ACCOUNT, p_actor_id: USER, p_reason: null }])
   })
 
+  it("releases the account of a give campaign sent back for changes (DOS/Give#38)", async () => {
+    state.userHandler = bindReads({
+      acc: account({ bindings: [bound] }),
+      camp: campaign({ status: "changes_requested", type: "give" }),
+    })
+    state.serviceHandler = () => ({ data: "b" })
+    expect((await releaseAccount(ACCOUNT, null, new FormData()))?.ok).toBe(true)
+    expect(state.serviceCalls.some((c) => c.target === "rpc:release_account_binding")).toBe(true)
+  })
+
+  it("explains why a give campaign sent back for changes keeps an account that received money", async () => {
+    state.userHandler = bindReads({
+      acc: account({ bindings: [bound] }),
+      camp: campaign({ status: "changes_requested", type: "give" }),
+    })
+    state.serviceHandler = () => ({
+      error: { code: "23514", message: "GIVE_BINDING_NOT_RELEASABLE: campaign changes_requested since " },
+    })
+    const result = await releaseAccount(ACCOUNT, null, new FormData())
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toContain("đã nhận giao dịch")
+  })
+
+  it("does not ask for a back project sent back for changes", async () => {
+    state.userHandler = bindReads({
+      acc: account({ bindings: [bound] }),
+      camp: campaign({ status: "changes_requested", type: "back" }),
+    })
+    expect((await releaseAccount(ACCOUNT, null, new FormData()))?.ok).toBe(false)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
   it("does not ask while the campaign is in review or live", async () => {
     state.userHandler = bindReads({ acc: account({ bindings: [bound] }), camp: campaign({ status: "live" }) })
     const result = await releaseAccount(ACCOUNT, null, new FormData())

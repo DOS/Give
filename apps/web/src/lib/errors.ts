@@ -47,10 +47,10 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ACCOUNT_NOT_VERIFIED:
     "Tài khoản nhận chưa được xác minh, hoặc hồ sơ người tổ chức chưa được xác minh hay đã đổi tên pháp lý.",
   GIVE_ACCOUNT_ALREADY_BOUND:
-    "Tài khoản này đang gắn với một chiến dịch khác. Hãy nhả tài khoản khỏi chiến dịch đó trước: bản nháp nhả được ngay, chiến dịch đã gửi duyệt chỉ nhả được khi đã xong hẳn phần tiền.",
+    "Tài khoản này đang gắn với một chiến dịch khác. Hãy nhả tài khoản khỏi chiến dịch đó trước: bản nháp, hay chiến dịch từ thiện được yêu cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào, nhả được ngay; các chiến dịch khác đã gửi duyệt chỉ nhả được khi đã xong hẳn phần tiền.",
   GIVE_BINDING_NOT_FOUND: "Tài khoản này hiện không gắn với chiến dịch nào.",
   GIVE_BINDING_NOT_RELEASABLE:
-    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, đã hủy mà chưa có giao dịch nào, hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày).",
+    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, chiến dịch từ thiện được yêu cầu chỉnh sửa, hoặc đã hủy, mà tài khoản chưa nhận giao dịch nào; hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày). Tài khoản đã nhận giao dịch là lịch sử tiền của chiến dịch nên không nhả sớm được.",
   GIVE_BINDING_HAS_OPEN_TRANSACTIONS:
     "Chưa nhả được tài khoản: còn giao dịch của chiến dịch chưa được đối chiếu hoặc chưa được giải trình.",
   GIVE_CAMPAIGN_ALREADY_BOUND: "Chiến dịch này đã có tài khoản nhận khác.",
@@ -133,12 +133,13 @@ export const REVIEW_MESSAGES: Record<string, string> = {
 
 /**
  * The same code when a just-approved campaign could not open: it stays
- * approved (there is no way back to changes requested) and the cron opens it
- * once the organizer binds a usable account.
+ * approved (there is no way back to changes requested, and its binding can be
+ * neither released nor replaced yet, DOS/Give#64) and the cron opens it once
+ * the bound account is usable again.
  */
 export const OPEN_MESSAGES: Record<string, string> = {
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
-    "chiến dịch không còn tài khoản nhận tiền dùng được. Chiến dịch vẫn ở trạng thái đã duyệt và sẽ tự mở khi người tổ chức gắn một tài khoản đã xác minh đứng tên họ.",
+    "tài khoản nhận tiền đang gắn không còn dùng được. Chiến dịch vẫn ở trạng thái đã duyệt và sẽ tự mở khi tài khoản đó dùng được trở lại (bộ phận tài chính mở lại tài khoản, hoặc hồ sơ người tổ chức được xác minh lại); nếu không, hãy hủy chiến dịch.",
 }
 
 /** Result shape that form actions return to useActionState. */

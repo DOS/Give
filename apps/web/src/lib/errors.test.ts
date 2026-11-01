@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { dbErrorMessage, giveErrorCode, REVIEW_MESSAGES, SUBMIT_MESSAGES } from "./errors"
+import { dbErrorMessage, giveErrorCode, OPEN_MESSAGES, REVIEW_MESSAGES, SUBMIT_MESSAGES } from "./errors"
 
 describe("giveErrorCode", () => {
   it("reads the code at the start of the message", () => {
@@ -34,6 +34,7 @@ describe("dbErrorMessage", () => {
     expect(dbErrorMessage(error)).toBe("Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau.")
     expect(dbErrorMessage(error, SUBMIT_MESSAGES)).toContain("Tài khoản nhận tiền")
     expect(dbErrorMessage(error, REVIEW_MESSAGES)).toContain("yêu cầu người tổ chức chỉnh sửa")
+    expect(dbErrorMessage(error, OPEN_MESSAGES)).toContain("vẫn ở trạng thái đã duyệt")
     // The overrides touch only this code.
     expect(dbErrorMessage({ message: "GIVE_REASON_REQUIRED" }, SUBMIT_MESSAGES)).toBe("Cần ghi lý do.")
   })

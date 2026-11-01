@@ -154,9 +154,10 @@ give.account_bindings (
 CREATE UNIQUE INDEX ... ON give.account_bindings(receiving_account_id) WHERE released_at IS NULL;
 ```
 
-Chỉ hàm `give.release_account_binding()` được nhả binding, và chỉ khi campaign đã xong hẳn phần tiền:
+Chỉ hàm `give.release_account_binding()` được nhả binding, và chỉ khi campaign đã xong hẳn phần tiền, trừ khi binding chưa nhận giao dịch nào:
 
-- `give`: đã `closed` ít nhất 30 ngày, và mọi giao dịch của tài khoản trong thời gian binding đã được khớp hoặc giải trình.
+- `draft`, và với `give` cả `changes_requested` (DOS/Give#38) hay `cancelled`: nhả ngay nếu tài khoản chưa nhận giao dịch nào trong binding đó.
+- `give`: đã `closed` (hoặc `cancelled`) ít nhất 30 ngày, và mọi giao dịch của tài khoản trong thời gian binding đã được khớp hoặc giải trình.
 - `back`: `failed` hoặc `cancelled`, hoặc `succeeded` và không còn contribution nào ở `payment_due`, `partially_paid` hay `refund_due`.
 
 Mỗi giao dịch được gắn `campaign_id` theo binding đang hiệu lực tại lúc ghi nhận, và không bao giờ đổi sau đó (mục 2.4). Nhờ vậy, khi tài khoản được dùng lại cho campaign sau, sao kê, tiền chưa khớp và báo cáo chi của campaign cũ vẫn tách bạch.
