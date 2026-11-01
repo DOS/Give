@@ -281,6 +281,22 @@ describe("addEvidence", () => {
     expect(state.serviceCalls).toHaveLength(0)
   })
 
+  it("does not count images staff hid, so a redacted copy fits under the cap", async () => {
+    const base = reads({ disbursement: explained(20) })
+    state.userHandler = (call) =>
+      call.target === "evidence_moderation"
+        ? { data: [{ evidence_id: "e3", hidden: true, reason: "Lộ CCCD", moderated_at: "t" }] }
+        : base(call)
+    const result = await addEvidence(CAMPAIGN, TX, null, form({ evidence_kind: "photo" }, [png()]))
+    expect(result?.ok).toBe(true)
+    expect(
+      op(
+        state.userCalls.find((c) => c.target === "evidence_moderation"),
+        "in"
+      )?.[1]
+    ).toHaveLength(20)
+  })
+
   it("removes the upload when the database refuses", async () => {
     state.userHandler = reads({ disbursement: explained() })
     state.serviceHandler = (call) =>

@@ -8,10 +8,13 @@ import { isUuid } from "./ids"
  * steps 10-12). The DDL lives in DOS-Me
  * `supabase/migrations/20261101110000_give_money_core_ledger.sql`.
  *
- * Public pages read only the views give.public_campaigns and
- * give.public_statement, always with explicit column lists. Those views
- * already hide anonymous donors' names, guest details, transfer descriptions
- * and full account numbers; nothing here adds any of that back.
+ * Public pages read only the views give.public_campaigns,
+ * give.public_statement and give.public_disbursement_evidence, always with
+ * explicit column lists. Those views never carry a bank account-holder name,
+ * guest details, transfer descriptions or full account numbers, and hide
+ * anonymous donors' names (DOS-Me
+ * `20261102210000_give_public_evidence_and_donor_names.sql`, DOS/Give#58);
+ * nothing here adds any of that back.
  */
 
 // ---------------------------------------------------------------------------
@@ -94,6 +97,14 @@ export function raisedAmount(totals: MoneyTotals | null | undefined, type: Campa
   return type === "back" ? totals.pledged_amount : totals.paid_amount
 }
 
+/**
+ * What is left of the money that came in: paid in minus spent minus
+ * refunded, never negative (an organizer may top the account up).
+ */
+export function remainingAmount(totals: MoneyTotals): number {
+  return Math.max(0, totals.paid_amount - totals.disbursed_amount - totals.refunded_amount)
+}
+
 /** Explained spending: disbursed minus the unexplained part, never negative. */
 export function explainedOutAmount(totals: MoneyTotals): number {
   return Math.max(0, totals.disbursed_amount - totals.unexplained_out_amount)
@@ -114,8 +125,7 @@ export interface StatementRow {
   booked_date_only: boolean
   after_close: boolean
   matched: boolean
-  /** Only for a row matched to (or refunding) a non-anonymous contribution. */
-  counterparty_name: string | null
+  /** Only for an explained payment out that is not a refund. */
   counterparty_account_masked: string | null
   /** null for incoming rows. */
   explained: boolean | null
@@ -124,11 +134,18 @@ export interface StatementRow {
   recipient: string | null
   is_refund: boolean | null
   explained_at: string | null
+  /** The donor's chosen display name: only for an incoming row matched to a non-anonymous contribution. */
+  donor_name: string | null
+  /** For a matched incoming row, whether the donor chose anonymity; null otherwise. */
+  donor_anonymous: boolean | null
 }
 
+// counterparty_name is left out on purpose: the bank's account-holder name is
+// never public (the view returns NULL there since DOS/Give#58).
 const STATEMENT_COLUMNS =
-  "id, direction, asset, amount, booked_at, booked_date_only, after_close, matched, counterparty_name, " +
-  "counterparty_account_masked, explained, purpose, category, recipient, is_refund, explained_at"
+  "id, direction, asset, amount, booked_at, booked_date_only, after_close, matched, " +
+  "counterparty_account_masked, explained, purpose, category, recipient, is_refund, explained_at, " +
+  "donor_name, donor_anonymous"
 
 export const STATEMENT_FILTERS = ["all", "in", "out", "unexplained"] as const
 export type StatementFilter = (typeof STATEMENT_FILTERS)[number]
@@ -141,6 +158,13 @@ export const STATEMENT_FILTER_LABELS: Record<StatementFilter, string> = {
 }
 
 export const STATEMENT_PAGE_SIZE = 50
+
+const optionalText = (max: number, message: string) =>
+  z
+    .string()
+    .trim()
+    .max(max, message)
+    .transform((v) => (v === "" ? null : v))
 /** Keeps ?page= bounded. */
 const MAX_PAGE = 1000
 
@@ -202,21 +226,66 @@ export async function listStatement(
   return { rows, total: count ?? rows.length }
 }
 
+export const ANONYMOUS_LABEL = "Ẩn danh"
+
 /**
  * Who is on the other side of a statement row, as far as the public may
- * know. The view returns a name only when it may be shown, so a missing name
- * never reveals why it is missing.
+ * know (owner decision on DOS/Give#58): for money in, the donor's chosen
+ * display name or "Ẩn danh", never the bank account-holder name; an
+ * unmatched transfer has no name.
  */
 export function counterpartyLabel(
-  row: Pick<StatementRow, "direction" | "matched" | "counterparty_name" | "recipient" | "explained">
+  row: Pick<StatementRow, "direction" | "matched" | "donor_name" | "donor_anonymous" | "recipient" | "explained">
 ): string {
   if (row.direction === "out") {
     if (!row.explained) return "Chưa rõ người nhận"
-    return row.recipient ?? row.counterparty_name ?? "Không công khai"
+    return row.recipient ?? "Không công khai"
   }
-  if (row.counterparty_name) return row.counterparty_name
-  return row.matched ? "Người ủng hộ (không hiện tên)" : "Chưa khớp với lượt ủng hộ nào"
+  if (!row.matched) return "Chưa khớp với lượt ủng hộ nào"
+  if (row.donor_anonymous) return ANONYMOUS_LABEL
+  return row.donor_name ?? "Người ủng hộ"
 }
+
+// ---------------------------------------------------------------------------
+// Public disbursement evidence (give.public_disbursement_evidence)
+// ---------------------------------------------------------------------------
+
+/** An evidence image anyone may see: of a public campaign and not hidden by staff. */
+export interface PublicEvidence {
+  id: string
+  bank_transaction_id: string
+  storage_path: string
+  kind: EvidenceKind
+  created_at: string
+}
+
+/** Evidence of the given outgoing transactions of a public campaign, oldest first, by transaction. */
+export async function listPublicEvidence(
+  db: Db,
+  campaignId: string,
+  transactionIds: readonly string[]
+): Promise<Map<string, PublicEvidence[]>> {
+  const ids = [...new Set(transactionIds)]
+  if (ids.length === 0) return new Map()
+  const { data, error } = await db
+    .from("public_disbursement_evidence")
+    .select("id, bank_transaction_id, storage_path, kind, created_at")
+    .eq("campaign_id", campaignId)
+    .in("bank_transaction_id", ids)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+  if (error) throw error
+  const byTx = new Map<string, PublicEvidence[]>()
+  for (const row of (data ?? []) as PublicEvidence[]) {
+    byTx.set(row.bank_transaction_id, [...(byTx.get(row.bank_transaction_id) ?? []), row])
+  }
+  return byTx
+}
+
+/** A visitor's report that an evidence image exposes someone's personal data. */
+export const reportSchema = z.object({
+  reason: optionalText(500, "Lý do tối đa 500 ký tự"),
+})
 
 // ---------------------------------------------------------------------------
 // Disbursement explanations (organizer side)
@@ -288,9 +357,25 @@ export function parseEvidencePath(segments: readonly string[]): string | null {
   return EVIDENCE_PATH.test(path) ? path : null
 }
 
-/** Where the organizer's pages load an evidence image (app/media/evidence). */
+/**
+ * Where the organizer's and staff pages load an evidence image
+ * (app/media/evidence: under RLS, so also a hidden one).
+ */
 export function evidenceUrl(storagePath: string): string {
   return `/media/evidence/${storagePath.replace(/^disbursements\//, "")}`
+}
+
+/**
+ * Where public pages load an evidence image (app/media/public/evidence: no
+ * session, only images in give.public_disbursement_evidence).
+ */
+export function publicEvidenceUrl(storagePath: string): string {
+  return `/media/public/evidence/${storagePath.replace(/^disbursements\//, "")}`
+}
+
+/** The campaign id inside an evidence storage key, or null when the key has another shape. */
+export function evidenceCampaignId(storagePath: string): string | null {
+  return EVIDENCE_PATH.test(storagePath) ? storagePath.split("/")[1] : null
 }
 
 /** An outgoing transaction of the organizer's campaign, read under RLS. */
@@ -497,13 +582,6 @@ export function refundOptionLabel(x: RefundableContribution, format: (amount: nu
   const left = x.refundable_amount < x.received_amount ? `, còn hoàn được ${format(x.refundable_amount)}` : ""
   return `${x.reference_code} · ${who} · đã nhận ${format(x.received_amount)}${left}`
 }
-
-const optionalText = (max: number, message: string) =>
-  z
-    .string()
-    .trim()
-    .max(max, message)
-    .transform((v) => (v === "" ? null : v))
 
 /**
  * The organizer's explanation of one outgoing transaction

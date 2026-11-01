@@ -37,10 +37,14 @@ describe("MoneyTotals", () => {
     const html = renderToStaticMarkup(createElement(MoneyTotals, { totals, statementHref: "/campaigns/a/statement" }))
     expect(figures(html)).toEqual({
       paid: formatVnd(1_500_000),
-      disbursed: formatVnd(700_000),
       refunded: formatVnd(100_000),
+      remaining: formatVnd(700_000),
+      disbursed: formatVnd(700_000),
       unexplained: formatVnd(200_000),
     })
+    // The gross amount is the headline; refunded and remaining follow right below it.
+    const order = ["paid", "refunded", "remaining", "disbursed"].map((k) => html.indexOf(`data-figure="${k}"`))
+    expect(order).toEqual([...order].sort((x, y) => x - y))
     expect(html).toContain("1 khoản")
     expect(html).toContain('href="/campaigns/a/statement"')
   })

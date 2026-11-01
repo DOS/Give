@@ -74,15 +74,18 @@ export function SubmitButton({
   className = "btn-primary",
   name,
   value,
+  disabled,
 }: {
   children: ReactNode
   className?: string
   name?: string
   value?: string
+  /** Turns the button off while a precondition shown next to it is unmet. */
+  disabled?: boolean
 }) {
   const pending = useContext(PendingContext)
   return (
-    <button type="submit" className={className} disabled={pending} name={name} value={value}>
+    <button type="submit" className={className} disabled={pending || disabled} name={name} value={value}>
       {pending ? "Đang xử lý…" : children}
     </button>
   )

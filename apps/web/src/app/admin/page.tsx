@@ -36,6 +36,9 @@ export default async function AdminPage() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-3xl font-bold">Kiểm duyệt</h1>
         <div className="flex flex-wrap gap-2">
+          <Link href="/admin/evidence" className="btn-secondary">
+            Ảnh chứng từ bị báo cáo
+          </Link>
           {reviewsAccounts && (
             <>
               <Link href="/admin/accounts" className="btn-secondary">
