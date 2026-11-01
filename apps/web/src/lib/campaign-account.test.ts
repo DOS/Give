@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest"
 
+import { fakeDb, op, type Call } from "@/test/fake-db"
+
 import {
   accountChoices,
   boundAccountOf,
   canPickAccount,
+  loadEditorAccounts,
   SUBMIT_NO_ACCOUNT,
   submitAccountProblem,
   submitUnusableAccount,
 } from "./campaign-account"
+import type { Db } from "./campaigns"
 import type { ReceivingAccount } from "./receiving-accounts"
 
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
@@ -113,6 +117,48 @@ describe("accountChoices", () => {
   it("blocks a verified account once the organizer's identity no longer matches it", () => {
     const [choice] = accountChoices([account("x")], CAMPAIGN, { ...organizer, legal_name: "Trần Văn B" }, refs)
     expect(choice.blockedReason).toContain("Tên chủ tài khoản không còn trùng")
+  })
+})
+
+describe("loadEditorAccounts", () => {
+  it("finds the bound account, titles accounts held elsewhere and blocks submission when unusable", async () => {
+    const calls: Call[] = []
+    const accounts = [
+      account("here", { verification_status: "disabled", bindings: bound(CAMPAIGN) }),
+      account("elsewhere", { bindings: bound(OTHER) }),
+    ]
+    const db = fakeDb((call) => {
+      if (call.target === "receiving_accounts") return { data: accounts }
+      if (call.target === "organizers") return { data: organizer }
+      if (call.target === "campaigns") return { data: [{ id: OTHER, slug: "khac", title: "Quỹ khác", status: "live" }] }
+      return undefined
+    }, calls)
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN)
+    expect(view.bound?.id).toBe("here")
+    expect(view.boundUnusable).toBe("Tài khoản chưa được xác minh.")
+    expect(view.submitBlocked).toBe(submitUnusableAccount("Tài khoản chưa được xác minh."))
+    expect(view.choices.map((c) => c.account.id)).toEqual(["elsewhere"])
+    expect(view.choices[0].blockedReason).toContain('"Quỹ khác"')
+    // Only campaigns other than this one are looked up.
+    expect(
+      op(
+        calls.find((c) => c.target === "campaigns"),
+        "in"
+      )
+    ).toEqual(["id", [OTHER]])
+  })
+
+  it("lets a campaign with a usable bound account be submitted", async () => {
+    const db = fakeDb((call) =>
+      call.target === "receiving_accounts"
+        ? { data: [account("here", { bindings: bound(CAMPAIGN) })] }
+        : call.target === "organizers"
+          ? { data: organizer }
+          : undefined
+    )
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN)
+    expect(view.submitBlocked).toBeNull()
+    expect(view.choices).toEqual([])
   })
 })
 

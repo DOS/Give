@@ -24,7 +24,7 @@ import {
 import { formatDate, formatVnd, toVietnamLocalInput } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { privateCoverUrl } from "@/lib/cover-urls"
-import { canAskRelease } from "@/lib/receiving-accounts"
+import { canAskRelease, isBindableStatus } from "@/lib/receiving-accounts"
 import { getMoneyTotals } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
@@ -57,7 +57,9 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
     listMilestones(db, campaign.id),
     listAllUpdates(db, campaign.id),
     isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
-    isGive ? loadEditorAccounts(db, session.user.id, campaign.id) : Promise.resolve(null),
+    // A failed account read shows a notice in its section instead of failing the
+    // whole editor; submitForReview still checks the account on the server.
+    isGive ? loadEditorAccounts(db, session.user.id, campaign.id).catch(() => null) : Promise.resolve(null),
   ])
   const editable = isEditableStatus(campaign.status)
   const submitBlocked = accounts?.submitBlocked ?? null
@@ -451,6 +453,19 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
         </section>
       )}
 
+      {isGive && !accounts && (
+        <section id="receiving-account" className="card p-6">
+          <h2 className="text-lg font-semibold">Tài khoản nhận tiền</h2>
+          <p className="text-sm text-red-700">
+            Không tải được tài khoản nhận tiền của chiến dịch. Hãy tải lại trang, hoặc xem tại trang{" "}
+            <Link href="/me/accounts" className="underline">
+              Tài khoản nhận tiền
+            </Link>
+            .
+          </p>
+        </section>
+      )}
+
       {accounts && (
         <ReceivingAccountSection
           campaignId={campaign.id}
@@ -471,13 +486,15 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             </p>
             {submitBlocked && (
               <p role="alert" className="mb-3 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Chưa gửi duyệt được: chiến dịch từ thiện cần gắn một tài khoản nhận tiền đã xác minh, đứng tên bạn,{" "}
-                {accounts?.bound ? "và tài khoản đang gắn phải còn dùng được" : "và chiến dịch này chưa gắn tài khoản"}.
-                Chọn tài khoản trong mục{" "}
+                Chưa gửi duyệt được: chiến dịch từ thiện cần gắn một tài khoản nhận tiền đã xác minh, đứng tên bạn.{" "}
+                {accounts?.bound
+                  ? "Tài khoản đang gắn không còn dùng được: nhả nó trong mục "
+                  : "Chiến dịch này chưa gắn tài khoản: chọn tài khoản trong mục "}
                 <a href="#receiving-account" className="underline">
                   Tài khoản nhận tiền
                 </a>{" "}
-                ở trên, hoặc khai báo và xác minh tài khoản tại trang{" "}
+                {accounts?.bound ? "ở trên rồi gắn tài khoản khác" : "ở trên"}, hoặc khai báo và xác minh tài khoản tại
+                trang{" "}
                 <Link href="/me/accounts" className="font-medium underline">
                   Tài khoản nhận tiền
                 </Link>
@@ -569,13 +586,18 @@ function ReceivingAccountSection({
           {canAskRelease(status, type) ? (
             <ActionForm
               action={releaseAccount.bind(null, bound.id)}
-              confirm="Nhả tài khoản này khỏi chiến dịch? Chiến dịch sẽ không có tài khoản nhận cho đến khi bạn gắn tài khoản khác."
+              confirm={
+                isBindableStatus(status)
+                  ? "Nhả tài khoản này khỏi chiến dịch? Chiến dịch sẽ không có tài khoản nhận cho đến khi bạn gắn tài khoản khác."
+                  : "Nhả tài khoản khỏi chiến dịch đã kết thúc để dùng cho chiến dịch khác? Hệ thống chỉ cho nhả khi phần tiền của chiến dịch đã xong hẳn."
+              }
             >
               <SubmitButton className="btn-secondary">Nhả tài khoản</SubmitButton>
             </ActionForm>
           ) : (
             <p className="text-sm text-gray-600">
-              Sau khi gửi duyệt, tài khoản chỉ được nhả khi chiến dịch đã xong hẳn phần tiền.
+              Khi chiến dịch đang chờ duyệt, đã duyệt hoặc đang chạy, tài khoản không nhả được; tài khoản được nhả khi
+              chiến dịch đã xong hẳn phần tiền.
             </p>
           )}
         </div>
