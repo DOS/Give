@@ -306,7 +306,8 @@ View công khai (client chỉ được đọc các view này):
 
 - `give.public_campaigns`: campaign ở trạng thái `live` trở về sau, kèm các tổng ở trên.
 - `give.public_contributions`: tên đã che theo `is_anonymous`, không có email.
-- `give.public_statement`: giao dịch vào và ra, số tài khoản đối ứng đã che. Tên đối ứng chỉ hiện khi giao dịch khớp với một contribution không ẩn danh.
+- `give.public_statement`: giao dịch vào và ra. Tiền vào khớp với một contribution hiện tên hiển thị người góp đã chọn (`donor_name`) hoặc "Ẩn danh" (`donor_anonymous`), không bao giờ hiện tên chủ tài khoản ngân hàng hay số tài khoản của người góp; tiền vào chưa khớp không có tên. Tiền ra đã giải trình (không phải hoàn tiền) hiện số tài khoản người nhận đã che (DOS/Give#58).
+- `give.public_disbursement_evidence`: ảnh chứng từ khoản chi của campaign công khai, trừ ảnh nhân viên đã ẩn. Người tổ chức che thông tin cá nhân của người nhận trước khi tải lên; người dùng đã đăng nhập báo cáo được ảnh lộ thông tin (`give.report_evidence`), kiểm duyệt viên/quản trị viên ẩn hoặc hiện lại ảnh (`give.moderate_evidence`, ghi `audit_log`) (DOS/Give#58).
 
 > ⚠️ **Lưu ý UX khi ẩn danh:** nếu tài khoản nhận là tài khoản minh bạch của ngân hàng, trang sao kê của **ngân hàng** vẫn hiện tên người chuyển. Give chỉ ẩn được trên Give. Phải báo rõ điều này cho người góp ngay tại bước chọn ẩn danh.
 

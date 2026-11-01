@@ -28,6 +28,7 @@ import {
   type RefundableContribution,
 } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
+import { listHiddenEvidence, type EvidenceState } from "@/lib/evidence-moderation"
 
 import { addEvidence, explainDisbursement } from "./actions"
 
@@ -51,11 +52,14 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
     listExplainedOutgoing(db, campaign.id),
     listRefundable(db, campaign.id),
   ])
-  const refundCodes = await listReferenceCodes(
-    db,
-    campaign.id,
-    done.flatMap((tx) => (tx.disbursement.refund_contribution_id ? [tx.disbursement.refund_contribution_id] : []))
-  )
+  const [refundCodes, hiddenEvidence] = await Promise.all([
+    listReferenceCodes(
+      db,
+      campaign.id,
+      done.flatMap((tx) => (tx.disbursement.refund_contribution_id ? [tx.disbursement.refund_contribution_id] : []))
+    ),
+    listHiddenEvidence(db),
+  ])
 
   return (
     <div className="mx-auto max-w-4xl space-y-8 px-4 py-10">
@@ -66,9 +70,8 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
         <h1 className="mt-3 text-3xl font-bold">Giải trình khoản chi</h1>
         <p className="mt-2 text-gray-600">
           Mỗi khoản tiền ra khỏi tài khoản nhận cần được giải trình trong {EXPLAIN_WITHIN_DAYS} ngày. Mục đích, loại
-          khoản chi và người nhận sẽ hiện công khai trên sao kê; số khoản chưa giải trình cũng được công khai. Ảnh chứng
-          từ chỉ bạn và bộ phận tài chính của Give xem được. Giải trình đã gửi thì không sửa được, nhưng có thể thêm
-          chứng từ.
+          khoản chi, người nhận và ảnh chứng từ sẽ hiện công khai trên sao kê; số khoản chưa giải trình cũng được công
+          khai. Giải trình đã gửi thì không sửa được, nhưng có thể thêm chứng từ.
         </p>
         {isPublicStatus(campaign.status) && (
           <Link href={statementHref(campaign.slug, "all")} className="mt-2 inline-block text-sm text-brand-600">
@@ -115,6 +118,7 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
                 <Explanation
                   disbursement={tx.disbursement}
                   refundCode={refundCodes.get(tx.disbursement.refund_contribution_id ?? "")}
+                  hidden={hiddenEvidence}
                 />
                 {tx.disbursement.evidence.length < MAX_EVIDENCE_PER_TRANSACTION && (
                   <ActionForm
@@ -241,6 +245,11 @@ function EvidenceFields({ idPrefix, label }: { idPrefix: string; label: string }
           multiple
           className="field"
         />
+        <p className="mt-1 rounded bg-amber-50 p-2 text-sm text-amber-900" role="note">
+          Ảnh chứng từ được công khai cho mọi người xem. Trước khi tải lên, hãy che kín thông tin cá nhân của người
+          nhận: số CCCD, số điện thoại, địa chỉ, số tài khoản. Ai cũng có thể báo cáo ảnh lộ thông tin cá nhân, và Give
+          sẽ ẩn ảnh đó.
+        </p>
         <p className="hint">
           Tối đa {MAX_EVIDENCE_FILES} ảnh JPEG, PNG hoặc WebP, tổng 4 MB mỗi lần. Thông tin vị trí và thiết bị trong ảnh
           được xóa trước khi lưu.
@@ -262,7 +271,16 @@ function EvidenceFields({ idPrefix, label }: { idPrefix: string; label: string }
   )
 }
 
-function Explanation({ disbursement, refundCode }: { disbursement: Disbursement; refundCode: string | undefined }) {
+function Explanation({
+  disbursement,
+  refundCode,
+  hidden,
+}: {
+  disbursement: Disbursement
+  refundCode: string | undefined
+  /** Evidence staff hid from the public statement, by evidence id. */
+  hidden: Map<string, EvidenceState>
+}) {
   const category = categoryLabel(disbursement.category)
   const evidence = disbursement.evidence
   return (
@@ -290,6 +308,13 @@ function Explanation({ disbursement, refundCode }: { disbursement: Disbursement;
               >
                 {EVIDENCE_KINDS[e.kind] ?? e.kind} ({formatDate(e.created_at)})
               </a>
+              {hidden.has(e.id) && (
+                <span className="ml-1 rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-800">
+                  Give đã ẩn khỏi sao kê
+                  {hidden.get(e.id)?.reason ? `: ${hidden.get(e.id)?.reason}` : ""}. Hãy tải lên bản đã che thông tin cá
+                  nhân.
+                </span>
+              )}
             </li>
           ))}
         </ul>

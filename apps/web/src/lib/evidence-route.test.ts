@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
-import { evidenceResponse } from "./evidence-route"
+import { evidenceResponse, PUBLIC_EVIDENCE_CACHE, publicEvidenceResponse } from "./evidence-route"
 
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
 const TX = "33333333-3333-4333-8333-333333333333"
@@ -46,5 +46,50 @@ describe("evidenceResponse", () => {
     const broken = fakeDb(() => ({ error: { code: "XX000", message: "boom" } }))
     expect((await evidenceResponse(SEGMENTS, expired as never, service([]) as never, "b")).status).toBe(404)
     expect((await evidenceResponse(SEGMENTS, broken as never, service([]) as never, "b")).status).toBe(502)
+  })
+})
+
+describe("publicEvidenceResponse", () => {
+  it("serves a public image without a session, cacheable briefly and kept out of search", async () => {
+    const anonCalls: Call[] = []
+    const serviceCalls: Call[] = []
+    const anon = fakeDb(() => ({ data: [{ id: "e1" }] }), anonCalls)
+    const res = await publicEvidenceResponse(SEGMENTS, anon as never, service(serviceCalls) as never, "give-media")
+    expect(res.status).toBe(200)
+    expect(res.headers.get("Cache-Control")).toBe(PUBLIC_EVIDENCE_CACHE)
+    expect(res.headers.get("Set-Cookie")).toBeNull()
+    expect(res.headers.get("X-Robots-Tag")).toContain("noindex")
+    expect(res.headers.get("Content-Security-Policy")).toBe("default-src 'none'")
+    expect(anonCalls[0].target).toBe("public_disbursement_evidence")
+    expect(op(anonCalls[0], "eq")).toEqual(["storage_path", PATH])
+    expect(op(serviceCalls[0], "download")).toEqual([PATH])
+  })
+
+  it("is a 404 for a hidden image or one of a campaign that is no longer public (not in the view)", async () => {
+    const serviceCalls: Call[] = []
+    const res = await publicEvidenceResponse(
+      SEGMENTS,
+      fakeDb(() => ({ data: [] })) as never,
+      service(serviceCalls) as never,
+      "give-media"
+    )
+    expect(res.status).toBe(404)
+    expect(res.headers.get("Cache-Control")).toBe("no-store")
+    expect(serviceCalls).toHaveLength(0)
+  })
+
+  it("is a 404 for a malformed path without any lookup, and a 502 when the view fails", async () => {
+    const anonCalls: Call[] = []
+    const any = fakeDb(() => ({ data: [{ id: "e1" }] }), anonCalls)
+    expect((await publicEvidenceResponse(["..", "x.webp"], any as never, service([]) as never, "b")).status).toBe(404)
+    expect(anonCalls).toHaveLength(0)
+    const broken = fakeDb(() => ({ error: { code: "XX000", message: "boom" } }))
+    expect((await publicEvidenceResponse(SEGMENTS, broken as never, service([]) as never, "b")).status).toBe(502)
+  })
+
+  it("is a 404 when the object is missing from storage", async () => {
+    const anon = fakeDb(() => ({ data: [{ id: "e1" }] }))
+    const missing = fakeDb(() => ({ error: { message: "Object not found" } }))
+    expect((await publicEvidenceResponse(SEGMENTS, anon as never, missing as never, "b")).status).toBe(404)
   })
 })
