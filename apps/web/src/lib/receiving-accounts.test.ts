@@ -6,6 +6,7 @@ import {
   accountUnusableReason,
   activeBinding,
   bindRefusalReason,
+  canAskRelease,
   hostnameOf,
   isBindableStatus,
   maskAccountNumber,
@@ -118,6 +119,15 @@ describe("binding helpers", () => {
     const active = { id: "b", campaign_id: "c2", bound_at: "2026-03-01", released_at: null }
     expect(activeBinding({ bindings: [released, active] })).toBe(active)
     expect(activeBinding({ bindings: [released] })).toBeNull()
+  })
+
+  it("lets the owner ask for a release of a draft's or an ended campaign's account", () => {
+    expect(canAskRelease("draft")).toBe(true)
+    expect(canAskRelease("cancelled")).toBe(true)
+    expect(canAskRelease("closed")).toBe(true)
+    expect(canAskRelease("in_review")).toBe(false)
+    expect(canAskRelease("live")).toBe(false)
+    expect(canAskRelease(undefined)).toBe(false)
   })
 
   it("allows binding from draft until the campaign ends", () => {

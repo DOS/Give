@@ -85,10 +85,29 @@ export const FINANCE_ROLES = ["finance", "admin"] as const
  * the editor can require an account before submission; deleting the draft
  * deletes its binding.
  */
-export const BINDABLE_STATUSES: readonly CampaignStatus[] = ["draft", "in_review", "changes_requested", "approved", "live"]
+export const BINDABLE_STATUSES: readonly CampaignStatus[] = [
+  "draft",
+  "in_review",
+  "changes_requested",
+  "approved",
+  "live",
+]
 
 export function isBindableStatus(status: CampaignStatus): boolean {
   return BINDABLE_STATUSES.includes(status)
+}
+
+/**
+ * Campaign statuses for which the owner may ask give.release_account_binding
+ * to free the account: a draft at once (to change its account), an ended
+ * campaign once the database's terms hold (no transaction for a draft
+ * cancelled without submission; otherwise 30 days and every transaction
+ * matched or explained). The database decides and explains a refusal.
+ */
+export const RELEASE_STATUSES: readonly CampaignStatus[] = ["draft", "cancelled", "closed", "failed", "succeeded"]
+
+export function canAskRelease(status: CampaignStatus | undefined): boolean {
+  return status !== undefined && RELEASE_STATUSES.includes(status)
 }
 
 export const ACCOUNT_STATUS_LABELS: Record<AccountStatus, string> = {

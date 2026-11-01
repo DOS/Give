@@ -24,7 +24,7 @@ vi.mock("@/lib/supabase", () => ({
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
 }))
 
-const { bindAccount, registerAccount } = await import("./actions")
+const { bindAccount, registerAccount, releaseAccount } = await import("./actions")
 
 function registerForm(overrides: Record<string, string> = {}) {
   const form = new FormData()
@@ -266,5 +266,43 @@ describe("bindAccount", () => {
     expect((await bindAccount("x", null, bindForm()))?.ok).toBe(false)
     expect((await bindAccount(ACCOUNT, null, bindForm("nope")))?.ok).toBe(false)
     expect(state.userCalls).toHaveLength(0)
+  })
+})
+
+describe("releaseAccount", () => {
+  const bound = { id: "b", campaign_id: CAMPAIGN, bound_at: "2026-11-01", released_at: null }
+
+  it("releases the account of the organizer's draft through the service-role RPC", async () => {
+    state.userHandler = bindReads({ acc: account({ bindings: [bound] }), camp: campaign({ status: "draft" }) })
+    state.serviceHandler = () => ({ data: "b" })
+
+    const result = await releaseAccount(ACCOUNT, null, new FormData())
+
+    expect(result?.ok).toBe(true)
+    const rpc = state.serviceCalls.find((c) => c.target === "rpc:release_account_binding")
+    expect(op(rpc, "args")).toEqual([{ p_receiving_account_id: ACCOUNT, p_actor_id: USER, p_reason: null }])
+  })
+
+  it("does not ask while the campaign is in review or live", async () => {
+    state.userHandler = bindReads({ acc: account({ bindings: [bound] }), camp: campaign({ status: "live" }) })
+    const result = await releaseAccount(ACCOUNT, null, new FormData())
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toContain("Chưa nhả được tài khoản")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("refuses someone else's account and an account with no binding", async () => {
+    state.userHandler = bindReads({ acc: account({ owner_user_id: OTHER, bindings: [bound] }) })
+    expect((await releaseAccount(ACCOUNT, null, new FormData()))?.message).toContain("Không tìm thấy tài khoản nhận")
+    state.userHandler = bindReads()
+    expect((await releaseAccount(ACCOUNT, null, new FormData()))?.message).toContain("không gắn với chiến dịch nào")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("explains the database's refusal for an ended campaign", async () => {
+    state.userHandler = bindReads({ acc: account({ bindings: [bound] }), camp: campaign({ status: "closed" }) })
+    state.serviceHandler = () => ({ error: { code: "23514", message: "GIVE_BINDING_HAS_OPEN_TRANSACTIONS" } })
+    const result = await releaseAccount(ACCOUNT, null, new FormData())
+    expect(result?.message).toContain("chưa được đối chiếu")
   })
 })
