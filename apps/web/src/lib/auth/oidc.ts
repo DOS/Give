@@ -73,7 +73,39 @@ export class TokenRequestError extends Error {
   }
 }
 
-async function tokenRequest(cfg: OidcConfig, body: URLSearchParams, signal?: AbortSignal): Promise<TokenResponse> {
+// Error codes for a refresh token that can never be used again. The Supabase
+// OAuth server answers a dead refresh token with its own codes, not OAuth's
+// `invalid_grant` (`internal/tokens/service.go`, RefreshTokenGrant); both
+// count. Anything else, such as `invalid_client` from a wrong or rotated
+// client secret, is a fault on our side, not a session that ended.
+const DEAD_REFRESH_CODES = new Set([
+  "invalid_grant",
+  "refresh_token_not_found",
+  "refresh_token_already_used",
+  "session_not_found",
+  "session_expired",
+  "user_banned",
+])
+
+/** True when the issuer rejected the refresh token itself, so the session is over. */
+export function isDeadRefreshToken(error: unknown): boolean {
+  return (
+    error instanceof TokenRequestError &&
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.code !== undefined &&
+    DEAD_REFRESH_CODES.has(error.code)
+  )
+}
+
+/** Deadline for a token request when the caller gives none, so a slow issuer cannot stall a request. */
+export const TOKEN_TIMEOUT_MS = 5000
+
+async function tokenRequest(
+  cfg: OidcConfig,
+  body: URLSearchParams,
+  signal: AbortSignal = AbortSignal.timeout(TOKEN_TIMEOUT_MS)
+): Promise<TokenResponse> {
   const basic = Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString("base64")
   const res = await fetch(`${cfg.issuer}/oauth/token`, {
     method: "POST",
