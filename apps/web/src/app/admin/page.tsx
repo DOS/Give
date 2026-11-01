@@ -19,11 +19,22 @@ export default async function AdminPage() {
   // Non-staff get a plain 404 so the page does not advertise itself.
   if (!(await isStaff(db))) notFound()
 
-  const [queue, organizers] = await Promise.all([listReviewQueue(db), listOrganizersToVerify(db)])
+  const [queue, organizers, canManageRoles] = await Promise.all([
+    listReviewQueue(db),
+    listOrganizersToVerify(db),
+    isStaff(db, ["admin"]),
+  ])
 
   return (
     <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
-      <h1 className="text-3xl font-bold">Kiểm duyệt</h1>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-3xl font-bold">Kiểm duyệt</h1>
+        {canManageRoles && (
+          <Link href="/admin/roles" className="btn-secondary">
+            Phân quyền nhân sự
+          </Link>
+        )}
+      </div>
 
       <section>
         <h2 className="mb-4 text-xl font-bold">Chiến dịch chờ duyệt ({queue.length})</h2>

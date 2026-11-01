@@ -24,6 +24,15 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ORGANIZER_NOT_FOUND: "Không tìm thấy hồ sơ người tổ chức.",
   GIVE_ORGANIZER_CHANGED_SINCE_REVIEW:
     "Người tổ chức vừa đổi thông tin. Hãy tải lại trang và xem lại trước khi xác minh.",
+  GIVE_ADMIN_REQUIRED: "Chỉ quản trị viên mới được cấp hoặc thu quyền.",
+  GIVE_ROLE_INVALID: "Quyền không hợp lệ.",
+  GIVE_ROLE_UNCHANGED: "Người này đã có quyền này rồi.",
+  GIVE_USER_NOT_FOUND: "Không tìm thấy tài khoản DOS.Me với email hoặc mã này.",
+  GIVE_USER_INELIGIBLE:
+    "Tài khoản này chưa xác nhận email, đã bị khóa hoặc đã xóa nên không thể nhận quyền. Nếu chắc chắn đúng người, hãy nhập mã người dùng.",
+  GIVE_USER_AMBIGUOUS: "Có nhiều tài khoản dùng email này. Hãy nhập mã người dùng thay cho email.",
+  GIVE_ADMIN_NOT_FOUND: "Người này không còn quyền nào để thu.",
+  GIVE_LAST_ADMIN: "Không thể thu hoặc hạ quyền quản trị viên cuối cùng. Hãy cấp quyền quản trị cho người khác trước.",
 }
 
 const PG_MESSAGES: Record<string, string> = {
