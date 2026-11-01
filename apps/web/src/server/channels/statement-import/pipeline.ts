@@ -5,12 +5,18 @@ import { createHash } from "node:crypto"
 import { z } from "zod"
 
 import type { Db } from "@/lib/campaigns"
-import { failureCode, processInboundEvent, type InboundEvent, type InboundProcessor } from "@/server/inbound"
+import {
+  failureCode,
+  processInboundEvent,
+  PROCESSOR_TIMEOUT_MS,
+  type InboundEvent,
+  type InboundProcessor,
+} from "@/server/inbound"
 import { statementParsers, type ParserRegistry } from "@/server/statement-parsers"
 import { PARSER_NAME } from "@/server/statement-parsers/registry"
 
 import { StatementImportError } from "./errors"
-import { MAX_ROWS, normalizeStatement, type StagedStatement } from "./normalize"
+import { jsonbTextBytes, MAX_ROWS, normalizeStatement, type StagedStatement } from "./normalize"
 import { importStatementBatch, recordStatementEvent, stageStatementImport, type ImportResult } from "./rpc"
 
 /**
@@ -29,11 +35,10 @@ import { importStatementBatch, recordStatementEvent, stageStatementImport, type 
 /** Largest file accepted; real exports of one account are far smaller. */
 export const MAX_FILE_BYTES = 10 * 1024 * 1024
 /**
- * Largest payload, as JSON. give.inbound_events.payload holds at most 1 MiB of
- * jsonb text, which prints a space after every colon and comma, so the margin
- * covers that. A larger statement is split by period.
+ * Largest payload, measured as jsonb text (give.inbound_events.payload holds
+ * at most 1 MiB of it). A larger statement is split by period.
  */
-export const MAX_PAYLOAD_BYTES = 900_000
+export const MAX_PAYLOAD_BYTES = 1_000_000
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const DAY = /^\d{4}-\d{2}-\d{2}$/
@@ -63,7 +68,7 @@ const payloadSchema = z.object({
   period_to: z.string().regex(DAY).nullable(),
   opening_balance: z.string().regex(BALANCE).nullable(),
   closing_balance: z.string().regex(BALANCE).nullable(),
-  exported_at: z.string().nullable(),
+  exported_at: z.string(),
   rows: z.array(rowSchema).min(1).max(MAX_ROWS),
 })
 
@@ -127,14 +132,40 @@ export interface StatementImportDeps {
   now?: Date
 }
 
+interface ResultBase {
+  inboundEventId: string
+  /**
+   * The same file was uploaded to this account before: the statement that
+   * upload recorded (its parser and uploader) is what was processed.
+   */
+  replayed: boolean
+  /** The parser whose rows were processed. */
+  parser: string
+}
+
 export type StatementImportResult =
-  | ({ status: "imported"; inboundEventId: string } & StatementBatchOutcome)
+  | ({ status: "imported" } & ResultBase & StatementBatchOutcome)
   /**
    * The file is recorded but could not be staged or imported yet; the
-   * reprocess-inbound cron retries it. `code` says why (a GIVE_* code from
-   * the database, or a generic one).
+   * reprocess-inbound cron retries it. `code` says why.
    */
-  | { status: "pending"; inboundEventId: string; code: string; row?: number }
+  | ({ status: "pending"; code: string; row?: number } & ResultBase)
+  /**
+   * The database refused the recorded statement and will refuse it again
+   * (`code` is a GIVE_* code): the uploader fixes the file. The event still
+   * counts as pending until inbound events get a parked state.
+   */
+  | ({ status: "refused"; code: string; row?: number } & ResultBase)
+
+/** Refusals that do not depend on timing: retrying the same statement cannot succeed. */
+function isFinalRefusal(code: string): boolean {
+  return (
+    code.startsWith("GIVE_IMPORT_") ||
+    ["GIVE_ACCOUNT_NOT_FOUND", "GIVE_NOT_ALLOWED", "GIVE_INBOUND_EVENT_INVALID", "STATEMENT_PAYLOAD_INVALID"].includes(
+      code
+    )
+  )
+}
 
 /**
  * Imports one uploaded statement file for a statement_import account. A
@@ -181,38 +212,79 @@ export async function importStatementFile(
     if (err instanceof StatementImportError) throw err
     throw new StatementImportError("STATEMENT_PARSE_FAILED")
   }
-  const payload = statementPayload(account.id, upload.actorId, normalizeStatement(parser, statement, now))
-  if (Buffer.byteLength(JSON.stringify(payload), "utf8") > MAX_PAYLOAD_BYTES) {
-    throw new StatementImportError("STATEMENT_TOO_LARGE")
+  const staged = normalizeStatement(parser, statement, now)
+  const payload = statementPayload(account.id, upload.actorId, staged)
+  if (jsonbTextBytes(payload) > MAX_PAYLOAD_BYTES) throw new StatementImportError("STATEMENT_TOO_LARGE")
+
+  // give.stage_statement_import refuses a parser name used before with other
+  // format flags; check it before the event is recorded.
+  const earlier = await service
+    .from("statement_import_batches")
+    .select("has_stable_row_id, has_running_balance")
+    .eq("receiving_account_id", account.id)
+    .eq("parser", parser.name)
+    .limit(1)
+  if (earlier.error) throw new Error(`statement_import_batches read failed: ${earlier.error.code ?? "unknown"}`)
+  const flags = (earlier.data ?? []) as { has_stable_row_id: boolean; has_running_balance: boolean }[]
+  if (
+    flags.some(
+      (b) => b.has_stable_row_id !== parser.hasStableRowId || b.has_running_balance !== parser.hasRunningBalance
+    )
+  ) {
+    throw new StatementImportError("STATEMENT_PARSER_FLAGS_CHANGED")
   }
 
   const dedupeKey = statementDedupeKey(account.id, upload.file)
   const recorded = await recordStatementEvent(service, dedupeKey, payload)
+  // A file uploaded before is processed from what that upload recorded, so the
+  // inline run and the cron always stage the same statement.
+  let stored: unknown = payload
+  if (!recorded.created) {
+    const body = await service.from("inbound_events").select("payload").eq("id", recorded.inboundEventId).maybeSingle()
+    if (body.error || !body.data) throw new Error(`inbound_events read failed: ${body.error?.code ?? "missing"}`)
+    stored = (body.data as { payload: unknown }).payload
+  }
   const event: InboundEvent = {
     id: recorded.inboundEventId,
     channel: "statement_import",
     dedupe_key: dedupeKey,
     received_at: now.toISOString(),
-    payload,
+    payload: stored,
+  }
+  const storedParser = (stored as { parser?: unknown } | null)?.parser
+  const base: ResultBase = {
+    inboundEventId: event.id,
+    replayed: !recorded.created,
+    parser: typeof storedParser === "string" ? storedParser : parser.name,
   }
 
-  // processInboundEvent records the outcome on the event and never throws;
-  // the wrapper keeps the counts and the failure for the uploader.
+  // processInboundEvent records the outcome on the event and never throws.
+  // The wrapper keeps the counts or the failure for the uploader, unless the
+  // attempt timed out: then the event says processing_timeout, and so do we.
   let outcome: StatementBatchOutcome | undefined
   let failure: unknown
-  await processInboundEvent(service, event, async (db, ev, signal) => {
+  let attempt: AbortSignal | undefined
+  const processed = await processInboundEvent(service, event, async (db, ev, signal) => {
+    attempt = signal
     try {
-      outcome = await runStatementEvent(db, ev, signal)
+      const result = await runStatementEvent(db, ev, signal)
+      if (!signal.aborted) outcome = result
     } catch (err) {
-      failure = err
+      if (!signal.aborted) failure = err
       throw err
     }
   })
-  if (outcome) return { status: "imported", inboundEventId: event.id, ...outcome }
-  return {
-    status: "pending",
-    inboundEventId: event.id,
-    code: failure === undefined ? "processing_timeout" : failureCode(failure),
-    ...(failure instanceof StatementImportError && failure.row !== undefined ? { row: failure.row } : {}),
+  if (!outcome && processed) {
+    // Another run (the cron, a parallel upload) processed the event: replaying
+    // it is idempotent and returns its counts.
+    try {
+      outcome = await runStatementEvent(service, event, AbortSignal.timeout(PROCESSOR_TIMEOUT_MS))
+    } catch {
+      // Reported as pending below; the event itself is processed.
+    }
   }
+  if (outcome) return { status: "imported", ...base, ...outcome }
+  const code = attempt?.aborted || failure === undefined ? "processing_timeout" : failureCode(failure)
+  const row = failure instanceof StatementImportError ? failure.row : undefined
+  return { status: isFinalRefusal(code) ? "refused" : "pending", ...base, code, ...(row !== undefined ? { row } : {}) }
 }

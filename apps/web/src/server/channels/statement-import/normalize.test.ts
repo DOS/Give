@@ -5,7 +5,7 @@ import type { ParsedStatement, StatementFormat } from "@/server/statement-parser
 import { CSV_COLUMNS, parseCsvStatement } from "@/test/csv-statement-parser"
 
 import { StatementImportError } from "./errors"
-import { MAX_ROWS, maskAccount, normalizeStatement, vnDay } from "./normalize"
+import { jsonbTextBytes, MAX_ROWS, maskAccount, normalizeStatement, vnDay } from "./normalize"
 
 const NOW = new Date("2026-10-05T03:00:00Z") // 10:00 on 5 Oct in Hanoi
 const IDS: StatementFormat = { name: "test-csv", hasStableRowId: true, hasRunningBalance: true }
@@ -73,8 +73,9 @@ describe("normalizeStatement", () => {
           counterparty_account: "****6789",
           balance_after: "150000",
           provider_tx_id: "FT001",
+          // The account number is masked in the raw cells too.
           raw: {
-            line: "2026-10-01T09:15:00+07:00,in,50000,150000,FT001,MBVCB.123.GVABCDEF.CT,NGUYEN VAN A,0123456789",
+            line: "2026-10-01T09:15:00+07:00,in,50000,150000,FT001,MBVCB.123.GVABCDEF.CT,NGUYEN VAN A,****6789",
           },
         },
         {
@@ -91,6 +92,17 @@ describe("normalizeStatement", () => {
         },
       ],
     })
+  })
+
+  it("takes the upload time as the export time when the file states none", () => {
+    expect(normalizeStatement(IDS, statement([tx()]), NOW).exported_at).toBe(NOW.toISOString())
+  })
+
+  it("masks the counterparty account wherever it appears in the raw cells", () => {
+    const raw = { cells: ["9704 3612 3456", "970436123456"], note: { text: "from 970436123456" }, n: 1 }
+    const rows = normalizeStatement(IDS, statement([tx({ counterpartyAccount: "9704 3612 3456", raw })]), NOW).rows
+    expect(rows[0].raw).toEqual({ cells: ["****3456", "****3456"], note: { text: "from ****3456" }, n: 1 })
+    expect(raw.cells[0]).toBe("9704 3612 3456") // the parser's object is not changed
   })
 
   it("sends the largest amounts and balances as exact digits", () => {
@@ -202,6 +214,9 @@ describe("normalizeStatement", () => {
       ["a description that is not text", { description: 5 as unknown as string }],
       ["raw that is not an object", { raw: ["a"] as unknown as Record<string, unknown> }],
       ["raw over 60 000 bytes", { raw: { cell: "x".repeat(60001) } }],
+      ["raw under 60 000 bytes compact but over as jsonb text", { raw: { cells: Array(25000).fill(0) } }],
+      ["a booking before 2000", { bookedAt: new Date("1999-12-31T23:00:00+07:00") }],
+      ["a booking in a year that toISOString cannot print plainly", { bookedAt: new Date("-000026-10-01T00:00:00Z") }],
       ["raw that is not JSON", { raw: { n: BigInt(1) } }],
     ])("%s, naming the row", (_name, overrides) => {
       const rows = [tx({ providerTxId: "FT000" }), tx(overrides)]
@@ -247,6 +262,17 @@ describe("normalizeStatement", () => {
         row: 2,
       })
     })
+  })
+})
+
+describe("jsonbTextBytes", () => {
+  it.each<[unknown, string]>([
+    [{ a: 1, b: [true, null, "x"] }, '{"a": 1, "b": [true, null, "x"]}'],
+    [[], "[]"],
+    [{}, "{}"],
+    ["Đồng", '"Đồng"'],
+  ])("counts %j as Postgres prints it", (value, text) => {
+    expect(jsonbTextBytes(value)).toBe(Buffer.byteLength(text, "utf8"))
   })
 })
 

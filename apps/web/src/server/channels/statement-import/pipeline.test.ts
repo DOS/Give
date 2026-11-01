@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { Db } from "@/lib/campaigns"
-import { reprocessPendingInboundEvents, REPROCESS_GRACE_MS } from "@/server/inbound"
+import { PROCESSOR_TIMEOUT_MS, reprocessPendingInboundEvents, REPROCESS_GRACE_MS } from "@/server/inbound"
 import { inboundProcessors } from "@/server/inbound/processors"
 import { ParserRegistry } from "@/server/statement-parsers/registry"
 import { CSV_COLUMNS, csvFile, csvStatementParser } from "@/test/csv-statement-parser"
@@ -46,6 +46,34 @@ const FILE = csvFile(
   "2026-10-01T10:00:00+07:00,in,20000,170000,FT002,UNG HO,TRAN B,9876543210",
   "2026-10-02,out,1100,168900,FT003,PHI SMS,,"
 )
+
+const payload = (): StatementPayload => ({
+  version: 1,
+  account_id: ACCOUNT,
+  actor_id: ACTOR,
+  parser: "test-csv",
+  has_stable_row_id: true,
+  has_running_balance: true,
+  period_from: "2026-10-01",
+  period_to: "2026-10-02",
+  opening_balance: "100000",
+  closing_balance: null,
+  exported_at: "2026-10-03T01:00:00.000Z",
+  rows: [
+    {
+      booked_at: "2026-10-01T02:15:00.000Z",
+      booked_date_only: false,
+      direction: "in",
+      amount: "50000",
+      description: "GVABCDEF",
+      counterparty_name: null,
+      counterparty_account: "****6789",
+      balance_after: "150000",
+      provider_tx_id: "FT001",
+      raw: null,
+    },
+  ],
+})
 
 let userCalls: Call[]
 let serviceCalls: Call[]
@@ -100,6 +128,8 @@ describe("importStatementFile", () => {
     expect(result).toEqual({
       status: "imported",
       inboundEventId: EVENT,
+      replayed: false,
+      parser: "test-csv",
       importBatchId: BATCH,
       created: true,
       imported: 2,
@@ -108,6 +138,7 @@ describe("importStatementFile", () => {
       ready: 0,
     })
     expect(serviceCalls.map((c) => c.target)).toEqual([
+      "statement_import_batches",
       "rpc:record_inbound_event",
       "rpc:stage_statement_import",
       "rpc:import_statement_batch",
@@ -168,31 +199,66 @@ describe("importStatementFile", () => {
       p_period_to: "2026-10-02",
       p_opening_balance: null,
       p_closing_balance: null,
-      p_exported_at: null,
+      p_exported_at: NOW.toISOString(),
     })
     expect(args("import_statement_batch")).toEqual({ p_import_batch_id: BATCH })
     expect(op(rpc("stage_statement_import"), "abortSignal")?.[0]).toBeInstanceOf(AbortSignal)
     expect(op(rpc("stage_statement_import"), "single")).toEqual([])
   })
 
-  it("replays the same file safely: the event and batch come back, the import runs again", async () => {
+  it("replays the same file from what its first upload recorded", async () => {
+    const OTHER = "55555555-5555-4555-8555-555555555555"
+    const first = { ...payload(), actor_id: OTHER, parser: "test-csv-v0" }
     responses["rpc:record_inbound_event"] = {
       data: { inbound_event_id: EVENT, created: false, processed_at: "2026-10-05T02:00:00Z" },
     }
+    responses["inbound_events"] = { data: { payload: first } }
     responses["rpc:stage_statement_import"] = {
       data: { import_batch_id: BATCH, created: false, ready: 0, duplicate: 0, ambiguous: 1 },
     }
     responses["rpc:import_statement_batch"] = { data: { imported: 2, duplicate: 0, ambiguous: 1, ready: 0 } }
-    expect(await upload()).toMatchObject({ status: "imported", created: false, imported: 2, ambiguous: 1 })
+    expect(await upload()).toMatchObject({
+      status: "imported",
+      replayed: true,
+      parser: "test-csv-v0",
+      created: false,
+      imported: 2,
+      ambiguous: 1,
+    })
+    // The stored statement is staged, not this upload's parse.
+    expect(args("stage_statement_import")).toMatchObject({
+      p_actor_id: OTHER,
+      p_parser: "test-csv-v0",
+      p_rows: first.rows,
+    })
+    expect(
+      op(
+        serviceCalls.find((c) => c.target === "inbound_events"),
+        "eq"
+      )
+    ).toEqual(["id", EVENT])
   })
 
-  it("leaves the event pending with the database's code and row when staging fails", async () => {
+  it("refuses before recording when the parser was used with other format flags", async () => {
+    responses["statement_import_batches"] = { data: [{ has_stable_row_id: false, has_running_balance: true }] }
+    await expect(upload()).rejects.toMatchObject({ code: "STATEMENT_PARSER_FLAGS_CHANGED" })
+    expect(rpc("record_inbound_event")).toBeUndefined()
+    const lookup = serviceCalls.find((c) => c.target === "statement_import_batches")
+    expect(lookup?.ops.filter(([name]) => name === "eq")).toEqual([
+      ["eq", "receiving_account_id", ACCOUNT],
+      ["eq", "parser", "test-csv"],
+    ])
+  })
+
+  it("reports a refusal the database will repeat, with its code and row", async () => {
     responses["rpc:stage_statement_import"] = {
       error: { code: "23514", message: "GIVE_IMPORT_ROW_INVALID: row 3 booked_at" },
     }
     expect(await upload()).toEqual({
-      status: "pending",
+      status: "refused",
       inboundEventId: EVENT,
+      replayed: false,
+      parser: "test-csv",
       code: "GIVE_IMPORT_ROW_INVALID",
       row: 3,
     })
@@ -202,8 +268,52 @@ describe("importStatementFile", () => {
 
   it("stores only a generic code for a failure that is not a GIVE_* error", async () => {
     responses["rpc:import_statement_batch"] = { error: { code: "57014", message: "canceling statement 0123456789" } }
-    expect(await upload()).toEqual({ status: "pending", inboundEventId: EVENT, code: "processing_failed" })
+    expect(await upload()).toEqual({
+      status: "pending",
+      inboundEventId: EVENT,
+      replayed: false,
+      parser: "test-csv",
+      code: "processing_failed",
+    })
     expect(args("complete_inbound_event").p_error).toBe("processing_failed")
+  })
+
+  it("reports a timed-out attempt as processing_timeout, as the event records it", async () => {
+    vi.useFakeTimers()
+    try {
+      responses["rpc:complete_inbound_event"] = { data: null }
+      const base = fakeDb(handler, serviceCalls)
+      const hanging = { abortSignal: () => hanging, single: () => new Promise(() => {}) }
+      const service = {
+        ...base,
+        rpc: (fn: string, a: unknown) => (fn === "stage_statement_import" ? hanging : base.rpc(fn, a)),
+      } as unknown as Db
+      const result = importStatementFile(
+        { receivingAccountId: ACCOUNT, actorId: ACTOR, parser: "test-csv", file: FILE },
+        { user: dbs().user, service, parsers, now: NOW }
+      )
+      await vi.advanceTimersByTimeAsync(PROCESSOR_TIMEOUT_MS + 1)
+      expect(await result).toMatchObject({ status: "pending", code: "processing_timeout" })
+      expect(args("complete_inbound_event")).toEqual({ p_inbound_event_id: EVENT, p_error: "processing_timeout" })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("returns the counts when another run processed the event meanwhile", async () => {
+    let stages = 0
+    const service = fakeDb((call) => {
+      if (call.target === "rpc:stage_statement_import" && (stages += 1) === 1) {
+        return { error: { code: "55P03", message: "canceling statement due to lock timeout" } }
+      }
+      return handler(call)
+    }, serviceCalls) as unknown as Db
+    const result = await importStatementFile(
+      { receivingAccountId: ACCOUNT, actorId: ACTOR, parser: "test-csv", file: FILE },
+      { user: dbs().user, service, parsers, now: NOW }
+    )
+    expect(result).toMatchObject({ status: "imported", imported: 2 })
+    expect(stages).toBe(2)
   })
 
   it("reports the import even when its outcome could not be written (the cron finishes it)", async () => {
@@ -289,34 +399,6 @@ describe("importStatementFile", () => {
 })
 
 describe("statement_import processor", () => {
-  const payload = (): StatementPayload => ({
-    version: 1,
-    account_id: ACCOUNT,
-    actor_id: ACTOR,
-    parser: "test-csv",
-    has_stable_row_id: true,
-    has_running_balance: true,
-    period_from: "2026-10-01",
-    period_to: "2026-10-02",
-    opening_balance: "100000",
-    closing_balance: null,
-    exported_at: null,
-    rows: [
-      {
-        booked_at: "2026-10-01T02:15:00.000Z",
-        booked_date_only: false,
-        direction: "in",
-        amount: "50000",
-        description: "GVABCDEF",
-        counterparty_name: null,
-        counterparty_account: "****6789",
-        balance_after: "150000",
-        provider_tx_id: "FT001",
-        raw: null,
-      },
-    ],
-  })
-
   it("is registered for the reprocess-inbound cron", () => {
     expect(inboundProcessors.statement_import).toBe(statementImportProcessor)
   })
@@ -402,7 +484,8 @@ describe("RPC wrappers", () => {
     ) as unknown as Db
     const err = await stageStatementImport(db, {
       ...{ parser: "p", has_stable_row_id: true, has_running_balance: false, rows: [] },
-      ...{ period_from: null, period_to: null, opening_balance: null, closing_balance: null, exported_at: null },
+      ...{ period_from: null, period_to: null, opening_balance: null, closing_balance: null },
+      exported_at: NOW.toISOString(),
       accountId: ACCOUNT,
       actorId: ACTOR,
       inboundEventId: EVENT,
