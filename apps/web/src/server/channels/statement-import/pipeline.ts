@@ -251,6 +251,9 @@ export async function importStatementFile(
     const body = await service.from("inbound_events").select("payload").eq("id", recorded.inboundEventId).maybeSingle()
     if (body.error || !body.data) throw new Error(`inbound_events read failed: ${body.error?.code ?? "missing"}`)
     const earlierPayload = payloadSchema.safeParse((body.data as { payload: unknown }).payload)
+    // A recorded payload this schema no longer reads (an older version) is
+    // replaced by this upload's statement inline; the cron cannot read it
+    // either, so only an upload can finish such an event.
     if (earlierPayload.success && earlierPayload.data.account_id === account.id) {
       stored = { ...earlierPayload.data, actor_id: upload.actorId }
     }
