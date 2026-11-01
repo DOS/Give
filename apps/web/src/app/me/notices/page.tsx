@@ -17,10 +17,12 @@ export default async function MyNoticesPage() {
   const db = dbAs(session.accessToken)
   // The unread count covers every notice, like the header badge, not only
   // the newest page: "mark all" must stay reachable while any is unread.
-  const [notices, unread] = await Promise.all([
+  const [notices, unreadCount] = await Promise.all([
     listNotices(db, session.user.id),
     countUnreadNotices(db, session.user.id),
   ])
+  // The count is 0 on an error; never show fewer than the list itself holds.
+  const unread = Math.max(unreadCount, notices.filter((n) => !n.read_at).length)
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10">
