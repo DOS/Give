@@ -20,7 +20,10 @@ import {
 import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
 import { SLUG_PATTERN } from "@/lib/slug"
 import { privateCoverUrl, publicCoverUrl } from "@/lib/cover-urls"
-import { dbAs } from "@/lib/supabase"
+import { dbAs, dbService } from "@/lib/supabase"
+import { acceptsDonations, paymentAccount } from "@/server/contributions"
+
+import { DonateForm } from "./DonateForm"
 
 /**
  * Public campaigns load as an anonymous visitor. If that finds nothing and
@@ -60,17 +63,27 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   if (!loaded) notFound()
   const { campaign, db, preview } = loaded
 
-  const [milestones, updates, organizer] = await Promise.all([
+  const isGive = campaign.type === "give"
+  const donationsOpen = !preview && acceptsDonations(campaign)
+  const [milestones, updates, organizer, account, session] = await Promise.all([
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
     preview ? Promise.resolve(null) : getPublicOrganizer(db, campaign.id),
+    donationsOpen ? paymentAccount(dbService(), campaign.id).catch(() => null) : Promise.resolve(null),
+    getSession(),
   ])
+  const canDonate = donationsOpen && account !== null
+  const closedNote =
+    !isGive || preview
+      ? `Give sắp mở nhận ${isGive ? "ủng hộ" : "cam kết"}. Tiền sẽ đi thẳng vào tài khoản nhận của chiến dịch.`
+      : donationsOpen
+        ? "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau."
+        : "Chiến dịch không còn nhận ủng hộ."
 
   const raised = 0
   const percent = progressPercent(raised, campaign.goal_amount)
   const days = daysLeft(campaign.ends_at)
   const options = campaign.display_options
-  const isGive = campaign.type === "give"
 
   return (
     <article>
@@ -196,12 +209,16 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 <dd className="font-semibold">{formatDate(campaign.ends_at)}</dd>
               </div>
             </dl>
-            <button type="button" disabled className="btn-primary w-full">
-              {isGive ? "Ủng hộ" : "Đồng hành cùng dự án"}
-            </button>
-            <p className="text-center text-xs text-gray-500">
-              Give sắp mở nhận {isGive ? "ủng hộ" : "cam kết"}. Tiền sẽ đi thẳng vào tài khoản nhận của chiến dịch.
-            </p>
+            {canDonate ? (
+              <DonateForm campaignId={campaign.id} defaultName={session?.user.name ?? ""} signedIn={!!session} />
+            ) : (
+              <>
+                <button type="button" disabled className="btn-primary w-full">
+                  {isGive ? "Ủng hộ" : "Đồng hành cùng dự án"}
+                </button>
+                <p className="text-center text-xs text-gray-500">{closedNote}</p>
+              </>
+            )}
             {!isGive && (
               <p className="text-xs text-gray-500">
                 Dự án theo hình thức “đạt mục tiêu mới thanh toán”: bạn cam kết trước, chỉ trả tiền khi dự án đạt mục

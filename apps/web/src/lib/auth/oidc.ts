@@ -62,7 +62,18 @@ export function buildAuthorizeUrl(
   return url.toString()
 }
 
-async function tokenRequest(cfg: OidcConfig, body: URLSearchParams): Promise<TokenResponse> {
+/** A non-2xx token response. `code` is Supabase's `error_code` or OAuth's `error`, when present. */
+export class TokenRequestError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string | undefined
+  ) {
+    super(`oidc_token_request_failed_${status}`)
+    this.name = "TokenRequestError"
+  }
+}
+
+async function tokenRequest(cfg: OidcConfig, body: URLSearchParams, signal?: AbortSignal): Promise<TokenResponse> {
   const basic = Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString("base64")
   const res = await fetch(`${cfg.issuer}/oauth/token`, {
     method: "POST",
@@ -72,11 +83,31 @@ async function tokenRequest(cfg: OidcConfig, body: URLSearchParams): Promise<Tok
     },
     body: body.toString(),
     cache: "no-store",
+    // A redirect would re-send the code or refresh token to another URL.
+    redirect: "error",
+    signal,
   })
   if (!res.ok) {
-    throw new Error(`oidc_token_request_failed_${res.status}`)
+    throw new TokenRequestError(res.status, await errorCode(res))
   }
   return (await res.json()) as TokenResponse
+}
+
+/**
+ * The error code of a failed response: Supabase's `x-sb-error-code` header
+ * (sent by every API version), else `error_code` or OAuth's `error` in the
+ * body. Only plain snake_case codes are returned, so they are safe to log.
+ */
+export async function errorCode(res: Response): Promise<string | undefined> {
+  const safe = (code: unknown) => (typeof code === "string" && /^[a-z_]{1,64}$/.test(code) ? code : undefined)
+  const header = safe(res.headers.get("x-sb-error-code"))
+  if (header) return header
+  try {
+    const body = (await res.json()) as { error_code?: unknown; error?: unknown }
+    return safe(body.error_code ?? body.error)
+  } catch {
+    return undefined
+  }
 }
 
 export function exchangeCode(cfg: OidcConfig, code: string, codeVerifier: string) {
@@ -91,8 +122,8 @@ export function exchangeCode(cfg: OidcConfig, code: string, codeVerifier: string
   )
 }
 
-export function refreshTokens(cfg: OidcConfig, refreshToken: string) {
-  return tokenRequest(cfg, new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }))
+export function refreshTokens(cfg: OidcConfig, refreshToken: string, signal?: AbortSignal) {
+  return tokenRequest(cfg, new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }), signal)
 }
 
 const jwksByIssuer = new Map<string, ReturnType<typeof createRemoteJWKSet>>()

@@ -1,12 +1,13 @@
 import type { Metadata } from "next"
 import Link from "next/link"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 
 import { TypeBadge, VerificationBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff, listOrganizersToVerify, listReviewQueue } from "@/lib/campaigns"
 import { formatDate, formatVnd } from "@/lib/format"
+import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import { dbAs } from "@/lib/supabase"
 
 import { approveCampaign, requestChanges, setVerification } from "./actions"
@@ -16,8 +17,13 @@ export const metadata: Metadata = { title: "Kiểm duyệt", robots: { index: fa
 export default async function AdminPage() {
   const session = await requireSession("/admin")
   const db = dbAs(session.accessToken)
-  // Non-staff get a plain 404 so the page does not advertise itself.
-  if (!(await isStaff(db))) notFound()
+  const [moderates, reviewsAccounts] = await Promise.all([isStaff(db), isStaff(db, FINANCE_ROLES)])
+  // Finance-only staff work on receiving accounts; everyone else who is not
+  // staff gets a plain 404 so the page does not advertise itself.
+  if (!moderates) {
+    if (reviewsAccounts) redirect("/admin/accounts")
+    notFound()
+  }
 
   const [queue, organizers, canManageRoles] = await Promise.all([
     listReviewQueue(db),
@@ -29,11 +35,18 @@ export default async function AdminPage() {
     <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-3xl font-bold">Kiểm duyệt</h1>
-        {canManageRoles && (
-          <Link href="/admin/roles" className="btn-secondary">
-            Phân quyền nhân sự
-          </Link>
-        )}
+        <div className="flex flex-wrap gap-2">
+          {reviewsAccounts && (
+            <Link href="/admin/accounts" className="btn-secondary">
+              Xác minh tài khoản nhận
+            </Link>
+          )}
+          {canManageRoles && (
+            <Link href="/admin/roles" className="btn-secondary">
+              Phân quyền nhân sự
+            </Link>
+          )}
+        </div>
       </div>
 
       <section>

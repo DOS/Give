@@ -24,6 +24,31 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ORGANIZER_NOT_FOUND: "Không tìm thấy hồ sơ người tổ chức.",
   GIVE_ORGANIZER_CHANGED_SINCE_REVIEW:
     "Người tổ chức vừa đổi thông tin. Hãy tải lại trang và xem lại trước khi xác minh.",
+  // Receiving accounts and bindings (money core part 1).
+  GIVE_CHANNEL_NOT_AVAILABLE: "Kênh nhận tiền này chưa được hỗ trợ.",
+  GIVE_ACCOUNT_NAME_MISMATCH:
+    "Tên chủ tài khoản phải trùng với tên pháp lý trong hồ sơ người tổ chức (không phân biệt dấu và hoa thường).",
+  GIVE_ACCOUNT_ALREADY_REGISTERED: "Tài khoản ngân hàng này đã được khai báo trên Give.",
+  // Raised for both account verification codes and donation reference codes.
+  GIVE_CODE_GENERATION_FAILED: "Chưa tạo được mã. Hãy thử lại.",
+  GIVE_ACCOUNT_NOT_FOUND: "Không tìm thấy tài khoản nhận, hoặc bạn không có quyền với tài khoản này.",
+  GIVE_SELF_REVIEW: "Không thể tự xác minh tài khoản nhận của chính mình.",
+  GIVE_ORGANIZER_NOT_VERIFIED: "Người tổ chức chưa được xác minh danh tính, nên chưa thể xác minh tài khoản nhận.",
+  GIVE_EVIDENCE_REQUIRED: "Ghi bằng chứng của giao dịch chuyển khoản thử (mã giao dịch ngân hàng và ngày).",
+  GIVE_VERIFICATION_CHANGED_SINCE_REVIEW:
+    "Mã xác minh của tài khoản đã đổi từ khi trang này tải. Hãy tải lại trang và đối chiếu lại.",
+  GIVE_CAMPAIGN_NOT_BINDABLE:
+    "Chỉ gắn được tài khoản nhận khi chiến dịch đã gửi duyệt (đang chờ duyệt, cần chỉnh sửa, đã duyệt hoặc đang gây quỹ).",
+  GIVE_ACCOUNT_NOT_VERIFIED:
+    "Tài khoản nhận chưa được xác minh, hoặc hồ sơ người tổ chức chưa được xác minh hay đã đổi tên pháp lý.",
+  GIVE_ACCOUNT_ALREADY_BOUND:
+    "Tài khoản này đang gắn với một chiến dịch khác. Tài khoản chỉ được nhả khi chiến dịch đó đã xong hẳn phần tiền.",
+  // Donations.
+  GIVE_CAMPAIGN_NOT_ACCEPTING: "Chiến dịch này hiện không nhận ủng hộ.",
+  GIVE_AMOUNT_BELOW_MINIMUM: "Số tiền thấp hơn mức ủng hộ tối thiểu của chiến dịch.",
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau.",
+  GIVE_CONTRIBUTION_TYPE_MISMATCH: "Chiến dịch này không nhận ủng hộ trực tiếp.",
+  // Staff roles.
   GIVE_ADMIN_REQUIRED: "Chỉ quản trị viên mới được cấp hoặc thu quyền.",
   GIVE_ROLE_INVALID: "Quyền không hợp lệ.",
   GIVE_ROLE_UNCHANGED: "Người này đã có quyền này rồi.",
@@ -55,8 +80,13 @@ export function giveErrorCode(error: DbErrorLike | null | undefined): string | n
   return match ? match[1] : null
 }
 
-export function dbErrorMessage(error: DbErrorLike | null | undefined): string {
+/**
+ * `overrides` words a shared code for the caller's context, e.g.
+ * GIVE_TRANSITION_NOT_ALLOWED for an account review instead of a campaign.
+ */
+export function dbErrorMessage(error: DbErrorLike | null | undefined, overrides: Record<string, string> = {}): string {
   const code = giveErrorCode(error)
+  if (code && Object.hasOwn(overrides, code)) return overrides[code]
   if (code && GIVE_MESSAGES[code]) return GIVE_MESSAGES[code]
   if (error?.code && PG_MESSAGES[error.code]) return PG_MESSAGES[error.code]
   return "Có lỗi xảy ra. Hãy thử lại sau."

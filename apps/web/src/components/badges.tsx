@@ -8,6 +8,7 @@ import {
   type CampaignType,
   type VerificationStatus,
 } from "@/lib/campaigns"
+import { ACCOUNT_STATUS_LABELS, type AccountStatus } from "@/lib/receiving-accounts"
 
 const pill = "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium"
 
@@ -51,6 +52,22 @@ export function VerificationBadge({ status }: { status: VerificationStatus }) {
     >
       {status === "verified" ? "✓ " : ""}
       {VERIFICATION_LABELS[status]}
+    </span>
+  )
+}
+
+const ACCOUNT_STATUS_COLORS: Record<AccountStatus, string> = {
+  pending: "bg-amber-100 text-amber-800",
+  verified: "bg-green-100 text-green-800",
+  rejected: "bg-red-100 text-red-700",
+  disabled: "bg-gray-100 text-gray-600",
+}
+
+export function AccountStatusBadge({ status }: { status: AccountStatus }) {
+  return (
+    <span className={clsx(pill, ACCOUNT_STATUS_COLORS[status])}>
+      {status === "verified" ? "✓ " : ""}
+      {ACCOUNT_STATUS_LABELS[status]}
     </span>
   )
 }
