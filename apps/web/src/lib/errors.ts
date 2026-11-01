@@ -29,20 +29,31 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ACCOUNT_NAME_MISMATCH:
     "Tên chủ tài khoản phải trùng với tên pháp lý trong hồ sơ người tổ chức (không phân biệt dấu và hoa thường).",
   GIVE_ACCOUNT_ALREADY_REGISTERED: "Tài khoản ngân hàng này đã được khai báo trên Give.",
+  GIVE_TOO_MANY_PENDING_ACCOUNTS:
+    "Bạn đang có 3 tài khoản chờ xác minh. Hãy hoàn tất xác minh các tài khoản đó trước khi khai báo thêm.",
   // Raised for both account verification codes and donation reference codes.
   GIVE_CODE_GENERATION_FAILED: "Chưa tạo được mã. Hãy thử lại.",
   GIVE_ACCOUNT_NOT_FOUND: "Không tìm thấy tài khoản nhận, hoặc bạn không có quyền với tài khoản này.",
   GIVE_SELF_REVIEW: "Không thể tự xác minh tài khoản nhận của chính mình.",
   GIVE_ORGANIZER_NOT_VERIFIED: "Người tổ chức chưa được xác minh danh tính, nên chưa thể xác minh tài khoản nhận.",
   GIVE_EVIDENCE_REQUIRED: "Ghi bằng chứng của giao dịch chuyển khoản thử (mã giao dịch ngân hàng và ngày).",
+  GIVE_SENDER_NAME_REQUIRED: "Ghi tên người chuyển đọc được trên giao dịch xác minh.",
+  GIVE_SENDER_NAME_MISMATCH:
+    "Tên người chuyển trên giao dịch xác minh không trùng tên pháp lý của người tổ chức. Không xác minh tài khoản này.",
   GIVE_VERIFICATION_CHANGED_SINCE_REVIEW:
     "Mã xác minh của tài khoản đã đổi từ khi trang này tải. Hãy tải lại trang và đối chiếu lại.",
   GIVE_CAMPAIGN_NOT_BINDABLE:
-    "Chỉ gắn được tài khoản nhận khi chiến dịch đã gửi duyệt (đang chờ duyệt, cần chỉnh sửa, đã duyệt hoặc đang gây quỹ).",
+    "Chỉ gắn được tài khoản nhận khi chiến dịch là bản nháp, đang chờ duyệt, cần chỉnh sửa, đã duyệt hoặc đang gây quỹ.",
   GIVE_ACCOUNT_NOT_VERIFIED:
     "Tài khoản nhận chưa được xác minh, hoặc hồ sơ người tổ chức chưa được xác minh hay đã đổi tên pháp lý.",
   GIVE_ACCOUNT_ALREADY_BOUND:
-    "Tài khoản này đang gắn với một chiến dịch khác. Tài khoản chỉ được nhả khi chiến dịch đó đã xong hẳn phần tiền.",
+    "Tài khoản này đang gắn với một chiến dịch khác. Hãy nhả tài khoản khỏi chiến dịch đó trước: bản nháp nhả được ngay, chiến dịch đã gửi duyệt chỉ nhả được khi đã xong hẳn phần tiền.",
+  GIVE_BINDING_NOT_FOUND: "Tài khoản này hiện không gắn với chiến dịch nào.",
+  GIVE_BINDING_NOT_RELEASABLE:
+    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, đã hủy mà chưa có giao dịch nào, hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày).",
+  GIVE_BINDING_HAS_OPEN_TRANSACTIONS:
+    "Chưa nhả được tài khoản: còn giao dịch của chiến dịch chưa được đối chiếu hoặc chưa được giải trình.",
+  GIVE_CAMPAIGN_ALREADY_BOUND: "Chiến dịch này đã có tài khoản nhận khác.",
   // Donations.
   GIVE_CAMPAIGN_NOT_ACCEPTING: "Chiến dịch này hiện không nhận ủng hộ.",
   GIVE_AMOUNT_BELOW_MINIMUM: "Số tiền thấp hơn mức ủng hộ tối thiểu của chiến dịch.",

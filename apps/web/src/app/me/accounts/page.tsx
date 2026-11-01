@@ -12,6 +12,7 @@ import {
   accountUnusableReason,
   activeBinding,
   bindRefusalReason,
+  canAskRelease,
   listMyAccounts,
   normalizePersonName,
   VERIFICATION_TRANSFER_AMOUNT,
@@ -19,7 +20,7 @@ import {
 } from "@/lib/receiving-accounts"
 import { dbAs } from "@/lib/supabase"
 
-import { bindAccount, registerAccount } from "./actions"
+import { bindAccount, registerAccount, releaseAccount } from "./actions"
 
 export const metadata: Metadata = { title: "Tài khoản nhận tiền", robots: { index: false } }
 
@@ -97,6 +98,7 @@ export default async function MyAccountsPage() {
                 account={account}
                 organizer={organizer}
                 boundTitle={(id) => campaignById.get(id)?.title ?? "Chiến dịch"}
+                boundReleasable={(id) => canAskRelease(campaignById.get(id)?.status)}
                 bindChoices={bindChoices}
               />
             ))}
@@ -194,11 +196,14 @@ function AccountItem({
   account,
   organizer,
   boundTitle,
+  boundReleasable,
   bindChoices,
 }: {
   account: ReceivingAccount
   organizer: Organizer
   boundTitle: (campaignId: string) => string
+  /** Whether the bound campaign's status lets the owner ask for a release. */
+  boundReleasable: (campaignId: string) => boolean
   bindChoices: BindChoice[]
 }) {
   const holder = activeBinding(account)
@@ -258,7 +263,8 @@ function AccountItem({
           <Link href={`/me/campaigns/${holder.campaign_id}`} className="font-medium text-brand-600">
             {boundTitle(holder.campaign_id)}
           </Link>{" "}
-          từ ngày {formatDate(holder.bound_at)}. Tài khoản chỉ được nhả khi chiến dịch đó đã xong hẳn phần tiền.
+          từ ngày {formatDate(holder.bound_at)}. Khi chiến dịch còn là bản nháp, bạn có thể nhả tài khoản để đổi tài
+          khoản khác; sau khi gửi duyệt, tài khoản chỉ được nhả khi chiến dịch đó đã xong hẳn phần tiền.
           {(account.verification_status === "disabled" || unusable) && (
             <span className="font-semibold text-red-700">
               {" "}
@@ -267,12 +273,21 @@ function AccountItem({
           )}
         </p>
       )}
+      {holder && boundReleasable(holder.campaign_id) && (
+        <ActionForm
+          action={releaseAccount.bind(null, account.id)}
+          confirm="Nhả tài khoản này khỏi chiến dịch? Chiến dịch sẽ không còn tài khoản nhận cho đến khi bạn gắn tài khoản khác."
+          className="border-t border-gray-100 pt-4"
+        >
+          <SubmitButton className="btn-secondary">Nhả tài khoản</SubmitButton>
+        </ActionForm>
+      )}
       {unusable && <p className="text-sm text-amber-800">Tài khoản tạm không dùng được: {unusable}</p>}
 
       {canBind &&
         (bindChoices.length === 0 ? (
           <p className="border-t border-gray-100 pt-4 text-sm text-gray-600">
-            Tạo chiến dịch và gửi duyệt, rồi quay lại đây để gắn tài khoản.{" "}
+            Tạo chiến dịch, rồi quay lại đây để gắn tài khoản trước khi gửi duyệt.{" "}
             <Link href="/start" className="font-medium text-brand-600">
               Tạo chiến dịch
             </Link>
@@ -280,7 +295,7 @@ function AccountItem({
         ) : (
           <ActionForm
             action={bindAccount.bind(null, account.id)}
-            confirm="Gắn tài khoản này với chiến dịch đã chọn? Sau khi gắn, tài khoản chỉ được nhả khi chiến dịch đó đã xong hẳn phần tiền."
+            confirm="Gắn tài khoản này với chiến dịch đã chọn? Khi chiến dịch đã gửi duyệt, tài khoản chỉ được nhả khi chiến dịch đó đã xong hẳn phần tiền."
             className="space-y-2 border-t border-gray-100 pt-4"
           >
             <label htmlFor={`campaign-${account.id}`} className="label">
@@ -308,8 +323,7 @@ function AccountItem({
               <SubmitButton className="btn-secondary">Gắn tài khoản</SubmitButton>
             ) : (
               <p className="text-sm text-gray-600">
-                Chỉ gắn được tài khoản khi chiến dịch đã gửi duyệt và chưa có tài khoản nhận khác. Bản nháp chưa gắn
-                được tài khoản.
+                Chỉ gắn được tài khoản với chiến dịch chưa kết thúc (kể cả bản nháp) và chưa có tài khoản nhận khác.
               </p>
             )}
           </ActionForm>

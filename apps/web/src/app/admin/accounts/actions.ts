@@ -20,7 +20,8 @@ import { dbAs, dbService } from "@/lib/supabase"
  * The holder name an organizer declares is only compared with their own
  * legal name, so it proves nothing about the bank. Verifying therefore also
  * takes the sender name the reviewer read on the test transfer, from a source
- * the bank issued, and refuses unless it matches the legal name.
+ * the bank issued, and refuses unless it matches the legal name. The
+ * database checks the same name again (GIVE_SENDER_NAME_MISMATCH).
  */
 
 const SIGNED_OUT = "Phiên đăng nhập đã hết. Hãy đăng nhập lại."
@@ -97,6 +98,7 @@ export async function reviewAccount(accountId: string, _state: ActionResult, for
     // The code the reviewer checked the transfer against; a reopened account
     // has a new one, and the database refuses a stale review.
     p_expected_code: decision === "verified" ? String(form.get("expected_code") ?? "") : null,
+    p_sender_name: decision === "verified" ? senderName : null,
   })
   if (error) return fail(dbErrorMessage(error, REVIEW_MESSAGES))
 

@@ -11,6 +11,7 @@ import {
   accountUnusableReason,
   activeBinding,
   activeBindingsOfCampaign,
+  canAskRelease,
   countPendingAccounts,
   getAccount,
   isBindableStatus,
@@ -121,10 +122,10 @@ export async function bindAccount(accountId: string, _state: ActionResult, form:
   if (holder && holder.campaign_id !== campaign.id) {
     return fail(dbErrorMessage({ message: "GIVE_ACCOUNT_ALREADY_BOUND" }))
   }
-  // The database allows several accounts on one campaign; one is enough to
-  // receive, and a second would split the statement across accounts.
+  // One account per campaign: a second would split the statement across
+  // accounts. The database refuses it too (GIVE_CAMPAIGN_ALREADY_BOUND).
   if (campaignBindings.some((b) => b.receiving_account_id !== account.id)) {
-    return fail("Chiến dịch này đã có tài khoản nhận khác.")
+    return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_ALREADY_BOUND" }))
   }
 
   const { error } = await dbService().rpc("bind_receiving_account", {
@@ -137,4 +138,47 @@ export async function bindAccount(accountId: string, _state: ActionResult, form:
   revalidatePath("/me/accounts")
   revalidatePath(`/me/campaigns/${campaign.id}`)
   return done(`Đã gắn tài khoản với chiến dịch "${campaign.title}".`)
+}
+
+/**
+ * Frees one of the organizer's accounts from its campaign: a draft's account
+ * at once, so the organizer can pick another one, and an ended campaign's
+ * account on give.release_account_binding's terms.
+ */
+export async function releaseAccount(accountId: string, _state: ActionResult, _form: FormData): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  if (!isUuid(accountId)) return fail(dbErrorMessage({ message: "GIVE_ACCOUNT_NOT_FOUND" }))
+
+  const db = dbAs(session.accessToken)
+  let account
+  try {
+    account = await getAccount(db, accountId)
+  } catch (error) {
+    return fail(dbErrorMessage(error as { message?: string; code?: string }))
+  }
+  // Finance staff release through their own tools; this page is the owner's.
+  if (!account || account.owner_user_id !== session.user.id) {
+    return fail(dbErrorMessage({ message: "GIVE_ACCOUNT_NOT_FOUND" }))
+  }
+  const holder = activeBinding(account)
+  if (!holder) return fail(dbErrorMessage({ message: "GIVE_BINDING_NOT_FOUND" }))
+  let campaign
+  try {
+    campaign = await getCampaignById(db, holder.campaign_id)
+  } catch (error) {
+    return fail(dbErrorMessage(error as { message?: string; code?: string }))
+  }
+  if (!canAskRelease(campaign?.status)) return fail(dbErrorMessage({ message: "GIVE_BINDING_NOT_RELEASABLE" }))
+
+  const { error } = await dbService().rpc("release_account_binding", {
+    p_receiving_account_id: account.id,
+    p_actor_id: session.user.id,
+    p_reason: null,
+  })
+  if (error) return fail(dbErrorMessage(error))
+
+  revalidatePath("/me/accounts")
+  revalidatePath(`/me/campaigns/${holder.campaign_id}`)
+  return done("Đã nhả tài khoản khỏi chiến dịch. Bạn có thể gắn tài khoản này với chiến dịch khác.")
 }

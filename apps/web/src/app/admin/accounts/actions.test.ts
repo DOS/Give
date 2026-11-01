@@ -75,6 +75,7 @@ describe("reviewAccount", () => {
         p_evidence: "Người chuyển: NGUYEN THI DAO. FT2630512345 01/11",
         p_reason: null,
         p_expected_code: "XM2345678",
+        p_sender_name: "NGUYEN THI DAO",
       },
     ])
   })
@@ -116,6 +117,7 @@ describe("reviewAccount", () => {
         p_evidence: null,
         p_reason: "Không thấy giao dịch",
         p_expected_code: null,
+        p_sender_name: null,
       },
     ])
   })
@@ -163,5 +165,13 @@ describe("reviewAccount", () => {
       form({ decision: "verified", sender_name: "Nguyễn Thị Đào", evidence: "x", expected_code: "XM" })
     )
     expect(stale?.message).toContain("Mã xác minh của tài khoản đã đổi")
+
+    state.serviceHandler = () => ({ error: { message: "GIVE_SENDER_NAME_MISMATCH" } })
+    const renamed = await reviewAccount(
+      ACCOUNT,
+      null,
+      form({ decision: "verified", sender_name: "Nguyễn Thị Đào", evidence: "x", expected_code: "XM" })
+    )
+    expect(renamed?.message).toContain("Tên người chuyển trên giao dịch xác minh không trùng")
   })
 })

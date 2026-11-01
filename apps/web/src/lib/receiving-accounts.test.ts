@@ -6,6 +6,7 @@ import {
   accountUnusableReason,
   activeBinding,
   bindRefusalReason,
+  canAskRelease,
   hostnameOf,
   isBindableStatus,
   maskAccountNumber,
@@ -120,8 +121,17 @@ describe("binding helpers", () => {
     expect(activeBinding({ bindings: [released] })).toBeNull()
   })
 
-  it("allows binding from submission on, never on a draft", () => {
-    expect(isBindableStatus("draft")).toBe(false)
+  it("lets the owner ask for a release of a draft's or an ended campaign's account", () => {
+    expect(canAskRelease("draft")).toBe(true)
+    expect(canAskRelease("cancelled")).toBe(true)
+    expect(canAskRelease("closed")).toBe(true)
+    expect(canAskRelease("in_review")).toBe(false)
+    expect(canAskRelease("live")).toBe(false)
+    expect(canAskRelease(undefined)).toBe(false)
+  })
+
+  it("allows binding from draft until the campaign ends", () => {
+    expect(isBindableStatus("draft")).toBe(true)
     expect(isBindableStatus("in_review")).toBe(true)
     expect(isBindableStatus("live")).toBe(true)
     expect(isBindableStatus("closed")).toBe(false)
@@ -147,13 +157,14 @@ describe("accountUnusableReason", () => {
 })
 
 describe("bindRefusalReason", () => {
-  it("allows submitted campaigns without an account", () => {
+  it("allows drafts and submitted campaigns without an account", () => {
+    expect(bindRefusalReason("draft", false)).toBeNull()
     expect(bindRefusalReason("in_review", false)).toBeNull()
     expect(bindRefusalReason("live", false)).toBeNull()
   })
 
-  it("explains drafts, closed campaigns and campaigns that already have an account", () => {
-    expect(bindRefusalReason("draft", false)).toContain("bản nháp")
+  it("explains closed campaigns and campaigns that already have an account", () => {
+    expect(bindRefusalReason("draft", true)).toContain("đã có tài khoản")
     expect(bindRefusalReason("closed", false)).toContain("không cho gắn")
     expect(bindRefusalReason("in_review", true)).toContain("đã có tài khoản")
   })
