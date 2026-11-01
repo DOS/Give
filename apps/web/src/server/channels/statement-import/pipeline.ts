@@ -68,7 +68,8 @@ const payloadSchema = z.object({
   period_to: z.string().regex(DAY).nullable(),
   opening_balance: z.string().regex(BALANCE).nullable(),
   closing_balance: z.string().regex(BALANCE).nullable(),
-  exported_at: z.string(),
+  // Null in payloads recorded before the upload time was filled in.
+  exported_at: z.string().nullable(),
   rows: z.array(rowSchema).min(1).max(MAX_ROWS),
 })
 
@@ -157,10 +158,14 @@ export type StatementImportResult =
    */
   | ({ status: "refused"; code: string; row?: number } & ResultBase)
 
-/** Refusals that do not depend on timing: retrying the same statement cannot succeed. */
+/**
+ * Refusals that do not depend on timing: retrying the same statement cannot
+ * succeed. GIVE_IMPORT_PERIOD_INVALID compares with the database's clock,
+ * which may lag the app's near midnight, so it stays pending.
+ */
 function isFinalRefusal(code: string): boolean {
   return (
-    code.startsWith("GIVE_IMPORT_") ||
+    (code.startsWith("GIVE_IMPORT_") && code !== "GIVE_IMPORT_PERIOD_INVALID") ||
     ["GIVE_ACCOUNT_NOT_FOUND", "GIVE_NOT_ALLOWED", "GIVE_INBOUND_EVENT_INVALID", "STATEMENT_PAYLOAD_INVALID"].includes(
       code
     )
@@ -236,13 +241,19 @@ export async function importStatementFile(
 
   const dedupeKey = statementDedupeKey(account.id, upload.file)
   const recorded = await recordStatementEvent(service, dedupeKey, payload)
-  // A file uploaded before is processed from what that upload recorded, so the
-  // inline run and the cron always stage the same statement.
-  let stored: unknown = payload
+  // A file uploaded before is processed from the statement that upload
+  // recorded, so the inline run and the cron always stage the same rows. It is
+  // staged as the current uploader, whose access was just checked: the
+  // uploader is not part of the statement, and the first one may have lost
+  // access since.
+  let stored: StatementPayload = payload
   if (!recorded.created) {
     const body = await service.from("inbound_events").select("payload").eq("id", recorded.inboundEventId).maybeSingle()
     if (body.error || !body.data) throw new Error(`inbound_events read failed: ${body.error?.code ?? "missing"}`)
-    stored = (body.data as { payload: unknown }).payload
+    const earlierPayload = payloadSchema.safeParse((body.data as { payload: unknown }).payload)
+    if (earlierPayload.success && earlierPayload.data.account_id === account.id) {
+      stored = { ...earlierPayload.data, actor_id: upload.actorId }
+    }
   }
   const event: InboundEvent = {
     id: recorded.inboundEventId,
@@ -251,12 +262,7 @@ export async function importStatementFile(
     received_at: now.toISOString(),
     payload: stored,
   }
-  const storedParser = (stored as { parser?: unknown } | null)?.parser
-  const base: ResultBase = {
-    inboundEventId: event.id,
-    replayed: !recorded.created,
-    parser: typeof storedParser === "string" ? storedParser : parser.name,
-  }
+  const base: ResultBase = { inboundEventId: event.id, replayed: !recorded.created, parser: stored.parser }
 
   // processInboundEvent records the outcome on the event and never throws.
   // The wrapper keeps the counts or the failure for the uploader, unless the

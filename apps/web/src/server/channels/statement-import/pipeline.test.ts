@@ -206,7 +206,7 @@ describe("importStatementFile", () => {
     expect(op(rpc("stage_statement_import"), "single")).toEqual([])
   })
 
-  it("replays the same file from what its first upload recorded", async () => {
+  it("replays the same file from what its first upload recorded, as the current uploader", async () => {
     const OTHER = "55555555-5555-4555-8555-555555555555"
     const first = { ...payload(), actor_id: OTHER, parser: "test-csv-v0" }
     responses["rpc:record_inbound_event"] = {
@@ -225,9 +225,10 @@ describe("importStatementFile", () => {
       imported: 2,
       ambiguous: 1,
     })
-    // The stored statement is staged, not this upload's parse.
+    // The stored statement is staged, not this upload's parse, by whoever
+    // uploads now (the first uploader may have lost access since).
     expect(args("stage_statement_import")).toMatchObject({
-      p_actor_id: OTHER,
+      p_actor_id: ACTOR,
       p_parser: "test-csv-v0",
       p_rows: first.rows,
     })
@@ -237,6 +238,25 @@ describe("importStatementFile", () => {
         "eq"
       )
     ).toEqual(["id", EVENT])
+  })
+
+  it("replays with this upload's statement when the recorded one is no longer readable", async () => {
+    responses["rpc:record_inbound_event"] = { data: { inbound_event_id: EVENT, created: false, processed_at: null } }
+    responses["inbound_events"] = { data: { payload: { ...payload(), version: 0 } } }
+    expect(await upload()).toMatchObject({ status: "imported", replayed: true, parser: "test-csv" })
+    expect(args("stage_statement_import")).toMatchObject({ p_parser: "test-csv", p_actor_id: ACTOR })
+  })
+
+  it("still reads payloads recorded without an export time", async () => {
+    responses["rpc:record_inbound_event"] = { data: { inbound_event_id: EVENT, created: false, processed_at: null } }
+    responses["inbound_events"] = { data: { payload: { ...payload(), exported_at: null } } }
+    await upload()
+    expect(args("stage_statement_import")).toMatchObject({ p_exported_at: null, p_rows: payload().rows })
+  })
+
+  it("keeps a period refusal pending: it depends on the database's clock", async () => {
+    responses["rpc:stage_statement_import"] = { error: { code: "23514", message: "GIVE_IMPORT_PERIOD_INVALID" } }
+    expect(await upload()).toMatchObject({ status: "pending", code: "GIVE_IMPORT_PERIOD_INVALID" })
   })
 
   it("refuses before recording when the parser was used with other format flags", async () => {

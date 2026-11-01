@@ -82,7 +82,7 @@ export function maskAccount(account: string | null | undefined): string | null {
 
 function optionalText(value: unknown, row: number): string | null {
   if (value === undefined || value === null) return null
-  if (typeof value !== "string") throw new StatementImportError("STATEMENT_ROW_INVALID", row)
+  if (typeof value !== "string" || !isStorableText(value)) throw new StatementImportError("STATEMENT_ROW_INVALID", row)
   return value.trim() === "" ? null : value
 }
 
@@ -114,13 +114,36 @@ export function jsonbTextBytes(value: unknown): number {
   )
 }
 
-/** Replaces every occurrence of the account number in the raw cells with its mask. */
+// NUL and unpaired surrogates: Postgres text and jsonb refuse them.
+const UNSTORABLE = /\u0000|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/
+
+/** True for text Postgres can store. */
+export function isStorableText(value: string): boolean {
+  return !UNSTORABLE.test(value)
+}
+
+/** Every key and string of a JSON value is storable (JSON.stringify would escape them unnoticed). */
+function isStorableJson(node: unknown): boolean {
+  if (typeof node === "string") return isStorableText(node)
+  if (Array.isArray(node)) return node.every(isStorableJson)
+  if (node !== null && typeof node === "object") {
+    return Object.entries(node).every(([key, item]) => isStorableText(key) && isStorableJson(item))
+  }
+  return true
+}
+
+/**
+ * Masks the account number wherever it appears in the raw cells: written
+ * with or without spaces, dots or dashes between its characters, and never
+ * as part of a longer number or word.
+ */
 function scrubAccount(value: unknown, account: string | null): unknown {
-  const forms = account === null ? [] : [account.trim(), account.replace(/\s+/g, "")].filter((f) => f.length >= 5)
-  if (forms.length === 0) return value
+  const chars = (account ?? "").replace(/[^0-9A-Za-z]/g, "")
+  if (chars.length < 5) return value
   const masked = maskAccount(account)!
+  const pattern = new RegExp(`(?<![0-9A-Za-z])${chars.split("").join("[\\s.-]?")}(?![0-9A-Za-z])`, "g")
   const walk = (node: unknown): unknown => {
-    if (typeof node === "string") return forms.reduce((text, form) => text.split(form).join(masked), node)
+    if (typeof node === "string") return node.replace(pattern, masked)
     if (Array.isArray(node)) return node.map(walk)
     if (node !== null && typeof node === "object") {
       return Object.fromEntries(Object.entries(node).map(([key, item]) => [key, walk(item)]))
@@ -140,6 +163,7 @@ function rawObject(value: unknown, account: string | null, row: number): Record<
     throw new StatementImportError("STATEMENT_ROW_INVALID", row)
   }
   copy = scrubAccount(copy, account) as Record<string, unknown>
+  if (!isStorableJson(copy)) throw new StatementImportError("STATEMENT_ROW_INVALID", row)
   if (jsonbTextBytes(copy) > MAX_RAW_BYTES) throw new StatementImportError("STATEMENT_ROW_INVALID", row)
   return copy
 }
@@ -210,7 +234,12 @@ export function normalizeStatement(
     if (tx.providerTxId !== null && typeof tx.providerTxId !== "string") {
       throw new StatementImportError("STATEMENT_ROW_INVALID", row)
     }
-    if (stable !== (providerId !== "") || providerId.length > MAX_PROVIDER_ID || MADE_UP_ID.test(providerId)) {
+    if (
+      stable !== (providerId !== "") ||
+      providerId.length > MAX_PROVIDER_ID ||
+      !isStorableText(providerId) ||
+      MADE_UP_ID.test(providerId)
+    ) {
       throw new StatementImportError("STATEMENT_ROW_INVALID", row)
     }
 

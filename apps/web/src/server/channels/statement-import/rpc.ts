@@ -65,7 +65,9 @@ export async function recordStatementEvent(db: Db, dedupeKey: string, payload: u
   }
 }
 
-export interface StageInput extends StagedStatement {
+export interface StageInput extends Omit<StagedStatement, "exported_at"> {
+  /** Null only in payloads recorded before the upload time was filled in. */
+  exported_at: string | null
   accountId: string
   /** The uploader: the account's owner, or finance/admin staff. */
   actorId: string

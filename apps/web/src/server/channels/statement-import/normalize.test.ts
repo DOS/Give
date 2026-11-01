@@ -105,6 +105,12 @@ describe("normalizeStatement", () => {
     expect(raw.cells[0]).toBe("9704 3612 3456") // the parser's object is not changed
   })
 
+  it("masks only the whole account number, also when written with separators", () => {
+    const raw = { amount: "1000000", ref: "X100000", acct: "100.000", other: "10000 0" }
+    const rows = normalizeStatement(IDS, statement([tx({ counterpartyAccount: "100000", raw })]), NOW).rows
+    expect(rows[0].raw).toEqual({ amount: "1000000", ref: "X100000", acct: "****0000", other: "****0000" })
+  })
+
   it("sends the largest amounts and balances as exact digits", () => {
     const big = BigInt("-999999999999999")
     const rows = normalizeStatement(
@@ -218,6 +224,10 @@ describe("normalizeStatement", () => {
       ["a booking before 2000", { bookedAt: new Date("1999-12-31T23:00:00+07:00") }],
       ["a booking in a year that toISOString cannot print plainly", { bookedAt: new Date("-000026-10-01T00:00:00Z") }],
       ["raw that is not JSON", { raw: { n: BigInt(1) } }],
+      ["a NUL in the description", { description: "GV\u0000X" }],
+      ["an unpaired surrogate in the counterparty name", { counterpartyName: "A\ud800" }],
+      ["a NUL in the raw cells", { raw: { cell: "a\u0000" } }],
+      ["a NUL in the id", { providerTxId: "FT\u0000" }],
     ])("%s, naming the row", (_name, overrides) => {
       const rows = [tx({ providerTxId: "FT000" }), tx(overrides)]
       expect(refusal(() => normalizeStatement(IDS, statement(rows, { periodTo: "2026-10-05" }), NOW))).toEqual({
