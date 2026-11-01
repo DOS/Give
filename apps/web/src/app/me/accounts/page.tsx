@@ -5,12 +5,13 @@ import { AccountStatusBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { requireSession } from "@/lib/auth/session"
 import { BANKS, bankLabel } from "@/lib/banks"
-import { getOrganizer, listMyCampaigns, STATUS_LABELS, VERIFICATION_LABELS } from "@/lib/campaigns"
+import { getOrganizer, listMyCampaigns, VERIFICATION_LABELS, type Organizer } from "@/lib/campaigns"
 import { formatDate, formatVnd } from "@/lib/format"
 import {
   ACCOUNT_KIND_LABELS,
+  accountUnusableReason,
   activeBinding,
-  isBindableStatus,
+  bindRefusalReason,
   listMyAccounts,
   normalizePersonName,
   VERIFICATION_TRANSFER_AMOUNT,
@@ -55,13 +56,7 @@ export default async function MyAccountsPage() {
   const bindChoices: BindChoice[] = campaigns.map((c) => ({
     id: c.id,
     title: c.title,
-    disabledReason: !isBindableStatus(c.status)
-      ? c.status === "draft"
-        ? "bản nháp, cần gửi duyệt trước"
-        : STATUS_LABELS[c.status]
-      : campaignsWithAccount.has(c.id)
-        ? "đã có tài khoản nhận"
-        : null,
+    disabledReason: bindRefusalReason(c.status, campaignsWithAccount.has(c.id)),
   }))
 
   return (
@@ -100,6 +95,7 @@ export default async function MyAccountsPage() {
               <AccountItem
                 key={account.id}
                 account={account}
+                organizer={organizer}
                 boundTitle={(id) => campaignById.get(id)?.title ?? "Chiến dịch"}
                 bindChoices={bindChoices}
               />
@@ -196,22 +192,26 @@ interface BindChoice {
 
 function AccountItem({
   account,
+  organizer,
   boundTitle,
   bindChoices,
 }: {
   account: ReceivingAccount
+  organizer: Organizer
   boundTitle: (campaignId: string) => string
   bindChoices: BindChoice[]
 }) {
   const holder = activeBinding(account)
-  const canBind = account.verification_status === "verified" && !holder
+  // A verified account stops being usable when the organizer's identity changes.
+  const unusable = account.verification_status === "verified" ? accountUnusableReason(account, organizer) : null
+  const canBind = account.verification_status === "verified" && !unusable && !holder
   const anyBindable = bindChoices.some((c) => !c.disabledReason)
 
   return (
     <li className="space-y-4 card p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 text-sm">
-          {/* The owner sees the full number; everyone else gets maskAccountNumber. */}
+          {/* The owner's own page: the full number (RLS keeps other users out). */}
           <p className="font-semibold">
             {bankLabel(account.bank_bin)} · {account.account_number}
           </p>
@@ -259,8 +259,15 @@ function AccountItem({
             {boundTitle(holder.campaign_id)}
           </Link>{" "}
           từ ngày {formatDate(holder.bound_at)}. Tài khoản chỉ được nhả khi chiến dịch đó đã xong hẳn phần tiền.
+          {(account.verification_status === "disabled" || unusable) && (
+            <span className="font-semibold text-red-700">
+              {" "}
+              Chiến dịch này hiện không nhận được tiền ủng hộ qua tài khoản này.
+            </span>
+          )}
         </p>
       )}
+      {unusable && <p className="text-sm text-amber-800">Tài khoản tạm không dùng được: {unusable}</p>}
 
       {canBind &&
         (bindChoices.length === 0 ? (

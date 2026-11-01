@@ -49,11 +49,27 @@ function bindForm(campaignId = CAMPAIGN) {
 const organizer = { user_id: USER, legal_name: "Nguyễn Thị Đào", verification_status: "verified" }
 
 function account(overrides: Record<string, unknown> = {}) {
-  return { id: ACCOUNT, owner_user_id: USER, verification_status: "verified", bindings: [], ...overrides }
+  return {
+    id: ACCOUNT,
+    owner_user_id: USER,
+    verification_status: "verified",
+    account_name: "NGUYEN THI DAO",
+    bindings: [],
+    ...overrides,
+  }
 }
 
 function campaign(overrides: Record<string, unknown> = {}) {
   return { id: CAMPAIGN, organizer_id: USER, status: "in_review", title: "Quỹ học bổng", ...overrides }
+}
+
+/** User-token reads for registerAccount: the organizer and the pending accounts. */
+function registerReads(org: unknown = organizer, pending: unknown[] = []): Handler {
+  return (call) => {
+    if (call.target === "organizers") return { data: org }
+    if (call.target === "receiving_accounts") return { data: pending }
+    return undefined
+  }
 }
 
 /** User-token reads for bindAccount: the account, the campaign and its active bindings. */
@@ -61,11 +77,13 @@ function bindReads({
   acc = account(),
   camp = campaign(),
   bindings = [] as unknown[],
-}: { acc?: unknown; camp?: unknown; bindings?: unknown[] } = {}): Handler {
+  org = { ...organizer, legal_name: "Nguyễn Thị Đào", verification_status: "verified" } as unknown,
+}: { acc?: unknown; camp?: unknown; bindings?: unknown[]; org?: unknown } = {}): Handler {
   return (call) => {
     if (call.target === "receiving_accounts") return { data: acc }
     if (call.target === "rpc:managed_campaigns") return { data: camp }
     if (call.target === "account_bindings") return { data: bindings }
+    if (call.target === "organizers") return { data: org }
     return undefined
   }
 }
@@ -79,7 +97,7 @@ beforeEach(() => {
 
 describe("registerAccount", () => {
   it("registers through the service-role RPC with the verified user's id and normalised fields", async () => {
-    state.userHandler = (call) => (call.target === "organizers" ? { data: organizer } : undefined)
+    state.userHandler = registerReads()
     state.serviceHandler = () => ({ data: [{ receiving_account_id: ACCOUNT, verification_code: "XM2345678" }] })
 
     const result = await registerAccount(null, registerForm())
@@ -109,7 +127,7 @@ describe("registerAccount", () => {
   })
 
   it("asks for an organizer profile first", async () => {
-    state.userHandler = () => ({ data: null })
+    state.userHandler = registerReads(null)
     const result = await registerAccount(null, registerForm())
     expect(result?.ok).toBe(false)
     expect(result?.message).toContain("hồ sơ người tổ chức")
@@ -117,10 +135,18 @@ describe("registerAccount", () => {
   })
 
   it("explains a holder name that does not match the legal name", async () => {
-    state.userHandler = () => ({ data: organizer })
+    state.userHandler = registerReads()
     const result = await registerAccount(null, registerForm({ account_name: "TRAN VAN B" }))
     expect(result?.ok).toBe(false)
     expect(result?.message).toContain("Nguyễn Thị Đào")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("caps the accounts waiting for verification", async () => {
+    state.userHandler = registerReads(organizer, [{ id: "a" }, { id: "b" }, { id: "c" }])
+    const result = await registerAccount(null, registerForm())
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toContain("3 tài khoản chờ xác minh")
     expect(state.serviceCalls).toHaveLength(0)
   })
 
@@ -131,7 +157,7 @@ describe("registerAccount", () => {
   })
 
   it("maps database errors to Vietnamese messages", async () => {
-    state.userHandler = () => ({ data: organizer })
+    state.userHandler = registerReads()
     state.serviceHandler = () => ({ error: { code: "23505", message: "GIVE_ACCOUNT_ALREADY_REGISTERED" } })
     const result = await registerAccount(null, registerForm())
     expect(result).toEqual({ ok: false, message: "Tài khoản ngân hàng này đã được khai báo trên Give." })
@@ -185,6 +211,16 @@ describe("bindAccount", () => {
     state.userHandler = bindReads({ acc: account({ verification_status: "pending" }) })
     const result = await bindAccount(ACCOUNT, null, bindForm())
     expect(result?.ok).toBe(false)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("refuses a verified account once the organizer's identity changed", async () => {
+    state.userHandler = bindReads({ org: { ...organizer, verification_status: "pending" } })
+    const reset = await bindAccount(ACCOUNT, null, bindForm())
+    expect(reset?.message).toContain("Hồ sơ người tổ chức chưa được xác minh")
+    state.userHandler = bindReads({ org: { ...organizer, legal_name: "Trần Văn B" } })
+    const renamed = await bindAccount(ACCOUNT, null, bindForm())
+    expect(renamed?.message).toContain("không còn trùng tên pháp lý")
     expect(state.serviceCalls).toHaveLength(0)
   })
 

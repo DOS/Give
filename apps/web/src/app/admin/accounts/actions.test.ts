@@ -29,7 +29,15 @@ function form(values: Record<string, string>) {
   return data
 }
 
-const isFinance: Handler = (call) => (call.target === "rpc:is_admin" ? { data: true } : undefined)
+const OWNER = "11111111-1111-4111-8111-111111111111"
+
+/** A finance reviewer's reads: the role check, the account and its organizer. */
+const isFinance: Handler = (call) => {
+  if (call.target === "rpc:is_admin") return { data: true }
+  if (call.target === "receiving_accounts") return { data: { id: ACCOUNT, owner_user_id: OWNER, bindings: [] } }
+  if (call.target === "organizers") return { data: { user_id: OWNER, legal_name: "Nguyễn Thị Đào" } }
+  return undefined
+}
 
 beforeEach(() => {
   state.userCalls.length = 0
@@ -43,7 +51,13 @@ describe("reviewAccount", () => {
     const result = await reviewAccount(
       ACCOUNT,
       null,
-      form({ decision: "verified", evidence: " FT2630512345 01/11 ", expected_code: "XM2345678", reason: "x" })
+      form({
+        decision: "verified",
+        sender_name: "NGUYEN THI DAO",
+        evidence: " FT2630512345 01/11 ",
+        expected_code: "XM2345678",
+        reason: "x",
+      })
     )
 
     expect(result).toEqual({ ok: true, message: "Đã xác minh tài khoản nhận." })
@@ -58,11 +72,22 @@ describe("reviewAccount", () => {
         p_receiving_account_id: ACCOUNT,
         p_decision: "verified",
         p_reviewer_id: REVIEWER,
-        p_evidence: "FT2630512345 01/11",
+        p_evidence: "Người chuyển: NGUYEN THI DAO. FT2630512345 01/11",
         p_reason: null,
         p_expected_code: "XM2345678",
       },
     ])
+  })
+
+  it("refuses to verify when the sender on the transfer is not the organizer", async () => {
+    const result = await reviewAccount(
+      ACCOUNT,
+      null,
+      form({ decision: "verified", sender_name: "TRAN VAN B", evidence: "FT1", expected_code: "XM2345678" })
+    )
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toContain("không trùng tên pháp lý")
+    expect(state.serviceCalls).toHaveLength(0)
   })
 
   it("rejects with a reason and no evidence or code", async () => {
@@ -82,6 +107,7 @@ describe("reviewAccount", () => {
 
   it("requires evidence to verify and a reason to reject or disable", async () => {
     expect((await reviewAccount(ACCOUNT, null, form({ decision: "verified", evidence: " " })))?.ok).toBe(false)
+    expect((await reviewAccount(ACCOUNT, null, form({ decision: "verified", evidence: "FT1" })))?.ok).toBe(false)
     expect((await reviewAccount(ACCOUNT, null, form({ decision: "rejected" })))?.ok).toBe(false)
     expect((await reviewAccount(ACCOUNT, null, form({ decision: "disabled" })))?.ok).toBe(false)
     expect(state.serviceCalls).toHaveLength(0)
@@ -93,7 +119,10 @@ describe("reviewAccount", () => {
     expect(result?.ok).toBe(false)
 
     state.userHandler = () => ({ error: { code: "PGRST301", message: "JWT invalid" } })
-    expect((await reviewAccount(ACCOUNT, null, form({ decision: "pending" })))?.ok).toBe(false)
+    expect(await reviewAccount(ACCOUNT, null, form({ decision: "pending" }))).toEqual({
+      ok: false,
+      message: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+    })
     expect(state.serviceCalls).toHaveLength(0)
   })
 
@@ -106,14 +135,18 @@ describe("reviewAccount", () => {
   it("words database refusals for an account review", async () => {
     state.serviceHandler = () => ({ error: { message: "GIVE_TRANSITION_NOT_ALLOWED: pending -> rejected" } })
     const rejected = await reviewAccount(ACCOUNT, null, form({ decision: "rejected", reason: "x" }))
-    expect(rejected?.message).toContain("chỉ có thể khóa")
+    expect(rejected?.message).toContain("tải lại trang")
 
     state.serviceHandler = () => ({ error: { message: "GIVE_SELF_REVIEW" } })
     const self = await reviewAccount(ACCOUNT, null, form({ decision: "pending" }))
     expect(self?.message).toBe("Không thể tự xác minh tài khoản nhận của chính mình.")
 
     state.serviceHandler = () => ({ error: { message: "GIVE_VERIFICATION_CHANGED_SINCE_REVIEW" } })
-    const stale = await reviewAccount(ACCOUNT, null, form({ decision: "verified", evidence: "x", expected_code: "XM" }))
+    const stale = await reviewAccount(
+      ACCOUNT,
+      null,
+      form({ decision: "verified", sender_name: "Nguyễn Thị Đào", evidence: "x", expected_code: "XM" })
+    )
     expect(stale?.message).toContain("Mã xác minh của tài khoản đã đổi")
   })
 })

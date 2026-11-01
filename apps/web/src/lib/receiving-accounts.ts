@@ -45,7 +45,10 @@ export interface ReceivingAccount {
 }
 
 export interface AccountForReview extends ReceivingAccount {
-  organizer: Pick<Organizer, "user_id" | "kind" | "legal_name" | "display_name" | "verification_status"> | null
+  organizer: Pick<
+    Organizer,
+    "user_id" | "kind" | "legal_name" | "display_name" | "phone" | "verification_status"
+  > | null
 }
 
 /** Columns authenticated may select (DOS-Me grants), with the bindings embedded. */
@@ -65,6 +68,12 @@ export const REGISTER_CHANNEL = "statement_import"
  * verification code as its content.
  */
 export const VERIFICATION_TRANSFER_AMOUNT = 10_000
+
+/**
+ * Accounts an organizer may have waiting for verification at once, so one
+ * person cannot squat many account numbers or flood the finance queue.
+ */
+export const MAX_PENDING_ACCOUNTS = 3
 
 /** Staff roles that may read and review receiving accounts (RLS and give.review_receiving_account). */
 export const FINANCE_ROLES = ["finance", "admin"] as const
@@ -102,6 +111,15 @@ export function maskAccountNumber(number: string | null | undefined): string {
   return number.length <= 4 ? "••••" : `•••• ${number.slice(-4)}`
 }
 
+/** The host of an organizer-supplied URL, so a reviewer can tell a bank's site from any other. */
+export function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return "?"
+  }
+}
+
 /** Mirrors the normalisation in give.register_receiving_account. */
 export function normalizeAccountNumber(input: string): string {
   return input.replace(/[\s.-]/g, "").toUpperCase()
@@ -130,6 +148,72 @@ export function normalizePersonName(input: string | null | undefined): string {
 export function accountNameMatches(accountName: string | null | undefined, legalName: string | null | undefined) {
   const account = normalizePersonName(accountName)
   return account !== "" && account === normalizePersonName(legalName)
+}
+
+type OrganizerIdentity = Pick<Organizer, "legal_name" | "verification_status"> | null | undefined
+
+/**
+ * Why an account cannot receive money or be bound right now, or null when it
+ * can. Mirrors the checks in give.bind_receiving_account and
+ * give.create_donation: a verified account stops being usable when the
+ * organizer's verification resets or their legal name no longer matches.
+ */
+export function accountUnusableReason(
+  account: Pick<ReceivingAccount, "verification_status" | "account_name">,
+  organizer: OrganizerIdentity
+): string | null {
+  if (account.verification_status !== "verified") return "Tài khoản chưa được xác minh."
+  if (organizer?.verification_status !== "verified") {
+    return "Hồ sơ người tổ chức chưa được xác minh (hoặc cần xác minh lại sau khi đổi thông tin)."
+  }
+  if (!accountNameMatches(account.account_name, organizer.legal_name)) {
+    return "Tên chủ tài khoản không còn trùng tên pháp lý trong hồ sơ người tổ chức."
+  }
+  return null
+}
+
+/** Why a campaign cannot take an account now, or null when it can. */
+export function bindRefusalReason(status: CampaignStatus, hasAccount: boolean): string | null {
+  if (status === "draft") return "bản nháp, cần gửi duyệt trước"
+  if (!isBindableStatus(status)) return "trạng thái không cho gắn tài khoản"
+  if (hasAccount) return "đã có tài khoản nhận"
+  return null
+}
+
+export interface ReviewOptions {
+  /** Why the verify button is off (the RPC would refuse), or null. */
+  verifyBlocked: string | null
+  /** The closing decision offered: rejecting frees the number, so an account ever bound can only be disabled. */
+  close: "rejected" | "disabled" | null
+  reopen: boolean
+}
+
+/** What a finance reviewer may do with an account, mirroring give.review_receiving_account. */
+export function reviewOptions(
+  account: Pick<ReceivingAccount, "verification_status" | "account_name" | "bindings">,
+  organizer: OrganizerIdentity
+): ReviewOptions {
+  const status = account.verification_status
+  let verifyBlocked: string | null = null
+  if (status === "pending") {
+    if (organizer?.verification_status !== "verified") {
+      verifyBlocked = "Người tổ chức chưa được xác minh danh tính; xác minh hồ sơ trước."
+    } else if (!accountNameMatches(account.account_name, organizer.legal_name)) {
+      verifyBlocked = "Tên chủ tài khoản đã khai không trùng tên pháp lý hiện tại."
+    }
+  }
+  return {
+    verifyBlocked,
+    close:
+      status === "pending"
+        ? account.bindings.length === 0
+          ? "rejected"
+          : "disabled"
+        : status === "verified"
+          ? "disabled"
+          : null,
+    reopen: status === "rejected" || status === "disabled",
+  }
 }
 
 export const registerAccountSchema = z.object({
@@ -168,6 +252,17 @@ export async function listMyAccounts(db: Db, userId: string): Promise<ReceivingA
   return (data ?? []) as unknown as ReceivingAccount[]
 }
 
+/** How many of the caller's accounts are waiting for verification. */
+export async function countPendingAccounts(db: Db, userId: string): Promise<number> {
+  const { data, error } = await db
+    .from("receiving_accounts")
+    .select("id")
+    .eq("owner_user_id", userId)
+    .eq("verification_status", "pending")
+  if (error) throw error
+  return (data ?? []).length
+}
+
 /** One account the caller may read (its owner, or finance/admin staff). */
 export async function getAccount(db: Db, id: string): Promise<ReceivingAccount | null> {
   const { data, error } = await db.from("receiving_accounts").select(ACCOUNT_COLUMNS).eq("id", id).maybeSingle()
@@ -175,7 +270,7 @@ export async function getAccount(db: Db, id: string): Promise<ReceivingAccount |
   return data as unknown as ReceivingAccount | null
 }
 
-const REVIEW_COLUMNS = `${ACCOUNT_COLUMNS}, organizer:organizers(user_id, kind, legal_name, display_name, verification_status)`
+const REVIEW_COLUMNS = `${ACCOUNT_COLUMNS}, organizer:organizers(user_id, kind, legal_name, display_name, phone, verification_status)`
 
 /** Accounts waiting for verification, oldest first (finance/admin only under RLS). */
 export async function listAccountsToReview(db: Db, limit = 100): Promise<AccountForReview[]> {

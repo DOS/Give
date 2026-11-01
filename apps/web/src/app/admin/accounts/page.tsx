@@ -14,8 +14,10 @@ import {
   activeBinding,
   campaignRefs,
   FINANCE_ROLES,
+  hostnameOf,
   listAccountsToReview,
   listReviewedAccounts,
+  reviewOptions,
   VERIFICATION_TRANSFER_AMOUNT,
   type AccountForReview,
   type CampaignRef,
@@ -46,9 +48,11 @@ export default async function AdminAccountsPage() {
         </Link>
         <h1 className="mt-2 text-3xl font-bold">Xác minh tài khoản nhận</h1>
         <p className="mt-2 text-sm text-gray-600">
-          Xác minh khi đã thấy trên sao kê của chính tài khoản này một giao dịch chuyển đi{" "}
-          {formatVnd(VERIFICATION_TRANSFER_AMOUNT)} với nội dung đúng bằng mã xác minh, và tên chủ tài khoản trùng tên
-          pháp lý của người tổ chức đã được xác minh. Mọi thao tác được ghi vào nhật ký kiểm toán.
+          Xác minh khi đã thấy, từ một nguồn do ngân hàng phát hành (sao kê trên trang của chính ngân hàng, hoặc biên
+          lai và sao kê đã đối chiếu với ngân hàng), một giao dịch chuyển đi {formatVnd(VERIFICATION_TRANSFER_AMOUNT)}{" "}
+          từ đúng số tài khoản này, nội dung đúng bằng mã xác minh, và tên người chuyển trên giao dịch trùng tên pháp lý
+          của người tổ chức đã được xác minh. Tên chủ tài khoản và đường dẫn sao kê là do người tổ chức tự khai, chưa
+          được kiểm chứng. Mọi thao tác được ghi vào nhật ký kiểm toán.
         </p>
       </div>
 
@@ -95,7 +99,7 @@ function AccountCard({
   const nameMatches = accountNameMatches(account.account_name, organizer?.legal_name)
   const holder = activeBinding(account)
   const boundCampaign = holder ? refs.get(holder.campaign_id) : undefined
-  const everBound = account.bindings.length > 0
+  const options = reviewOptions(account, organizer)
   const own = account.owner_user_id === selfId
   const status = account.verification_status
 
@@ -114,11 +118,11 @@ function AccountCard({
             <dd className="font-mono">{account.account_number}</dd>
           </div>
           <div>
-            <dt className="text-gray-500">Tên chủ tài khoản</dt>
+            <dt className="text-gray-500">Tên chủ tài khoản (người tổ chức khai)</dt>
             <dd>
               {account.account_name}{" "}
-              <span className={nameMatches ? "text-green-700" : "font-semibold text-red-700"}>
-                {nameMatches ? "✓ trùng tên pháp lý" : "✗ không trùng tên pháp lý"}
+              <span className={nameMatches ? "text-gray-600" : "font-semibold text-red-700"}>
+                {nameMatches ? "(tên khai trùng tên pháp lý)" : "✗ tên khai không trùng tên pháp lý"}
               </span>
             </dd>
           </div>
@@ -128,6 +132,7 @@ function AccountCard({
               {organizer ? (
                 <>
                   {organizer.display_name} (tên pháp lý: {organizer.legal_name})
+                  {organizer.phone ? ` · ${organizer.phone}` : ""}
                   <VerificationBadge status={organizer.verification_status} />
                 </>
               ) : (
@@ -145,7 +150,10 @@ function AccountCard({
           </div>
           {account.public_statement_url && (
             <div className="sm:col-span-2">
-              <dt className="text-gray-500">Sao kê công khai</dt>
+              <dt className="text-gray-500">
+                Sao kê công khai (người tổ chức cung cấp, chưa kiểm chứng; tên miền:{" "}
+                <span className="font-semibold text-gray-900">{hostnameOf(account.public_statement_url)}</span>)
+              </dt>
               <dd className="break-all">
                 <a
                   href={account.public_statement_url}
@@ -191,7 +199,10 @@ function AccountCard({
         <p className="text-sm text-amber-800">Đây là tài khoản của bạn; một nhân viên khác cần xử lý.</p>
       ) : (
         <div className="grid gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2">
-          {status === "pending" && (
+          {status === "pending" && options.verifyBlocked && (
+            <p className="text-sm text-amber-800">Chưa xác minh được: {options.verifyBlocked}</p>
+          )}
+          {status === "pending" && !options.verifyBlocked && (
             <ActionForm
               action={reviewAccount.bind(null, account.id)}
               confirm="Xác minh tài khoản này? Sau đó người tổ chức có thể gắn nó với chiến dịch để nhận tiền."
@@ -199,6 +210,10 @@ function AccountCard({
             >
               <input type="hidden" name="decision" value="verified" />
               <input type="hidden" name="expected_code" value={account.verification_code} />
+              <label htmlFor={`sender-${account.id}`} className="label">
+                Tên người chuyển trên giao dịch (đọc từ nguồn của ngân hàng)
+              </label>
+              <input id={`sender-${account.id}`} name="sender_name" className="field" required maxLength={120} />
               <label htmlFor={`evidence-${account.id}`} className="label">
                 Bằng chứng giao dịch xác minh
               </label>
@@ -209,21 +224,25 @@ function AccountCard({
                 rows={2}
                 required
                 maxLength={500}
-                placeholder="Mã giao dịch ngân hàng, ngày giờ, nguồn (sao kê công khai, biên lai)"
+                placeholder="Mã giao dịch ngân hàng, ngày giờ, nguồn (trang sao kê của ngân hàng, biên lai đã đối chiếu)"
               />
               <SubmitButton>Xác minh</SubmitButton>
             </ActionForm>
           )}
-          {(status === "pending" || status === "verified") && (
-            <ActionForm action={reviewAccount.bind(null, account.id)} className="space-y-2">
+          {options.close && (
+            <ActionForm
+              action={reviewAccount.bind(null, account.id)}
+              confirm={
+                options.close === "rejected"
+                  ? "Từ chối tài khoản này? Số tài khoản sẽ được giải phóng để khai báo lại."
+                  : "Khóa tài khoản này? Chiến dịch đang gắn với nó sẽ không nhận được tiền ủng hộ mới."
+              }
+              className="space-y-2"
+            >
               {/* Rejecting frees the number; an account that was ever bound can only be disabled. */}
-              <input
-                type="hidden"
-                name="decision"
-                value={status === "pending" && !everBound ? "rejected" : "disabled"}
-              />
+              <input type="hidden" name="decision" value={options.close} />
               <label htmlFor={`reason-${account.id}`} className="label">
-                {status === "pending" && !everBound ? "Từ chối" : "Khóa tài khoản"}
+                {options.close === "rejected" ? "Từ chối" : "Khóa tài khoản"}
               </label>
               <textarea
                 id={`reason-${account.id}`}
@@ -234,12 +253,10 @@ function AccountCard({
                 maxLength={1000}
                 placeholder="Lý do (người tổ chức sẽ thấy)"
               />
-              <SubmitButton className="btn-danger">
-                {status === "pending" && !everBound ? "Từ chối" : "Khóa"}
-              </SubmitButton>
+              <SubmitButton className="btn-danger">{options.close === "rejected" ? "Từ chối" : "Khóa"}</SubmitButton>
             </ActionForm>
           )}
-          {(status === "rejected" || status === "disabled") && (
+          {options.reopen && (
             <ActionForm
               action={reviewAccount.bind(null, account.id)}
               confirm="Mở lại tài khoản để xác minh? Người tổ chức sẽ nhận mã xác minh mới."

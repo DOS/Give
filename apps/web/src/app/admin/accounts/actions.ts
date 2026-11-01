@@ -3,10 +3,10 @@
 import { revalidatePath } from "next/cache"
 
 import { getSession } from "@/lib/auth/session"
-import { isStaff } from "@/lib/campaigns"
+import { getOrganizer } from "@/lib/campaigns"
 import { dbErrorMessage, done, fail, type ActionResult } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
-import { FINANCE_ROLES, type AccountStatus } from "@/lib/receiving-accounts"
+import { accountNameMatches, FINANCE_ROLES, getAccount, type AccountStatus } from "@/lib/receiving-accounts"
 import { dbAs, dbService } from "@/lib/supabase"
 
 /**
@@ -16,6 +16,11 @@ import { dbAs, dbService } from "@/lib/supabase"
  * and writes the audit row. Because it trusts the id, the role check below
  * runs with the reviewer's own token first: PostgREST verifies that token, so
  * a forged session cookie fails here.
+ *
+ * The holder name an organizer declares is only compared with their own
+ * legal name, so it proves nothing about the bank. Verifying therefore also
+ * takes the sender name the reviewer read on the test transfer, from a source
+ * the bank issued, and refuses unless it matches the legal name.
  */
 
 const SIGNED_OUT = "Phiên đăng nhập đã hết. Hãy đăng nhập lại."
@@ -31,7 +36,7 @@ const DONE_MESSAGES: Record<AccountStatus, string> = {
 
 const REVIEW_MESSAGES: Record<string, string> = {
   GIVE_TRANSITION_NOT_ALLOWED:
-    "Không thể đổi tài khoản sang trạng thái này. Tài khoản từng gắn với chiến dịch không thể bị từ chối, chỉ có thể khóa.",
+    "Không thể đổi tài khoản sang trạng thái này: trạng thái có thể vừa đổi (hãy tải lại trang), hoặc tài khoản từng gắn với chiến dịch nên chỉ có thể khóa.",
   GIVE_NOT_ADMIN: "Chỉ nhân viên tài chính hoặc quản trị viên được xác minh tài khoản nhận.",
 }
 
@@ -49,20 +54,43 @@ export async function reviewAccount(accountId: string, _state: ActionResult, for
     String(form.get("reason") ?? "")
       .trim()
       .slice(0, 1000) || null
+  const senderName = String(form.get("sender_name") ?? "")
+    .trim()
+    .slice(0, 120)
   if (decision === "verified" && !evidence) return fail(dbErrorMessage({ message: "GIVE_EVIDENCE_REQUIRED" }))
+  if (decision === "verified" && !senderName) return fail("Ghi tên người chuyển đọc được trên giao dịch xác minh.")
   if ((decision === "rejected" || decision === "disabled") && !reason) {
     return fail(dbErrorMessage({ message: "GIVE_REASON_REQUIRED" }))
   }
 
-  if (!(await isStaff(dbAs(session.accessToken), FINANCE_ROLES))) {
-    return fail(REVIEW_MESSAGES.GIVE_NOT_ADMIN)
+  const db = dbAs(session.accessToken)
+  const role = await db.rpc("is_admin", { p_roles: FINANCE_ROLES })
+  if (role.error) return fail(dbErrorMessage(role.error))
+  if (role.data !== true) return fail(REVIEW_MESSAGES.GIVE_NOT_ADMIN)
+
+  let recordedEvidence = evidence
+  if (decision === "verified") {
+    let legalName
+    try {
+      const account = await getAccount(db, accountId)
+      if (!account) return fail(dbErrorMessage({ message: "GIVE_ACCOUNT_NOT_FOUND" }))
+      legalName = (await getOrganizer(db, account.owner_user_id))?.legal_name
+    } catch (error) {
+      return fail(dbErrorMessage(error as { message?: string; code?: string }))
+    }
+    if (!accountNameMatches(senderName, legalName)) {
+      return fail(
+        `Tên người chuyển "${senderName}" không trùng tên pháp lý "${legalName ?? "—"}". Không xác minh tài khoản này.`
+      )
+    }
+    recordedEvidence = `Người chuyển: ${senderName}. ${evidence}`.slice(0, 500)
   }
 
   const { error } = await dbService().rpc("review_receiving_account", {
     p_receiving_account_id: accountId,
     p_decision: decision,
     p_reviewer_id: session.user.id,
-    p_evidence: decision === "verified" ? evidence : null,
+    p_evidence: decision === "verified" ? recordedEvidence : null,
     p_reason: decision === "rejected" || decision === "disabled" ? reason : null,
     // The code the reviewer checked the transfer against; a reopened account
     // has a new one, and the database refuses a stale review.

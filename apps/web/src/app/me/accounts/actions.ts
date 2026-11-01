@@ -8,10 +8,13 @@ import { dbErrorMessage, done, fail, type ActionResult } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
 import {
   accountNameMatches,
+  accountUnusableReason,
   activeBinding,
   activeBindingsOfCampaign,
+  countPendingAccounts,
   getAccount,
   isBindableStatus,
+  MAX_PENDING_ACCOUNTS,
   REGISTER_CHANNEL,
   registerAccountSchema,
 } from "@/lib/receiving-accounts"
@@ -42,13 +45,22 @@ export async function registerAccount(_state: ActionResult, form: FormData): Pro
   if (!parsed.success) return fail(firstError(parsed.error))
   const input = parsed.data
 
-  let organizer
+  const db = dbAs(session.accessToken)
+  let organizer, pending
   try {
-    organizer = await getOrganizer(dbAs(session.accessToken), session.user.id)
+    ;[organizer, pending] = await Promise.all([
+      getOrganizer(db, session.user.id),
+      countPendingAccounts(db, session.user.id),
+    ])
   } catch (error) {
     return fail(dbErrorMessage(error as { message?: string; code?: string }))
   }
   if (!organizer) return fail("Hãy tạo hồ sơ người tổ chức trước khi khai báo tài khoản nhận.")
+  if (pending >= MAX_PENDING_ACCOUNTS) {
+    return fail(
+      `Bạn đang có ${pending} tài khoản chờ xác minh. Hãy hoàn tất xác minh các tài khoản đó trước khi khai báo thêm.`
+    )
+  }
   if (!accountNameMatches(input.account_name, organizer.legal_name)) {
     return fail(
       `Tên chủ tài khoản phải trùng với tên pháp lý "${organizer.legal_name}" trong hồ sơ người tổ chức (không phân biệt dấu và hoa thường).`
@@ -84,12 +96,13 @@ export async function bindAccount(accountId: string, _state: ActionResult, form:
   if (!isUuid(campaignId)) return fail("Chọn chiến dịch để gắn tài khoản.")
 
   const db = dbAs(session.accessToken)
-  let account, campaign, campaignBindings
+  let account, campaign, campaignBindings, organizer
   try {
-    ;[account, campaign, campaignBindings] = await Promise.all([
+    ;[account, campaign, campaignBindings, organizer] = await Promise.all([
       getAccount(db, accountId),
       getCampaignById(db, campaignId),
       activeBindingsOfCampaign(db, campaignId),
+      getOrganizer(db, session.user.id),
     ])
   } catch (error) {
     return fail(dbErrorMessage(error as { message?: string; code?: string }))
@@ -101,7 +114,8 @@ export async function bindAccount(accountId: string, _state: ActionResult, form:
   if (!campaign || campaign.organizer_id !== session.user.id) {
     return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_NOT_FOUND" }))
   }
-  if (account.verification_status !== "verified") return fail(dbErrorMessage({ message: "GIVE_ACCOUNT_NOT_VERIFIED" }))
+  const unusable = accountUnusableReason(account, organizer)
+  if (unusable) return fail(unusable)
   if (!isBindableStatus(campaign.status)) return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_NOT_BINDABLE" }))
   const holder = activeBinding(account)
   if (holder && holder.campaign_id !== campaign.id) {

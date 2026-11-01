@@ -3,12 +3,16 @@ import { describe, expect, it } from "vitest"
 import { BANKS, bankByBin, bankLabel } from "./banks"
 import {
   accountNameMatches,
+  accountUnusableReason,
   activeBinding,
+  bindRefusalReason,
+  hostnameOf,
   isBindableStatus,
   maskAccountNumber,
   normalizeAccountNumber,
   normalizePersonName,
   registerAccountSchema,
+  reviewOptions,
 } from "./receiving-accounts"
 
 describe("maskAccountNumber", () => {
@@ -121,5 +125,74 @@ describe("binding helpers", () => {
     expect(isBindableStatus("in_review")).toBe(true)
     expect(isBindableStatus("live")).toBe(true)
     expect(isBindableStatus("closed")).toBe(false)
+  })
+})
+
+describe("accountUnusableReason", () => {
+  const verified = { verification_status: "verified" as const, account_name: "NGUYEN THI DAO" }
+  const organizer = { legal_name: "Nguyễn Thị Đào", verification_status: "verified" as const }
+
+  it("is null for a verified account of a verified organizer with the same name", () => {
+    expect(accountUnusableReason(verified, organizer)).toBeNull()
+  })
+
+  it("explains each reason the database would refuse", () => {
+    expect(accountUnusableReason({ ...verified, verification_status: "pending" }, organizer)).toContain(
+      "chưa được xác minh"
+    )
+    expect(accountUnusableReason(verified, { ...organizer, verification_status: "pending" })).toContain("Hồ sơ")
+    expect(accountUnusableReason(verified, { ...organizer, legal_name: "Trần Văn B" })).toContain("không còn trùng")
+    expect(accountUnusableReason(verified, null)).toContain("Hồ sơ")
+  })
+})
+
+describe("bindRefusalReason", () => {
+  it("allows submitted campaigns without an account", () => {
+    expect(bindRefusalReason("in_review", false)).toBeNull()
+    expect(bindRefusalReason("live", false)).toBeNull()
+  })
+
+  it("explains drafts, closed campaigns and campaigns that already have an account", () => {
+    expect(bindRefusalReason("draft", false)).toContain("bản nháp")
+    expect(bindRefusalReason("closed", false)).toContain("không cho gắn")
+    expect(bindRefusalReason("in_review", true)).toContain("đã có tài khoản")
+  })
+})
+
+describe("reviewOptions", () => {
+  const organizer = { legal_name: "Nguyễn Thị Đào", verification_status: "verified" as const }
+  const pending = { verification_status: "pending" as const, account_name: "NGUYEN THI DAO", bindings: [] }
+  const binding = { id: "b", campaign_id: "c", bound_at: "2026-11-01", released_at: null }
+
+  it("offers verify and reject on a fresh pending account", () => {
+    expect(reviewOptions(pending, organizer)).toEqual({ verifyBlocked: null, close: "rejected", reopen: false })
+  })
+
+  it("offers disable instead of reject once the account was ever bound", () => {
+    expect(reviewOptions({ ...pending, bindings: [binding] }, organizer).close).toBe("disabled")
+    expect(reviewOptions({ ...pending, verification_status: "verified" }, organizer).close).toBe("disabled")
+  })
+
+  it("blocks verifying while the organizer is unverified or the name differs", () => {
+    expect(reviewOptions(pending, { ...organizer, verification_status: "pending" }).verifyBlocked).toContain(
+      "chưa được xác minh"
+    )
+    expect(reviewOptions(pending, { ...organizer, legal_name: "Trần Văn B" }).verifyBlocked).toContain("không trùng")
+  })
+
+  it("offers reopening for rejected and disabled accounts only", () => {
+    expect(reviewOptions({ ...pending, verification_status: "rejected" }, organizer)).toEqual({
+      verifyBlocked: null,
+      close: null,
+      reopen: true,
+    })
+    expect(reviewOptions({ ...pending, verification_status: "disabled" }, organizer).reopen).toBe(true)
+  })
+})
+
+describe("hostnameOf", () => {
+  it("shows the host of a statement URL", () => {
+    expect(hostnameOf("https://sao-ke.vietcombank.com.vn/abc?x=1")).toBe("sao-ke.vietcombank.com.vn")
+    expect(hostnameOf("not a url")).toBe("?")
   })
 })
