@@ -8,6 +8,7 @@ import {
   donationCookieToken,
   guestContribution,
   guestStatus,
+  hostnameFrom,
   isSessionRejected,
   ownStatus,
 } from "@/server/contributions"
@@ -45,17 +46,26 @@ export async function GET(request: NextRequest) {
       const code = request.nextUrl.searchParams.get("code")
       if (!isDonationCode(code)) return notFound()
       const session = await getSession()
-      if (session) result = await ownStatus(dbAs(session.accessToken), session.user.id, code)
+      let sessionRejected = false
+      if (session) {
+        try {
+          result = await ownStatus(dbAs(session.accessToken), session.user.id, code)
+        } catch (error) {
+          if (!isSessionRejected(error)) throw error
+          sessionRejected = true
+        }
+      }
       if (!result) {
-        const token = donationCookieToken(request.cookies, code, request.nextUrl.hostname)
+        const token = donationCookieToken(request.cookies, code, hostnameFrom(request.headers.get("host")))
         const guest = token ? await guestContribution(dbService(), code, token) : null
         if (guest) result = { status: guest.status, received_amount: guest.received_amount }
       }
+      // A donor whose session ended, with no guest cookie for this code either.
+      if (!result && sessionRejected) {
+        return NextResponse.json({ error: "signed_out" }, { status: 401, headers: NO_STORE })
+      }
     }
   } catch (error) {
-    if (isSessionRejected(error)) {
-      return NextResponse.json({ error: "signed_out" }, { status: 401, headers: NO_STORE })
-    }
     const { code, message } = (error ?? {}) as { code?: string; message?: string }
     console.error("contribution status failed", code, message)
     return NextResponse.json({ error: "unavailable" }, { status: 503, headers: NO_STORE })

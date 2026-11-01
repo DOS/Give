@@ -9,7 +9,7 @@ import { dbErrorMessage, fail, giveErrorCode, type ActionResult } from "@/lib/er
 import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { dbAs, dbService } from "@/lib/supabase"
-import { donationCookie } from "@/server/contributions"
+import { donationCookie, donationCookiesToDrop, hostnameFrom } from "@/server/contributions"
 
 const NOT_ACCEPTING = "Chiến dịch này hiện không nhận ủng hộ."
 
@@ -73,9 +73,14 @@ export async function donate(campaignId: string, _state: ActionResult, form: For
     if (!isStatusToken(created.status_token) || !created.status_token_expires_at) {
       return fail("Có lỗi xảy ra. Hãy thử lại sau.")
     }
-    const hostname = ((await headers()).get("host") ?? "localhost").replace(/:\d+$/, "")
+    const hostname = hostnameFrom((await headers()).get("host"))
     const cookie = donationCookie(created.reference_code, hostname)
-    ;(await cookies()).set(cookie.name, created.status_token, {
+    const jar = await cookies()
+    // Expire with the same attributes, or the browser keeps a __Host- cookie.
+    for (const name of donationCookiesToDrop(jar.getAll().map((c) => c.name))) {
+      jar.set(name, "", { ...cookie.options, maxAge: 0 })
+    }
+    jar.set(cookie.name, created.status_token, {
       ...cookie.options,
       expires: new Date(created.status_token_expires_at),
     })

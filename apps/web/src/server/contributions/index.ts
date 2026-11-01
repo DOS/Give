@@ -55,6 +55,24 @@ export function donationCookie(code: string, hostname: string) {
   }
 }
 
+/** The hostname from a Host header, as getSession() reads it, so cookie names agree everywhere. */
+export function hostnameFrom(host: string | null): string {
+  return (host ?? "localhost").replace(/:\d+$/, "")
+}
+
+/** At most this many guest donation cookies are kept; Path=/ sends each one with every request. */
+export const MAX_DONATION_COOKIES = 20
+
+/**
+ * Names of guest donation cookies to drop before adding one more, oldest
+ * first (browsers send cookies in creation order), so the request header
+ * stays small.
+ */
+export function donationCookiesToDrop(names: readonly string[]): string[] {
+  const own = names.filter((name) => /^(__Host-)?give_dn_GV[0-9A-Z]{6,7}$/.test(name))
+  return own.slice(0, Math.max(0, own.length - (MAX_DONATION_COOKIES - 1)))
+}
+
 /** The status token in a guest's cookie for this donation, if it looks like one. */
 export function donationCookieToken(
   cookies: { get(name: string): { value: string } | undefined },
@@ -197,18 +215,24 @@ interface BindingRow {
   campaign: { organizer: { verification_status: string; legal_name: string } | null } | null
 }
 
+// The combining diacritical marks block, U+0300 to U+036F, as in give.normalize_person_name.
+const COMBINING_MARKS = new RegExp(`[${String.fromCharCode(0x300)}-${String.fromCharCode(0x36f)}]`, "g")
+
 /**
  * give.normalize_person_name in TypeScript: drop Vietnamese tones and other
  * accents, map đ/Đ to D, upper-case, and keep letters and digits separated by
  * single spaces. The service role may not execute the database function.
+ * Wherever the two could differ, this one is the stricter.
  */
 export function normalizePersonName(name: string): string | null {
   const normalized = name
     .replace(/đ/g, "d")
     .replace(/Đ/g, "D")
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toUpperCase()
+    .replace(COMBINING_MARKS, "")
+    // ASCII letters only: JS maps a few other letters to ASCII ("ß" -> "SS")
+    // where Postgres may not, and a mismatch must hide details, not show them.
+    .replace(/[a-z]+/g, (letters) => letters.toUpperCase())
     .replace(/[^A-Z0-9]+/g, " ")
     .trim()
   return normalized === "" ? null : normalized

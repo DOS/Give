@@ -5,6 +5,7 @@ import { notFound, redirect } from "next/navigation"
 
 import { CopyButton } from "@/components/CopyButton"
 import { DonationStatus } from "@/components/DonationStatus"
+import { SaveQrButton } from "@/components/SaveQrButton"
 import { getSession } from "@/lib/auth/session"
 import { qrExpiresAt } from "@/lib/contributions"
 import { formatVnd } from "@/lib/format"
@@ -13,6 +14,7 @@ import {
   acceptsDonations,
   donationCookieToken,
   guestContribution,
+  hostnameFrom,
   isSessionRejected,
   ownContribution,
   paymentAccount,
@@ -35,26 +37,25 @@ const timeFormat = new Intl.DateTimeFormat("vi-VN", {
 /**
  * The donation, if the visitor may see it: a signed-in donor's own one, or a
  * guest's whose status token cookie (set by the donate action) matches. A
- * visitor with neither a session nor that cookie is sent to sign in, which
- * brings a donor whose session ended back here.
+ * donor whose session ended is sent to sign in and back; anyone else gets
+ * the not-found page, which explains where the page can be opened.
  */
 async function loadDonation(code: string): Promise<{ donation: PaymentContribution; guest: boolean }> {
   const session = await getSession()
-  let signedIn = false
+  let sessionRejected = false
   if (session) {
     try {
       const own = await ownContribution(dbAs(session.accessToken), session.user.id, code)
       if (own) return { donation: own, guest: false }
-      signedIn = true
     } catch (error) {
       if (!isSessionRejected(error)) throw error
+      sessionRejected = true
     }
   }
-  const hostname = ((await headers()).get("host") ?? "localhost").replace(/:\d+$/, "")
-  const token = donationCookieToken(await cookies(), code, hostname)
+  const token = donationCookieToken(await cookies(), code, hostnameFrom((await headers()).get("host")))
   const guest = token ? await guestContribution(dbService(), code, token) : null
   if (guest) return { donation: guest, guest: true }
-  if (!signedIn && !token) redirect(`/auth/login?return_path=${encodeURIComponent(`/donations/${code}`)}`)
+  if (sessionRejected) redirect(`/auth/login?return_path=${encodeURIComponent(`/donations/${code}`)}`)
   notFound()
 }
 
@@ -86,28 +87,31 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
   const expiresAt = qrExpiresAt(donation.created_at)
   const open = acceptsDonations(campaign, now)
   const received = donation.status === "received"
+  const qrExpired = donation.status === "expired" || expiresAt <= now
 
   const closedNote = (
     <div className="card border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
       Chiến dịch hiện không nhận chuyển khoản nên Give không hiển thị thông tin thanh toán. Đừng chuyển thêm tiền cho
-      khoản này. Nếu bạn đã chuyển trước đó, tiền nằm trong tài khoản nhận của chiến dịch và Give vẫn ghi lại theo sao
-      kê.
+      khoản này. Nếu bạn đã chuyển trước đó, tiền nằm trong tài khoản nhận của chiến dịch và Give vẫn ghi nhận khi đối
+      soát được khoản này.
     </div>
   )
-  const expiredNote = open ? (
-    <div className="card p-6 text-sm text-gray-700">
-      Mã QR của khoản này đã hết hạn hiển thị. Nếu bạn đã chuyển khoản với nội dung {donation.reference_code}, Give vẫn
-      ghi nhận khi tiền về.{" "}
-      <Link href={`/campaigns/${campaign.slug}`} className="font-medium text-brand-600">
-        Ủng hộ khoản mới
-      </Link>
-    </div>
-  ) : (
-    closedNote
-  )
+  const expiredNote =
+    open && account ? (
+      <div className="card p-6 text-sm text-gray-700">
+        Mã QR của khoản này đã hết hạn hiển thị. Nếu bạn đã chuyển khoản với nội dung {donation.reference_code}, Give
+        vẫn ghi nhận khi tiền về.{" "}
+        <Link href={`/campaigns/${campaign.slug}`} className="font-medium text-brand-600">
+          Ủng hộ khoản mới
+        </Link>
+      </div>
+    ) : (
+      closedNote
+    )
 
   let instructions = null
-  if (!received && open && account) {
+  // The server decides expiry too, so the QR is never sent once its 24 hours have passed.
+  if (!received && !qrExpired && open && account) {
     const svg = renderVietQrSvg(
       buildDonationPayload({
         bankBin: account.bank_bin,
@@ -129,13 +133,7 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
           <p className="mt-2 text-xs text-gray-500">
             Quét bằng app ngân hàng. Mã hiển thị tới {timeFormat.format(expiresAt)}.
           </p>
-          <a
-            href={`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`}
-            download={`give-${donation.reference_code}.svg`}
-            className="mt-2 inline-block text-xs font-medium text-brand-600"
-          >
-            Lưu ảnh QR
-          </a>
+          <SaveQrButton svg={svg} filename={`give-${donation.reference_code}.png`} />
         </div>
         <div>
           <dl className="divide-y divide-gray-100">
@@ -152,7 +150,7 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
         </div>
       </div>
     )
-  } else if (!received) {
+  } else if (!received && !qrExpired) {
     instructions = closedNote
   }
 
@@ -173,7 +171,8 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
       <DonationStatus
         code={donation.reference_code}
         initial={{ status: donation.status, received_amount: Number(donation.received_amount) }}
-        expiresAt={expiresAt.toISOString()}
+        qrExpired={qrExpired}
+        qrMsLeft={Math.max(0, expiresAt.getTime() - now.getTime())}
         expiredNote={expiredNote}
       >
         {instructions}

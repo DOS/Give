@@ -16,6 +16,7 @@ const state = vi.hoisted(() => ({
   userCalls: [] as Call[],
   serviceCalls: [] as Call[],
   cookies: [] as [string, string, Record<string, unknown>][],
+  existingCookies: [] as string[],
 }))
 
 vi.mock("next/navigation", () => ({
@@ -26,6 +27,7 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/headers", () => ({
   headers: async () => new Headers({ host: "give.example.com" }),
   cookies: async () => ({
+    getAll: () => state.existingCookies.map((name) => ({ name, value: "x" })),
     set: (name: string, value: string, options: Record<string, unknown>) => state.cookies.push([name, value, options]),
   }),
 }))
@@ -67,6 +69,7 @@ beforeEach(() => {
   state.userCalls.length = 0
   state.serviceCalls.length = 0
   state.cookies.length = 0
+  state.existingCookies = []
 })
 
 describe("donate", () => {
@@ -96,6 +99,19 @@ describe("donate", () => {
           expires: new Date("2026-11-08T00:00:00.000Z"),
         },
       ],
+    ])
+  })
+
+  it("drops the oldest guest donation cookies beyond the cap", async () => {
+    const alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+    state.existingCookies = [
+      "__Host-give_at",
+      ...Array.from({ length: 20 }, (_, i) => `__Host-give_dn_GVBBBBB${alphabet[i]}`),
+    ]
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    expect(state.cookies.map(([name, value, options]) => [name, value, options.maxAge])).toEqual([
+      ["__Host-give_dn_GVBBBBB2", "", 0],
+      ["__Host-give_dn_GVABCDEFG", TOKEN, undefined],
     ])
   })
 

@@ -6,6 +6,7 @@ import {
   acceptsDonations,
   accountNameMatches,
   donationCookie,
+  donationCookiesToDrop,
   donationCookieToken,
   guestContribution,
   normalizePersonName,
@@ -39,6 +40,14 @@ describe("donationCookie", () => {
     expect(donationCookieToken(jar, "GVABCDEFG", "give.dos.me")).toBe(TOKEN)
     expect(donationCookieToken(jar, "GVABCDEFH", "give.dos.me")).toBeNull()
     expect(donationCookieToken(new Map([["give_dn_GVABCDEFG", { value: "x" }]]), "GVABCDEFG", "localhost")).toBeNull()
+  })
+})
+
+describe("donationCookiesToDrop", () => {
+  it("keeps the newest 19 guest donation cookies so the new one makes 20", () => {
+    const names = Array.from({ length: 22 }, (_, i) => `__Host-give_dn_GVAAAAA${"23456789ABCDEFGHJKMNPQRSTUVWXYZ"[i]}`)
+    expect(donationCookiesToDrop(["__Host-give_at", ...names])).toEqual(names.slice(0, 3))
+    expect(donationCookiesToDrop(names.slice(0, 19))).toEqual([])
   })
 })
 
@@ -98,11 +107,18 @@ describe("guestContribution", () => {
 describe("normalizePersonName", () => {
   // Expected values computed by give.normalize_person_name in Postgres.
   it.each([
-    ["Nguyễn Thị Đào-Müller  ß", "NGUYEN THI DAO MULLER SS"],
+    ["Nguyễn Thị Đào-Müller", "NGUYEN THI DAO MULLER"],
+    ["ĐẶNG THỊ Ợ", "DANG THI O"],
     [" trần  văn   ơn ", "TRAN VAN ON"],
     ["NGUYEN VAN AN", "NGUYEN VAN AN"],
   ])("normalises %j like the database", (input, expected) => {
     expect(normalizePersonName(input)).toBe(expected)
+  })
+
+  it("is stricter than the database where they could differ", () => {
+    // Postgres may upper-case "ß" to "SS"; here it is dropped, so no match.
+    expect(normalizePersonName("Strauß")).toBe("STRAU")
+    expect(accountNameMatches("STRAUSS", "Strauß")).toBe(false)
   })
 
   it("treats names with nothing left as no match", () => {

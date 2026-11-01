@@ -15,26 +15,29 @@ type Watch = "watching" | "paused" | "lost" | "signed_out"
  *
  * The payment instructions (children) are shown only while the QR code is
  * still valid: once its 24 hours pass, or the donation turns `expired`, the
- * page shows `expiredNote` instead.
+ * page shows `expiredNote` instead (the server stops sending them too).
  */
 export function DonationStatus({
   code,
   initial,
-  expiresAt,
+  qrExpired: qrExpiredAtRender,
+  qrMsLeft,
   expiredNote,
   children,
 }: {
   code: string
   initial: ContributionStatus
-  /** ISO time when the QR code stops being shown. */
-  expiresAt: string
+  /** Decided by the server, so the browser's clock cannot bring an expired QR back. */
+  qrExpired: boolean
+  /** Milliseconds the QR had left when the server rendered the page. */
+  qrMsLeft: number
   expiredNote: ReactNode
   children: ReactNode
 }) {
   const [status, setStatus] = useState(initial)
   const received = status.status === "received"
   const [watch, setWatch] = useState<Watch>(received ? "paused" : "watching")
-  const [qrExpired, setQrExpired] = useState(() => new Date(expiresAt).getTime() <= Date.now())
+  const [qrExpired, setQrExpired] = useState(qrExpiredAtRender)
   const resumeNow = useRef(false)
 
   const check = useCallback(async (): Promise<ContributionStatus | Watch | null> => {
@@ -75,13 +78,12 @@ export function DonationStatus({
     }
   }, [watch, received, check])
 
+  // Counted from the server's figure, not the browser's clock.
   useEffect(() => {
     if (qrExpired) return
-    const ms = new Date(expiresAt).getTime() - Date.now()
-    // setTimeout holds at most about 24.8 days; the QR lives 24 hours.
-    const timer = setTimeout(() => setQrExpired(true), Math.max(0, Math.min(ms, 2 ** 31 - 1)))
+    const timer = setTimeout(() => setQrExpired(true), Math.min(qrMsLeft, 2 ** 31 - 1))
     return () => clearTimeout(timer)
-  }, [expiresAt, qrExpired])
+  }, [qrMsLeft, qrExpired])
 
   if (received) {
     return (
