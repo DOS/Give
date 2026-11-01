@@ -4,6 +4,8 @@ import { notFound, redirect } from "next/navigation"
 import { cache } from "react"
 
 import { MoneyTotals } from "@/components/MoneyTotals"
+import { PublicEvidenceList } from "@/components/PublicEvidence"
+import { getSession } from "@/lib/auth/session"
 import { getCampaignBySlug, isPublicStatus } from "@/lib/campaigns"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import { SLUG_PATTERN } from "@/lib/slug"
@@ -11,20 +13,26 @@ import {
   categoryLabel,
   counterpartyLabel,
   getMoneyTotals,
+  listPublicEvidence,
   listStatement,
   parseStatementParams,
   STATEMENT_FILTER_LABELS,
   STATEMENT_FILTERS,
   STATEMENT_PAGE_SIZE,
   statementHref,
+  type PublicEvidence,
   type StatementRow,
 } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
+import { reportEvidence } from "./actions"
+
 /**
  * Public statement of a campaign (design section 2.4): every transaction of
  * its receiving account, in and out, as an anonymous visitor reads it from
- * give.public_statement. Only public campaigns have one.
+ * give.public_statement, with the evidence images of each explained
+ * disbursement from give.public_disbursement_evidence. Only public campaigns
+ * have one. The session only decides whether the report form is shown.
  */
 const loadCampaign = cache(async (slug: string) => {
   if (!SLUG_PATTERN.test(slug) || slug.length > 80) return null
@@ -54,14 +62,22 @@ export default async function StatementPage({
   const { campaign, db } = loaded
   const { filter, page } = parseStatementParams(await searchParams)
 
-  const [totals, { rows, total }] = await Promise.all([
+  const [totals, { rows, total }, session] = await Promise.all([
     getMoneyTotals(db, campaign.id),
     listStatement(db, campaign.id, filter, page),
+    getSession(),
   ])
   if (!totals) notFound()
   const pages = Math.max(1, Math.ceil(total / STATEMENT_PAGE_SIZE))
   // A stale link past the end (rows were explained since) goes to the last page.
   if (page > pages) redirect(statementHref(campaign.slug, filter, pages))
+  const evidence = await listPublicEvidence(
+    db,
+    campaign.id,
+    // Refund evidence is never public (it would name the donor); the view leaves it out too.
+    rows.filter((row) => row.direction === "out" && row.explained && !row.is_refund).map((row) => row.id)
+  )
+  const loginHref = `/auth/login?return_path=${encodeURIComponent(statementHref(campaign.slug, filter, page))}`
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -71,8 +87,9 @@ export default async function StatementPage({
       <h1 className="mt-3 text-3xl font-bold tracking-tight">Sao kê chiến dịch</h1>
       <p className="mt-2 max-w-3xl text-gray-600">
         Đây là bản sao sao kê tài khoản nhận của chiến dịch. Give không giữ tiền và không sửa số liệu: mỗi khoản chi do
-        người tổ chức tự giải trình. Tên chủ tài khoản chuyển tiền chỉ hiện khi khoản đó khớp với một lượt ủng hộ không
-        ẩn danh; số tài khoản chỉ hiện 4 số cuối; nội dung chuyển khoản không được công khai.
+        người tổ chức tự giải trình, kèm ảnh chứng từ. Tiền vào hiện tên hiển thị người ủng hộ đã chọn, hoặc &quot;Ẩn
+        danh&quot;; tên chủ tài khoản ngân hàng, số tài khoản của người ủng hộ và nội dung chuyển khoản không được công
+        khai.
       </p>
 
       <div className="mt-8 grid gap-8 lg:grid-cols-3">
@@ -111,7 +128,13 @@ export default async function StatementPage({
           ) : (
             <ol className="mt-6 divide-y divide-gray-200 card">
               {rows.map((row) => (
-                <StatementItem key={row.id} row={row} />
+                <StatementItem
+                  key={row.id}
+                  row={row}
+                  evidence={evidence.get(row.id) ?? []}
+                  report={session ? reportEvidence : null}
+                  loginHref={loginHref}
+                />
               ))}
             </ol>
           )}
@@ -143,7 +166,17 @@ export default async function StatementPage({
   )
 }
 
-function StatementItem({ row }: { row: StatementRow }) {
+function StatementItem({
+  row,
+  evidence,
+  report,
+  loginHref,
+}: {
+  row: StatementRow
+  evidence: PublicEvidence[]
+  report: typeof reportEvidence | null
+  loginHref: string
+}) {
   const incoming = row.direction === "in"
   const category = categoryLabel(row.category)
 
@@ -169,6 +202,7 @@ function StatementItem({ row }: { row: StatementRow }) {
               {category && <span>{category}</span>}
               {row.explained_at && <span>Giải trình ngày {formatDate(row.explained_at)}</span>}
             </p>
+            <PublicEvidenceList evidence={evidence} report={report} loginHref={loginHref} />
           </div>
         )}
         {!incoming && !row.explained && (

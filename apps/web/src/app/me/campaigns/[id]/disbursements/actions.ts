@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache"
 import { getSession, type Session } from "@/lib/auth/session"
 import { getCampaignById, type CampaignWithRefs } from "@/lib/campaigns"
 import { dbErrorMessage, done, fail, giveErrorCode, type ActionResult, type DbErrorLike } from "@/lib/errors"
+import { listEvidenceStates } from "@/lib/evidence-moderation"
 import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { detectImageType, reencodeCover } from "@/lib/media"
@@ -56,7 +57,15 @@ async function load(session: Session, campaignId: string, transactionId: string)
     }
     if (!tx) return TX_NOT_FOUND
     const { disbursement, ...rest } = tx
-    return { campaign, tx: rest, explained: disbursement !== null, evidenceCount: disbursement?.evidence.length ?? 0 }
+    // Images staff hid do not count towards the cap, so the organizer can
+    // always upload the redacted copy staff asked for.
+    const evidence = disbursement?.evidence ?? []
+    const states = await listEvidenceStates(
+      db,
+      evidence.map((e) => e.id)
+    )
+    const evidenceCount = evidence.filter((e) => !states.get(e.id)?.hidden).length
+    return { campaign, tx: rest, explained: disbursement !== null, evidenceCount }
   } catch (error) {
     return dbErrorMessage(error as DbErrorLike)
   }

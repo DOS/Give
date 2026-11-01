@@ -9,8 +9,10 @@ const nextConfig: NextConfig = {
   images: {
     // Covers come from the app's own /media routes (give-media is a private
     // bucket). Only public covers may be optimized and cached; private ones
-    // (src/lib/cover-urls.ts) are rendered unoptimized.
-    localPatterns: [{ pathname: "/media/public/**", search: "" }],
+    // (src/lib/cover-urls.ts) are rendered unoptimized. Public evidence
+    // (/media/public/evidence/) is never optimized: the optimizer's cache
+    // would keep serving an image after staff hide it (DOS/Give#58).
+    localPatterns: [{ pathname: "/media/public/campaigns/**", search: "" }],
     // Match the route's own cache time, so a cover stops being served soon
     // after its campaign is suspended or cancelled.
     minimumCacheTTL: 300,

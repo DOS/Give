@@ -5,6 +5,7 @@ import { fakeDb, op, type Call } from "@/test/fake-db"
 
 import {
   counterpartyLabel,
+  evidenceCampaignId,
   evidencePath,
   evidenceUrl,
   explainedOutAmount,
@@ -13,13 +14,17 @@ import {
   getMoneyTotals,
   listMoneyTotals,
   listExplainedOutgoing,
+  listPublicEvidence,
   listPendingOutgoing,
   listRefundable,
   listStatement,
   parseEvidencePath,
   parseStatementParams,
+  publicEvidenceUrl,
   raisedAmount,
   refundOptionLabel,
+  remainingAmount,
+  reportSchema,
   STATEMENT_PAGE_SIZE,
   statementHref,
   type MoneyTotals,
@@ -106,6 +111,13 @@ describe("money totals", () => {
     expect(explainedOutAmount({ disbursed_amount: 700, unexplained_out_amount: 200 } as MoneyTotals)).toBe(500)
     expect(explainedOutAmount({ disbursed_amount: 0, unexplained_out_amount: 0 } as MoneyTotals)).toBe(0)
   })
+
+  it("computes what remains: paid in minus spent minus refunded, never negative", () => {
+    const t = (paid: number, disbursed: number, refunded: number) =>
+      ({ paid_amount: paid, disbursed_amount: disbursed, refunded_amount: refunded }) as MoneyTotals
+    expect(remainingAmount(t(1_500_000, 700_000, 100_000))).toBe(700_000)
+    expect(remainingAmount(t(100, 150, 0))).toBe(0)
+  })
 })
 
 describe("public statement", () => {
@@ -169,37 +181,69 @@ describe("public statement", () => {
     expect(statementHref("quy-a", "unexplained", 2)).toBe("/campaigns/quy-a/statement?filter=unexplained&page=2")
   })
 
-  it("labels the counterparty without guessing why a name is missing", () => {
-    expect(
-      counterpartyLabel({ direction: "in", matched: true, counterparty_name: "Lan", recipient: null, explained: null })
-    ).toBe("Lan")
-    expect(
-      counterpartyLabel({ direction: "in", matched: true, counterparty_name: null, recipient: null, explained: null })
-    ).toBe("Người ủng hộ (không hiện tên)")
-    expect(
-      counterpartyLabel({ direction: "in", matched: false, counterparty_name: null, recipient: null, explained: null })
-    ).toBe("Chưa khớp với lượt ủng hộ nào")
-    expect(
-      counterpartyLabel({
-        direction: "out",
-        matched: false,
-        counterparty_name: null,
-        recipient: "Nhà sách B",
-        explained: true,
-      })
-    ).toBe("Nhà sách B")
-    expect(
-      counterpartyLabel({ direction: "out", matched: false, counterparty_name: null, recipient: null, explained: true })
-    ).toBe("Không công khai")
-    expect(
-      counterpartyLabel({
-        direction: "out",
-        matched: false,
-        counterparty_name: null,
-        recipient: null,
-        explained: false,
-      })
-    ).toBe("Chưa rõ người nhận")
+  it("labels money in by the donor's chosen name or Ẩn danh, never a bank name", () => {
+    const row = { direction: "in" as const, recipient: null, explained: null }
+    expect(counterpartyLabel({ ...row, matched: true, donor_name: "Cô Ba", donor_anonymous: false })).toBe("Cô Ba")
+    expect(counterpartyLabel({ ...row, matched: true, donor_name: null, donor_anonymous: true })).toBe("Ẩn danh")
+    // Even if a name ever came back for an anonymous donor, it is not shown.
+    expect(counterpartyLabel({ ...row, matched: true, donor_name: "Leak", donor_anonymous: true })).toBe("Ẩn danh")
+    expect(counterpartyLabel({ ...row, matched: true, donor_name: null, donor_anonymous: false })).toBe("Người ủng hộ")
+    expect(counterpartyLabel({ ...row, matched: false, donor_name: null, donor_anonymous: null })).toBe(
+      "Chưa khớp với lượt ủng hộ nào"
+    )
+  })
+
+  it("labels money out by the explained recipient only", () => {
+    const row = { direction: "out" as const, matched: false, donor_name: null, donor_anonymous: null }
+    expect(counterpartyLabel({ ...row, recipient: "Nhà sách B", explained: true })).toBe("Nhà sách B")
+    expect(counterpartyLabel({ ...row, recipient: null, explained: true })).toBe("Không công khai")
+    expect(counterpartyLabel({ ...row, recipient: null, explained: false })).toBe("Chưa rõ người nhận")
+  })
+
+  it("never asks the view for the bank account-holder name", async () => {
+    const calls: Call[] = []
+    await listStatement(fakeDb(() => ({ data: [] }), calls) as never, CAMPAIGN)
+    const columns = selected(calls[0])
+      .split(",")
+      .map((c) => c.trim())
+    expect(columns).not.toContain("counterparty_name")
+    expect(columns).toEqual(expect.arrayContaining(["donor_name", "donor_anonymous", "counterparty_account_masked"]))
+  })
+})
+
+describe("public evidence", () => {
+  it("reads give.public_disbursement_evidence for the page's transactions, grouped by transaction", async () => {
+    const calls: Call[] = []
+    const OTHER = "66666666-6666-4666-8666-666666666666"
+    const db = fakeDb(
+      () => ({
+        data: [
+          { id: "e1", bank_transaction_id: TX, storage_path: "p1", kind: "receipt", created_at: "2026-11-01" },
+          { id: "e2", bank_transaction_id: OTHER, storage_path: "p2", kind: "photo", created_at: "2026-11-01" },
+          { id: "e3", bank_transaction_id: TX, storage_path: "p3", kind: "photo", created_at: "2026-11-02" },
+        ],
+      }),
+      calls
+    )
+    const byTx = await listPublicEvidence(db as never, CAMPAIGN, [TX, OTHER, TX])
+    expect(calls[0].target).toBe("public_disbursement_evidence")
+    expect(selected(calls[0])).not.toMatch(/added_by|hidden|reporter|moderat/)
+    expect(op(calls[0], "eq")).toEqual(["campaign_id", CAMPAIGN])
+    expect(op(calls[0], "in")).toEqual(["bank_transaction_id", [TX, OTHER]])
+    expect(byTx.get(TX)?.map((e) => e.id)).toEqual(["e1", "e3"])
+    expect(byTx.get(OTHER)?.map((e) => e.id)).toEqual(["e2"])
+  })
+
+  it("does not query without transactions", async () => {
+    const calls: Call[] = []
+    expect((await listPublicEvidence(fakeDb(() => ({ data: [] }), calls) as never, CAMPAIGN, [])).size).toBe(0)
+    expect(calls).toHaveLength(0)
+  })
+
+  it("limits a report reason to 500 characters and treats an empty one as none", () => {
+    expect(reportSchema.parse({ reason: "  " })).toEqual({ reason: null })
+    expect(reportSchema.parse({ reason: " Lộ CCCD " })).toEqual({ reason: "Lộ CCCD" })
+    expect(reportSchema.safeParse({ reason: "x".repeat(501) }).success).toBe(false)
   })
 })
 
@@ -271,6 +315,11 @@ describe("evidence paths", () => {
     const url = evidenceUrl(path)
     expect(url).toBe(`/media/evidence/${CAMPAIGN}/${TX}/${OBJECT}.webp`)
     expect(parseEvidencePath(url.replace("/media/evidence/", "").split("/"))).toBe(path)
+    const publicUrl = publicEvidenceUrl(path)
+    expect(publicUrl).toBe(`/media/public/evidence/${CAMPAIGN}/${TX}/${OBJECT}.webp`)
+    expect(parseEvidencePath(publicUrl.replace("/media/public/evidence/", "").split("/"))).toBe(path)
+    expect(evidenceCampaignId(path)).toBe(CAMPAIGN)
+    expect(evidenceCampaignId("disbursements/x/y/z.webp")).toBeNull()
   })
 
   it("rejects anything that is not exactly an evidence key", () => {
