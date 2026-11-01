@@ -386,22 +386,40 @@ export async function listDuplicateTargets(
   accountId: string,
   includeId: string | null = null
 ): Promise<DuplicateTargets> {
-  const day = 86_400_000
+  const window = DUPLICATE_WINDOW_DAYS * 86_400_000
   const at = new Date(row.booked_at).getTime()
-  const { data, error, count } = await db
-    .from("bank_transactions")
-    .select(TARGET_COLUMNS, { count: "exact" })
-    .eq("receiving_account_id", accountId)
-    .eq("direction", row.direction)
-    .eq("amount", row.amount)
-    .gte("booked_at", new Date(at - DUPLICATE_WINDOW_DAYS * day).toISOString())
-    .lte("booked_at", new Date(at + DUPLICATE_WINDOW_DAYS * day).toISOString())
-    .order("booked_at", { ascending: true })
-    .limit(PAGE)
-  if (error) throw error
+  const rowAt = new Date(at).toISOString()
+  const query = (columns: string, options?: { count: "exact"; head: true }) =>
+    db
+      .from("bank_transactions")
+      .select(columns, options)
+      .eq("receiving_account_id", accountId)
+      .eq("direction", row.direction)
+      .eq("amount", row.amount)
+  // The closest on each side of the row's time, and how many in the window.
+  const [before, after, counted] = await Promise.all([
+    query(TARGET_COLUMNS)
+      .gte("booked_at", new Date(at - window).toISOString())
+      .lte("booked_at", rowAt)
+      .order("booked_at", { ascending: false })
+      .limit(DUPLICATE_TARGETS_SHOWN),
+    query(TARGET_COLUMNS)
+      .gt("booked_at", rowAt)
+      .lte("booked_at", new Date(at + window).toISOString())
+      .order("booked_at", { ascending: true })
+      .limit(DUPLICATE_TARGETS_SHOWN),
+    query("id", { count: "exact", head: true })
+      .gte("booked_at", new Date(at - window).toISOString())
+      .lte("booked_at", new Date(at + window).toISOString()),
+  ])
+  for (const result of [before, after, counted]) if (result.error) throw result.error
   const distance = (tx: RecordedTransaction) => Math.abs(new Date(tx.booked_at).getTime() - at)
-  const all = ((data ?? []) as RecordedTransaction[]).map((tx) => ({ ...tx, amount: Number(tx.amount) }))
-  let shown = all.sort((a, b) => distance(a) - distance(b)).slice(0, DUPLICATE_TARGETS_SHOWN)
+  const near = ([...(before.data ?? []), ...(after.data ?? [])] as unknown as RecordedTransaction[]).map((tx) => ({
+    ...tx,
+    amount: Number(tx.amount),
+  }))
+  let total = counted.count ?? near.length
+  let shown = near.sort((a, b) => distance(a) - distance(b)).slice(0, DUPLICATE_TARGETS_SHOWN)
   if (includeId && !shown.some((tx) => tx.id === includeId)) {
     const extra = await db
       .from("bank_transactions")
@@ -415,9 +433,11 @@ export async function listDuplicateTargets(
     if (extra.data) {
       const tx = extra.data as RecordedTransaction
       shown = [{ ...tx, amount: Number(tx.amount) }, ...shown.slice(0, DUPLICATE_TARGETS_SHOWN - 1)]
+      // Outside the window it was not counted.
+      if (distance(tx) > window) total += 1
     }
   }
-  return { shown, total: Math.max(count ?? all.length, shown.length) }
+  return { shown, total: Math.max(total, shown.length) }
 }
 
 /** "+200.000 ₫" or "−50.000 ₫" */

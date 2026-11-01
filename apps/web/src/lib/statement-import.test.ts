@@ -158,34 +158,52 @@ describe("listDuplicateTargets", () => {
   const ROW = { direction: "in" as const, amount: 50000, booked_at: "2026-10-15T00:00:00Z" }
   const tx = (id: string, day: number) => ({
     id,
-    booked_at: `2026-10-${String(day).padStart(2, "0")}T00:00:00Z`,
+    booked_at: new Date(Date.UTC(2026, 9, day)).toISOString(),
     amount: "50000",
   })
 
-  it("shows the transactions closest to the row first, and how many there are", async () => {
-    // 25 transactions from 1 to 25 October, oldest first as the database returns them.
-    const all = Array.from({ length: 25 }, (_, i) => tx(`t${i + 1}`, i + 1))
-    const db = fakeDb(() => ({ data: all, count: 25 })) as unknown as Db
-    const targets = await listDuplicateTargets(db, ROW, ACCOUNT)
-    expect(targets.total).toBe(25)
+  /** Answers the three window queries (and the candidate lookup) the way PostgREST would over `all`. */
+  function windowDb(all: ReturnType<typeof tx>[], calls: Call[] = [], extra?: ReturnType<typeof tx>) {
+    return fakeDb((call) => {
+      if (op(call, "maybeSingle")) return { data: extra ?? null }
+      let rows = all.filter((t) =>
+        call.ops.every(([name, column, value]) => {
+          if (column !== "booked_at") return true
+          if (name === "gte") return t.booked_at >= String(value)
+          if (name === "lte") return t.booked_at <= String(value)
+          if (name === "gt") return t.booked_at > String(value)
+          return true
+        })
+      )
+      if ((op(call, "select")?.[1] as { head?: boolean } | undefined)?.head) return { count: rows.length }
+      const ascending = (op(call, "order")?.[1] as { ascending: boolean }).ascending
+      rows = [...rows].sort((a, b) => (ascending ? 1 : -1) * a.booked_at.localeCompare(b.booked_at))
+      return { data: rows.slice(0, op(call, "limit")?.[0] as number) }
+    }, calls) as unknown as Db
+  }
+
+  it("shows the transactions closest to the row on both sides, and how many there are", async () => {
+    // 60 transactions, one a day from 16 September to 14 November.
+    const all = Array.from({ length: 60 }, (_, i) => tx(`t${i}`, i - 14))
+    const targets = await listDuplicateTargets(windowDb(all), ROW, ACCOUNT)
+    expect(targets.total).toBe(60)
     expect(targets.shown).toHaveLength(20)
-    expect(targets.shown[0]).toMatchObject({ id: "t15", amount: 50000 })
-    expect(targets.shown.map((t) => t.id)).not.toContain("t1")
+    expect(targets.shown[0]).toMatchObject({ id: "t29", amount: 50000 })
+    const days = targets.shown.map((t) => new Date(t.booked_at).getTime())
+    const distance = (ms: number) => Math.abs(ms - Date.parse(ROW.booked_at))
+    expect(Math.max(...days.map(distance))).toBeLessThanOrEqual(10 * 86_400_000)
   })
 
   it("always shows the transaction of the earlier row the queued row lines up with", async () => {
-    const all = Array.from({ length: 25 }, (_, i) => tx(`t${i + 1}`, i + 1))
+    const all = Array.from({ length: 60 }, (_, i) => tx(`t${i}`, i - 14))
     const calls: Call[] = []
-    const db = fakeDb(
-      (call) => (op(call, "maybeSingle") ? { data: tx("t1", 1) } : { data: all, count: 25 }),
-      calls
-    ) as unknown as Db
-    const targets = await listDuplicateTargets(db, ROW, ACCOUNT, "t1")
-    expect(targets.shown[0].id).toBe("t1")
+    const targets = await listDuplicateTargets(windowDb(all, calls, all[0]), ROW, ACCOUNT, "t0")
+    expect(targets.shown[0].id).toBe("t0")
     expect(targets.shown).toHaveLength(20)
-    expect(calls[1].ops).toEqual(
+    expect(targets.total).toBe(60)
+    expect(calls.at(-1)?.ops).toEqual(
       expect.arrayContaining([
-        ["eq", "id", "t1"],
+        ["eq", "id", "t0"],
         ["eq", "receiving_account_id", ACCOUNT],
       ])
     )
@@ -193,13 +211,18 @@ describe("listDuplicateTargets", () => {
 
   it("looks for the account's transactions of the same direction and amount around the row", async () => {
     const calls: Call[] = []
-    const db = fakeDb(() => ({ data: [] }), calls) as unknown as Db
-    await listDuplicateTargets(db, ROW, ACCOUNT)
-    expect(calls[0].ops).toEqual(
+    await listDuplicateTargets(windowDb([], calls), ROW, ACCOUNT)
+    for (const call of calls) {
+      expect(call.ops).toEqual(
+        expect.arrayContaining([
+          ["eq", "receiving_account_id", ACCOUNT],
+          ["eq", "direction", "in"],
+          ["eq", "amount", 50000],
+        ])
+      )
+    }
+    expect(calls[2].ops).toEqual(
       expect.arrayContaining([
-        ["eq", "receiving_account_id", ACCOUNT],
-        ["eq", "direction", "in"],
-        ["eq", "amount", 50000],
         ["gte", "booked_at", "2026-09-14T00:00:00.000Z"],
         ["lte", "booked_at", "2026-11-15T00:00:00.000Z"],
       ])

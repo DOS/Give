@@ -192,7 +192,8 @@ export async function paidBreakdown(db: Db, campaignId: string): Promise<PaidBre
   let received = 0
   let unmatched = 0
   // Keyset pages: the ledger is append-only, so an entry added meanwhile
-  // cannot shift a page and be read twice or skipped among those read.
+  // cannot shift a page and be read twice. (One whose id is lower than the
+  // last read but commits later is missed; it shows on the next load.)
   let after = 0
   for (let read = 0; ; read += PAGE) {
     if (read >= MAX_LEDGER_ROWS) return null
