@@ -9,11 +9,10 @@ import { publicCoverUrl } from "@/lib/cover-urls"
 
 /**
  * Campaign card for discovery (public campaigns only: the cover goes through
- * the public media route), ported from the old ProjectCard. Money totals
- * arrive with M1 (ledger); until then the card shows the goal and 0 raised.
+ * the public media route), ported from the old ProjectCard. `raised` comes
+ * from give.public_campaigns (lib/statement.ts raisedAmount).
  */
-export function CampaignCard({ campaign }: { campaign: PublicCampaign }) {
-  const raised = 0
+export function CampaignCard({ campaign, raised = 0 }: { campaign: PublicCampaign; raised?: number }) {
   const percent = progressPercent(raised, campaign.goal_amount)
   const days = daysLeft(campaign.ends_at)
   const options = campaign.display_options

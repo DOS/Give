@@ -35,6 +35,20 @@ export function formatDate(iso: string | null | undefined): string {
   return iso ? dateFormat.format(new Date(iso)) : "—"
 }
 
+const dateTimeFormat = new Intl.DateTimeFormat("vi-VN", {
+  hour: "2-digit",
+  minute: "2-digit",
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  timeZone: "Asia/Ho_Chi_Minh",
+})
+
+/** Date and time in Vietnam time, e.g. "09:05 01/11/2026". */
+export function formatDateTime(iso: string | null | undefined): string {
+  return iso ? dateTimeFormat.format(new Date(iso)) : "—"
+}
+
 /** Whole days left until `iso`, never negative. */
 export function daysLeft(iso: string | null | undefined, now = new Date()): number | null {
   if (!iso) return null

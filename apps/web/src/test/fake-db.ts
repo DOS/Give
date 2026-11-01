@@ -9,20 +9,34 @@ export interface Call {
   ops: [string, ...unknown[]][]
 }
 
-export type Result = { data?: unknown; error?: { code?: string; message?: string } | null }
+export type Result = { data?: unknown; error?: { code?: string; message?: string } | null; count?: number | null }
 export type Handler = (call: Call) => Result | undefined
 
 export function fakeDb(handler: Handler, log: Call[] = []) {
   const run = (call: Call): Promise<Result> => {
     log.push(call)
     const result = handler(call) ?? {}
-    return Promise.resolve({ data: result.data ?? null, error: result.error ?? null })
+    return Promise.resolve({ data: result.data ?? null, error: result.error ?? null, count: result.count ?? null })
   }
 
   const chain = (target: string, ops: Call["ops"] = []) => {
     const call: Call = { target, ops }
     const builder: Record<string, unknown> = {}
-    for (const op of ["select", "insert", "update", "delete", "eq", "gt", "in", "is", "not", "or", "order", "limit"]) {
+    for (const op of [
+      "select",
+      "insert",
+      "update",
+      "delete",
+      "eq",
+      "gt",
+      "in",
+      "is",
+      "not",
+      "or",
+      "order",
+      "limit",
+      "range",
+    ]) {
       builder[op] = (...args: unknown[]) => {
         call.ops.push([op, ...args])
         return builder

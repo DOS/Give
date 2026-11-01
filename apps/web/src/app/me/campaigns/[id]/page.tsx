@@ -20,6 +20,7 @@ import {
 import { formatDate, formatVnd, toVietnamLocalInput } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { privateCoverUrl } from "@/lib/cover-urls"
+import { getMoneyTotals } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
 import {
@@ -43,10 +44,11 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   const campaign = await getCampaignById(db, id)
   if (!campaign || campaign.organizer_id !== session.user.id) notFound()
 
-  const [categories, milestones, updates] = await Promise.all([
+  const [categories, milestones, updates, totals] = await Promise.all([
     listCategories(db),
     listMilestones(db, campaign.id),
     listAllUpdates(db, campaign.id),
+    isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
   ])
   const editable = isEditableStatus(campaign.status)
   const isGive = campaign.type === "give"
@@ -69,6 +71,26 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
       </div>
 
       <StatusNotice status={campaign.status} reviewNote={campaign.review_note} />
+
+      {(totals || !isEditableStatus(campaign.status)) && (
+        <section className="flex flex-wrap items-center justify-between gap-3 card p-6">
+          <div>
+            <h2 className="text-lg font-semibold">Sao kê và giải trình chi</h2>
+            {totals ? (
+              <p className={`text-sm ${totals.unexplained_out_count > 0 ? "text-amber-700" : "text-gray-600"}`}>
+                {totals.unexplained_out_count > 0
+                  ? `${totals.unexplained_out_count} khoản chi chưa giải trình (công khai trên trang chiến dịch).`
+                  : "Mọi khoản chi đã được giải trình."}
+              </p>
+            ) : (
+              <p className="text-sm text-gray-600">Các khoản tiền ra từ tài khoản nhận của chiến dịch.</p>
+            )}
+          </div>
+          <Link href={`/me/campaigns/${campaign.id}/disbursements`} className="btn-secondary">
+            Giải trình khoản chi
+          </Link>
+        </section>
+      )}
 
       <section className="card p-6">
         <h2 className="mb-4 text-lg font-semibold">Nội dung</h2>

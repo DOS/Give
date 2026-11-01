@@ -10,6 +10,7 @@ import {
   parseDiscoveryFilters,
   type CampaignType,
 } from "@/lib/campaigns"
+import { listMoneyTotals, raisedAmount } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
 export const metadata: Metadata = { title: "Khám phá chiến dịch" }
@@ -29,6 +30,10 @@ export default async function CampaignsPage({
   const db = dbAs()
   const categories = await listCategories(db)
   const campaigns = await listPublicCampaigns(db, filters, categories)
+  const totals = await listMoneyTotals(
+    db,
+    campaigns.map((c) => c.id)
+  )
   const visibleCategories = filters.type ? categoriesFor(categories, filters.type) : categories
 
   return (
@@ -104,7 +109,11 @@ export default async function CampaignsPage({
         {campaigns.length > 0 ? (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {campaigns.map((campaign) => (
-              <CampaignCard key={campaign.id} campaign={campaign} />
+              <CampaignCard
+                key={campaign.id}
+                campaign={campaign}
+                raised={raisedAmount(totals.get(campaign.id), campaign.type)}
+              />
             ))}
           </div>
         ) : (

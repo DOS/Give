@@ -48,6 +48,18 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_AMOUNT_BELOW_MINIMUM: "Số tiền thấp hơn mức ủng hộ tối thiểu của chiến dịch.",
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau.",
   GIVE_CONTRIBUTION_TYPE_MISMATCH: "Chiến dịch này không nhận ủng hộ trực tiếp.",
+  // Disbursement explanations (money core part 2).
+  GIVE_NOT_ALLOWED: "Bạn không có quyền thực hiện thao tác này.",
+  GIVE_TRANSACTION_NOT_FOUND: "Không tìm thấy giao dịch, hoặc bạn không có quyền với giao dịch này.",
+  GIVE_TRANSACTION_NOT_OUTBOUND: "Chỉ giải trình được các khoản tiền ra.",
+  GIVE_PURPOSE_REQUIRED: "Ghi mục đích của khoản chi.",
+  GIVE_REFUND_CONTRIBUTION_REQUIRED: "Khoản hoàn tiền cần chọn lượt ủng hộ được hoàn.",
+  GIVE_DISBURSEMENT_ALREADY_EXPLAINED: "Khoản chi này đã được giải trình. Giải trình đã công khai thì không sửa được.",
+  GIVE_REFUND_CONTRIBUTION_INVALID: "Lượt ủng hộ được hoàn không thuộc chiến dịch này.",
+  GIVE_REFUND_EXCEEDS_RECEIVED: "Tổng tiền hoàn vượt quá số tiền lượt ủng hộ này đã chuyển vào.",
+  GIVE_LEDGER_POST_MISSING: "Giao dịch chi chưa được ghi sổ đầy đủ. Hãy thử lại sau ít phút.",
+  GIVE_EVIDENCE_INVALID: "Chứng từ không hợp lệ.",
+  GIVE_DISBURSEMENT_NOT_FOUND: "Khoản chi này chưa được giải trình, nên chưa thêm được chứng từ.",
   // Staff roles.
   GIVE_ADMIN_REQUIRED: "Chỉ quản trị viên mới được cấp hoặc thu quyền.",
   GIVE_ROLE_INVALID: "Quyền không hợp lệ.",
