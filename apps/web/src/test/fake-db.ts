@@ -29,6 +29,7 @@ export function fakeDb(handler: Handler, log: Call[] = []) {
       "delete",
       "eq",
       "gt",
+      "lt",
       "in",
       "is",
       "not",

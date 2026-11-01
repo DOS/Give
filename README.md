@@ -90,6 +90,16 @@ start time. A campaign approved after its start time goes live immediately.
 Vercel's Hobby plan runs crons at most daily; use Pro for the 5-minute
 schedule.
 
+Every 5 minutes it also calls `GET /api/cron/finalize-ended`, which runs
+`give.finalize_ended_campaigns()` to close live give campaigns past their end
+time, and `GET /api/cron/reprocess-inbound`, which retries pending inbound
+events (webhooks, statement imports) through their channel's processor in
+`src/server/inbound` and records each outcome with
+`give.complete_inbound_event()`. No channel has a processor yet, so for now it
+only reports how many events are waiting. All cron routes need
+`Authorization: Bearer $CRON_SECRET` (at least 16 characters) and refuse
+everything when it is not set.
+
 ## Routes
 
 | Route                                           | Who                | What                                                                                     |
@@ -102,6 +112,8 @@ schedule.
 | `/me/campaigns/[id]`                            | the organizer      | Editor: content, milestones, cover, submit, cancel, delete draft, updates.               |
 | `/admin`                                        | moderators, admins | Review queue (approve, request changes) and organizer verification.                      |
 | `/api/cron/activate`                            | Vercel Cron        | Activates scheduled campaigns.                                                           |
+| `/api/cron/finalize-ended`                      | Vercel Cron        | Closes ended give campaigns.                                                             |
+| `/api/cron/reprocess-inbound`                   | Vercel Cron        | Retries pending inbound events.                                                          |
 | `/media/public/...`, `/media/private/...`       | –                  | Cover images from the private `give-media` bucket, after a visibility check.             |
 | `/auth/login`, `/auth/callback`, `/auth/logout` | –                  | DOS.Me login flow.                                                                       |
 
