@@ -115,6 +115,22 @@ export function dbErrorMessage(error: DbErrorLike | null | undefined, overrides:
   return "Có lỗi xảy ra. Hãy thử lại sau."
 }
 
+/**
+ * GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT worded for the organizer submitting a
+ * campaign. The database raises it when a give campaign has no active binding
+ * to a verified account in the verified organizer's own name.
+ */
+export const SUBMIT_MESSAGES: Record<string, string> = {
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
+    "Chưa gửi duyệt được: chiến dịch từ thiện cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản. Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại.",
+}
+
+/** The same code worded for a moderator approving or opening a campaign. */
+export const REVIEW_MESSAGES: Record<string, string> = {
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
+    "Chiến dịch chưa có tài khoản nhận tiền dùng được: cần một tài khoản đã xác minh, đứng tên người tổ chức đã xác minh, đang gắn với chiến dịch (tài khoản có thể đã bị khóa, bị nhả, hoặc người tổ chức đã đổi tên pháp lý). Hãy yêu cầu người tổ chức chỉnh sửa.",
+}
+
 /** Result shape that form actions return to useActionState. */
 export type ActionResult = { ok: boolean; message: string } | null
 

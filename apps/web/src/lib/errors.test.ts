@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { dbErrorMessage, giveErrorCode } from "./errors"
+import { dbErrorMessage, giveErrorCode, REVIEW_MESSAGES, SUBMIT_MESSAGES } from "./errors"
 
 describe("giveErrorCode", () => {
   it("reads the code at the start of the message", () => {
@@ -27,6 +27,15 @@ describe("dbErrorMessage", () => {
   it("falls back to the Postgres or PostgREST error code", () => {
     expect(dbErrorMessage({ code: "42501", message: "permission denied for table campaigns" })).toContain("quyền")
     expect(dbErrorMessage({ code: "PGRST303", message: "JWT expired" })).toContain("đăng nhập lại")
+  })
+
+  it("words the missing receiving account for donors, organizers and moderators (DOS/Give#38)", () => {
+    const error = { code: "23514", message: "GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT" }
+    expect(dbErrorMessage(error)).toBe("Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau.")
+    expect(dbErrorMessage(error, SUBMIT_MESSAGES)).toContain("Tài khoản nhận tiền")
+    expect(dbErrorMessage(error, REVIEW_MESSAGES)).toContain("yêu cầu người tổ chức chỉnh sửa")
+    // The overrides touch only this code.
+    expect(dbErrorMessage({ message: "GIVE_REASON_REQUIRED" }, SUBMIT_MESSAGES)).toBe("Cần ghi lý do.")
   })
 
   it("never echoes unknown internals", () => {

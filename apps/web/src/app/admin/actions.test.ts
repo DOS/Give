@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { REVIEW_MESSAGES } from "@/lib/errors"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
@@ -70,6 +71,38 @@ describe("approveCampaign", () => {
     expect(await approveCampaign(CAMPAIGN, null, new FormData())).toEqual({
       ok: false,
       message: "Không thể chuyển chiến dịch sang trạng thái này lúc này.",
+    })
+  })
+})
+
+describe("approveCampaign without a usable receiving account (DOS/Give#38)", () => {
+  const noAccount = { code: "23514", message: "GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT" }
+
+  it("explains the missing account when approval is refused", async () => {
+    state.handler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: { slug: "a-b", starts_at: null, ends_at: null } }
+        : call.target === "rpc:transition_campaign"
+          ? { error: noAccount }
+          : undefined
+    expect(await approveCampaign(CAMPAIGN, null, new FormData())).toEqual({
+      ok: false,
+      message: REVIEW_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT,
+    })
+    expect(transitions()).toEqual(["approved"])
+  })
+
+  it("explains the missing account when the account went away before opening", async () => {
+    state.handler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: { slug: "a-b", starts_at: null, ends_at: null } }
+        : call.target === "rpc:transition_campaign" &&
+            (op(call, "args")?.[0] as { p_to_status: string }).p_to_status === "live"
+          ? { error: noAccount }
+          : undefined
+    expect(await approveCampaign(CAMPAIGN, null, new FormData())).toEqual({
+      ok: true,
+      message: `Đã duyệt, nhưng chưa mở được: ${REVIEW_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT}`,
     })
   })
 })

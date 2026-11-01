@@ -446,6 +446,15 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               câu chuyện ít nhất 100 ký tự, ngày kết thúc
               {isGive ? " và người thụ hưởng" : ""}.
             </p>
+            {isGive && (
+              <p className="mb-3 text-sm text-gray-600">
+                Chiến dịch từ thiện còn cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch (
+                <Link href="/me/accounts" className="underline">
+                  Tài khoản nhận tiền
+                </Link>
+                ).
+              </p>
+            )}
             <SubmitButton>Gửi duyệt</SubmitButton>
           </ActionForm>
         )}

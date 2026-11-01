@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { getSession } from "@/lib/auth/session"
-import { dbErrorMessage, done, fail, type ActionResult } from "@/lib/errors"
+import { dbErrorMessage, done, fail, REVIEW_MESSAGES, type ActionResult } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
 import { dbAs } from "@/lib/supabase"
 
@@ -36,13 +36,13 @@ export async function approveCampaign(
   }
 
   const approved = await db.rpc("transition_campaign", { p_campaign_id: campaignId, p_to_status: "approved" })
-  if (approved.error) return fail(dbErrorMessage(approved.error))
+  if (approved.error) return fail(dbErrorMessage(approved.error, REVIEW_MESSAGES))
 
   let message = "Đã duyệt. Chiến dịch sẽ tự mở khi tới ngày bắt đầu."
   if (!campaign.starts_at || new Date(campaign.starts_at) <= new Date()) {
     const live = await db.rpc("transition_campaign", { p_campaign_id: campaignId, p_to_status: "live" })
     message = live.error
-      ? `Đã duyệt, nhưng chưa mở được: ${dbErrorMessage(live.error)}`
+      ? `Đã duyệt, nhưng chưa mở được: ${dbErrorMessage(live.error, REVIEW_MESSAGES)}`
       : "Đã duyệt và mở chiến dịch công khai."
     if (!live.error) revalidatePath(`/campaigns/${campaign.slug}`)
   }
