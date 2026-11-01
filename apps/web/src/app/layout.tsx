@@ -3,7 +3,9 @@ import Link from "next/link"
 import type { ReactNode } from "react"
 
 import { siteOrigin } from "@/lib/auth/origin"
-import { getSession } from "@/lib/auth/session"
+import { getSession, type Session } from "@/lib/auth/session"
+import { countUnreadNotices, unreadBadge } from "@/lib/notices"
+import { dbAs } from "@/lib/supabase"
 
 import "./globals.css"
 
@@ -15,8 +17,18 @@ export const metadata: Metadata = {
   description: "Gây quỹ từ thiện và dự án sáng tạo, minh bạch từng đồng. Một sản phẩm của DOS.",
 }
 
+/** The header badge; never fails the page (no badge on any error). */
+async function unreadNotices(session: Session): Promise<string | null> {
+  try {
+    return unreadBadge(await countUnreadNotices(dbAs(session.accessToken), session.user.id))
+  } catch {
+    return null
+  }
+}
+
 export default async function RootLayout({ children }: { children: ReactNode }) {
   const session = await getSession()
+  const unread = session ? await unreadNotices(session) : null
 
   return (
     <html lang="vi">
@@ -43,6 +55,18 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                   </Link>
                   <Link href="/me/accounts" className="text-sm font-medium text-gray-700 hover:text-gray-900">
                     Tài khoản nhận
+                  </Link>
+                  <Link
+                    href="/me/notices"
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-gray-900"
+                    aria-label={unread ? `Thông báo, ${unread} chưa đọc` : "Thông báo"}
+                  >
+                    Thông báo
+                    {unread && (
+                      <span className="rounded-full bg-brand-600 px-1.5 py-0.5 text-xs leading-none font-semibold text-white">
+                        {unread}
+                      </span>
+                    )}
                   </Link>
                   <span className="hidden text-sm text-gray-500 sm:inline">
                     {session.user.name ?? session.user.email}

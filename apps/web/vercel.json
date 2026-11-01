@@ -2,6 +2,7 @@
   "crons": [
     { "path": "/api/cron/activate", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/finalize-ended", "schedule": "*/5 * * * *" },
-    { "path": "/api/cron/reprocess-inbound", "schedule": "*/5 * * * *" }
+    { "path": "/api/cron/reprocess-inbound", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/remind-unexplained", "schedule": "0 2 * * *" }
   ]
 }
