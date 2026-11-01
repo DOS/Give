@@ -27,9 +27,17 @@ export interface TokenResponse {
   token_type: string
 }
 
+/** A required OIDC environment variable is unset. Only its name is kept, so it is safe to log. */
+export class OidcConfigError extends Error {
+  constructor(readonly variable: string) {
+    super(`OIDC config error: ${variable} is not set`)
+    this.name = "OidcConfigError"
+  }
+}
+
 function requireEnv(name: string): string {
   const value = process.env[name]
-  if (!value) throw new Error(`OIDC config error: ${name} is not set`)
+  if (!value) throw new OidcConfigError(name)
   return value
 }
 
@@ -96,6 +104,20 @@ export function isDeadRefreshToken(error: unknown): boolean {
     error.code !== undefined &&
     DEAD_REFRESH_CODES.has(error.code)
   )
+}
+
+/**
+ * The fields of a failed token request that are safe to log: the HTTP
+ * status, the sanitized error code, a missing variable's name and the
+ * error's name. Never the message, which could echo a token.
+ */
+export function tokenFailureLog(error: unknown) {
+  return {
+    status: error instanceof TokenRequestError ? error.status : undefined,
+    code: error instanceof TokenRequestError ? error.code : undefined,
+    ...(error instanceof OidcConfigError ? { variable: error.variable } : {}),
+    error: error instanceof Error ? error.name : undefined,
+  }
 }
 
 /** Deadline for a token request when the caller gives none, so a slow issuer cannot stall a request. */

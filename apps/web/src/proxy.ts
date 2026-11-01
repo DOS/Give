@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 
 import { cookieName, cookieOptions, REFRESH_TTL_SECONDS, SESSION_ACCESS, SESSION_REFRESH } from "@/lib/auth/cookies"
-import { isDeadRefreshToken, loadOidcConfig, refreshTokens, TokenRequestError } from "@/lib/auth/oidc"
+import { isDeadRefreshToken, loadOidcConfig, refreshTokens, tokenFailureLog } from "@/lib/auth/oidc"
 import { appOrigin } from "@/lib/auth/origin"
 import { needsRefresh } from "@/lib/auth/token"
 
@@ -36,7 +36,7 @@ export async function proxy(request: NextRequest) {
     // the cookies so the next request can try again, and is logged so a
     // config mistake fails loudly instead of signing everyone out.
     if (!isDeadRefreshToken(error)) {
-      console.warn("auth.refresh.failed", refreshFailure(error))
+      console.warn("auth.refresh.failed", tokenFailureLog(error))
       return NextResponse.next()
     }
     request.cookies.delete(accessName)
@@ -44,15 +44,6 @@ export async function proxy(request: NextRequest) {
     response.cookies.set(accessName, "", cookieOptions(hostname, 0))
     response.cookies.set(refreshName, "", cookieOptions(hostname, 0))
     return response
-  }
-}
-
-/** The status, error code and error name only: an error message could echo a token. */
-function refreshFailure(error: unknown) {
-  return {
-    status: error instanceof TokenRequestError ? error.status : undefined,
-    code: error instanceof TokenRequestError ? error.code : undefined,
-    error: error instanceof Error ? error.name : undefined,
   }
 }
 

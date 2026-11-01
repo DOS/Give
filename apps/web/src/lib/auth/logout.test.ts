@@ -91,6 +91,13 @@ describe("endIssuerSession", () => {
     expect(warn).not.toHaveBeenCalled()
   })
 
+  it("skips when the issuer answers invalid_grant", async () => {
+    fetchMock.mockResolvedValueOnce(Response.json({ error: "invalid_grant" }, { status: 400 }))
+
+    await expect(endIssuerSession("https://give.example", { refresh: "rt-dead" })).resolves.toBe("skipped")
+    expect(warn).not.toHaveBeenCalled()
+  })
+
   it("reads the dead-token code from Supabase's error header too", async () => {
     fetchMock.mockResolvedValueOnce(
       Response.json({ code: "session_expired" }, { status: 400, headers: { "x-sb-error-code": "session_expired" } })

@@ -103,6 +103,36 @@ describe("proxy session refresh", () => {
     expect(loggedText()).not.toContain("client-secret")
   })
 
+  it.each([
+    ["a wrong client secret", 400, { "x-sb-error-code": "invalid_credentials" }, { code: 400 }, "invalid_credentials"],
+    ["a client the session was not issued to", 400, {}, { error: "invalid_client" }, "invalid_client"],
+    [
+      "a refresh token this server did not issue",
+      400,
+      { "x-sb-error-code": "validation_failed" },
+      {},
+      "validation_failed",
+    ],
+  ])("keeps the cookies for %s, as Supabase answers it", async (_case, status, headers, body, code) => {
+    fetchMock.mockResolvedValueOnce(Response.json(body, { status, headers }))
+
+    expectCookiesKept(await proxy(pageRequest()))
+    expect(warn).toHaveBeenCalledWith("auth.refresh.failed", { status, code, error: "TokenRequestError" })
+  })
+
+  it("keeps the cookies and names the missing variable when config is incomplete", async () => {
+    vi.stubEnv("OIDC_CLIENT_SECRET", "")
+
+    expectCookiesKept(await proxy(pageRequest()))
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledWith("auth.refresh.failed", {
+      status: undefined,
+      code: undefined,
+      variable: "OIDC_CLIENT_SECRET",
+      error: "OidcConfigError",
+    })
+  })
+
   it("keeps the cookies on a 400 that names no error code", async () => {
     fetchMock.mockResolvedValueOnce(Response.json({ error: "rt-1 is not valid" }, { status: 400 }))
 

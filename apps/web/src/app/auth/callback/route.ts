@@ -11,7 +11,7 @@ import {
   SESSION_ACCESS,
   SESSION_REFRESH,
 } from "@/lib/auth/cookies"
-import { exchangeCode, loadOidcConfig, verifyIdToken } from "@/lib/auth/oidc"
+import { exchangeCode, loadOidcConfig, tokenFailureLog, verifyIdToken } from "@/lib/auth/oidc"
 import { appOrigin } from "@/lib/auth/origin"
 import { safeReturnPath } from "@/lib/return-path"
 
@@ -56,7 +56,8 @@ export async function GET(request: NextRequest) {
       cookieOptions(hostname, REFRESH_TTL_SECONDS)
     )
     return response
-  } catch {
+  } catch (error) {
+    console.warn("auth.callback.exchange_failed", tokenFailureLog(error))
     return fail("exchange")
   }
 }
