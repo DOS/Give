@@ -23,7 +23,13 @@ export default async function AdminPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
-      <h1 className="text-3xl font-bold">Kiểm duyệt</h1>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-3xl font-bold">Kiểm duyệt</h1>
+        {/* The accounts page itself admits finance and admin staff only. */}
+        <Link href="/admin/accounts" className="btn-secondary">
+          Xác minh tài khoản nhận
+        </Link>
+      </div>
 
       <section>
         <h2 className="mb-4 text-xl font-bold">Chiến dịch chờ duyệt ({queue.length})</h2>

@@ -38,6 +38,9 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                   <Link href="/me/campaigns" className="text-sm font-medium text-gray-700 hover:text-gray-900">
                     Chiến dịch của tôi
                   </Link>
+                  <Link href="/me/accounts" className="text-sm font-medium text-gray-700 hover:text-gray-900">
+                    Tài khoản nhận
+                  </Link>
                   <span className="hidden text-sm text-gray-500 sm:inline">
                     {session.user.name ?? session.user.email}
                   </span>
