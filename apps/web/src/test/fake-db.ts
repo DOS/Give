@@ -22,7 +22,7 @@ export function fakeDb(handler: Handler, log: Call[] = []) {
   const chain = (target: string, ops: Call["ops"] = []) => {
     const call: Call = { target, ops }
     const builder: Record<string, unknown> = {}
-    for (const op of ["select", "insert", "update", "delete", "eq", "in", "not", "or", "order", "limit"]) {
+    for (const op of ["select", "insert", "update", "delete", "eq", "gt", "is", "in", "not", "or", "order", "limit"]) {
       builder[op] = (...args: unknown[]) => {
         call.ops.push([op, ...args])
         return builder

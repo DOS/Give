@@ -24,6 +24,11 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ORGANIZER_NOT_FOUND: "Không tìm thấy hồ sơ người tổ chức.",
   GIVE_ORGANIZER_CHANGED_SINCE_REVIEW:
     "Người tổ chức vừa đổi thông tin. Hãy tải lại trang và xem lại trước khi xác minh.",
+  GIVE_CAMPAIGN_NOT_ACCEPTING: "Chiến dịch này hiện không nhận ủng hộ.",
+  GIVE_AMOUNT_BELOW_MINIMUM: "Số tiền thấp hơn mức ủng hộ tối thiểu của chiến dịch.",
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau.",
+  GIVE_CONTRIBUTION_TYPE_MISMATCH: "Chiến dịch này không nhận ủng hộ trực tiếp.",
+  GIVE_CODE_GENERATION_FAILED: "Chưa tạo được mã ủng hộ. Hãy thử lại.",
 }
 
 const PG_MESSAGES: Record<string, string> = {
