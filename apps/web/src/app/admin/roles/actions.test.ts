@@ -52,7 +52,7 @@ describe("grantRole", () => {
   })
 
   it("refuses demoting yourself from the grant form", async () => {
-    for (const user of [state.self, "TOI@vidu.com"]) {
+    for (const user of [state.self, state.self.toUpperCase(), "TOI@vidu.com"]) {
       const result = await grantRole(null, form({ user, role: "moderator" }))
       expect(result?.ok).toBe(false)
       expect(result?.message).toContain("chính mình")

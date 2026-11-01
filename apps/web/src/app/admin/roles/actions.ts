@@ -35,7 +35,8 @@ export async function grantRole(_state: ActionResult, form: FormData): Promise<A
   // Demoting yourself locks you out of this page at once; only the
   // confirmed change form on your own row may do it.
   const self =
-    user === session.user.id || (!!session.user.email && user.toLowerCase() === session.user.email.toLowerCase())
+    user.toLowerCase() === session.user.id.toLowerCase() ||
+    (!!session.user.email && user.toLowerCase() === session.user.email.toLowerCase())
   if (self && role !== "admin" && form.get("confirm_self") !== "yes") {
     return fail("Bạn đang hạ quyền của chính mình. Hãy dùng nút “Đổi quyền” ở dòng của bạn để xác nhận.")
   }
