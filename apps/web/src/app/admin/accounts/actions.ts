@@ -83,7 +83,9 @@ export async function reviewAccount(accountId: string, _state: ActionResult, for
         `Tên người chuyển "${senderName}" không trùng tên pháp lý "${legalName ?? "—"}". Không xác minh tài khoản này.`
       )
     }
-    recordedEvidence = `Người chuyển: ${senderName}. ${evidence}`.slice(0, 500)
+    recordedEvidence = `Người chuyển: ${senderName}. ${evidence}`
+    // The database keeps at most 500 characters; never cut the bank reference off.
+    if (recordedEvidence.length > 500) return fail("Bằng chứng quá dài. Hãy rút gọn còn khoảng 350 ký tự.")
   }
 
   const { error } = await dbService().rpc("review_receiving_account", {

@@ -223,7 +223,7 @@ function AccountCard({
                 className="field"
                 rows={2}
                 required
-                maxLength={500}
+                maxLength={350}
                 placeholder="Mã giao dịch ngân hàng, ngày giờ, nguồn (trang sao kê của ngân hàng, biên lai đã đối chiếu)"
               />
               <SubmitButton>Xác minh</SubmitButton>

@@ -90,6 +90,21 @@ describe("reviewAccount", () => {
     expect(state.serviceCalls).toHaveLength(0)
   })
 
+  it("refuses evidence that would not fit instead of cutting it", async () => {
+    const result = await reviewAccount(
+      ACCOUNT,
+      null,
+      form({
+        decision: "verified",
+        sender_name: "NGUYEN THI DAO",
+        evidence: "x".repeat(490),
+        expected_code: "XM2345678",
+      })
+    )
+    expect(result?.message).toContain("quá dài")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
   it("rejects with a reason and no evidence or code", async () => {
     const result = await reviewAccount(ACCOUNT, null, form({ decision: "rejected", reason: "Không thấy giao dịch" }))
     expect(result?.ok).toBe(true)
