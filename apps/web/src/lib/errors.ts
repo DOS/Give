@@ -50,7 +50,7 @@ const GIVE_MESSAGES: Record<string, string> = {
     "Tài khoản này đang gắn với một chiến dịch khác. Hãy nhả tài khoản khỏi chiến dịch đó trước: bản nháp nhả được ngay, chiến dịch đã gửi duyệt chỉ nhả được khi đã xong hẳn phần tiền.",
   GIVE_BINDING_NOT_FOUND: "Tài khoản này hiện không gắn với chiến dịch nào.",
   GIVE_BINDING_NOT_RELEASABLE:
-    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, đã hủy mà chưa có giao dịch nào, hoặc đã kết thúc ít nhất 30 ngày.",
+    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, đã hủy mà chưa có giao dịch nào, hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày).",
   GIVE_BINDING_HAS_OPEN_TRANSACTIONS:
     "Chưa nhả được tài khoản: còn giao dịch của chiến dịch chưa được đối chiếu hoặc chưa được giải trình.",
   GIVE_CAMPAIGN_ALREADY_BOUND: "Chiến dịch này đã có tài khoản nhận khác.",
