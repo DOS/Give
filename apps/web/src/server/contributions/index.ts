@@ -294,8 +294,9 @@ export async function paymentCampaign(service: Db, campaignId: string): Promise<
 
 /**
  * A live give campaign inside its dates, as give.create_donation checks it.
- * Only for wording (closed or not ready yet): whether payment details show is
- * decided by give.payment_account() in paymentAccount().
+ * Pages use it for wording (closed or not ready yet) and to skip the account
+ * lookup; it can only hide payment details, never show more than
+ * give.payment_account() in paymentAccount() allows.
  */
 export function acceptsDonations(
   campaign: Pick<PaymentCampaign, "type" | "status" | "starts_at" | "ends_at">,
