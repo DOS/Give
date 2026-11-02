@@ -120,12 +120,16 @@ export interface EditorAccounts {
 }
 
 /**
- * True when the editor knows the give campaign has no usable receiving
- * account (none bound, or the bound one is unusable), so an approved one
- * does not open. False when the accounts could not be read.
+ * Why the editor knows a give campaign has no usable receiving account (so an
+ * approved one does not open): none bound, or the bound one unusable. Null
+ * when it has one, or when the accounts could not be read.
  */
-export function accountBlocksOpening(accounts: Pick<EditorAccounts, "bound" | "boundUnusable"> | null): boolean {
-  return accounts !== null && (accounts.bound === null || accounts.boundUnusable !== null)
+export function openingBlock(
+  accounts: Pick<EditorAccounts, "bound" | "boundUnusable"> | null
+): "no_account" | "unusable" | null {
+  if (accounts === null) return null
+  if (accounts.bound === null) return "no_account"
+  return accounts.boundUnusable !== null ? "unusable" : null
 }
 
 /** Everything the editor shows about a give campaign's receiving account. */

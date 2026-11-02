@@ -7,7 +7,7 @@ import { AccountStatusBadge, StatusBadge, TypeBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { requireSession } from "@/lib/auth/session"
 import { bankLabel } from "@/lib/banks"
-import { accountBlocksOpening, canPickAccount, loadEditorAccounts, type EditorAccounts } from "@/lib/campaign-account"
+import { canPickAccount, loadEditorAccounts, openingBlock, type EditorAccounts } from "@/lib/campaign-account"
 import {
   canPostUpdate,
   type CampaignStatus,
@@ -84,7 +84,8 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
       <StatusNotice
         status={campaign.status}
         reviewNote={campaign.review_note}
-        accountBlocked={accountBlocksOpening(accounts)}
+        accountBlock={openingBlock(accounts)}
+        ended={campaign.ends_at !== null && new Date(campaign.ends_at) <= new Date()}
       />
 
       {(totals || !isEditableStatus(campaign.status)) && (
@@ -648,13 +649,22 @@ function ReceivingAccountSection({
 function StatusNotice({
   status,
   reviewNote,
-  accountBlocked,
+  accountBlock,
+  ended,
 }: {
   status: string
   reviewNote: string | null
-  /** A give campaign without a usable receiving account: an approved one does not open. */
-  accountBlocked: boolean
+  /** Why a give campaign has no usable receiving account (an approved one does not open), or null. */
+  accountBlock: "no_account" | "unusable" | null
+  ended: boolean
 }) {
+  const blockedApproval = !accountBlock
+    ? null
+    : ended
+      ? "Đã duyệt, nhưng chiến dịch đã quá ngày kết thúc mà chưa mở được vì không có tài khoản nhận tiền dùng được. Kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn sửa ngày và đổi tài khoản, hoặc bạn có thể hủy chiến dịch."
+      : accountBlock === "no_account"
+        ? "Đã duyệt, nhưng chiến dịch chưa mở được vì chưa gắn tài khoản nhận tiền. Gắn một tài khoản đã xác minh ở mục Tài khoản nhận tiền bên dưới; chiến dịch tự mở khi tới ngày bắt đầu."
+        : "Đã duyệt, nhưng chiến dịch chưa mở được vì tài khoản nhận tiền đang gắn không dùng được. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn đổi tài khoản. Cần hỗ trợ, hãy liên hệ đội ngũ Give."
   const notices: Record<string, { tone: string; text: string }> = {
     draft: { tone: "bg-gray-50 text-gray-700", text: "Bản nháp: chỉ bạn thấy. Hoàn thiện nội dung rồi gửi duyệt." },
     in_review: { tone: "bg-amber-50 text-amber-900", text: "Đang chờ kiểm duyệt. Nội dung tạm khóa." },
@@ -662,11 +672,8 @@ function StatusNotice({
       tone: "bg-orange-50 text-orange-900",
       text: `Kiểm duyệt viên yêu cầu chỉnh sửa${reviewNote ? `: ${reviewNote}` : "."} Sửa xong thì gửi duyệt lại.`,
     },
-    approved: accountBlocked
-      ? {
-          tone: "bg-amber-50 text-amber-900",
-          text: "Đã duyệt, nhưng chiến dịch chưa mở được vì không có tài khoản nhận tiền dùng được. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn đổi tài khoản. Cần hỗ trợ, hãy liên hệ đội ngũ Give.",
-        }
+    approved: blockedApproval
+      ? { tone: "bg-amber-50 text-amber-900", text: blockedApproval }
       : { tone: "bg-sky-50 text-sky-900", text: "Đã duyệt. Chiến dịch tự mở khi tới ngày bắt đầu." },
     live: { tone: "bg-green-50 text-green-900", text: "Chiến dịch đang công khai." },
     suspended: {

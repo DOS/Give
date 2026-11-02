@@ -146,6 +146,7 @@ export default async function AdminPage() {
                         <SubmitButton>Duyệt</SubmitButton>
                       </ActionForm>
                       <ActionForm action={requestChanges.bind(null, campaign.id)} resetOnSuccess className="space-y-2">
+                        <input type="hidden" name="from_status" value="in_review" />
                         <label htmlFor={`reason-${campaign.id}`} className="label">
                           Yêu cầu chỉnh sửa
                         </label>
@@ -189,7 +190,7 @@ export default async function AdminPage() {
               const now = new Date()
               const ended = campaign.ends_at !== null && new Date(campaign.ends_at) <= now
               const due = !campaign.starts_at || new Date(campaign.starts_at) <= now
-              const advice = waitingAdvice(campaign)
+              const advice = waitingAdvice(campaign, now)
               return (
                 <li key={campaign.id} className="space-y-4 card p-6">
                   <div className="flex flex-wrap items-start justify-between gap-4">
@@ -227,9 +228,8 @@ export default async function AdminPage() {
                       </div>
                     )}
                   </dl>
-                  {advice.blocked ? (
-                    <p className="text-sm text-amber-800">{advice.blocked}</p>
-                  ) : own ? (
+                  {advice.note && <p className="text-sm text-amber-800">{advice.note}</p>}
+                  {advice.sendBackReason === null ? null : own ? (
                     <p className="text-sm text-amber-800">
                       Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý.
                     </p>
@@ -239,6 +239,7 @@ export default async function AdminPage() {
                       confirm="Trả chiến dịch đã duyệt về cho người tổ chức chỉnh sửa? Chiến dịch sẽ phải gửi duyệt lại."
                       className="space-y-2 border-t border-gray-100 pt-4"
                     >
+                      <input type="hidden" name="from_status" value="approved" />
                       <label htmlFor={`waiting-reason-${campaign.id}`} className="label">
                         Yêu cầu chỉnh sửa
                       </label>
@@ -249,7 +250,7 @@ export default async function AdminPage() {
                         rows={2}
                         required
                         maxLength={2000}
-                        defaultValue={advice.sendBackReason ?? ""}
+                        defaultValue={advice.sendBackReason}
                       />
                       <SubmitButton className="btn-secondary">Gửi yêu cầu</SubmitButton>
                     </ActionForm>

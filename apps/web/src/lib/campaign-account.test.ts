@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest"
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
 import {
-  accountBlocksOpening,
   accountChoices,
   boundAccountOf,
   canPickAccount,
+  openingBlock,
   loadEditorAccounts,
   SUBMIT_NO_ACCOUNT,
   submitAccountProblem,
@@ -172,11 +172,11 @@ describe("canPickAccount", () => {
   })
 })
 
-describe("accountBlocksOpening", () => {
-  it("is true with no bound account or an unusable one, false when usable or unknown", () => {
-    expect(accountBlocksOpening({ bound: null, boundUnusable: null })).toBe(true)
-    expect(accountBlocksOpening({ bound: account("a"), boundUnusable: "Tài khoản chưa được xác minh." })).toBe(true)
-    expect(accountBlocksOpening({ bound: account("a"), boundUnusable: null })).toBe(false)
-    expect(accountBlocksOpening(null)).toBe(false)
+describe("openingBlock", () => {
+  it("says why an approved campaign cannot open, and nothing when usable or unknown", () => {
+    expect(openingBlock({ bound: null, boundUnusable: null })).toBe("no_account")
+    expect(openingBlock({ bound: account("a"), boundUnusable: "Tài khoản chưa được xác minh." })).toBe("unusable")
+    expect(openingBlock({ bound: account("a"), boundUnusable: null })).toBeNull()
+    expect(openingBlock(null)).toBeNull()
   })
 })
