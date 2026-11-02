@@ -69,7 +69,7 @@ const created = (overrides: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", SERVICE_KEY)
   vi.stubEnv("GIVE_RATE_LIMIT_SECRET", "")
-  vi.stubEnv("VERCEL", "1")
+  vi.stubEnv("VERCEL_ENV", "preview")
   state.session = null
   state.requestHeaders = { "x-real-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.1, 10.0.0.1" }
   state.anonHandler = (call) => (call.target === "campaigns" ? { data: { id: CAMPAIGN } } : undefined)
@@ -96,6 +96,7 @@ describe("donate", () => {
         p_is_anonymous: false,
         p_message: "Cố lên",
         p_client_key: clientKey("203.0.113.7"),
+        p_client_network_key: null,
       },
     ])
     expect(state.cookies).toEqual([
@@ -195,16 +196,54 @@ describe("donate", () => {
     ])
   })
 
-  it("trusts the address headers only on Vercel, whose proxy sets them", async () => {
-    vi.stubEnv("VERCEL", "")
+  it("also counts an IPv6 guest by their /48 network", async () => {
+    state.requestHeaders = { "x-real-ip": "2001:db8:abcd:12:1:2:3:4" }
     await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
-    expect(op(state.serviceCalls[0], "args")).toEqual([expect.objectContaining({ p_client_key: null })])
+    expect(op(state.serviceCalls[0], "args")).toEqual([
+      expect.objectContaining({
+        p_client_key: clientKey("2001:db8:abcd:12::/64"),
+        p_client_network_key: clientKey("2001:db8:abcd::/48"),
+      }),
+    ])
   })
 
-  it("sends no client key when the request carries no address", async () => {
+  it.each([[""], ["development"]])(
+    "trusts the address headers only on Vercel deployments (VERCEL_ENV=%j)",
+    async (deployment) => {
+      vi.stubEnv("VERCEL", "1")
+      vi.stubEnv("VERCEL_ENV", deployment)
+      await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+      expect(op(state.serviceCalls[0], "args")).toEqual([
+        expect.objectContaining({ p_client_key: null, p_client_network_key: null }),
+      ])
+    }
+  )
+
+  it("needs the dedicated secret in Production and says so when it is missing", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+    vi.stubEnv("VERCEL_ENV", "production")
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    expect(op(state.serviceCalls[0], "args")).toEqual([expect.objectContaining({ p_client_key: null })])
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("GIVE_RATE_LIMIT_SECRET is not set"))
+
+    vi.stubEnv("GIVE_RATE_LIMIT_SECRET", "dedicated-secret")
+    state.serviceCalls.length = 0
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    expect(op(state.serviceCalls[0], "args")).toEqual([
+      expect.objectContaining({
+        p_client_key: createHmac("sha256", "dedicated-secret").update("give:donation-rate:203.0.113.7").digest("hex"),
+      }),
+    ])
+    log.mockRestore()
+  })
+
+  it("sends no client key when the request carries no address, and logs it", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
     state.requestHeaders = {}
     await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
     expect(op(state.serviceCalls[0], "args")).toEqual([expect.objectContaining({ p_client_key: null })])
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("no address header"))
+    log.mockRestore()
   })
 
   it("tells a limited guest when to retry and that signing in lifts the limit", async () => {

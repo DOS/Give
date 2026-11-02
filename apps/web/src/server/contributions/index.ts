@@ -65,8 +65,9 @@ export function hostnameFrom(host: string | null): string {
  * The client's network address for the donation rate limit, from
  * x-real-ip, else the first x-forwarded-for entry. These are only as good as
  * the proxy that sets them: Vercel overwrites both, but Next.js alone keeps
- * whatever the client sent, so requestClientKey reads them only on Vercel. A
- * CDN in front of Vercel would make every visitor look like the CDN.
+ * whatever the client sent, so requestClientKeys reads them only on Vercel
+ * deployments. A CDN in front of Vercel would make every visitor look like
+ * the CDN.
  *
  * An IPv6 address counts as its /64 network, since one connection usually
  * holds a whole /64 (a wider prefix would put many mobile subscribers in one
@@ -112,29 +113,59 @@ function ipv6Groups(ip: string): number[] {
 }
 
 /**
+ * The wider network give.create_donation also counts a guest under: the /48
+ * of an IPv6 /64, which one site or tunnel commonly holds whole, so rotating
+ * through its 65,536 /64 networks does not multiply the limit. Null for IPv4.
+ */
+export function clientNetwork(address: string | null): string | null {
+  const match = /^([0-9a-f]+:[0-9a-f]+:[0-9a-f]+):[0-9a-f]+::\/64$/.exec(address ?? "")
+  return match ? `${match[1]}::/48` : null
+}
+
+/**
  * The key give.create_donation counts a guest's donations under: an
  * HMAC-SHA256 of the address under a server secret, so the database never
  * sees the address and, without the secret, nobody can turn a key back into
- * one by trying every IPv4 address. Null when the address or the secret is missing; the database
- * then counts the guest in one shared bucket per campaign.
+ * one by trying every IPv4 address. Null when the address or the secret is
+ * missing; the database then counts the guest in one shared bucket per
+ * campaign.
  */
 export function donationClientKey(address: string | null, secret: string | undefined): string | null {
   if (!address || !secret) return null
   return createHmac("sha256", secret).update(`give:donation-rate:${address}`).digest("hex")
 }
 
+export interface DonationClientKeys {
+  clientKey: string | null
+  networkKey: string | null
+}
+
 /**
- * donationClientKey for this request, or null off Vercel, where the address
- * headers are not trustworthy (clientAddress). The secret is
- * GIVE_RATE_LIMIT_SECRET, else the service-role key the server already
- * holds; rotating it only restarts the counts.
+ * The rate-limit keys for this request. Only Vercel production and preview
+ * deployments get keys: elsewhere (`next start`, or `vercel env pull` output,
+ * which sets VERCEL=1 but VERCEL_ENV=development) the address headers are the
+ * client's own. The secret is GIVE_RATE_LIMIT_SECRET; previews may fall back to
+ * the service-role key, Production may not, since every service on the shared
+ * project holds that key. Rotating the secret only restarts the counts.
  */
-export function requestClientKey(headers: { get(name: string): string | null }): string | null {
-  if (process.env.VERCEL !== "1") return null
-  return donationClientKey(
-    clientAddress(headers),
-    process.env.GIVE_RATE_LIMIT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY
-  )
+export function requestClientKeys(headers: { get(name: string): string | null }): DonationClientKeys {
+  const deployment = process.env.VERCEL_ENV
+  if (deployment !== "production" && deployment !== "preview") return { clientKey: null, networkKey: null }
+  const secret =
+    process.env.GIVE_RATE_LIMIT_SECRET || (deployment === "preview" ? process.env.SUPABASE_SERVICE_ROLE_KEY : undefined)
+  const address = clientAddress(headers)
+  const keys = {
+    clientKey: donationClientKey(address, secret),
+    networkKey: donationClientKey(clientNetwork(address), secret),
+  }
+  if (!keys.clientKey) {
+    // Without a key every guest of a campaign shares one bucket, which one
+    // visitor can fill. Say so where the logs are watched.
+    console.error(
+      `donation rate limit: no client key on ${deployment} (${secret ? "no address header" : "GIVE_RATE_LIMIT_SECRET is not set"})`
+    )
+  }
+  return keys
 }
 
 /** At most this many guest donation cookies are kept; Path=/ sends each one with every request. */

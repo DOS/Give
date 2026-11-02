@@ -9,7 +9,7 @@ import { dbErrorMessage, fail, giveErrorCode, type ActionResult } from "@/lib/er
 import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { dbAs, dbService } from "@/lib/supabase"
-import { donationCookie, donationCookiesToDrop, hostnameFrom, requestClientKey } from "@/server/contributions"
+import { donationCookie, donationCookiesToDrop, hostnameFrom, requestClientKeys } from "@/server/contributions"
 
 const NOT_ACCEPTING = "Chiến dịch này hiện không nhận ủng hộ."
 
@@ -57,6 +57,7 @@ export async function donate(campaignId: string, _state: ActionResult, form: For
   // it first: PostgREST rejects a forged or expired token there.
   const session = await getSession()
   const requestHeaders = await headers()
+  const { clientKey, networkKey } = requestClientKeys(requestHeaders)
   const { data: visible, error: readError } = await dbAs(session?.accessToken)
     .from("campaigns")
     .select("id")
@@ -73,7 +74,8 @@ export async function donate(campaignId: string, _state: ActionResult, form: For
       p_public_name: input.public_name,
       p_is_anonymous: input.anonymous,
       p_message: input.message,
-      p_client_key: requestClientKey(requestHeaders),
+      p_client_key: clientKey,
+      p_client_network_key: networkKey,
     })
     .select("contribution_id, reference_code, status_token, status_token_expires_at")
     .single()

@@ -6,6 +6,7 @@ import {
   acceptsDonations,
   accountNameMatches,
   clientAddress,
+  clientNetwork,
   donationClientKey,
   donationCookie,
   donationCookiesToDrop,
@@ -58,6 +59,15 @@ describe("clientAddress", () => {
     expect(from({ "x-real-ip": "" })).toBeNull()
     expect(from({ "x-forwarded-for": "unknown" })).toBeNull()
     expect(from({ "x-real-ip": "203.0.113.7:443" })).toBeNull()
+  })
+})
+
+describe("clientNetwork", () => {
+  it("is the /48 of an IPv6 /64 and null for IPv4", () => {
+    expect(clientNetwork("2001:db8:abcd:12::/64")).toBe("2001:db8:abcd::/48")
+    expect(clientNetwork("2001:db8:0:0::/64")).toBe("2001:db8:0::/48")
+    expect(clientNetwork("203.0.113.7")).toBeNull()
+    expect(clientNetwork(null)).toBeNull()
   })
 })
 
