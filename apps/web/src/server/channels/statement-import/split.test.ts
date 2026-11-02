@@ -29,7 +29,9 @@ describe("splitStatement", () => {
       csvFile("period_from,2026-10-01", "period_to,2026-10-02", CSV_COLUMNS, row("2026-10-01T09:00:00+07:00", 1))
     )
     const parts = splitStatement(statement, bytes, MAX_PAYLOAD_BYTES)
-    expect(parts).toEqual([{ index: 0, count: 1, firstRow: 1, statement }])
+    expect(parts).toEqual([
+      { index: 0, count: 1, firstRow: 1, firstDay: "2026-10-01", lastDay: "2026-10-01", statement },
+    ])
     expect(parts[0].statement).toBe(statement)
   })
 
@@ -40,6 +42,13 @@ describe("splitStatement", () => {
     expect(bytes(statement)).toBeGreaterThan(MAX_PAYLOAD_BYTES)
 
     const parts = splitStatement(statement, bytes, MAX_PAYLOAD_BYTES)
+    expect(parts.map((p) => [p.firstDay, p.lastDay])).toEqual([
+      ["2026-09-20", "2026-09-21"],
+      ["2026-09-22", "2026-09-23"],
+      ["2026-09-24", "2026-09-25"],
+      ["2026-09-26", "2026-09-27"],
+      ["2026-09-28", "2026-09-29"],
+    ])
     expect(parts.map((p) => [p.index, p.count, p.firstRow, p.statement.rows.length])).toEqual([
       [0, 5, 1, 1000],
       [1, 5, 1001, 1000],

@@ -105,14 +105,49 @@ export interface StatementBatchOutcome extends ImportResult {
   created: boolean
 }
 
+const PART_KEY = /^(.+):part(\d{1,4})of(\d{1,4}):\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}$/
+
+/**
+ * The parts of a file are staged in file order, as one upload of the whole
+ * file would be: the database's day-by-day overlap, orphan and edge-balance
+ * checks of a part rely on the part before it being staged. A part waits
+ * (retryable) until the previous part of the same file has a batch; once the
+ * previous part ended without one (refused, dismissed), this part ends too.
+ */
+async function assertPreviousPartStaged(db: Db, dedupeKey: string | undefined): Promise<void> {
+  const match = dedupeKey ? PART_KEY.exec(dedupeKey) : null
+  if (!match || Number(match[2]) <= 1) return
+  const previous = await db
+    .from("inbound_events")
+    .select("id, processed_at")
+    .eq("channel", "statement_import")
+    .like("dedupe_key", `${match[1]}:part${Number(match[2]) - 1}of${match[3]}:%`)
+  if (previous.error) throw new Error(`inbound_events read failed: ${previous.error.code ?? "unknown"}`)
+  const events = (previous.data ?? []) as { id: string; processed_at: string | null }[]
+  if (events.length === 0) return // never happens: parts are recorded in order
+  const batches = await db
+    .from("statement_import_batches")
+    .select("inbound_event_id")
+    .in(
+      "inbound_event_id",
+      events.map((e) => e.id)
+    )
+  if (batches.error) throw new Error(`statement_import_batches read failed: ${batches.error.code ?? "unknown"}`)
+  if ((batches.data ?? []).length > 0) return
+  if (events.every((e) => e.processed_at !== null)) throw new InboundError("STATEMENT_PART_PREVIOUS_FAILED", true)
+  throw new InboundError("STATEMENT_PART_WAITING")
+}
+
 /** Stages the event's statement and imports its ready rows. */
 export async function runStatementEvent(
   db: Db,
-  event: Pick<InboundEvent, "id" | "payload">,
+  event: Pick<InboundEvent, "id" | "payload"> & { dedupe_key?: string },
   signal?: AbortSignal
 ): Promise<StatementBatchOutcome> {
   const parsed = payloadSchema.safeParse(event.payload)
   if (!parsed.success) throw new StatementImportError("STATEMENT_PAYLOAD_INVALID")
+  await assertPreviousPartStaged(db, event.dedupe_key)
+  signal?.throwIfAborted()
   const { version: _version, account_id, actor_id, ...staged } = parsed.data
   const batch = await stageStatementImport(
     db,
@@ -214,9 +249,6 @@ export type StatementImportResult =
   | (Extract<StatementPartResult, { status: "imported" }> & UploadParts & { importBatchIds: string[] })
   | (Exclude<StatementPartResult, { status: "imported" }> & UploadParts & { part: number; importedParts: number })
 
-/** Refusals first, then parked parts (staff), then pending ones (the cron). */
-const SEVERITY: Record<StatementPartResult["status"], number> = { refused: 3, parked: 2, pending: 1, imported: 0 }
-
 /**
  * Refusals of the statement's content by the database: retrying the same
  * statement cannot succeed, so the event ends. GIVE_IMPORT_PERIOD_INVALID
@@ -228,7 +260,12 @@ const SEVERITY: Record<StatementPartResult["status"], number> = { refused: 3, pa
  */
 function isContentRefusal(code: string): boolean {
   return (
-    (code.startsWith("GIVE_IMPORT_") && code !== "GIVE_IMPORT_PERIOD_INVALID") || code === "GIVE_INBOUND_EVENT_INVALID"
+    (code.startsWith("GIVE_IMPORT_") && code !== "GIVE_IMPORT_PERIOD_INVALID") ||
+    code === "GIVE_INBOUND_EVENT_INVALID" ||
+    // Staff dismissed the event (or the previous part of its file ended without
+    // being staged): the database refuses to import it, so nothing retries it.
+    code === "GIVE_INBOUND_EVENT_DISMISSED" ||
+    code === "STATEMENT_PART_PREVIOUS_FAILED"
   )
 }
 
@@ -249,10 +286,18 @@ export function isAccessRefusal(code: string): boolean {
 
 /**
  * The dedupe key of one part. A file of one part keeps the plain key of
- * statementDedupeKey, as uploads before the split did.
+ * statementDedupeKey, as uploads before the split did. A part's key names its
+ * days, so an upload of the same file split another way (another app version)
+ * records new parts instead of replaying old ones with other days; the
+ * database then stages the overlapping days as a re-upload.
  */
-export function statementPartDedupeKey(fileKey: string, part: Pick<StatementPart, "index" | "count">): string {
-  return part.count === 1 ? fileKey : `${fileKey}:part${part.index + 1}of${part.count}`
+export function statementPartDedupeKey(
+  fileKey: string,
+  part: Pick<StatementPart, "index" | "count" | "firstDay" | "lastDay">
+): string {
+  return part.count === 1
+    ? fileKey
+    : `${fileKey}:part${part.index + 1}of${part.count}:${part.firstDay}..${part.lastDay}`
 }
 
 /**
@@ -339,9 +384,12 @@ export async function importStatementFile(
     recorded.push({ key, payload, event: await recordStatementEvent(service, key, payload) })
   }
 
+  // A part runs only after the part before it was imported: parts are staged
+  // in file order (assertPreviousPartStaged), and one that failed is left to
+  // the cron together with the parts after it.
   const results: StatementPartResult[] = []
   for (const { key, payload, event } of recorded) {
-    if (clock() - started > INLINE_BUDGET_MS) {
+    if (results.some((r) => r.status !== "imported") || clock() - started > INLINE_BUDGET_MS) {
       results.push({
         status: "pending",
         code: "processing_deferred",
@@ -371,17 +419,10 @@ export async function importStatementFile(
       importBatchIds: imported.map((r) => r.importBatchId),
     }
   }
-  let worst = 0
-  results.forEach((r, i) => {
-    if (SEVERITY[r.status] > SEVERITY[results[worst].status]) worst = i
-  })
+  // Parts after the first one that was not imported never ran here.
+  const worst = results.findIndex((r) => r.status !== "imported")
   const result = results[worst] as Exclude<StatementPartResult, { status: "imported" }>
-  const extra = {
-    replayed,
-    parts: parts.length,
-    part: worst + 1,
-    importedParts: results.filter((r) => r.status === "imported").length,
-  }
+  const extra = { replayed, parts: parts.length, part: worst + 1, importedParts: worst }
   if (result.status !== "parked" && result.row !== undefined) {
     return { ...result, ...extra, row: parts[worst].firstRow + result.row - 1 }
   }

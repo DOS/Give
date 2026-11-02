@@ -11,7 +11,7 @@ const SHA = "ab".repeat(32)
 describe("statementEventRef", () => {
   it("reads the account and part of a statement upload's key", () => {
     expect(statementEventRef(`v1:${ACCOUNT}:${SHA}`)).toEqual({ accountId: ACCOUNT, part: null })
-    expect(statementEventRef(`v1:${ACCOUNT}:${SHA}:part2of5`)).toEqual({
+    expect(statementEventRef(`v1:${ACCOUNT}:${SHA}:part2of5:2026-09-22..2026-09-23`)).toEqual({
       accountId: ACCOUNT,
       part: { number: 2, count: 5 },
     })
@@ -20,6 +20,7 @@ describe("statementEventRef", () => {
   it("ignores keys of other shapes", () => {
     expect(statementEventRef("payos:12345")).toBeNull()
     expect(statementEventRef(`v1:${ACCOUNT}:${SHA}:extra`)).toBeNull()
+    expect(statementEventRef(`v1:${ACCOUNT}:${SHA}:part2of5`)).toBeNull()
     expect(statementEventRef(`v2:${ACCOUNT}:${SHA}`)).toBeNull()
   })
 })
@@ -30,6 +31,7 @@ describe("parkedReasonLabel", () => {
     expect(parkedReasonLabel("processing_unfinished; before: processing_timeout")).toContain("không kết thúc")
     expect(parkedReasonLabel("GIVE_NOT_ALLOWED")).toContain("không còn quyền")
     expect(parkedReasonLabel("STATEMENT_PAYLOAD_INVALID")).toContain("Tải lại đúng file")
+    expect(parkedReasonLabel("STATEMENT_PART_WAITING")).toContain("Phần trước")
     expect(parkedReasonLabel(null)).toBe("Không có mã lỗi.")
     expect(parkedReasonLabel("something_else")).toBe("Lỗi khác.")
   })

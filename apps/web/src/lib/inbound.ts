@@ -5,7 +5,7 @@ import { isUploadCode, uploadErrorMessage, type AuditEntry } from "@/lib/stateme
  * Parked inbound events for finance/admin staff (DOS/Give#73): events whose
  * automatic attempts are used up (DOS-Me migration 20261103180000). Staff
  * send one back to the reprocess cron (give.retry_inbound_event) or end it
- * with a note (give.dismiss_inbound_event, 20261104090000). Both are written
+ * with a note (give.dismiss_inbound_event, 20261104100000). Both are written
  * to give.audit_log.
  */
 
@@ -69,11 +69,11 @@ export async function getParkedInbound(db: Db, id: string): Promise<ParkedInboun
 }
 
 const STATEMENT_KEY =
-  /^v1:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):[0-9a-f]{64}(?::part(\d{1,4})of(\d{1,4}))?$/
+  /^v1:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):[0-9a-f]{64}(?::part(\d{1,4})of(\d{1,4}):\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2})?$/
 
 /**
  * The receiving account and part of a statement upload's event, read from its
- * dedupe key (v1:<account>:<file sha256>[:part<i>of<n>], see
+ * dedupe key (v1:<account>:<file sha256>[:part<i>of<n>:<first day>..<last day>], see
  * statementPartDedupeKey). Null for keys of other shapes.
  */
 export function statementEventRef(
@@ -101,6 +101,9 @@ export function parkedReasonLabel(code: string | null): string {
     return "Người tải sao kê lên không còn quyền với tài khoản nhận này. Người có quyền tải lại đúng file sẽ xử lý tiếp."
   }
   if (code === "GIVE_ACCOUNT_NOT_FOUND") return "Không tìm thấy tài khoản nhận của sao kê."
+  if (code === "STATEMENT_PART_WAITING") {
+    return "Phần trước của cùng file sao kê chưa được nhập, nên phần này chờ. Xử lý phần trước (gửi lại hoặc bỏ qua) trước."
+  }
   if (isUploadCode(code) || code.startsWith("GIVE_")) return uploadErrorMessage(code)
   return "Lỗi khác."
 }

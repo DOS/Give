@@ -37,7 +37,7 @@ function form(values: Record<string, string> = {}) {
 const PARKED = {
   id: EVENT,
   channel: "statement_import",
-  dedupe_key: `v1:11111111-1111-4111-8111-111111111111:${"a".repeat(64)}:part2of5`,
+  dedupe_key: `v1:11111111-1111-4111-8111-111111111111:${"a".repeat(64)}:part2of5:2026-09-22..2026-09-23`,
   received_at: "2026-11-02T01:00:00Z",
   attempts: 10,
   last_attempt_at: "2026-11-02T02:00:00Z",

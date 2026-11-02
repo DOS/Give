@@ -117,7 +117,9 @@ describe("uploadStatement", () => {
     const big = largeStatementFile()
     const result = await upload({ file: new File([big.slice()], "saoke.csv") })
     expect(result?.ok).toBe(false)
-    expect(result?.message).toMatch(/^Phần 1\/5 của sao kê không nhập được \(đã nhập 0 phần khác\)\./)
+    expect(result?.message).toMatch(
+      /^Phần 1\/5 của sao kê không nhập được \(đã nhập 0 phần trước nó; các phần sau không được nhập\)\./
+    )
     expect(result?.message).toContain("Hãy sửa file rồi tải lại.")
   })
 

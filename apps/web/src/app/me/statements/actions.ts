@@ -72,9 +72,13 @@ export async function uploadStatement(_state: UploadResult, form: FormData): Pro
     case "refused": {
       const reason = uploadErrorMessage(result.code, result.row)
       // An access refusal is about the account or the uploader, not the file.
-      const next = isAccessRefusal(result.code) ? "" : " Hãy sửa file rồi tải lại."
+      // A dismissal is finance staff's decision about the file, not a fault in it.
+      const next =
+        isAccessRefusal(result.code) || result.code === "GIVE_INBOUND_EVENT_DISMISSED"
+          ? ""
+          : " Hãy sửa file rồi tải lại."
       const what = split
-        ? `Phần ${result.part}/${result.parts} của sao kê không nhập được (đã nhập ${result.importedParts} phần khác).`
+        ? `Phần ${result.part}/${result.parts} của sao kê không nhập được (đã nhập ${result.importedParts} phần trước nó; các phần sau không được nhập).`
         : "Sao kê không nhập được."
       return failed(`${again}${what} ${reason}${reason.endsWith(".") ? "" : "."}${next}`)
     }

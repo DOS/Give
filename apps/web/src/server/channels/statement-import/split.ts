@@ -25,7 +25,7 @@ import { jsonbTextBytes, vnDay, type StagedRow, type StagedStatement } from "./n
  * Rows a part aims at. Each part is one processor attempt (stage + import)
  * within PROCESSOR_TIMEOUT_MS (15 s). Measured on PostgreSQL 17.11 for
  * DOS/Give#73, with staging run without JIT (DOS-Me migration
- * 20261104090000): a realistic 1000-row part takes 1.4 to 3.0 s, a re-upload
+ * 20261104100000): a realistic 1000-row part takes 1.4 to 3.0 s, a re-upload
  * of one (all duplicates) 0.4 to 1.3 s, against 10 to 13 s for 5000 rows in
  * one batch. 1000 rows also keep a part's payload near 0.5 MB, half the cap.
  */
@@ -38,6 +38,9 @@ export interface StatementPart {
   count: number
   /** File row number (1-based) of the part's first row. */
   firstRow: number
+  /** Local days of the part's first and last rows. */
+  firstDay: string
+  lastDay: string
   statement: StagedStatement
 }
 
@@ -64,7 +67,16 @@ export function splitStatement(
   maxBytes: number
 ): StatementPart[] {
   if (staged.rows.length <= PART_ROWS && payloadBytes(staged) <= maxBytes) {
-    return [{ index: 0, count: 1, firstRow: 1, statement: staged }]
+    return [
+      {
+        index: 0,
+        count: 1,
+        firstRow: 1,
+        firstDay: rowDay(staged.rows[0]),
+        lastDay: rowDay(staged.rows[staged.rows.length - 1]),
+        statement: staged,
+      },
+    ]
   }
 
   // Days in file order (normalizeStatement checked that days never go back).
@@ -123,7 +135,14 @@ export function splitStatement(
       rows: partRows,
     }
     if (payloadBytes(statement) > maxBytes) throw new StatementImportError("STATEMENT_TOO_LARGE")
-    const part = { index, count: groups.length, firstRow, statement }
+    const part = {
+      index,
+      count: groups.length,
+      firstRow,
+      firstDay: days[group.from].day,
+      lastDay: days[group.to].day,
+      statement,
+    }
     firstRow += partRows.length
     return part
   })
