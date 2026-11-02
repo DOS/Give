@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { OPEN_MESSAGES, REVIEW_MESSAGES } from "@/lib/errors"
+import { OPEN_MESSAGES, REVIEW_MESSAGES, SEND_BACK_MESSAGES } from "@/lib/errors"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
@@ -14,7 +14,7 @@ vi.mock("@/lib/auth/session", () => ({
 }))
 vi.mock("@/lib/supabase", () => ({ dbAs: () => fakeDb((call) => state.handler(call), state.calls) }))
 
-const { approveCampaign, setVerification } = await import("./actions")
+const { approveCampaign, requestChanges, setVerification } = await import("./actions")
 
 const day = 86_400_000
 const transitions = () =>
@@ -104,6 +104,73 @@ describe("approveCampaign without a usable receiving account (DOS/Give#38)", () 
       ok: true,
       message: `Đã duyệt, nhưng chưa mở được: ${OPEN_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT}`,
     })
+  })
+})
+
+describe("requestChanges", () => {
+  const form = (reason: string, fromStatus = "approved") => {
+    const f = new FormData()
+    f.set("reason", reason)
+    f.set("from_status", fromStatus)
+    return f
+  }
+  const statusIs =
+    (status: string, rpc?: Handler): Handler =>
+    (call) =>
+      op(call, "maybeSingle") ? { data: { status } } : rpc?.(call)
+
+  it("sends a campaign back with the trimmed reason", async () => {
+    state.handler = statusIs("approved")
+    const result = await requestChanges(CAMPAIGN, null, form("  Bind another account.  "))
+    expect(result).toEqual({ ok: true, message: "Đã gửi yêu cầu chỉnh sửa cho người tổ chức." })
+    const call = state.calls.find((c) => c.target === "rpc:transition_campaign")
+    expect(op(call, "args")?.[0]).toEqual({
+      p_campaign_id: CAMPAIGN,
+      p_to_status: "changes_requested",
+      p_reason: "Bind another account.",
+    })
+  })
+
+  it("does not send back a campaign approved since the review form was shown (DOS/Give#64)", async () => {
+    state.handler = statusIs("approved")
+    const result = await requestChanges(CAMPAIGN, null, form("Fix the story.", "in_review"))
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toContain("đã đổi trạng thái")
+    expect(transitions()).toEqual([])
+  })
+
+  it("refuses a form that does not say which status it was shown for", async () => {
+    state.handler = statusIs("approved")
+    expect((await requestChanges(CAMPAIGN, null, form("Fix.", "")))?.ok).toBe(false)
+    expect(state.calls).toHaveLength(0)
+  })
+
+  it("explains that the campaign opened before it could be sent back", async () => {
+    state.handler = statusIs("approved", (call) =>
+      call.target === "rpc:transition_campaign"
+        ? { error: { code: "42501", message: "GIVE_TRANSITION_NOT_ALLOWED: live -> changes_requested" } }
+        : undefined
+    )
+    expect(await requestChanges(CAMPAIGN, null, form("Bind another account."))).toEqual({
+      ok: false,
+      message: SEND_BACK_MESSAGES.GIVE_TRANSITION_NOT_ALLOWED,
+    })
+  })
+
+  it("keeps the plain refusal on the review form", async () => {
+    state.handler = statusIs("in_review", (call) =>
+      call.target === "rpc:transition_campaign"
+        ? { error: { code: "42501", message: "GIVE_TRANSITION_NOT_ALLOWED: in_review -> changes_requested" } }
+        : undefined
+    )
+    expect((await requestChanges(CAMPAIGN, null, form("Fix.", "in_review")))?.message).toBe(
+      "Không thể chuyển chiến dịch sang trạng thái này lúc này."
+    )
+  })
+
+  it("needs a reason", async () => {
+    expect((await requestChanges(CAMPAIGN, null, form("   ")))?.ok).toBe(false)
+    expect(state.calls).toHaveLength(0)
   })
 })
 

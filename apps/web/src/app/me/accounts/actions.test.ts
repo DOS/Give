@@ -303,7 +303,7 @@ describe("releaseAccount", () => {
     })
     const result = await releaseAccount(ACCOUNT, null, new FormData())
     expect(result?.ok).toBe(false)
-    expect(result?.message).toContain("đã nhận giao dịch")
+    expect(result?.message).toContain("Giao dịch đã vào tài khoản là lịch sử tiền")
   })
 
   it("does not ask for a back project sent back for changes", async () => {

@@ -6,6 +6,7 @@ import {
   accountChoices,
   boundAccountOf,
   canPickAccount,
+  openingBlock,
   loadEditorAccounts,
   SUBMIT_NO_ACCOUNT,
   submitAccountProblem,
@@ -168,5 +169,14 @@ describe("canPickAccount", () => {
     expect(canPickAccount("changes_requested", null)).toBe(true)
     expect(canPickAccount("draft", account("a"))).toBe(false)
     expect(canPickAccount("cancelled", null)).toBe(false)
+  })
+})
+
+describe("openingBlock", () => {
+  it("says why an approved campaign cannot open, and nothing when usable or unknown", () => {
+    expect(openingBlock({ bound: null, boundUnusable: null })).toBe("no_account")
+    expect(openingBlock({ bound: account("a"), boundUnusable: "Tài khoản chưa được xác minh." })).toBe("unusable")
+    expect(openingBlock({ bound: account("a"), boundUnusable: null })).toBeNull()
+    expect(openingBlock(null)).toBeNull()
   })
 })

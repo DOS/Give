@@ -5,7 +5,15 @@ import { notFound, redirect } from "next/navigation"
 import { TypeBadge, VerificationBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { requireSession } from "@/lib/auth/session"
-import { isStaff, listOrganizersToVerify, listReviewQueue } from "@/lib/campaigns"
+import {
+  accountProblemLabel,
+  isStaff,
+  listOrganizersToVerify,
+  listReviewQueue,
+  listWaitingForAccount,
+  waitingAdvice,
+  type WaitingForAccount,
+} from "@/lib/campaigns"
 import { formatDate, formatVnd } from "@/lib/format"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import { dbAs } from "@/lib/supabase"
@@ -25,8 +33,13 @@ export default async function AdminPage() {
     notFound()
   }
 
-  const [queue, organizers, canManageRoles] = await Promise.all([
+  const [queue, waiting, organizers, canManageRoles] = await Promise.all([
     listReviewQueue(db),
+    // A read error hides only this section, not the review queue.
+    listWaitingForAccount(db).catch((e: { code?: string; message?: string } | null): WaitingForAccount[] | null => {
+      console.error("campaigns_waiting_for_account failed", e?.code, e?.message)
+      return null
+    }),
     listOrganizersToVerify(db),
     isStaff(db, ["admin"]),
   ])
@@ -133,6 +146,7 @@ export default async function AdminPage() {
                         <SubmitButton>Duyệt</SubmitButton>
                       </ActionForm>
                       <ActionForm action={requestChanges.bind(null, campaign.id)} resetOnSuccess className="space-y-2">
+                        <input type="hidden" name="from_status" value="in_review" />
                         <label htmlFor={`reason-${campaign.id}`} className="label">
                           Yêu cầu chỉnh sửa
                         </label>
@@ -148,6 +162,98 @@ export default async function AdminPage() {
                         <SubmitButton className="btn-secondary">Gửi yêu cầu</SubmitButton>
                       </ActionForm>
                     </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-2 text-xl font-bold">
+          Chiến dịch đã duyệt chờ tài khoản nhận{waiting ? ` (${waiting.length})` : ""}
+        </h2>
+        <p className="mb-4 text-sm text-gray-600">
+          Chiến dịch từ thiện đã duyệt nhưng tài khoản nhận tiền không còn dùng được, nên hệ thống không tự mở. Chiến
+          dịch tự mở nếu tài khoản dùng được trở lại; nếu không, hãy yêu cầu chỉnh sửa để người tổ chức nhả tài khoản
+          cũ, gắn tài khoản khác rồi gửi duyệt lại.
+        </p>
+        {waiting === null ? (
+          <p className="card p-6 text-gray-600">Chưa tải được danh sách này. Hãy tải lại trang sau.</p>
+        ) : waiting.length === 0 ? (
+          <p className="card p-6 text-gray-600">Không có chiến dịch đã duyệt nào đang chờ tài khoản nhận.</p>
+        ) : (
+          <ul className="space-y-4">
+            {waiting.map((campaign) => {
+              const own = campaign.organizer_id === session.user.id
+              const now = new Date()
+              const ended = campaign.ends_at !== null && new Date(campaign.ends_at) <= now
+              const due = !campaign.starts_at || new Date(campaign.starts_at) <= now
+              const advice = waitingAdvice(campaign, now)
+              return (
+                <li key={campaign.id} className="space-y-4 card p-6">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <h3 className="text-lg font-semibold">{campaign.title}</h3>
+                      <p className="text-sm text-red-700">{accountProblemLabel(campaign.account_problem)}</p>
+                    </div>
+                    <Link href={`/campaigns/${campaign.slug}`} className="btn-secondary" target="_blank">
+                      Xem trước
+                    </Link>
+                  </div>
+                  <dl className="grid gap-2 text-sm sm:grid-cols-3">
+                    <div>
+                      <dt className="text-gray-500">Ngày bắt đầu</dt>
+                      <dd>
+                        {campaign.starts_at ? formatDate(campaign.starts_at) : "Khi duyệt"}
+                        {ended ? " (đã quá ngày kết thúc)" : due ? " (đã tới, đang chờ mở)" : ""}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-gray-500">Ngày kết thúc</dt>
+                      <dd>{formatDate(campaign.ends_at)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-gray-500">Duyệt lúc</dt>
+                      <dd>{formatDate(campaign.approved_at)}</dd>
+                    </div>
+                    {campaign.organizer && (
+                      <div className="sm:col-span-3">
+                        <dt className="text-gray-500">Người tổ chức</dt>
+                        <dd className="flex flex-wrap items-center gap-2">
+                          {campaign.organizer.display_name} (tên pháp lý: {campaign.organizer.legal_name})
+                          <VerificationBadge status={campaign.organizer.verification_status} />
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                  {advice.note && <p className="text-sm text-amber-800">{advice.note}</p>}
+                  {advice.sendBackReason === null ? null : own ? (
+                    <p className="text-sm text-amber-800">
+                      Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý.
+                    </p>
+                  ) : (
+                    <ActionForm
+                      action={requestChanges.bind(null, campaign.id)}
+                      confirm="Trả chiến dịch đã duyệt về cho người tổ chức chỉnh sửa? Chiến dịch sẽ phải gửi duyệt lại."
+                      className="space-y-2 border-t border-gray-100 pt-4"
+                    >
+                      <input type="hidden" name="from_status" value="approved" />
+                      <label htmlFor={`waiting-reason-${campaign.id}`} className="label">
+                        Yêu cầu chỉnh sửa
+                      </label>
+                      <textarea
+                        id={`waiting-reason-${campaign.id}`}
+                        name="reason"
+                        className="field"
+                        rows={2}
+                        required
+                        maxLength={2000}
+                        defaultValue={advice.sendBackReason}
+                      />
+                      <SubmitButton className="btn-secondary">Gửi yêu cầu</SubmitButton>
+                    </ActionForm>
                   )}
                 </li>
               )
