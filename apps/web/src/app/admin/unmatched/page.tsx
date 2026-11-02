@@ -2,13 +2,14 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
-import { ManualMatchList } from "@/components/Reconciliation"
+import { InboundExplanationList, ManualMatchList } from "@/components/Reconciliation"
 import { UnmatchedTransactionCard } from "@/components/UnmatchedTransaction"
+import { explainTransaction } from "@/app/admin/unmatched/actions"
 import { matchTransaction } from "@/app/me/campaigns/[id]/unmatched/actions"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
 import { campaignRefs, FINANCE_ROLES } from "@/lib/receiving-accounts"
-import { listManualMatches, listMatchCandidates, listUnmatched } from "@/lib/reconciliation"
+import { listInboundExplanations, listManualMatches, listMatchCandidates, listUnmatched } from "@/lib/reconciliation"
 import { dbAs } from "@/lib/supabase"
 
 export const metadata: Metadata = { title: "Giao dịch chưa khớp", robots: { index: false } }
@@ -19,10 +20,18 @@ export default async function AdminUnmatchedPage() {
   // Finance and admin staff only; others get a 404.
   if (!(await isStaff(db, FINANCE_ROLES))) notFound()
 
-  const [{ transactions: unmatched, total }, matches] = await Promise.all([listUnmatched(db), listManualMatches(db)])
+  const [{ transactions: unmatched, total }, matches, explanations] = await Promise.all([
+    listUnmatched(db),
+    listManualMatches(db),
+    listInboundExplanations(db),
+  ])
   const campaignIds = [...new Set(unmatched.map((tx) => tx.campaign_id))]
   const [refs, candidateLists] = await Promise.all([
-    campaignRefs(db, [...campaignIds, ...matches.map((m) => m.tx.campaign_id)]),
+    campaignRefs(db, [
+      ...campaignIds,
+      ...matches.map((m) => m.tx.campaign_id),
+      ...explanations.map((e) => e.tx.campaign_id),
+    ]),
     Promise.all(campaignIds.map((id) => listMatchCandidates(db, id))),
   ])
   const candidates = new Map(campaignIds.map((id, i) => [id, candidateLists[i]]))
@@ -41,6 +50,11 @@ export default async function AdminUnmatchedPage() {
           của họ. Khớp tay chỉ chuyển tiền từ &quot;chưa khớp&quot; sang &quot;đã khớp&quot;, tổng đã thanh toán của
           chiến dịch không đổi. Mỗi giao dịch chỉ khớp được một lần, và mỗi lần được ghi vào nhật ký kiểm toán.
         </p>
+        <p className="mt-2 text-sm text-gray-600">
+          Khoản không phải tiền ủng hộ (người tổ chức nạp thêm, ngân hàng hoàn phí, lãi) thì giải trình thay vì khớp, kể
+          cả khi chiến dịch đã hủy hoặc đã đóng: ghi lý do và bằng chứng đã kiểm tra. Sao kê công khai chỉ hiện loại
+          khoản tiền; tổng đã thanh toán không đổi, và giao dịch không còn chặn việc nhả tài khoản nhận.
+        </p>
       </div>
 
       <section>
@@ -57,6 +71,7 @@ export default async function AdminUnmatchedPage() {
                 tx={tx}
                 candidates={candidates.get(tx.campaign_id) ?? []}
                 action={matchTransaction.bind(null, tx.id)}
+                explainAction={explainTransaction.bind(null, tx.id)}
                 campaignTitle={titles.get(tx.campaign_id) ?? tx.campaign_id}
               />
             ))}
@@ -65,6 +80,8 @@ export default async function AdminUnmatchedPage() {
       </section>
 
       <ManualMatchList matches={matches} titles={titles} />
+
+      <InboundExplanationList explanations={explanations} titles={titles} />
     </div>
   )
 }

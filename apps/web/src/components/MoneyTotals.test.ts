@@ -25,6 +25,7 @@ const totals: Totals = {
   unexplained_out_amount: 200_000,
   unexplained_out_count: 1,
   supporters_count: 3,
+  other_in_amount: 0,
 }
 
 /** The text of each figure, by its data-figure key. */
@@ -47,6 +48,15 @@ describe("MoneyTotals", () => {
     expect(order).toEqual([...order].sort((x, y) => x - y))
     expect(html).toContain("1 khoản")
     expect(html).toContain('href="/campaigns/a/statement"')
+  })
+
+  it("says how much of the money in is not donations, only when there is some (DOS/Give#49)", () => {
+    expect(renderToStaticMarkup(createElement(MoneyTotals, { totals }))).not.toContain("không phải tiền ủng hộ")
+    const html = renderToStaticMarkup(createElement(MoneyTotals, { totals: { ...totals, other_in_amount: 500_000 } }))
+    expect(figures(html).other_in).toBe(formatVnd(500_000))
+    expect(html).toContain("không phải tiền ủng hộ")
+    // The headline stays the gross amount in the account.
+    expect(figures(html).paid).toBe(formatVnd(1_500_000))
   })
 
   it("adds pledged for a back campaign", () => {

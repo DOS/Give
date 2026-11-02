@@ -7,11 +7,13 @@ import {
   accountLabel,
   ambiguousReasonLabel,
   AMBIGUOUS_REASON_LABELS,
+  AUDIT_ACTION_LABELS,
   countWaitingRows,
   importSummary,
   listAmbiguousRows,
   listBatchRows,
   listDuplicateTargets,
+  listReconciliationAudit,
   listUploadAccounts,
   rowStatusLabel,
   uploadErrorMessage,
@@ -227,5 +229,18 @@ describe("listDuplicateTargets", () => {
         ["lte", "booked_at", "2026-11-15T00:00:00.000Z"],
       ])
     )
+  })
+})
+
+describe("listReconciliationAudit", () => {
+  it("reads resolutions, manual matches and explanations of incoming money (DOS/Give#49)", async () => {
+    const calls: Call[] = []
+    await listReconciliationAudit(fakeDb(() => ({ data: [] }), calls) as unknown as Db)
+    expect(calls[0].target).toBe("audit_log")
+    expect(op(calls[0], "in")).toEqual([
+      "action",
+      ["statement_import_row.resolve", "bank_transaction.manual_match", "bank_transaction.explain_inbound"],
+    ])
+    expect(AUDIT_ACTION_LABELS["bank_transaction.explain_inbound"]).toBe("Giải trình tiền vào không phải tiền ủng hộ")
   })
 })

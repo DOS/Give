@@ -208,6 +208,12 @@ function StatementItem({
         {!incoming && !row.explained && (
           <p className="text-sm text-amber-700">Người tổ chức chưa giải trình khoản chi này.</p>
         )}
+        {incoming && row.in_explanation && (
+          <p className="flex flex-wrap gap-2 text-xs text-gray-500">
+            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700">Không phải tiền ủng hộ</span>
+            {row.in_explained_at && <span>Give giải trình ngày {formatDate(row.in_explained_at)}</span>}
+          </p>
+        )}
         {incoming && row.after_close && (
           <p className="text-xs text-amber-700">Tiền về sau khi chiến dịch đã kết thúc.</p>
         )}

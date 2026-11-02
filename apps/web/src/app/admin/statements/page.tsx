@@ -26,6 +26,7 @@ import {
   type DuplicateTargets,
   type StatementRowView,
 } from "@/lib/statement-import"
+import { inboundExplanationLabel } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
 import { resolveStatementRow } from "./actions"
@@ -302,6 +303,12 @@ function auditSummary(entry: AuditEntry): string {
   if (entry.action === "bank_transaction.manual_match") {
     return `${formatVnd(Number(after.amount ?? 0))} chuyển từ "chưa khớp" sang "đã khớp", lượt ủng hộ ${String(after.contribution_id ?? "—")}`
   }
+  if (entry.action === "bank_transaction.explain_inbound") {
+    const kind = typeof after.kind === "string" ? inboundExplanationLabel(after.kind) : "—"
+    const reason = typeof after.reason === "string" ? after.reason : ""
+    const evidence = typeof after.evidence === "string" ? after.evidence : ""
+    return `${formatVnd(Number(after.amount ?? 0))} chuyển từ "chưa khớp" sang "không phải tiền ủng hộ" (${kind}): ${reason}. Bằng chứng: ${evidence}`
+  }
   return ""
 }
 
@@ -309,7 +316,9 @@ function AuditTrail({ entries, names }: { entries: AuditEntry[]; names: Map<stri
   return (
     <section>
       <h2 className="mb-2 text-xl font-bold">Nhật ký kiểm toán ({entries.length})</h2>
-      <p className="mb-4 text-sm text-gray-600">Xử lý dòng sao kê và khớp tay gần đây. Chỉ quản trị viên xem được.</p>
+      <p className="mb-4 text-sm text-gray-600">
+        Xử lý dòng sao kê, khớp tay và giải trình tiền vào gần đây. Chỉ quản trị viên xem được.
+      </p>
       {entries.length === 0 ? (
         <p className="card p-6 text-gray-600">Chưa có mục nào.</p>
       ) : (

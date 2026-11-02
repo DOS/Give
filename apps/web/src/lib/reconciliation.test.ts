@@ -5,9 +5,12 @@ import { fakeDb, op, type Call } from "@/test/fake-db"
 import type { Db } from "./campaigns"
 import {
   candidateLabel,
+  getIncoming,
+  listInboundExplanations,
   listManualMatches,
   listUnmatched,
   normalizeReferenceCode,
+  paidAfterExplain,
   paidAfterMatch,
   paidBreakdown,
   REFERENCE_CODE,
@@ -30,7 +33,19 @@ describe("paidBreakdown", () => {
         { bucket: "received", amount: 200000 },
       ],
     })) as unknown as Db
-    expect(await paidBreakdown(db, CAMPAIGN)).toEqual({ received: 700000, unmatched: 0, paid: 700000 })
+    expect(await paidBreakdown(db, CAMPAIGN)).toEqual({ received: 700000, unmatched: 0, other: 0, paid: 700000 })
+  })
+
+  it("counts money explained as not a donation as paid, in its own part (DOS/Give#49)", async () => {
+    const db = fakeDb(() => ({
+      data: [
+        { bucket: "received", amount: 500000 },
+        { bucket: "unmatched_in", amount: 300000 },
+        { bucket: "unmatched_in", amount: -300000 },
+        { bucket: "other_in", amount: "300000" },
+      ],
+    })) as unknown as Db
+    expect(await paidBreakdown(db, CAMPAIGN)).toEqual({ received: 500000, unmatched: 0, other: 300000, paid: 800000 })
   })
 
   it("reads every page of a long ledger, after the last id read", async () => {
@@ -47,12 +62,12 @@ describe("paidBreakdown", () => {
         })),
       }
     }, calls) as unknown as Db
-    expect(await paidBreakdown(db, CAMPAIGN)).toEqual({ received: 0, unmatched: 1003, paid: 1003 })
+    expect(await paidBreakdown(db, CAMPAIGN)).toEqual({ received: 0, unmatched: 1003, other: 0, paid: 1003 })
     expect(calls.map((c) => op(c, "gt"))).toEqual([
       ["id", 0],
       ["id", 1000],
     ])
-    expect(op(calls[0], "in")).toEqual(["bucket", ["received", "unmatched_in"]])
+    expect(op(calls[0], "in")).toEqual(["bucket", ["received", "unmatched_in", "other_in"]])
   })
 
   it("gives up on a ledger too large to read here instead of showing a partial sum", async () => {
@@ -65,14 +80,14 @@ describe("paidBreakdown", () => {
 })
 
 describe("paidAfterMatch", () => {
-  const before = { received: 500000, unmatched: 200000, paid: 700000 }
+  const before = { received: 500000, unmatched: 200000, other: 0, paid: 700000 }
   it("says the paid total is unchanged when only the parts moved", () => {
-    expect(paidAfterMatch(before, { received: 700000, unmatched: 0, paid: 700000 })).toBe(
+    expect(paidAfterMatch(before, { received: 700000, unmatched: 0, other: 0, paid: 700000 })).toBe(
       vnd(" Tổng đã thanh toán không đổi: 700.000 ₫ (đã khớp 500.000 ₫ → 700.000 ₫, chưa khớp 200.000 ₫ → 0 ₫).")
     )
   })
   it("explains a total that moved because of another transaction", () => {
-    expect(paidAfterMatch(before, { received: 700000, unmatched: 50000, paid: 750000 })).toContain(
+    expect(paidAfterMatch(before, { received: 700000, unmatched: 50000, other: 0, paid: 750000 })).toContain(
       "có giao dịch khác vừa được ghi"
     )
   })
@@ -81,11 +96,32 @@ describe("paidAfterMatch", () => {
   })
 })
 
+describe("paidAfterExplain", () => {
+  const before = { received: 500000, unmatched: 200000, other: 0, paid: 700000 }
+  it("says the paid total is unchanged when the money only moved to 'not a donation'", () => {
+    expect(paidAfterExplain(before, { received: 500000, unmatched: 0, other: 200000, paid: 700000 })).toBe(
+      vnd(
+        " Tổng đã thanh toán không đổi: 700.000 ₫ (chưa khớp 200.000 ₫ → 0 ₫, không phải tiền ủng hộ 0 ₫ → 200.000 ₫)."
+      )
+    )
+  })
+  it("explains a total that moved because of another transaction", () => {
+    expect(paidAfterExplain(before, { received: 600000, unmatched: 0, other: 200000, paid: 800000 })).toContain(
+      "trước khi giải trình"
+    )
+    expect(paidAfterExplain(before, null)).toBe("")
+  })
+})
+
 describe("listUnmatched", () => {
-  it("selects incoming, attributed transactions without a match", async () => {
+  it("selects incoming, attributed transactions with neither a match nor an explanation", async () => {
     const calls: Call[] = []
     const db = fakeDb(
-      () => ({ data: [{ id: "t", campaign_id: CAMPAIGN, amount: "150000", transaction_matches: null }] }),
+      () => ({
+        data: [
+          { id: "t", campaign_id: CAMPAIGN, amount: "150000", transaction_matches: null, inbound_explanations: null },
+        ],
+      }),
       calls
     ) as unknown as Db
     expect(await listUnmatched(db, { campaignId: CAMPAIGN })).toEqual({
@@ -98,9 +134,56 @@ describe("listUnmatched", () => {
         ["eq", "direction", "in"],
         ["not", "campaign_id", "is", null],
         ["is", "transaction_matches", null],
+        ["is", "inbound_explanations", null],
         ["eq", "campaign_id", CAMPAIGN],
       ])
     )
+  })
+})
+
+describe("getIncoming", () => {
+  it("reads the match and the explanation of a transaction, as objects or arrays", async () => {
+    const row = { id: "t", campaign_id: CAMPAIGN, amount: "150000", direction: "in" }
+    const calls: Call[] = []
+    let db = fakeDb(
+      () => ({ data: { ...row, transaction_matches: null, inbound_explanations: { kind: "interest" } } }),
+      calls
+    ) as unknown as Db
+    expect(await getIncoming(db, "t")).toMatchObject({ amount: 150000, matched_to: null, explained_as: "interest" })
+    expect(String(op(calls[0], "select")?.[0])).toContain("inbound_explanations(kind)")
+
+    db = fakeDb(() => ({
+      data: { ...row, transaction_matches: [{ contribution_id: "c" }], inbound_explanations: [] },
+    })) as unknown as Db
+    expect(await getIncoming(db, "t")).toMatchObject({ matched_to: "c", explained_as: null })
+  })
+})
+
+describe("listInboundExplanations", () => {
+  it("reads the latest explanations with their transaction", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: [
+          {
+            bank_transaction_id: "t",
+            kind: "bank_adjustment",
+            reason: "Bounced payment",
+            evidence: "Bank letter",
+            explained_at: "2026-11-02T00:00:00Z",
+            tx: { amount: "200000", booked_at: "2026-10-30T00:00:00Z", campaign_id: CAMPAIGN },
+          },
+        ],
+      }),
+      calls
+    ) as unknown as Db
+    const explanations = await listInboundExplanations(db)
+    expect(explanations[0].tx.amount).toBe(200000)
+    expect(calls[0].target).toBe("inbound_explanations")
+    expect(String(op(calls[0], "select")?.[0])).toContain("tx:bank_transactions!inner(")
+    // Who explained it is never read (not granted to clients).
+    expect(String(op(calls[0], "select")?.[0])).not.toContain("explained_by")
+    expect(op(calls[0], "order")).toEqual(["explained_at", { ascending: false }])
   })
 })
 
