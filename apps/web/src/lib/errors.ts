@@ -130,7 +130,7 @@ export function dbErrorMessage(error: DbErrorLike | null | undefined, overrides:
  */
 export const SUBMIT_MESSAGES: Record<string, string> = {
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
-    "Chưa gửi duyệt được: chiến dịch từ thiện cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác. Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại.",
+    "Chưa gửi duyệt được: chiến dịch từ thiện cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác. Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại, và tài khoản nhận tiền phải đứng tên pháp lý mới.",
 }
 
 /** The same code worded for a moderator approving or opening a campaign. */
@@ -143,12 +143,19 @@ export const REVIEW_MESSAGES: Record<string, string> = {
  * The same code when a just-approved campaign could not open: it stays
  * approved, the cron opens it once the bound account is usable again, and a
  * moderator can send it back for changes so the organizer binds another
- * account (DOS/Give#64). A legal name change does not heal by itself: account
- * names never change, so that account stays unusable.
+ * account (DOS/Give#64). Re-verifying the organizer heals only a reset whose
+ * legal name did not change: account names never change, so after a legal
+ * name change that account stays unusable.
  */
 export const OPEN_MESSAGES: Record<string, string> = {
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
-    "tài khoản nhận tiền đang gắn không còn dùng được. Chiến dịch vẫn ở trạng thái đã duyệt và sẽ tự mở nếu tài khoản đó dùng được trở lại (bộ phận tài chính mở lại tài khoản). Nếu không, hãy yêu cầu người tổ chức chỉnh sửa để gắn tài khoản khác, tại mục Chiến dịch đã duyệt chờ tài khoản nhận.",
+    "tài khoản nhận tiền đang gắn không còn dùng được. Chiến dịch vẫn ở trạng thái đã duyệt và sẽ tự mở nếu tài khoản đó dùng được trở lại (bộ phận tài chính mở lại tài khoản, hoặc hồ sơ người tổ chức được xác minh lại khi tên pháp lý không đổi). Nếu không, hãy yêu cầu người tổ chức chỉnh sửa để gắn tài khoản khác, tại mục Chiến dịch đã duyệt chờ tài khoản nhận.",
+}
+
+/** The transition refusal worded for a moderator sending an approved campaign back. */
+export const SEND_BACK_MESSAGES: Record<string, string> = {
+  GIVE_TRANSITION_NOT_ALLOWED:
+    "Không yêu cầu chỉnh sửa được: chiến dịch vừa đổi trạng thái (có thể đã được mở công khai). Hãy tải lại trang.",
 }
 
 /** Result shape that form actions return to useActionState. */

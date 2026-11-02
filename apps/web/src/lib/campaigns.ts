@@ -427,7 +427,7 @@ export const ACCOUNT_PROBLEM_LABELS: Record<AccountProblem, string> = {
   no_account: "Không có tài khoản nhận tiền nào đang gắn.",
   account_not_verified: "Tài khoản đang gắn không còn ở trạng thái đã xác minh (có thể đã bị bộ phận tài chính khóa).",
   account_not_owned: "Tài khoản đang gắn không đứng tên người tổ chức của chiến dịch.",
-  organizer_not_verified: "Hồ sơ người tổ chức chưa được xác minh lại (thường do vừa đổi tên pháp lý).",
+  organizer_not_verified: "Hồ sơ người tổ chức cần được xác minh lại (người tổ chức vừa đổi tên hoặc loại hồ sơ).",
   name_mismatch: "Tên chủ tài khoản không còn trùng tên pháp lý của người tổ chức.",
 }
 
@@ -435,6 +435,57 @@ export function accountProblemLabel(problem: string): string {
   return Object.hasOwn(ACCOUNT_PROBLEM_LABELS, problem)
     ? ACCOUNT_PROBLEM_LABELS[problem as AccountProblem]
     : "Tài khoản nhận tiền không dùng được."
+}
+
+const SEND_BACK_REASONS: Partial<Record<AccountProblem, string>> = {
+  no_account:
+    "Chiến dịch chưa có tài khoản nhận tiền đang gắn. Hãy gắn một tài khoản đã xác minh đứng tên bạn rồi gửi duyệt lại.",
+  organizer_not_verified:
+    "Bạn đã đổi tên pháp lý nên tài khoản nhận tiền đang gắn không còn trùng tên. Hãy nhả tài khoản đó, gắn một tài khoản đã xác minh đứng tên pháp lý mới rồi gửi duyệt lại.",
+  name_mismatch:
+    "Tên chủ tài khoản nhận tiền đang gắn không còn trùng tên pháp lý của bạn. Hãy nhả tài khoản đó, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại rồi gửi duyệt lại.",
+}
+
+const SEND_BACK_REASON =
+  "Tài khoản nhận tiền đang gắn không còn dùng được. Hãy nhả tài khoản đó, gắn một tài khoản đã xác minh khác đứng tên bạn rồi gửi duyệt lại."
+
+export interface WaitingAdvice {
+  /** What to try before sending the campaign back, or null. */
+  hint: string | null
+  /** The reason prefilled in the send-back form, or null when sending back would not help. */
+  sendBackReason: string | null
+  /** Why the send-back form is not offered, or null. */
+  blocked: string | null
+}
+
+/**
+ * What a moderator should do with an approved campaign waiting for an
+ * account. A reset organizer verification may heal by re-verifying the
+ * profile (when only the display name or kind changed). An account that
+ * recorded a transaction cannot be released by the organizer, so sending
+ * the campaign back would only hide it from this queue (finance swap,
+ * DOS/Give#55).
+ */
+export function waitingAdvice(
+  row: Pick<WaitingForAccount, "account_problem" | "account_has_transactions">
+): WaitingAdvice {
+  const hint =
+    row.account_problem === "organizer_not_verified"
+      ? "Nếu người tổ chức chỉ đổi tên hiển thị hoặc loại hồ sơ, hãy xác minh lại hồ sơ ở mục Xác minh người tổ chức: tài khoản dùng được trở lại và chiến dịch tự mở. Nếu tên pháp lý đã đổi, tài khoản cũ không còn trùng tên nên cần yêu cầu chỉnh sửa."
+      : null
+  if (row.account_has_transactions) {
+    return {
+      hint,
+      sendBackReason: null,
+      blocked:
+        "Tài khoản đang gắn đã nhận giao dịch, nên người tổ chức không tự nhả được: đó là lịch sử tiền của chiến dịch. Việc đổi tài khoản cần bộ phận tài chính xử lý. Không yêu cầu chỉnh sửa ở đây, vì chiến dịch sẽ rời danh sách này mà vẫn chưa đổi được tài khoản.",
+    }
+  }
+  return {
+    hint,
+    sendBackReason: SEND_BACK_REASONS[row.account_problem as AccountProblem] ?? SEND_BACK_REASON,
+    blocked: null,
+  }
 }
 
 export interface WaitingForAccount extends ReviewItem {

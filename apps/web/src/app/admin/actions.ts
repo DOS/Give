@@ -3,7 +3,15 @@
 import { revalidatePath } from "next/cache"
 
 import { getSession } from "@/lib/auth/session"
-import { dbErrorMessage, done, fail, OPEN_MESSAGES, REVIEW_MESSAGES, type ActionResult } from "@/lib/errors"
+import {
+  dbErrorMessage,
+  done,
+  fail,
+  OPEN_MESSAGES,
+  REVIEW_MESSAGES,
+  SEND_BACK_MESSAGES,
+  type ActionResult,
+} from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
 import { dbAs } from "@/lib/supabase"
 
@@ -66,7 +74,7 @@ export async function requestChanges(campaignId: string, _state: ActionResult, f
     p_to_status: "changes_requested",
     p_reason: reason,
   })
-  if (error) return fail(dbErrorMessage(error))
+  if (error) return fail(dbErrorMessage(error, SEND_BACK_MESSAGES))
   revalidatePath("/admin")
   return done("Đã gửi yêu cầu chỉnh sửa cho người tổ chức.")
 }

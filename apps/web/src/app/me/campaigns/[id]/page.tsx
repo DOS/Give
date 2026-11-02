@@ -81,7 +81,11 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
         </Link>
       </div>
 
-      <StatusNotice status={campaign.status} reviewNote={campaign.review_note} />
+      <StatusNotice
+        status={campaign.status}
+        reviewNote={campaign.review_note}
+        accountBlocked={accounts !== null && (accounts.bound === null || accounts.boundUnusable !== null)}
+      />
 
       {(totals || !isEditableStatus(campaign.status)) && (
         <section className="flex flex-wrap items-center justify-between gap-3 card p-6">
@@ -641,7 +645,16 @@ function ReceivingAccountSection({
   )
 }
 
-function StatusNotice({ status, reviewNote }: { status: string; reviewNote: string | null }) {
+function StatusNotice({
+  status,
+  reviewNote,
+  accountBlocked,
+}: {
+  status: string
+  reviewNote: string | null
+  /** A give campaign without a usable receiving account: an approved one does not open. */
+  accountBlocked: boolean
+}) {
   const notices: Record<string, { tone: string; text: string }> = {
     draft: { tone: "bg-gray-50 text-gray-700", text: "Bản nháp: chỉ bạn thấy. Hoàn thiện nội dung rồi gửi duyệt." },
     in_review: { tone: "bg-amber-50 text-amber-900", text: "Đang chờ kiểm duyệt. Nội dung tạm khóa." },
@@ -649,7 +662,12 @@ function StatusNotice({ status, reviewNote }: { status: string; reviewNote: stri
       tone: "bg-orange-50 text-orange-900",
       text: `Kiểm duyệt viên yêu cầu chỉnh sửa${reviewNote ? `: ${reviewNote}` : "."} Sửa xong thì gửi duyệt lại.`,
     },
-    approved: { tone: "bg-sky-50 text-sky-900", text: "Đã duyệt. Chiến dịch tự mở khi tới ngày bắt đầu." },
+    approved: accountBlocked
+      ? {
+          tone: "bg-amber-50 text-amber-900",
+          text: "Đã duyệt, nhưng chiến dịch chưa mở được vì không có tài khoản nhận tiền dùng được. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, kiểm duyệt viên sẽ yêu cầu chỉnh sửa để bạn gắn tài khoản khác.",
+        }
+      : { tone: "bg-sky-50 text-sky-900", text: "Đã duyệt. Chiến dịch tự mở khi tới ngày bắt đầu." },
     live: { tone: "bg-green-50 text-green-900", text: "Chiến dịch đang công khai." },
     suspended: {
       tone: "bg-red-50 text-red-900",

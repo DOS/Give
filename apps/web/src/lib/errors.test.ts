@@ -35,9 +35,11 @@ describe("dbErrorMessage", () => {
     expect(dbErrorMessage(error, SUBMIT_MESSAGES)).toContain("Tài khoản nhận tiền")
     expect(dbErrorMessage(error, REVIEW_MESSAGES)).toContain("yêu cầu người tổ chức chỉnh sửa")
     expect(dbErrorMessage(error, OPEN_MESSAGES)).toContain("vẫn ở trạng thái đã duyệt")
-    // A legal name change does not reopen it (account names never change); a moderator sends it back (DOS/Give#64).
-    expect(OPEN_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT).not.toContain("xác minh lại")
+    // Re-verification heals only when the legal name did not change (account names never change);
+    // otherwise a moderator sends it back (DOS/Give#64).
+    expect(OPEN_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT).toContain("xác minh lại khi tên pháp lý không đổi")
     expect(OPEN_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT).toContain("Chiến dịch đã duyệt chờ tài khoản nhận")
+    expect(SUBMIT_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT).toContain("đứng tên pháp lý mới")
     // The overrides touch only this code.
     expect(dbErrorMessage({ message: "GIVE_REASON_REQUIRED" }, SUBMIT_MESSAGES)).toBe("Cần ghi lý do.")
   })

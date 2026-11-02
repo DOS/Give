@@ -11,6 +11,7 @@ import {
   listOrganizersToVerify,
   listReviewQueue,
   listWaitingForAccount,
+  waitingAdvice,
   type WaitingForAccount,
 } from "@/lib/campaigns"
 import { formatDate, formatVnd } from "@/lib/format"
@@ -35,7 +36,10 @@ export default async function AdminPage() {
   const [queue, waiting, organizers, canManageRoles] = await Promise.all([
     listReviewQueue(db),
     // A read error hides only this section, not the review queue.
-    listWaitingForAccount(db).catch((): WaitingForAccount[] | null => null),
+    listWaitingForAccount(db).catch((e: { code?: string; message?: string } | null): WaitingForAccount[] | null => {
+      console.error("campaigns_waiting_for_account failed", e?.code, e?.message)
+      return null
+    }),
     listOrganizersToVerify(db),
     isStaff(db, ["admin"]),
   ])
@@ -183,6 +187,7 @@ export default async function AdminPage() {
             {waiting.map((campaign) => {
               const own = campaign.organizer_id === session.user.id
               const due = !campaign.starts_at || new Date(campaign.starts_at) <= new Date()
+              const advice = waitingAdvice(campaign)
               return (
                 <li key={campaign.id} className="space-y-4 card p-6">
                   <div className="flex flex-wrap items-start justify-between gap-4">
@@ -220,14 +225,10 @@ export default async function AdminPage() {
                       </div>
                     )}
                   </dl>
-                  {campaign.account_has_transactions && (
-                    <p className="text-sm text-amber-800">
-                      Tài khoản đang gắn đã nhận giao dịch, nên người tổ chức không tự nhả được: đó là lịch sử tiền của
-                      chiến dịch. Đổi tài khoản trong trường hợp này cần bộ phận tài chính; yêu cầu chỉnh sửa lúc này
-                      chưa giúp đổi được tài khoản.
-                    </p>
-                  )}
-                  {own ? (
+                  {advice.hint && <p className="text-sm text-gray-700">{advice.hint}</p>}
+                  {advice.blocked ? (
+                    <p className="text-sm text-amber-800">{advice.blocked}</p>
+                  ) : own ? (
                     <p className="text-sm text-amber-800">
                       Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý.
                     </p>
@@ -247,7 +248,7 @@ export default async function AdminPage() {
                         rows={2}
                         required
                         maxLength={2000}
-                        defaultValue="Tài khoản nhận tiền của chiến dịch không còn dùng được. Hãy nhả tài khoản đó, gắn một tài khoản đã xác minh khác rồi gửi duyệt lại."
+                        defaultValue={advice.sendBackReason ?? ""}
                       />
                       <SubmitButton className="btn-secondary">Gửi yêu cầu</SubmitButton>
                     </ActionForm>
