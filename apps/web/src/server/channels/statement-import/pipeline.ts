@@ -112,13 +112,13 @@ export async function runStatementEvent(
 }
 
 /**
- * A refusal no retry of the same statement can pass becomes a final
- * InboundError, so the event ends with its code instead of being retried
- * until it is parked.
+ * A refusal of the statement itself, which no retry of the same event can
+ * pass, becomes a final InboundError, so the event ends with its code instead
+ * of being retried until it is parked.
  */
 function asInboundFailure(err: unknown): unknown {
   const code = failureCode(err)
-  return isFinalRefusal(code) ? new InboundError(code, true) : err
+  return isContentRefusal(code) ? new InboundError(code, true) : err
 }
 
 /** The statement_import channel's processor for the reprocess-inbound cron. */
@@ -168,8 +168,9 @@ export type StatementImportResult =
   | ({ status: "pending"; code: string; row?: number } & ResultBase)
   /**
    * The database refused the recorded statement and will refuse it again
-   * (`code` is a GIVE_* code): the uploader fixes the file. The cron retries
-   * the event until its attempts are used up, then parks it.
+   * (`code` is a GIVE_* code): the uploader fixes the file. A refusal of the
+   * statement's content ends the event; an access refusal (the account or
+   * the stored uploader) is retried by the cron and parked for staff.
    */
   | ({ status: "refused"; code: string; row?: number } & ResultBase)
   /**
@@ -180,17 +181,26 @@ export type StatementImportResult =
   | ({ status: "parked" } & ResultBase)
 
 /**
- * Refusals that do not depend on timing: retrying the same statement cannot
- * succeed. GIVE_IMPORT_PERIOD_INVALID compares with the database's clock,
- * which may lag the app's near midnight, so it stays pending.
+ * Refusals of the statement's content: retrying the same statement cannot
+ * succeed, so the event ends. GIVE_IMPORT_PERIOD_INVALID compares with the
+ * database's clock, which may lag the app's near midnight, so it stays
+ * pending.
  */
-function isFinalRefusal(code: string): boolean {
+function isContentRefusal(code: string): boolean {
   return (
     (code.startsWith("GIVE_IMPORT_") && code !== "GIVE_IMPORT_PERIOD_INVALID") ||
-    ["GIVE_ACCOUNT_NOT_FOUND", "GIVE_NOT_ALLOWED", "GIVE_INBOUND_EVENT_INVALID", "STATEMENT_PAYLOAD_INVALID"].includes(
-      code
-    )
+    ["GIVE_INBOUND_EVENT_INVALID", "STATEMENT_PAYLOAD_INVALID"].includes(code)
   )
+}
+
+/**
+ * Refusals the uploader is told about: the content ones, and access ones.
+ * Access refusals are not final for the event: the cron stages as the stored
+ * uploader, who may have lost access while the statement is fine, so such an
+ * event is retried and parked where staff see it.
+ */
+function isFinalRefusal(code: string): boolean {
+  return isContentRefusal(code) || code === "GIVE_ACCOUNT_NOT_FOUND" || code === "GIVE_NOT_ALLOWED"
 }
 
 /**
@@ -300,16 +310,25 @@ export async function importStatementFile(
   let outcome: StatementBatchOutcome | undefined
   let failure: unknown
   let attempt: AbortSignal | undefined
-  const state = await processInboundEvent(service, event, async (db, ev, signal) => {
-    attempt = signal
-    try {
-      const result = await runStatementEvent(db, ev, signal)
-      if (!signal.aborted) outcome = result
-    } catch (err) {
-      if (!signal.aborted) failure = err
-      throw asInboundFailure(err)
-    }
-  })
+  // The uploader's access was just checked and the statement is staged as
+  // them, so an upload of a parked event's file gets one more attempt
+  // (resume): it finishes events the cron cannot, e.g. when the first
+  // uploader has lost access since.
+  const state = await processInboundEvent(
+    service,
+    event,
+    async (db, ev, signal) => {
+      attempt = signal
+      try {
+        const result = await runStatementEvent(db, ev, signal)
+        if (!signal.aborted) outcome = result
+      } catch (err) {
+        if (!signal.aborted) failure = err
+        throw asInboundFailure(err)
+      }
+    },
+    { resume: true }
+  )
   if (!outcome && state === "processed") {
     // Another run (the cron, a parallel upload) processed the event, or an
     // earlier upload of this file ended it with a final refusal: replaying it

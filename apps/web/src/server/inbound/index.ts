@@ -104,8 +104,8 @@ type AttemptStart = "started" | "processed" | "parked" | "busy"
  * than two minutes ago may still run (an overlapping cron run, an upload
  * during a cron attempt); nothing is counted. Null when it could not.
  */
-async function beginAttempt(db: Db, id: string): Promise<AttemptStart | null> {
-  const { data, error } = await db.rpc("begin_inbound_attempt", { p_inbound_event_id: id })
+async function beginAttempt(db: Db, id: string, resume = false): Promise<AttemptStart | null> {
+  const { data, error } = await db.rpc("begin_inbound_attempt", { p_inbound_event_id: id, p_resume: resume })
   if (error) {
     console.error("begin_inbound_attempt failed", id, error.code)
     return null
@@ -163,14 +163,16 @@ async function runAttempt(db: Db, event: InboundEvent, processor: InboundProcess
 /**
  * Counts an attempt, runs the event's processor and records the outcome.
  * Never throws: a failure is stored on the event. A processed or parked event
- * is not run again.
+ * is not run again, unless `resume`: a person sent the same input again
+ * (with access just checked), which gives a parked event one more attempt.
  */
 export async function processInboundEvent(
   db: Db,
   event: InboundEvent,
-  processor: InboundProcessor
+  processor: InboundProcessor,
+  { resume = false }: { resume?: boolean } = {}
 ): Promise<InboundOutcome> {
-  const started = await beginAttempt(db, event.id)
+  const started = await beginAttempt(db, event.id, resume)
   if (started === null || started === "busy") return "pending"
   if (started !== "started") return started
   return runAttempt(db, event, processor)

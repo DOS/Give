@@ -146,7 +146,7 @@ describe("importStatementFile", () => {
       "rpc:import_statement_batch",
       "rpc:complete_inbound_event",
     ])
-    expect(args("begin_inbound_attempt")).toEqual({ p_inbound_event_id: EVENT })
+    expect(args("begin_inbound_attempt")).toEqual({ p_inbound_event_id: EVENT, p_resume: true })
     expect(args("complete_inbound_event")).toEqual({ p_inbound_event_id: EVENT, p_error: null, p_final: false })
   })
 
@@ -337,6 +337,12 @@ describe("importStatementFile", () => {
       (e: unknown) => e
     )
     expect(transient).toMatchObject({ code: "GIVE_IMPORT_PERIOD_INVALID", final: false })
+    // The cron stages as the stored uploader, who may have lost access: the
+    // statement is fine, so the event is retried and parked for staff.
+    for (const code of ["GIVE_ACCOUNT_NOT_FOUND", "GIVE_NOT_ALLOWED"]) {
+      const access = await statementImportProcessor(refusing(code), event, signal).catch((e: unknown) => e)
+      expect(access).toMatchObject({ code, final: false })
+    }
   })
 
   it("refuses before recording when the parser was used with other format flags", async () => {

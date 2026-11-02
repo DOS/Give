@@ -88,12 +88,16 @@ function select(call: Call) {
 }
 
 /** give.begin_inbound_attempt as the migration defines it. */
-function begin(args: { p_inbound_event_id: string }) {
+function begin(args: { p_inbound_event_id: string; p_resume?: boolean }) {
   const r = rows.find((x) => x.id === args.p_inbound_event_id)!
   if (r.processed_at) return { data: "processed" }
-  if (r.parked_at) return { data: "parked" }
+  if (r.parked_at && !args.p_resume) return { data: "parked" }
   // last_attempt_at newer than two minutes: an attempt of this same run.
   if (r.attempt_run === runs) return { data: "busy" }
+  if (r.parked_at) {
+    r.parked_at = null
+    r.attempts = MAX_ATTEMPTS - 1
+  }
   if (r.attempts >= MAX_ATTEMPTS) {
     r.parked_at = new Date(NOW).toISOString()
     r.error = `processing_unfinished${r.error ? `; before: ${r.error}` : ""}`
@@ -126,7 +130,9 @@ function complete(args: { p_inbound_event_id: string; p_error: string | null; p_
 
 function rpc(call: Call) {
   const args = op(call, "args")![0]
-  if (call.target === "rpc:begin_inbound_attempt") return begin(args as { p_inbound_event_id: string })
+  if (call.target === "rpc:begin_inbound_attempt") {
+    return begin(args as { p_inbound_event_id: string; p_resume?: boolean })
+  }
   if (call.target === "rpc:complete_inbound_event") {
     return complete(args as { p_inbound_event_id: string; p_error: string | null })
   }
@@ -528,6 +534,28 @@ describe("processInboundEvent", () => {
       p_error: "GIVE_IMPORT_ROW_INVALID",
       p_final: true,
     })
+  })
+
+  it("gives a parked event one more attempt when a person sends it again", async () => {
+    rows = [row("1", { attempts: MAX_ATTEMPTS, parked_at: "2026-11-01T09:00:00Z", error: "GIVE_ACCOUNT_NOT_FOUND" })]
+    const processor = vi.fn(async () => {})
+    expect(await processInboundEvent(db(), event(rows[0]), processor, { resume: true })).toBe("processed")
+    expect(processor).toHaveBeenCalledTimes(1)
+    expect(rows[0]).toMatchObject({ attempts: MAX_ATTEMPTS, parked_at: null, error: null })
+  })
+
+  it("parks it again when that attempt fails", async () => {
+    rows = [row("1", { attempts: MAX_ATTEMPTS, parked_at: "2026-11-01T09:00:00Z", error: "boom" })]
+    const outcome = await processInboundEvent(
+      db(),
+      event(rows[0]),
+      async () => {
+        throw new Error("GIVE_ACCOUNT_NOT_FOUND")
+      },
+      { resume: true }
+    )
+    expect(outcome).toBe("parked")
+    expect(rows[0]).toMatchObject({ attempts: MAX_ATTEMPTS, error: "GIVE_ACCOUNT_NOT_FOUND" })
   })
 
   it("does not run a parked event", async () => {
