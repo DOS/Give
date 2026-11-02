@@ -829,6 +829,23 @@ describe("statement parts in file order", () => {
     expect(serviceCalls.map((c) => c.target)).not.toContain("statement_import_batches")
   })
 
+  it("takes the latest-ending previous part, not an earlier one of another split", async () => {
+    const OTHER = "66666666-6666-4666-8666-666666666666"
+    const other = `v1:${ACCOUNT}:${"a".repeat(64)}:part1of3:2026-09-20..2026-09-20`
+    const err = await run(
+      {
+        data: [
+          { id: OTHER, dedupe_key: other, processed_at: null },
+          { id: PREVIOUS, dedupe_key: key(1), processed_at: null },
+        ],
+      },
+      // Its own predecessor has no batch yet; the other split's part is not even asked about.
+      { data: [] }
+    ).catch((e: unknown) => e)
+    expect(op(serviceCalls[1], "in")).toEqual(["inbound_event_id", [PREVIOUS]])
+    expect(err).toMatchObject({ code: "STATEMENT_PART_WAITING" })
+  })
+
   it("checks nothing for the first part or a file of one part", async () => {
     const db = fakeDb(handler, serviceCalls) as unknown as Db
     await runStatementEvent(db, { id: EVENT, payload: payload(), dedupe_key: key(1) })

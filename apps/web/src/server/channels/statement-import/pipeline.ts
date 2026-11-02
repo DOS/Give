@@ -124,13 +124,13 @@ async function assertPreviousPartStaged(db: Db, dedupeKey: string | undefined): 
     .like("dedupe_key", `${match[1]}:part${Number(match[2]) - 1}of${match[3]}:%`)
   if (previous.error) throw new Error(`inbound_events read failed: ${previous.error.code ?? "unknown"}`)
   // Only a previous part that ends before this one starts: the same file split
-  // another way (another app version) has parts of the same number and count.
-  const events = ((previous.data ?? []) as { id: string; dedupe_key: string; processed_at: string | null }[]).filter(
-    (e) => {
-      const last = PART_KEY.exec(e.dedupe_key)?.[5]
-      return last !== undefined && last < match[4]
-    }
-  )
+  // another way (another app version) has parts of the same number and count;
+  // the latest ending of them is this part's predecessor.
+  const ending = ((previous.data ?? []) as { id: string; dedupe_key: string; processed_at: string | null }[])
+    .map((e) => ({ ...e, last: PART_KEY.exec(e.dedupe_key)?.[5] }))
+    .filter((e): e is typeof e & { last: string } => e.last !== undefined && e.last < match[4])
+  const latest = ending.reduce((max, e) => (e.last > max ? e.last : max), "")
+  const events = ending.filter((e) => e.last === latest)
   if (events.length === 0) return // never happens: parts are recorded in order
   const batches = await db
     .from("statement_import_batches")

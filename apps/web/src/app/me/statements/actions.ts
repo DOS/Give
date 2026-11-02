@@ -79,8 +79,10 @@ export async function uploadStatement(_state: UploadResult, form: FormData): Pro
           : " Hãy sửa file rồi tải lại."
       // Later parts wait for this one while it may still pass (an access
       // refusal is retried); after a refusal of its content they end too.
+      // A dismissed part is staff's decision; whether later parts go on
+      // depends on what it left staged, so nothing is said about them.
       const later =
-        result.part === result.parts
+        result.part === result.parts || result.code === "GIVE_INBOUND_EVENT_DISMISSED"
           ? ""
           : isAccessRefusal(result.code)
             ? "; các phần sau chờ phần này"
