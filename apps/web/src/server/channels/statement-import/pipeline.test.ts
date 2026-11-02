@@ -150,23 +150,25 @@ describe("importStatementFile", () => {
     expect(args("complete_inbound_event")).toEqual({ p_inbound_event_id: EVENT, p_error: null, p_final: false })
   })
 
-  it("runs nothing for a file whose event is parked and says so", async () => {
+  it("resumes a parked event as the current uploader and imports it", async () => {
+    // The first uploader lost access, so the cron's attempts failed and the
+    // event was parked; begin_inbound_attempt (p_resume) gives one more.
+    const OTHER = "55555555-5555-4555-8555-555555555555"
     responses["rpc:record_inbound_event"] = { data: { inbound_event_id: EVENT, created: false, processed_at: null } }
-    responses["rpc:begin_inbound_attempt"] = { data: "parked" }
-    // The earlier upload's statement is read back first.
-    responses["inbound_events"] = { data: { payload: null } }
+    responses["inbound_events"] = { data: { payload: { ...payload(), actor_id: OTHER } } }
     const result = await upload()
-    expect(result).toEqual({ status: "parked", inboundEventId: EVENT, replayed: true, parser: "test-csv" })
-    expect(rpc("stage_statement_import")).toBeUndefined()
-    expect(rpc("complete_inbound_event")).toBeUndefined()
+    expect(result).toMatchObject({ status: "imported", replayed: true, imported: 2 })
+    expect(args("begin_inbound_attempt")).toEqual({ p_inbound_event_id: EVENT, p_resume: true })
+    expect(args("stage_statement_import")).toMatchObject({ p_actor_id: ACTOR })
   })
 
-  it("reports a parked file the database refused as refused, so the uploader fixes it", async () => {
-    responses["rpc:record_inbound_event"] = { data: { inbound_event_id: EVENT, created: false, processed_at: null } }
-    responses["rpc:begin_inbound_attempt"] = { data: "parked" }
-    responses["inbound_events"] = { data: { payload: null, error: "GIVE_IMPORT_ROWS_NOT_CHRONOLOGICAL" } }
-    expect(await upload()).toMatchObject({ status: "refused", code: "GIVE_IMPORT_ROWS_NOT_CHRONOLOGICAL" })
-    expect(rpc("stage_statement_import")).toBeUndefined()
+  it("keeps access refusals and unreadable payloads open for the cron, unlike content refusals", async () => {
+    for (const message of ["GIVE_ACCOUNT_NOT_FOUND", "GIVE_NOT_ALLOWED"]) {
+      serviceCalls.length = 0
+      responses["rpc:stage_statement_import"] = { error: { code: "P0001", message } }
+      expect(await upload()).toMatchObject({ status: "refused", code: message })
+      expect(args("complete_inbound_event")).toMatchObject({ p_error: message, p_final: false })
+    }
   })
 
   it("says parked when this upload's failure used up the last attempt", async () => {

@@ -7,7 +7,7 @@ import type { ActionResult } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
 import { importSummary, isUploadCode, MAX_UPLOAD_BYTES, uploadErrorMessage } from "@/lib/statement-import"
 import { dbAs, dbService } from "@/lib/supabase"
-import { importStatementFile, StatementImportError } from "@/server/channels/statement-import"
+import { importStatementFile, isAccessRefusal, StatementImportError } from "@/server/channels/statement-import"
 import { statementParsers } from "@/server/statement-parsers"
 
 /**
@@ -68,9 +68,9 @@ export async function uploadStatement(_state: UploadResult, form: FormData): Pro
       }
     case "refused": {
       const reason = uploadErrorMessage(result.code, result.row)
-      return failed(
-        `${again}Sao kê không nhập được. ${reason}${reason.endsWith(".") ? "" : "."} Hãy sửa file rồi tải lại.`
-      )
+      // An access refusal is about the account or the uploader, not the file.
+      const next = isAccessRefusal(result.code) ? "" : " Hãy sửa file rồi tải lại."
+      return failed(`${again}Sao kê không nhập được. ${reason}${reason.endsWith(".") ? "" : "."}${next}`)
     }
     case "pending": {
       // A known refusal that may pass later (the database's date lags near
@@ -83,7 +83,7 @@ export async function uploadStatement(_state: UploadResult, form: FormData): Pro
     }
     case "parked":
       return failed(
-        `${again}Give đã thử xử lý file này nhiều lần mà chưa được, nên đã chuyển cho đội tài chính kiểm tra. Bạn không cần tải lại file này.`
+        `${again}Give đã thử xử lý file này nhiều lần mà chưa được, nên đã chuyển cho đội tài chính kiểm tra. Bạn có thể tải lại đúng file này sau để Give thử thêm một lần.`
       )
   }
 }

@@ -91,11 +91,14 @@ function select(call: Call) {
 function begin(args: { p_inbound_event_id: string; p_resume?: boolean }) {
   const r = rows.find((x) => x.id === args.p_inbound_event_id)!
   if (r.processed_at) return { data: "processed" }
-  if (r.parked_at && !args.p_resume) return { data: "parked" }
-  // last_attempt_at newer than two minutes: an attempt of this same run.
-  if (r.attempt_run === runs) return { data: "busy" }
   if (r.parked_at) {
+    if (!args.p_resume) return { data: "parked" }
     r.parked_at = null
+    r.attempts = MAX_ATTEMPTS - 1
+  } else if (r.attempt_run === runs) {
+    // last_attempt_at newer than two minutes: an attempt of this same run.
+    return { data: "busy" }
+  } else if (r.attempts >= MAX_ATTEMPTS && args.p_resume) {
     r.attempts = MAX_ATTEMPTS - 1
   }
   if (r.attempts >= MAX_ATTEMPTS) {
