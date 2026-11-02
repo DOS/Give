@@ -208,7 +208,7 @@ describe("donate", () => {
   })
 
   it("tells a limited guest when to retry and that signing in lifts the limit", async () => {
-    state.serviceHandler = () => ({ error: { code: "54000", message: "GIVE_RATE_LIMITED: 125" } })
+    state.serviceHandler = () => ({ error: { code: "PT429", message: "GIVE_RATE_LIMITED: 125" } })
     expect(await donate(CAMPAIGN, null, form())).toEqual({
       ok: false,
       message:
@@ -218,13 +218,13 @@ describe("donate", () => {
   })
 
   it("assumes a full window when the limit error carries no wait", async () => {
-    state.serviceHandler = () => ({ error: { code: "54000", message: "GIVE_RATE_LIMITED" } })
+    state.serviceHandler = () => ({ error: { code: "PT429", message: "GIVE_RATE_LIMITED" } })
     expect((await donate(CAMPAIGN, null, form()))?.message).toContain("khoảng 10 phút")
   })
 
   it("tells a limited signed-in donor when to retry", async () => {
     state.session = { user: { id: USER, email: null, name: null }, accessToken: "jwt" }
-    state.serviceHandler = () => ({ error: { code: "54000", message: "GIVE_RATE_LIMITED: 30" } })
+    state.serviceHandler = () => ({ error: { code: "PT429", message: "GIVE_RATE_LIMITED: 30" } })
     expect(await donate(CAMPAIGN, null, form())).toEqual({
       ok: false,
       message: "Bạn vừa tạo nhiều lượt ủng hộ trong thời gian ngắn. Hãy thử lại sau khoảng 1 phút.",
