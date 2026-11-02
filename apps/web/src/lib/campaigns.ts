@@ -417,6 +417,63 @@ export async function listReviewQueue(db: Db): Promise<ReviewItem[]> {
 }
 
 /**
+ * Why an approved give campaign has no usable receiving account, as
+ * give.campaigns_waiting_for_account reports it (DOS/Give#64).
+ */
+export type AccountProblem =
+  "no_account" | "account_not_verified" | "account_not_owned" | "organizer_not_verified" | "name_mismatch"
+
+export const ACCOUNT_PROBLEM_LABELS: Record<AccountProblem, string> = {
+  no_account: "Không có tài khoản nhận tiền nào đang gắn.",
+  account_not_verified: "Tài khoản đang gắn không còn ở trạng thái đã xác minh (có thể đã bị bộ phận tài chính khóa).",
+  account_not_owned: "Tài khoản đang gắn không đứng tên người tổ chức của chiến dịch.",
+  organizer_not_verified: "Hồ sơ người tổ chức chưa được xác minh lại (thường do vừa đổi tên pháp lý).",
+  name_mismatch: "Tên chủ tài khoản không còn trùng tên pháp lý của người tổ chức.",
+}
+
+export function accountProblemLabel(problem: string): string {
+  return Object.hasOwn(ACCOUNT_PROBLEM_LABELS, problem)
+    ? ACCOUNT_PROBLEM_LABELS[problem as AccountProblem]
+    : "Tài khoản nhận tiền không dùng được."
+}
+
+export interface WaitingForAccount extends ReviewItem {
+  account_problem: string
+  /** The bound account already recorded a bank transaction, so the organizer cannot release it. */
+  account_has_transactions: boolean
+}
+
+/**
+ * Approved give campaigns without a usable receiving account, which the
+ * activation cron skips, earliest start first (moderators and admins; others
+ * get none). The database picks them; the rows come from managed_campaigns.
+ */
+export async function listWaitingForAccount(db: Db): Promise<WaitingForAccount[]> {
+  const waiting = await db.rpc("campaigns_waiting_for_account")
+  if (waiting.error) throw waiting.error
+  const rows = (waiting.data ?? []) as {
+    campaign_id: string
+    account_problem: string
+    account_has_transactions: boolean
+  }[]
+  if (rows.length === 0) return []
+  const { data, error } = await managedCampaigns(db)
+    .select(`${CAMPAIGN_WITH_REFS}, organizer:organizers(user_id, kind, legal_name, display_name, verification_status)`)
+    .in(
+      "id",
+      rows.map((r) => r.campaign_id)
+    )
+  if (error) throw error
+  const byId = new Map(((data ?? []) as ReviewItem[]).map((c) => [c.id, c]))
+  return rows.flatMap((r) => {
+    const campaign = byId.get(r.campaign_id)
+    return campaign
+      ? [{ ...campaign, account_problem: r.account_problem, account_has_transactions: r.account_has_transactions }]
+      : []
+  })
+}
+
+/**
  * Organizers who are not verified, oldest first (staff only under RLS).
  * Rejected ones stay listed so a moderator can verify them once fixed.
  */

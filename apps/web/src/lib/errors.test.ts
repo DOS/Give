@@ -35,8 +35,17 @@ describe("dbErrorMessage", () => {
     expect(dbErrorMessage(error, SUBMIT_MESSAGES)).toContain("Tài khoản nhận tiền")
     expect(dbErrorMessage(error, REVIEW_MESSAGES)).toContain("yêu cầu người tổ chức chỉnh sửa")
     expect(dbErrorMessage(error, OPEN_MESSAGES)).toContain("vẫn ở trạng thái đã duyệt")
+    // A legal name change does not reopen it (account names never change); a moderator sends it back (DOS/Give#64).
+    expect(OPEN_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT).not.toContain("xác minh lại")
+    expect(OPEN_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT).toContain("Chiến dịch đã duyệt chờ tài khoản nhận")
     // The overrides touch only this code.
     expect(dbErrorMessage({ message: "GIVE_REASON_REQUIRED" }, SUBMIT_MESSAGES)).toBe("Cần ghi lý do.")
+  })
+
+  it("explains that an account that received money is not released early", () => {
+    expect(dbErrorMessage({ message: "GIVE_BINDING_NOT_RELEASABLE: campaign live since " })).toMatch(
+      /Giao dịch đã vào tài khoản là lịch sử tiền của chiến dịch nên tài khoản không nhả sớm được\.$/
+    )
   })
 
   it("never echoes unknown internals", () => {

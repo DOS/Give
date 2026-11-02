@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest"
 
+import { fakeDb, op, type Call } from "@/test/fake-db"
+
 import {
+  accountProblemLabel,
   canPostUpdate,
   categoriesFor,
   discoveryHref,
   fundingModelFor,
   isEditableStatus,
   isPublicStatus,
+  listWaitingForAccount,
   normalizeSearch,
   organizerCanCancel,
   parseDiscoveryFilters,
@@ -123,5 +127,53 @@ describe("discoveryHref", () => {
     expect(discoveryHref({ type: "give", category: "healthcare", q: "lũ lụt" })).toBe(
       "/campaigns?type=give&category=healthcare&q=l%C5%A9+l%E1%BB%A5t"
     )
+  })
+})
+
+describe("listWaitingForAccount", () => {
+  const A = "6a7e64c0-0000-4000-8000-000000000001"
+  const B = "6a7e64c0-0000-4000-8000-000000000002"
+
+  it("keeps the database's order and reasons, with the campaign rows from managed_campaigns", async () => {
+    const log: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "rpc:campaigns_waiting_for_account")
+        return {
+          data: [
+            { campaign_id: B, account_problem: "no_account", account_has_transactions: false },
+            { campaign_id: A, account_problem: "account_not_verified", account_has_transactions: true },
+          ],
+        }
+      if (call.target === "rpc:managed_campaigns")
+        return {
+          data: [
+            { id: A, title: "A" },
+            { id: B, title: "B" },
+          ],
+        }
+    }, log)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const list = await listWaitingForAccount(db as any)
+    expect(list.map((c) => [c.title, c.account_problem, c.account_has_transactions])).toEqual([
+      ["B", "no_account", false],
+      ["A", "account_not_verified", true],
+    ])
+    expect(op(log[1], "in")).toEqual(["id", [B, A]])
+  })
+
+  it("skips the campaign read when nothing waits, and throws when the database refuses", async () => {
+    const log: Call[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(await listWaitingForAccount(fakeDb(() => ({ data: [] }), log) as any)).toEqual([])
+    expect(log).toHaveLength(1)
+    const refused = fakeDb(() => ({ error: { code: "42883", message: "function not found" } }))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(listWaitingForAccount(refused as any)).rejects.toMatchObject({ code: "42883" })
+  })
+
+  it("labels every reason in Vietnamese, with a fallback for an unknown one", () => {
+    expect(accountProblemLabel("account_not_verified")).toContain("bị bộ phận tài chính khóa")
+    expect(accountProblemLabel("name_mismatch")).toContain("không còn trùng tên pháp lý")
+    expect(accountProblemLabel("something_new")).toBe("Tài khoản nhận tiền không dùng được.")
   })
 })

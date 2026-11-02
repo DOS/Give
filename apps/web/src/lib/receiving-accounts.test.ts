@@ -142,7 +142,11 @@ describe("binding helpers", () => {
 })
 
 describe("accountUnusableReason", () => {
-  const verified = { verification_status: "verified" as const, account_name: "NGUYEN THI DAO" }
+  const verified = {
+    channel: "statement_import" as const,
+    verification_status: "verified" as const,
+    account_name: "NGUYEN THI DAO",
+  }
   const organizer = { legal_name: "Nguyễn Thị Đào", verification_status: "verified" as const }
 
   it("is null for a verified account of a verified organizer with the same name", () => {
@@ -156,6 +160,17 @@ describe("accountUnusableReason", () => {
     expect(accountUnusableReason(verified, { ...organizer, verification_status: "pending" })).toContain("Hồ sơ")
     expect(accountUnusableReason(verified, { ...organizer, legal_name: "Trần Văn B" })).toContain("không còn trùng")
     expect(accountUnusableReason(verified, null)).toContain("Hồ sơ")
+  })
+
+  it("does not match a crypto wallet's name, like the database", () => {
+    const wallet = { channel: "crypto" as const, verification_status: "verified" as const, account_name: null }
+    expect(accountUnusableReason(wallet, organizer)).toBeNull()
+    expect(accountUnusableReason(wallet, { ...organizer, legal_name: "Trần Văn B" })).toBeNull()
+    expect(accountUnusableReason({ ...wallet, verification_status: "disabled" }, organizer)).toContain(
+      "chưa được xác minh"
+    )
+    expect(accountUnusableReason(wallet, { ...organizer, verification_status: "pending" })).toContain("Hồ sơ")
+    expect(accountUnusableReason({ ...verified, account_name: null }, organizer)).toContain("không còn trùng")
   })
 })
 
@@ -175,7 +190,12 @@ describe("bindRefusalReason", () => {
 
 describe("reviewOptions", () => {
   const organizer = { legal_name: "Nguyễn Thị Đào", verification_status: "verified" as const }
-  const pending = { verification_status: "pending" as const, account_name: "NGUYEN THI DAO", bindings: [] }
+  const pending = {
+    channel: "statement_import" as const,
+    verification_status: "pending" as const,
+    account_name: "NGUYEN THI DAO",
+    bindings: [],
+  }
   const binding = { id: "b", campaign_id: "c", bound_at: "2026-11-01", released_at: null }
 
   it("offers verify and reject on a fresh pending account", () => {
@@ -192,6 +212,8 @@ describe("reviewOptions", () => {
       "chưa được xác minh"
     )
     expect(reviewOptions(pending, { ...organizer, legal_name: "Trần Văn B" }).verifyBlocked).toContain("không trùng")
+    const wallet = { ...pending, channel: "crypto" as const, account_name: null }
+    expect(reviewOptions(wallet, { ...organizer, legal_name: "Trần Văn B" }).verifyBlocked).toBeNull()
   })
 
   it("offers reopening for rejected and disabled accounts only", () => {

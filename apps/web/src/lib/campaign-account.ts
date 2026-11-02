@@ -37,7 +37,7 @@ export function submitUnusableAccount(reason: string): string {
  * active binding points at, or null when it has none.
  */
 export function submitAccountProblem(
-  bound: Pick<ReceivingAccount, "verification_status" | "account_name"> | null,
+  bound: Pick<ReceivingAccount, "channel" | "verification_status" | "account_name"> | null,
   organizer: Pick<Organizer, "legal_name" | "verification_status"> | null
 ): string | null {
   if (!bound) return SUBMIT_NO_ACCOUNT
