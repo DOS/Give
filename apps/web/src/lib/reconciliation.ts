@@ -7,7 +7,7 @@ import { formatVnd } from "./format"
  * transaction is booked to 'unmatched_in'; give.match_transaction moves it to
  * 'received' with a reversal plus a post, so "đã thanh toán" (received +
  * unmatched_in + other_in) stays the same, and a second match is refused.
- * Money that is not a donation (an organizer top-up, a bank refund, interest)
+ * Money that is not a donation (an organizer top-up, a bank fee refund or correction, interest)
  * is explained instead by finance/admin staff: give.explain_inbound_transaction
  * moves it to 'other_in' the same way (DOS/Give#49).
  *

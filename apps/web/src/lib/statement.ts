@@ -41,7 +41,7 @@ export interface MoneyTotals {
   supporters_count: number
   /**
    * SUM(other_in): the part of paid_amount that finance staff explained as
-   * not a donation (an organizer top-up, a bank refund, interest; DOS/Give#49).
+   * not a donation (an organizer top-up, a bank fee refund or correction, interest; DOS/Give#49).
    */
   other_in_amount: number
 }

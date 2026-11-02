@@ -14,7 +14,7 @@ import { dbAs, dbService } from "@/lib/supabase"
 
 /**
  * Explains an unmatched incoming transaction as money that is not a donation
- * (an organizer top-up, a bank refund, interest), by finance/admin staff only
+ * (an organizer top-up, a bank fee refund or correction, interest), by finance/admin staff only
  * (DOS/Give#49). give.explain_inbound_transaction runs as the service role
  * with the actor's id as an argument and checks the role and the transaction
  * under its locks. Because it trusts the id, the staff role and the
@@ -54,8 +54,13 @@ export async function explainTransaction(
   if (!session) return fail(SIGNED_OUT)
   if (!isUuid(transactionId)) return fail(TX_NOT_FOUND)
   const kind = String(form.get("kind") ?? "")
-  const reason = String(form.get("reason") ?? "").trim()
-  const evidence = String(form.get("evidence") ?? "").trim()
+  // Browsers submit line breaks as CRLF; count and store them as one character.
+  const reason = String(form.get("reason") ?? "")
+    .replace(/\r\n/g, "\n")
+    .trim()
+  const evidence = String(form.get("evidence") ?? "")
+    .replace(/\r\n/g, "\n")
+    .trim()
   if (!isInboundExplanationKind(kind)) return fail(EXPLAIN_MESSAGES.GIVE_EXPLANATION_KIND_INVALID)
   if (!reason) return fail(EXPLAIN_MESSAGES.GIVE_REASON_REQUIRED)
   if (!evidence) return fail(EXPLAIN_MESSAGES.GIVE_EVIDENCE_REQUIRED)

@@ -146,6 +146,13 @@ describe("explainTransaction", () => {
     expect(state.userCalls).toHaveLength(0)
   })
 
+  it("counts a line break the browser sends as CRLF as one character", async () => {
+    // Line breaks arrive as CRLF and count as one character each.
+    expect(
+      (await explainTransaction(TX, null, form({ ...VALID, reason: "a\r\n".repeat(400) + "x".repeat(199) })))?.message
+    ).not.toContain("tối đa")
+  })
+
   it("refuses outgoing, unattributed, unknown and matched transactions without calling the database", async () => {
     state.responses.bank_transactions = tx({ direction: "out" })
     expect((await explainTransaction(TX, null, form(VALID)))?.message).toContain(
