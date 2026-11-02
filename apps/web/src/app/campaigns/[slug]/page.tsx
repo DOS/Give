@@ -73,7 +73,13 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
     preview ? Promise.resolve(null) : getPublicOrganizer(db, campaign.id),
-    donationsOpen ? paymentAccount(dbService(), campaign.id).catch(() => null) : Promise.resolve(null),
+    donationsOpen
+      ? paymentAccount(dbService(), campaign.id).catch((error: unknown) => {
+          // The page still renders, without the donate form.
+          console.error("campaign page: payment account lookup failed", error)
+          return null
+        })
+      : Promise.resolve(null),
     getSession(),
     // Public views only: a preview has no public totals yet.
     preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),

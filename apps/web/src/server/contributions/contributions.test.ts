@@ -4,7 +4,6 @@ import { fakeDb, op, type Call } from "@/test/fake-db"
 
 import {
   acceptsDonations,
-  accountNameMatches,
   clientAddress,
   clientNetwork,
   donationClientKey,
@@ -12,7 +11,6 @@ import {
   donationCookiesToDrop,
   donationCookieToken,
   guestContribution,
-  normalizePersonName,
   paymentAccount,
   statusTokenHash,
 } from "."
@@ -167,73 +165,42 @@ describe("guestContribution", () => {
   })
 })
 
-describe("normalizePersonName", () => {
-  // Expected values computed by give.normalize_person_name in Postgres.
-  it.each([
-    ["Nguyễn Thị Đào-Müller", "NGUYEN THI DAO MULLER"],
-    ["ĐẶNG THỊ Ợ", "DANG THI O"],
-    [" trần  văn   ơn ", "TRAN VAN ON"],
-    ["NGUYEN VAN AN", "NGUYEN VAN AN"],
-  ])("normalises %j like the database", (input, expected) => {
-    expect(normalizePersonName(input)).toBe(expected)
-  })
-
-  it("is stricter than the database where they could differ", () => {
-    // Postgres may upper-case "ß" to "SS"; here it is dropped, so no match.
-    expect(normalizePersonName("Strauß")).toBe("STRAU")
-    expect(accountNameMatches("STRAUSS", "Strauß")).toBe(false)
-  })
-
-  it("treats names with nothing left as no match", () => {
-    expect(normalizePersonName(" - ")).toBeNull()
-    expect(accountNameMatches("", "")).toBe(false)
-    expect(accountNameMatches("NGUYEN VAN AN", "Nguyễn Văn An")).toBe(true)
-    expect(accountNameMatches("NGUYEN VAN ANH", "Nguyễn Văn An")).toBe(false)
-  })
-})
-
 describe("paymentAccount", () => {
-  const binding = (account: Record<string, unknown> = {}, organizer: Record<string, unknown> = {}) => ({
-    bound_at: "2026-11-01T00:00:00Z",
-    account: {
-      channel: "statement_import",
+  const row = (fields: Record<string, unknown> = {}) => ({
+    channel: "statement_import",
+    bank_bin: "970436",
+    account_number: "0123456789",
+    account_name: "NGUYEN VAN A",
+    ...fields,
+  })
+
+  it("asks give.payment_account for the campaign's payable account", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(() => ({ data: row() }), calls)
+    expect(await paymentAccount(db as never, CAMPAIGN)).toEqual({
       bank_bin: "970436",
       account_number: "0123456789",
       account_name: "NGUYEN VAN A",
-      verification_status: "verified",
-      ...account,
-    },
-    campaign: { organizer: { verification_status: "verified", legal_name: "Nguyễn Văn A", ...organizer } },
-  })
-
-  it("picks the first active binding that create_donation would accept", async () => {
-    const calls: Call[] = []
-    const db = fakeDb(
-      () => ({
-        data: [
-          binding({ verification_status: "disabled" }),
-          binding({ account_name: "TRAN THI B", account_number: "111" }),
-          binding({ account_number: "999888777" }),
-        ],
-      }),
-      calls
-    )
-    expect(await paymentAccount(db as never, CAMPAIGN)).toEqual({
-      bank_bin: "970436",
-      account_number: "999888777",
-      account_name: "NGUYEN VAN A",
     })
-    expect(calls[0].ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
-    expect(calls[0].ops).toContainEqual(["is", "released_at", null])
+    expect(calls).toHaveLength(1)
+    expect(calls[0].target).toBe("rpc:payment_account")
+    expect(op(calls[0], "args")).toEqual([{ p_campaign_id: CAMPAIGN }])
+    expect(op(calls[0], "select")).toEqual(["channel, bank_bin, account_number, account_name"])
+    expect(op(calls[0], "maybeSingle")).toEqual([])
   })
 
-  it.each([
-    ["the organizer is no longer verified", [binding({}, { verification_status: "pending" })]],
-    ["the account is pending", [binding({ verification_status: "pending" })]],
-    ["the account name no longer matches the legal name", [binding({}, { legal_name: "Nguyễn Văn Bình" })]],
-    ["the account row is missing", [{ bound_at: "x", account: null, campaign: null }]],
-  ])("shows nothing when %s", async (_name, rows) => {
-    expect(await paymentAccount(fakeDb(() => ({ data: rows })) as never, CAMPAIGN)).toBeNull()
+  it("shows nothing when the database returns no account", async () => {
+    expect(await paymentAccount(fakeDb(() => ({ data: null })) as never, CAMPAIGN)).toBeNull()
+  })
+
+  it("shows no bank details for a wallet", async () => {
+    const wallet = row({ channel: "crypto", bank_bin: null, account_number: null, account_name: null })
+    expect(await paymentAccount(fakeDb(() => ({ data: wallet })) as never, CAMPAIGN)).toBeNull()
+  })
+
+  it("passes database errors on", async () => {
+    const db = fakeDb(() => ({ error: { code: "42501", message: "permission denied" } }))
+    await expect(paymentAccount(db as never, CAMPAIGN)).rejects.toMatchObject({ code: "42501" })
   })
 })
 
