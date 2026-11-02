@@ -49,6 +49,7 @@ const viewRow = {
   unexplained_out_amount: 200_000,
   unexplained_out_count: 1,
   supporters_count: 3,
+  other_in_amount: "250000",
 }
 
 function selected(call: Call | undefined): string {
@@ -77,6 +78,7 @@ describe("money totals", () => {
       unexplained_out_amount: 200_000,
       unexplained_out_count: 1,
       supporters_count: 3,
+      other_in_amount: 250_000,
     })
   })
 
@@ -101,10 +103,16 @@ describe("money totals", () => {
   })
 
   it("headlines paid money for give and pledged money for back", () => {
-    const totals = { paid_amount: 10, pledged_amount: 99 } as MoneyTotals
+    const totals = { paid_amount: 10, pledged_amount: 99, other_in_amount: 0 } as MoneyTotals
     expect(raisedAmount(totals, "give")).toBe(10)
     expect(raisedAmount(totals, "back")).toBe(99)
     expect(raisedAmount(null, "give")).toBe(0)
+  })
+
+  it("leaves money explained as not a donation out of the raised amount (DOS/Give#49)", () => {
+    const totals = { paid_amount: 1_500_000, pledged_amount: 0, other_in_amount: 500_000 } as MoneyTotals
+    expect(raisedAmount(totals, "give")).toBe(1_000_000)
+    expect(raisedAmount({ ...totals, other_in_amount: 2_000_000 }, "give")).toBe(0)
   })
 
   it("splits disbursed money into explained and unexplained", () => {
@@ -193,6 +201,20 @@ describe("public statement", () => {
     )
   })
 
+  it("labels money in that is not a donation by its kind only (DOS/Give#49)", () => {
+    const row = { direction: "in" as const, recipient: null, explained: null, matched: false }
+    const unnamed = { donor_name: null, donor_anonymous: null }
+    expect(counterpartyLabel({ ...row, ...unnamed, in_explanation: "organizer_top_up" })).toBe(
+      "Người tổ chức nạp thêm tiền"
+    )
+    expect(counterpartyLabel({ ...row, ...unnamed, in_explanation: "interest" })).toBe("Lãi ngân hàng")
+    // A kind added later still reads as "not a donation", never as a raw code.
+    expect(counterpartyLabel({ ...row, ...unnamed, in_explanation: "grant" })).toBe(
+      "Khoản khác, không phải tiền ủng hộ"
+    )
+    expect(counterpartyLabel({ ...row, ...unnamed, in_explanation: null })).toBe("Chưa khớp với lượt ủng hộ nào")
+  })
+
   it("labels money out by the explained recipient only", () => {
     const row = { direction: "out" as const, matched: false, donor_name: null, donor_anonymous: null }
     expect(counterpartyLabel({ ...row, recipient: "Nhà sách B", explained: true })).toBe("Nhà sách B")
@@ -208,6 +230,9 @@ describe("public statement", () => {
       .map((c) => c.trim())
     expect(columns).not.toContain("counterparty_name")
     expect(columns).toEqual(expect.arrayContaining(["donor_name", "donor_anonymous", "counterparty_account_masked"]))
+    // An explanation of money in shows its kind and time; its reason and evidence are not in the view.
+    expect(columns).toEqual(expect.arrayContaining(["in_explanation", "in_explained_at"]))
+    expect(columns.join(",")).not.toMatch(/reason|evidence/)
   })
 })
 

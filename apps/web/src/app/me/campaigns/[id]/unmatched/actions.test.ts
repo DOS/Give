@@ -207,4 +207,19 @@ describe("matchTransaction", () => {
     )
     expect(state.serviceCalls).toHaveLength(0)
   })
+
+  it("refuses a transaction explained as not a donation (DOS/Give#49)", async () => {
+    state.responses.bank_transactions = { data: { ...tx().data, inbound_explanations: { kind: "organizer_top_up" } } }
+    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toContain(
+      "không phải tiền ủng hộ"
+    )
+    expect(state.serviceCalls).toHaveLength(0)
+
+    // Explained meanwhile: the database refuses, and the message says why.
+    state.responses.bank_transactions = tx()
+    state.serviceHandler = () => ({ error: { code: "23505", message: "GIVE_TRANSACTION_EXPLAINED" } })
+    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toContain(
+      "không khớp được nữa"
+    )
+  })
 })

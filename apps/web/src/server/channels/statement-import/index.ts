@@ -5,6 +5,7 @@ export { StatementImportError, type StatementImportCode } from "./errors"
 export { maskAccount, MAX_ROWS, normalizeStatement, vnDay, type StagedRow, type StagedStatement } from "./normalize"
 export {
   importStatementFile,
+  isAccessRefusal,
   MAX_FILE_BYTES,
   MAX_PAYLOAD_BYTES,
   runStatementEvent,

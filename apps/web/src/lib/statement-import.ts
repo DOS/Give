@@ -460,11 +460,16 @@ export interface AuditEntry {
   created_at: string
 }
 
-export const RECONCILIATION_AUDIT_ACTIONS = ["statement_import_row.resolve", "bank_transaction.manual_match"] as const
+export const RECONCILIATION_AUDIT_ACTIONS = [
+  "statement_import_row.resolve",
+  "bank_transaction.manual_match",
+  "bank_transaction.explain_inbound",
+] as const
 
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "statement_import_row.resolve": "Xử lý dòng sao kê",
   "bank_transaction.manual_match": "Khớp tay giao dịch",
+  "bank_transaction.explain_inbound": "Giải trình tiền vào không phải tiền ủng hộ",
 }
 
 /** The latest reconciliation audit entries. give.audit_log is readable by admins only; others get none. */

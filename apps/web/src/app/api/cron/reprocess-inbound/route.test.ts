@@ -67,14 +67,30 @@ describe("GET /api/cron/reprocess-inbound", () => {
     for (let run = 0; run < 2; run += 1) {
       const response = await GET(request(`Bearer ${SECRET}`))
       expect(response.status).toBe(200)
-      expect(await response.json()).toEqual({ processed: 0, failed: 0, waiting: 4 })
+      expect(await response.json()).toEqual({ processed: 0, failed: 0, waiting: 4, parked: 4 })
     }
     expect(state.calls.every((c) => c.target === "inbound_events")).toBe(true)
     expect(op(state.calls[0], "select")).toEqual(["id", { count: "exact", head: true }])
-    expect(op(state.calls[0], "is")).toEqual(["processed_at", null])
+    expect(state.calls[0].ops.filter(([name]) => name === "is")).toEqual([
+      ["is", "processed_at", null],
+      ["is", "parked_at", null],
+    ])
     expect(op(state.calls[0], "eq")).toEqual(["signature_valid", true])
     expect(op(state.calls[0], "not")).toEqual(["channel", "in", "(statement_import)"])
     expect(op(state.calls[1], "in")).toEqual(["channel", ["statement_import"]])
+    expect(op(state.calls[1], "eq")).toEqual(["signature_valid", true])
+  })
+
+  it("reports parked events so staff can retry them", async () => {
+    // No pending events; three parked ones.
+    state.handler = (call) => {
+      if (!op(call, "select")?.[1]) return { data: [] }
+      const parked = call.ops.some(([name, column]) => name === "not" && column === "parked_at")
+      return { count: parked ? 3 : 0 }
+    }
+    const response = await GET(request(`Bearer ${SECRET}`))
+    expect(await response.json()).toEqual({ processed: 0, failed: 0, waiting: 0, parked: 3 })
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("parked"), 3)
   })
 
   it("answers 500 without details when the events cannot be read", async () => {

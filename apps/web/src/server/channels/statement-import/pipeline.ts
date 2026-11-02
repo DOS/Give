@@ -7,6 +7,7 @@ import { z } from "zod"
 import type { Db } from "@/lib/campaigns"
 import {
   failureCode,
+  InboundError,
   processInboundEvent,
   PROCESSOR_TIMEOUT_MS,
   type InboundEvent,
@@ -110,9 +111,23 @@ export async function runStatementEvent(
   return { importBatchId: batch.importBatchId, created: batch.created, ...counts }
 }
 
+/**
+ * A refusal of the statement itself, which no retry of the same event can
+ * pass, becomes a final InboundError, so the event ends with its code instead
+ * of being retried until it is parked.
+ */
+function asInboundFailure(err: unknown): unknown {
+  const code = failureCode(err)
+  return isContentRefusal(code) ? new InboundError(code, true) : err
+}
+
 /** The statement_import channel's processor for the reprocess-inbound cron. */
 export const statementImportProcessor: InboundProcessor = async (db, event, signal) => {
-  await runStatementEvent(db, event, signal)
+  try {
+    await runStatementEvent(db, event, signal)
+  } catch (err) {
+    throw asInboundFailure(err)
+  }
 }
 
 export interface StatementUpload {
@@ -153,23 +168,47 @@ export type StatementImportResult =
   | ({ status: "pending"; code: string; row?: number } & ResultBase)
   /**
    * The database refused the recorded statement and will refuse it again
-   * (`code` is a GIVE_* code): the uploader fixes the file. The event still
-   * counts as pending until inbound events get a parked state.
+   * (`code` is a GIVE_* code): the uploader fixes the file. A refusal of the
+   * statement's content ends the event; an access refusal (the account or
+   * the stored uploader) is retried by the cron and parked for staff.
    */
   | ({ status: "refused"; code: string; row?: number } & ResultBase)
+  /**
+   * This upload's attempt failed and was the event's last: the event is
+   * parked, for a reason that is not a refusal of the file (a timeout, an
+   * outage), and waits for finance/admin staff. Uploading the same file again
+   * gives it one more attempt.
+   */
+  | ({ status: "parked" } & ResultBase)
 
 /**
- * Refusals that do not depend on timing: retrying the same statement cannot
- * succeed. GIVE_IMPORT_PERIOD_INVALID compares with the database's clock,
- * which may lag the app's near midnight, so it stays pending.
+ * Refusals of the statement's content by the database: retrying the same
+ * statement cannot succeed, so the event ends. GIVE_IMPORT_PERIOD_INVALID
+ * compares with the database's clock, which may lag the app's near midnight,
+ * so it stays pending. STATEMENT_PAYLOAD_INVALID is not here: it means this
+ * app version cannot read a stored payload, which says nothing about the
+ * statement; such an event is retried, parked for staff, and finished by an
+ * upload of the file.
+ */
+function isContentRefusal(code: string): boolean {
+  return (
+    (code.startsWith("GIVE_IMPORT_") && code !== "GIVE_IMPORT_PERIOD_INVALID") || code === "GIVE_INBOUND_EVENT_INVALID"
+  )
+}
+
+/**
+ * Refusals the uploader is told about: the content ones, and access ones.
+ * Access refusals are not final for the event: the cron stages as the stored
+ * uploader, who may have lost access while the statement is fine, so such an
+ * event is retried and parked where staff see it.
  */
 function isFinalRefusal(code: string): boolean {
-  return (
-    (code.startsWith("GIVE_IMPORT_") && code !== "GIVE_IMPORT_PERIOD_INVALID") ||
-    ["GIVE_ACCOUNT_NOT_FOUND", "GIVE_NOT_ALLOWED", "GIVE_INBOUND_EVENT_INVALID", "STATEMENT_PAYLOAD_INVALID"].includes(
-      code
-    )
-  )
+  return isContentRefusal(code) || isAccessRefusal(code)
+}
+
+/** The account or the uploader was refused, not the statement. */
+export function isAccessRefusal(code: string): boolean {
+  return code === "GIVE_ACCOUNT_NOT_FOUND" || code === "GIVE_NOT_ALLOWED"
 }
 
 /**
@@ -273,27 +312,50 @@ export async function importStatementFile(
   let outcome: StatementBatchOutcome | undefined
   let failure: unknown
   let attempt: AbortSignal | undefined
-  const processed = await processInboundEvent(service, event, async (db, ev, signal) => {
-    attempt = signal
-    try {
-      const result = await runStatementEvent(db, ev, signal)
-      if (!signal.aborted) outcome = result
-    } catch (err) {
-      if (!signal.aborted) failure = err
-      throw err
-    }
-  })
-  if (!outcome && processed) {
-    // Another run (the cron, a parallel upload) processed the event: replaying
-    // it is idempotent and returns its counts.
+  // The uploader's access was just checked and the statement is staged as
+  // them, so an upload of a parked event's file gets one more attempt
+  // (resume): it finishes events the cron cannot, e.g. when the first
+  // uploader has lost access since.
+  const state = await processInboundEvent(
+    service,
+    event,
+    async (db, ev, signal) => {
+      attempt = signal
+      try {
+        const result = await runStatementEvent(db, ev, signal)
+        if (!signal.aborted) outcome = result
+      } catch (err) {
+        if (!signal.aborted) failure = err
+        throw asInboundFailure(err)
+      }
+    },
+    { resume: true }
+  )
+  if (!outcome && state === "processed") {
+    // Another run (the cron, a parallel upload) processed the event, or an
+    // earlier upload of this file ended it with a final refusal: replaying it
+    // is idempotent and returns its counts, or the refusal again (as this
+    // uploader, with the statement as stored or as uploaded now).
     try {
       outcome = await runStatementEvent(service, event, AbortSignal.timeout(PROCESSOR_TIMEOUT_MS))
-    } catch {
-      // Reported as pending below; the event itself is processed.
+    } catch (err) {
+      failure = err
     }
   }
   if (outcome) return { status: "imported", ...base, ...outcome }
-  const code = attempt?.aborted || failure === undefined ? "processing_timeout" : failureCode(failure)
+  // No attempt ran when it could not be counted (or another is running), or
+  // when the event was already processed: then the replay's failure says why.
+  const code =
+    attempt === undefined
+      ? failure !== undefined
+        ? failureCode(failure)
+        : "processing_failed"
+      : attempt.aborted || failure === undefined
+        ? "processing_timeout"
+        : failureCode(failure)
   const row = failure instanceof StatementImportError ? failure.row : undefined
-  return { status: isFinalRefusal(code) ? "refused" : "pending", ...base, code, ...(row !== undefined ? { row } : {}) }
+  // A statement the database refuses is the uploader's to fix, parked or not.
+  if (isFinalRefusal(code)) return { status: "refused", ...base, code, ...(row !== undefined ? { row } : {}) }
+  if (state === "parked") return { status: "parked", ...base }
+  return { status: "pending", ...base, code, ...(row !== undefined ? { row } : {}) }
 }
