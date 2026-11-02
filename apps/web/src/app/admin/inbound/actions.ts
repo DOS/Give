@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache"
 import { getSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
 import { dbErrorMessage, done, fail, type ActionResult, type DbErrorLike } from "@/lib/errors"
-import { getParkedInbound, MAX_DISMISS_NOTE_LENGTH } from "@/lib/inbound"
+import { getParkedInbound, MAX_DISMISS_NOTE_LENGTH, statementEventRef, type ParkedInboundEvent } from "@/lib/inbound"
 import { isUuid } from "@/lib/ids"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import { dbAs, dbService } from "@/lib/supabase"
@@ -34,19 +34,44 @@ const MESSAGES: Record<string, string> = {
   GIVE_DISMISS_NOTE_REQUIRED: NOTE_REQUIRED,
 }
 
+type Checked = { actorId: string; event: ParkedInboundEvent; db: ReturnType<typeof dbAs> }
+
 /** The signed-in finance/admin actor and the parked event, or why not. */
-async function checkParked(eventId: string): Promise<{ actorId: string } | { failure: ActionResult }> {
+async function checkParked(eventId: string): Promise<Checked | { failure: ActionResult }> {
   const session = await getSession()
   if (!session) return { failure: fail(SIGNED_OUT) }
   if (!isUuid(eventId)) return { failure: fail(NOT_PARKED) }
   const db = dbAs(session.accessToken)
+  let event
   try {
     if (!(await isStaff(db, FINANCE_ROLES))) return { failure: fail(NOT_ALLOWED) }
-    if (!(await getParkedInbound(db, eventId))) return { failure: fail(NOT_PARKED) }
+    event = await getParkedInbound(db, eventId)
+    if (!event) return { failure: fail(NOT_PARKED) }
   } catch (error) {
     return { failure: fail(dbErrorMessage(error as DbErrorLike)) }
   }
-  return { actorId: session.user.id }
+  return { actorId: session.user.id, event, db }
+}
+
+/**
+ * Later parts of the same statement file that were parked while waiting for
+ * this one (STATEMENT_PART_WAITING): they spent their attempts waiting, so
+ * they are sent back with it. Read with the actor's token, like the event.
+ */
+async function waitingLaterParts({ event, db }: Checked): Promise<string[]> {
+  const ref = statementEventRef(event.dedupe_key)
+  if (!ref?.part) return []
+  const fileKey = event.dedupe_key.slice(0, event.dedupe_key.indexOf(":part"))
+  const { data, error } = await db
+    .from("parked_inbound_events")
+    .select("id, dedupe_key")
+    .eq("channel", "statement_import")
+    .eq("last_error", "STATEMENT_PART_WAITING")
+    .like("dedupe_key", `${fileKey}:part%`)
+  if (error || !Array.isArray(data)) return []
+  return (data as { id: string; dedupe_key: string }[])
+    .filter((e) => (statementEventRef(e.dedupe_key)?.part?.number ?? 0) > ref.part!.number)
+    .map((e) => e.id)
 }
 
 export async function retryInboundEvent(eventId: string, _state: ActionResult, _form: FormData): Promise<ActionResult> {
@@ -57,9 +82,15 @@ export async function retryInboundEvent(eventId: string, _state: ActionResult, _
     p_actor_id: checked.actorId,
   })
   if (error) return fail(dbErrorMessage(error, MESSAGES))
+  let alsoSent = 0
+  for (const id of await waitingLaterParts(checked)) {
+    // One that changed meanwhile is refused by the database and left as it is.
+    const later = await dbService().rpc("retry_inbound_event", { p_inbound_event_id: id, p_actor_id: checked.actorId })
+    if (!later.error) alsoSent += 1
+  }
   revalidatePath("/admin/inbound")
   return done(
-    "Đã gửi lại sự kiện. Give sẽ tự xử lý lại trong lần chạy tới (vài phút một lần), với lượt thử mới từ đầu."
+    `Đã gửi lại sự kiện${alsoSent > 0 ? ` cùng ${alsoSent} phần sau của cùng file đang chờ nó` : ""}. Give sẽ tự xử lý lại trong lần chạy tới (vài phút một lần), với lượt thử mới từ đầu.`
   )
 }
 

@@ -67,10 +67,45 @@ describe("retryInboundEvent", () => {
     expect(state.serviceCalls.map((c) => c.target)).toEqual(["rpc:retry_inbound_event"])
     expect(op(state.serviceCalls[0], "args")).toEqual([{ p_inbound_event_id: EVENT, p_actor_id: FINANCE }])
     // The role and the parked event are read with the actor's own token first.
-    expect(state.userCalls.map((c) => c.target)).toEqual(["rpc:is_admin", "parked_inbound_events"])
+    // Then later parts of the same file parked while waiting for it are looked up.
+    expect(state.userCalls.map((c) => c.target)).toEqual([
+      "rpc:is_admin",
+      "parked_inbound_events",
+      "parked_inbound_events",
+    ])
     expect(op(state.userCalls[0], "args")?.[0]).toEqual({ p_roles: ["finance", "admin"] })
     expect(op(state.userCalls[1], "eq")).toEqual(["id", EVENT])
     expect(revalidatePath).toHaveBeenCalledWith("/admin/inbound")
+  })
+
+  it("also sends back later parts of the same file that were parked waiting for it", async () => {
+    const fileKey = PARKED.dedupe_key.slice(0, PARKED.dedupe_key.indexOf(":part"))
+    const PART3 = "44444444-4444-4444-8444-444444444443"
+    const PART1 = "44444444-4444-4444-8444-444444444441"
+    let reads = 0
+    state.responses.parked_inbound_events = { data: PARKED }
+    const waiting = {
+      data: [
+        { id: PART1, dedupe_key: `${fileKey}:part1of5:2026-09-20..2026-09-21` },
+        { id: PART3, dedupe_key: `${fileKey}:part3of5:2026-09-24..2026-09-25` },
+      ],
+    }
+    state.responses = new Proxy(state.responses, {
+      get: (target, prop: string) => (prop === "parked_inbound_events" && reads++ > 0 ? waiting : target[prop]),
+    })
+    const result = await retryInboundEvent(EVENT, null, form())
+
+    expect(result?.message).toContain("cùng 1 phần sau của cùng file đang chờ nó")
+    expect(state.serviceCalls.map((c) => op(c, "args")?.[0])).toEqual([
+      { p_inbound_event_id: EVENT, p_actor_id: FINANCE },
+      { p_inbound_event_id: PART3, p_actor_id: FINANCE },
+    ])
+    const lookup = state.userCalls[2]
+    expect(op(lookup, "like")).toEqual(["dedupe_key", `${fileKey}:part%`])
+    expect(lookup.ops.filter(([n]) => n === "eq").map((o) => o.slice(1))).toEqual([
+      ["channel", "statement_import"],
+      ["last_error", "STATEMENT_PART_WAITING"],
+    ])
   })
 
   it("refuses staff who are not finance or admin, before the service role acts", async () => {

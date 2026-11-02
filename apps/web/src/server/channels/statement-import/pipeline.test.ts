@@ -574,7 +574,10 @@ describe("importStatementFile with a large file", () => {
           }
         case "inbound_events": {
           const like = op(call, "like")?.[1]
-          if (typeof like === "string") return { data: [{ id: eventId(like), processed_at: null }] }
+          if (typeof like === "string") {
+            const n = Number(/:part(\d+)of/.exec(like)?.[1])
+            return { data: [{ id: eventId(like), dedupe_key: like.replace("%", DAYS[n - 1]), processed_at: null }] }
+          }
           return responses.inbound_events
         }
         case "statement_import_batches": {
@@ -738,6 +741,24 @@ describe("importStatementFile with a large file", () => {
     expect(result).toMatchObject({ status: "imported", replayed: true, parts: 5, imported: 5 * 999 })
   })
 
+  it("does not replay a dismissed part even when nothing in it is left to import", async () => {
+    const second = eventId("x:part2of5")
+    const handler = partHandler()
+    const result = await uploadLarge((call) => {
+      const a = op(call, "args")?.[0] as Record<string, unknown> | undefined
+      if (call.target === "rpc:begin_inbound_attempt") {
+        return { data: a?.p_inbound_event_id === second ? "processed" : "started" }
+      }
+      if (call.target === "inbound_events" && op(call, "eq")?.[1] === second) return { data: { error: "dismissed" } }
+      return handler(call)
+    })
+    expect(result).toMatchObject({ status: "refused", code: "GIVE_INBOUND_EVENT_DISMISSED", part: 2, importedParts: 1 })
+    const staged = serviceCalls
+      .filter((c) => c.target === "rpc:stage_statement_import")
+      .map((c) => (op(c, "args")?.[0] as Record<string, unknown>).p_inbound_event_id)
+    expect(staged).not.toContain(second)
+  })
+
   it("refuses a file whose part staff dismissed, instead of importing it again", async () => {
     // Part 2 was dismissed: it is processed, so the upload replays it, and the
     // database refuses to import its rows.
@@ -770,7 +791,7 @@ describe("statement parts in file order", () => {
 
   it("stages a part once the part before it has a batch", async () => {
     const result = await run(
-      { data: [{ id: PREVIOUS, processed_at: null }] },
+      { data: [{ id: PREVIOUS, dedupe_key: key(1), processed_at: null }] },
       { data: [{ inbound_event_id: PREVIOUS }] }
     )
     expect(result).toMatchObject({ importBatchId: BATCH, imported: 2 })
@@ -779,18 +800,33 @@ describe("statement parts in file order", () => {
   })
 
   it("makes a part wait, retryably, while the part before it is not staged", async () => {
-    const err = await run({ data: [{ id: PREVIOUS, processed_at: null }] }, { data: [] }).catch((e: unknown) => e)
+    const err = await run({ data: [{ id: PREVIOUS, dedupe_key: key(1), processed_at: null }] }, { data: [] }).catch(
+      (e: unknown) => e
+    )
     expect(err).toBeInstanceOf(InboundError)
     expect(err).toMatchObject({ code: "STATEMENT_PART_WAITING", final: false })
     expect(rpc("stage_statement_import")).toBeUndefined()
   })
 
   it("ends a part whose previous part ended without being staged", async () => {
-    const err = await run({ data: [{ id: PREVIOUS, processed_at: "2026-10-05T03:00:00Z" }] }, { data: [] }).catch(
-      (e: unknown) => e
-    )
+    const err = await run(
+      { data: [{ id: PREVIOUS, dedupe_key: key(1), processed_at: "2026-10-05T03:00:00Z" }] },
+      { data: [] }
+    ).catch((e: unknown) => e)
     expect(err).toMatchObject({ code: "STATEMENT_PART_PREVIOUS_FAILED", final: true })
     expect(rpc("stage_statement_import")).toBeUndefined()
+  })
+
+  it("ignores a part of the same number from a split with other days", async () => {
+    // Part 1 of another split ends on the day this part starts: not this part's predecessor.
+    const other = `v1:${ACCOUNT}:${"a".repeat(64)}:part1of3:2026-09-20..2026-09-22`
+    const result = await run(
+      { data: [{ id: PREVIOUS, dedupe_key: other, processed_at: null }] },
+      { data: [{ inbound_event_id: PREVIOUS }] }
+    )
+    // No predecessor among them: treated as never recorded, so nothing waits.
+    expect(result).toMatchObject({ imported: 2 })
+    expect(serviceCalls.map((c) => c.target)).not.toContain("statement_import_batches")
   })
 
   it("checks nothing for the first part or a file of one part", async () => {

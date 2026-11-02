@@ -26,6 +26,7 @@ export type AmbiguousReason =
   | "balance_break"
   | "file_mismatch"
   | "possible_recorded"
+  | "event_dismissed"
 export type Resolution = "import" | "duplicate"
 
 export const ROW_STATUS_LABELS: Record<RowStatus, string> = {
@@ -48,6 +49,8 @@ export const AMBIGUOUS_REASON_LABELS: Record<AmbiguousReason, string> = {
   file_mismatch:
     "Một ngày khác trong file không khớp với lần tải trước (ngân hàng có thể đã chuyển dòng sang ngày khác).",
   possible_recorded: "Có thể đã được ghi nhận: đã có giao dịch cùng chiều, cùng số tiền vào khoảng ngày này.",
+  event_dismissed:
+    "Dòng của một lần tải sao kê mà đội tài chính đã bỏ qua. Đối chiếu với sao kê của ngân hàng: nhập nếu đây là giao dịch thật, hoặc đánh dấu là trùng.",
 }
 
 export const RESOLUTION_LABELS: Record<Resolution, string> = {

@@ -77,8 +77,16 @@ export async function uploadStatement(_state: UploadResult, form: FormData): Pro
         isAccessRefusal(result.code) || result.code === "GIVE_INBOUND_EVENT_DISMISSED"
           ? ""
           : " Hãy sửa file rồi tải lại."
+      // Later parts wait for this one while it may still pass (an access
+      // refusal is retried); after a refusal of its content they end too.
+      const later =
+        result.part === result.parts
+          ? ""
+          : isAccessRefusal(result.code)
+            ? "; các phần sau chờ phần này"
+            : "; các phần sau không được nhập"
       const what = split
-        ? `Phần ${result.part}/${result.parts} của sao kê không nhập được (đã nhập ${result.importedParts} phần trước nó; các phần sau không được nhập).`
+        ? `Phần ${result.part}/${result.parts} của sao kê không nhập được (đã nhập ${result.importedParts} phần trước nó${later}).`
         : "Sao kê không nhập được."
       return failed(`${again}${what} ${reason}${reason.endsWith(".") ? "" : "."}${next}`)
     }

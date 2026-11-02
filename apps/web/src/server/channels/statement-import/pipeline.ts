@@ -105,7 +105,7 @@ export interface StatementBatchOutcome extends ImportResult {
   created: boolean
 }
 
-const PART_KEY = /^(.+):part(\d{1,4})of(\d{1,4}):\d{4}-\d{2}-\d{2}\.\.\d{4}-\d{2}-\d{2}$/
+const PART_KEY = /^(.+):part(\d{1,4})of(\d{1,4}):(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/
 
 /**
  * The parts of a file are staged in file order, as one upload of the whole
@@ -119,11 +119,18 @@ async function assertPreviousPartStaged(db: Db, dedupeKey: string | undefined): 
   if (!match || Number(match[2]) <= 1) return
   const previous = await db
     .from("inbound_events")
-    .select("id, processed_at")
+    .select("id, dedupe_key, processed_at")
     .eq("channel", "statement_import")
     .like("dedupe_key", `${match[1]}:part${Number(match[2]) - 1}of${match[3]}:%`)
   if (previous.error) throw new Error(`inbound_events read failed: ${previous.error.code ?? "unknown"}`)
-  const events = (previous.data ?? []) as { id: string; processed_at: string | null }[]
+  // Only a previous part that ends before this one starts: the same file split
+  // another way (another app version) has parts of the same number and count.
+  const events = ((previous.data ?? []) as { id: string; dedupe_key: string; processed_at: string | null }[]).filter(
+    (e) => {
+      const last = PART_KEY.exec(e.dedupe_key)?.[5]
+      return last !== undefined && last < match[4]
+    }
+  )
   if (events.length === 0) return // never happens: parts are recorded in order
   const batches = await db
     .from("statement_import_batches")
@@ -491,6 +498,13 @@ async function processStatementPart(
     { resume: true }
   )
   if (!outcome && state === "processed") {
+    // Finance staff dismissed the event: it is not replayed. The database
+    // refuses to import its rows anyway; this also covers a batch with none
+    // left to import, which would otherwise read as imported.
+    const ended = await service.from("inbound_events").select("error").eq("id", event.id).maybeSingle()
+    if ((ended.data as { error: string | null } | null)?.error === "dismissed") {
+      return { status: "refused", ...base, code: "GIVE_INBOUND_EVENT_DISMISSED" }
+    }
     // Another run (the cron, a parallel upload) processed the event, or an
     // earlier upload of this file ended it with a final refusal: replaying it
     // is idempotent and returns its counts, or the refusal again (as this
