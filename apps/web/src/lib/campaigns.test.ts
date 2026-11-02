@@ -232,6 +232,22 @@ describe("waitingAdvice", () => {
     const advice = advise("account_not_owned")
     expect(advice.sendBackReason).toMatch(/^Tài khoản nhận tiền đang gắn không đứng tên bạn\. Hãy chờ đội ngũ Give nhả/)
     expect(advice.note).toContain("nhờ bộ phận tài chính hoặc quản trị viên nhả tài khoản đó")
+    expect(advice.sendBackReason).not.toMatch(/rồi .* rồi /)
+    const unverified = advise("account_not_owned", { verified: false })
+    expect(unverified.sendBackReason).toContain("cần được xác minh lại")
+    expect(unverified.note).not.toContain("tự mở")
+    expect(advise("account_not_owned", { ends_at: PAST }).sendBackReason).toContain(
+      "Hãy sửa ngày kết thúc, chờ đội ngũ Give nhả tài khoản không đứng tên bạn"
+    )
+  })
+
+  it("does not promise a replaceable account heals by re-verifying the organizer", () => {
+    for (const problem of ["account_not_verified", "name_mismatch"]) {
+      const advice = advise(problem, { verified: false })
+      expect(advice.sendBackReason).toBeNull()
+      expect(advice.note).toContain("nếu tài khoản vẫn không dùng được, hãy yêu cầu chỉnh sửa")
+      expect(advice.note).not.toContain("tự mở")
+    }
   })
 
   it("trusts the queue when the organizer row already reads verified", () => {

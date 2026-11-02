@@ -493,7 +493,7 @@ export function waitingAdvice(
       : problem === "no_account"
         ? "gắn một tài khoản đã xác minh đứng tên bạn"
         : problem === "account_not_owned"
-          ? "chờ đội ngũ Give nhả tài khoản không đứng tên bạn, rồi gắn một tài khoản đã xác minh đứng tên bạn"
+          ? "chờ đội ngũ Give nhả tài khoản không đứng tên bạn, sau đó gắn một tài khoản đã xác minh đứng tên bạn"
           : "nhả tài khoản đang gắn, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại của bạn"
 
   const notes: string[] = []
@@ -504,7 +504,9 @@ export function waitingAdvice(
           ? " Nếu tên pháp lý không đổi, tài khoản đang gắn dùng được trở lại."
           : problem === "no_account"
             ? " Sau đó người tổ chức gắn tài khoản trong trang sửa chiến dịch."
-            : "")
+            : problem === "account_not_owned" || waitFinance
+              ? ""
+              : " Sau đó, nếu tài khoản vẫn không dùng được, hãy yêu cầu chỉnh sửa để người tổ chức đổi tài khoản.")
     )
   }
   if (waitFinance) {
@@ -519,12 +521,15 @@ export function waitingAdvice(
   }
 
   // A send-back helps only when the organizer then has something to do.
-  const sendBack = ended || (verified && !waitFinance && problem !== "no_account")
+  // Staff release a foreign account whatever the organizer's state.
+  const sendBack = ended || problem === "account_not_owned" || (verified && !waitFinance && problem !== "no_account")
   if (!sendBack) {
     notes.push(
       verified && problem === "no_account"
         ? "Chiến dịch đã duyệt vẫn gắn được tài khoản: người tổ chức chỉ cần gắn một tài khoản đã xác minh trong trang sửa chiến dịch, rồi chiến dịch tự mở. Không cần yêu cầu chỉnh sửa."
-        : "Không cần yêu cầu chỉnh sửa lúc này; khi tài khoản dùng được, chiến dịch tự mở."
+        : problem === "organizer_not_verified" || waitFinance
+          ? "Không cần yêu cầu chỉnh sửa lúc này; khi tài khoản dùng được, chiến dịch tự mở."
+          : "Chưa cần yêu cầu chỉnh sửa lúc này."
     )
     return { sendBackReason: null, note: notes.join(" ") }
   }
@@ -542,7 +547,8 @@ export function waitingAdvice(
         ? "Tài khoản nhận tiền đang gắn không đứng tên bạn."
         : "Tài khoản nhận tiền đang gắn không còn dùng được."
   // Non-empty: an ended campaign fixes its dates, and any other send-back
-  // has a verified organizer, no finance wait and an account step.
+  // has an account step (a foreign account, or a verified organizer with no
+  // finance wait and a bound account).
   const steps = [ended ? "sửa ngày kết thúc" : null, accountStep].filter((x): x is string => x !== null)
   const parts = [lead, `Hãy ${steps.join(", ")} rồi gửi duyệt lại.`]
   if (!verified) parts.push("Hồ sơ người tổ chức của bạn cần được xác minh lại trước khi gắn hay dùng được tài khoản.")
