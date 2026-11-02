@@ -209,44 +209,23 @@ export interface PaidBreakdown {
   paid: number
 }
 
-const PAGE = 1000
-/** Stops reading a ledger larger than this; the page then shows no breakdown. */
-const MAX_LEDGER_ROWS = 50_000
-
 /**
- * Sums the campaign's 'received', 'unmatched_in' and 'other_in' ledger
- * entries, reversals included (they carry a negative amount). Null when the
- * ledger is too large to read here.
+ * The campaign's 'received', 'unmatched_in' and 'other_in' ledger sums,
+ * reversals included, in one read (give.campaign_paid, DOS/Give#56). It runs
+ * with the caller's rights, so it reads the ledger under the same RLS as the
+ * pages around it. Null when the database returns no row.
  */
 export async function paidBreakdown(db: Db, campaignId: string): Promise<PaidBreakdown | null> {
-  let received = 0
-  let unmatched = 0
-  let other = 0
-  // Keyset pages: the ledger is append-only, so an entry added meanwhile
-  // cannot shift a page and be read twice. (One whose id is lower than the
-  // last read but commits later is missed; it shows on the next load.)
-  let after = 0
-  for (let read = 0; ; read += PAGE) {
-    if (read >= MAX_LEDGER_ROWS) return null
-    const { data, error } = await db
-      .from("ledger_entries")
-      .select("id, bucket, amount")
-      .eq("campaign_id", campaignId)
-      .in("bucket", ["received", "unmatched_in", "other_in"])
-      .gt("id", after)
-      .order("id", { ascending: true })
-      .limit(PAGE)
-    if (error) throw error
-    const rows = (data ?? []) as { id: number | string; bucket: string; amount: number | string }[]
-    for (const row of rows) {
-      if (row.bucket === "received") received += Number(row.amount)
-      else if (row.bucket === "other_in") other += Number(row.amount)
-      else unmatched += Number(row.amount)
-    }
-    if (rows.length < PAGE) break
-    after = Number(rows[rows.length - 1].id)
+  const { data, error } = await db.rpc("campaign_paid", { p_campaign_id: campaignId }).maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  const row = data as Record<"received_amount" | "unmatched_amount" | "other_amount" | "paid_amount", number | string>
+  return {
+    received: Number(row.received_amount),
+    unmatched: Number(row.unmatched_amount),
+    other: Number(row.other_amount),
+    paid: Number(row.paid_amount),
   }
-  return { received, unmatched, other, paid: received + unmatched + other }
 }
 
 /** The sentence a manual match ends with: test 14 says "đã thanh toán" does not move. */

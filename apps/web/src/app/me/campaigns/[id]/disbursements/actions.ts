@@ -126,22 +126,6 @@ function refusedByDatabase(error: DbErrorLike): boolean {
   return giveErrorCode(error) !== null || /^([0-9A-Z]{5}|PGRST\d+)$/.test(error.code ?? "")
 }
 
-/**
- * After a successful RPC, removes uploaded images that have no evidence row.
- * That happens when a repeated submission hit record_disbursement's replay
- * path, which returns success without inserting evidence.
- */
-async function dropUnrecorded(paths: string[]): Promise<number> {
-  if (paths.length === 0) return 0
-  const service = dbService()
-  const { data, error } = await service.from("disbursement_evidence").select("storage_path").in("storage_path", paths)
-  if (error) return 0
-  const recorded = new Set(((data ?? []) as { storage_path: string }[]).map((row) => row.storage_path))
-  const orphans = paths.filter((path) => !recorded.has(path))
-  if (orphans.length) await service.storage.from(MEDIA_BUCKET).remove(orphans)
-  return orphans.length
-}
-
 function refresh(campaign: CampaignWithRefs) {
   revalidatePath(`/me/campaigns/${campaign.id}/disbursements`)
   revalidatePath(`/me/campaigns/${campaign.id}`)
@@ -191,25 +175,34 @@ export async function explainDisbursement(
   const stored = await storeEvidence(campaign.id, tx.id, images, input.evidence_kind)
   if (typeof stored === "string") return fail(stored)
 
-  const { error } = await dbService().rpc("record_disbursement", {
-    p_bank_transaction_id: tx.id,
-    p_actor_id: session.user.id,
-    p_purpose: input.purpose,
-    p_category: input.category,
-    p_recipient: input.recipient,
-    p_is_refund: input.is_refund,
-    p_refund_contribution_id: input.refund_contribution_id,
-    p_evidence: stored.evidence,
-  })
+  const { data, error } = await dbService()
+    .rpc("record_disbursement", {
+      p_bank_transaction_id: tx.id,
+      p_actor_id: session.user.id,
+      p_purpose: input.purpose,
+      p_category: input.category,
+      p_recipient: input.recipient,
+      p_is_refund: input.is_refund,
+      p_refund_contribution_id: input.refund_contribution_id,
+      p_evidence: stored.evidence,
+    })
+    .single()
   if (error) {
     if (refusedByDatabase(error)) await stored.cleanup()
     return fail(dbErrorMessage(error))
   }
-  const dropped = await dropUnrecorded(stored.evidence.map((e) => e.storage_path))
 
   refresh(campaign)
-  if (dropped > 0)
-    return done("Khoản chi này đã được giải trình từ trước. Ảnh vừa tải không được lưu, hãy thêm lại nếu cần.")
+  // A repeated submission (a double click) hit the stored explanation:
+  // nothing was written, not even this call's evidence.
+  if ((data as { replayed?: boolean } | null)?.replayed === true) {
+    await stored.cleanup()
+    return done(
+      stored.evidence.length > 0
+        ? "Khoản chi này đã được giải trình từ trước. Ảnh vừa tải không được lưu, hãy thêm lại nếu cần."
+        : "Khoản chi này đã được giải trình từ trước."
+    )
+  }
   return done(
     input.is_refund
       ? "Đã ghi khoản hoàn tiền. Sao kê công khai đã cập nhật."

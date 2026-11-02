@@ -24,58 +24,29 @@ const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
 const vnd = (text: string) => text.replace(/ ₫/g, " ₫")
 
 describe("paidBreakdown", () => {
-  it("sums received and unmatched_in, reversals included", async () => {
-    const db = fakeDb(() => ({
-      data: [
-        { bucket: "received", amount: "500000" },
-        { bucket: "unmatched_in", amount: 200000 },
-        { bucket: "unmatched_in", amount: -200000 },
-        { bucket: "received", amount: 200000 },
-      ],
-    })) as unknown as Db
-    expect(await paidBreakdown(db, CAMPAIGN)).toEqual({ received: 700000, unmatched: 0, other: 0, paid: 700000 })
-  })
-
-  it("counts money explained as not a donation as paid, in its own part (DOS/Give#49)", async () => {
-    const db = fakeDb(() => ({
-      data: [
-        { bucket: "received", amount: 500000 },
-        { bucket: "unmatched_in", amount: 300000 },
-        { bucket: "unmatched_in", amount: -300000 },
-        { bucket: "other_in", amount: "300000" },
-      ],
-    })) as unknown as Db
-    expect(await paidBreakdown(db, CAMPAIGN)).toEqual({ received: 500000, unmatched: 0, other: 300000, paid: 800000 })
-  })
-
-  it("reads every page of a long ledger, after the last id read", async () => {
+  it("reads received, unmatched, other and paid in one call to campaign_paid", async () => {
     const calls: Call[] = []
-    let page = 0
-    const db = fakeDb(() => {
-      page += 1
-      const first = page === 1 ? 1 : 1001
-      return {
-        data: Array.from({ length: page === 1 ? 1000 : 3 }, (_, i) => ({
-          id: String(first + i),
-          bucket: "unmatched_in",
-          amount: 1,
-        })),
-      }
-    }, calls) as unknown as Db
-    expect(await paidBreakdown(db, CAMPAIGN)).toEqual({ received: 0, unmatched: 1003, other: 0, paid: 1003 })
-    expect(calls.map((c) => op(c, "gt"))).toEqual([
-      ["id", 0],
-      ["id", 1000],
-    ])
-    expect(op(calls[0], "in")).toEqual(["bucket", ["received", "unmatched_in", "other_in"]])
+    const db = fakeDb(
+      () => ({ data: { received_amount: "500000", unmatched_amount: 0, other_amount: 300000, paid_amount: "800000" } }),
+      calls
+    ) as unknown as Db
+    expect(await paidBreakdown(db, CAMPAIGN)).toEqual({ received: 500000, unmatched: 0, other: 300000, paid: 800000 })
+    expect(calls).toHaveLength(1)
+    expect(calls[0].target).toBe("rpc:campaign_paid")
+    expect(op(calls[0], "args")).toEqual([{ p_campaign_id: CAMPAIGN }])
   })
 
-  it("gives up on a ledger too large to read here instead of showing a partial sum", async () => {
-    let next = 0
+  it("takes the database's total rather than adding the parts itself", async () => {
     const db = fakeDb(() => ({
-      data: Array.from({ length: 1000 }, () => ({ id: ++next, bucket: "received", amount: 1 })),
+      data: { received_amount: 1, unmatched_amount: 2, other_amount: 3, paid_amount: 7 },
     })) as unknown as Db
-    expect(await paidBreakdown(db, CAMPAIGN)).toBeNull()
+    expect((await paidBreakdown(db, CAMPAIGN))?.paid).toBe(7)
+  })
+
+  it("is null without a row and throws a database error", async () => {
+    expect(await paidBreakdown(fakeDb(() => ({ data: null })) as unknown as Db, CAMPAIGN)).toBeNull()
+    const failing = fakeDb(() => ({ error: { code: "PGRST301", message: "JWT expired" } })) as unknown as Db
+    await expect(paidBreakdown(failing, CAMPAIGN)).rejects.toMatchObject({ code: "PGRST301" })
   })
 })
 
