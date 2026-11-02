@@ -165,6 +165,7 @@ describe("describeAccountChange", () => {
     expect(text).toContain("••••0001")
     expect(text).toMatch(/^Từ .*02\/11\/2026/)
     expect(text).toContain("vẫn thuộc chiến dịch")
+    expect(text).toContain("tiền chuyển ra khỏi tài khoản cũ sau thời điểm đó")
   })
 })
 

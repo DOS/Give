@@ -242,5 +242,5 @@ function publicAccountLabel(channel: string, bankBin: string | null, chain: stri
 export function describeAccountChange(change: PublicAccountChange): string {
   const from = publicAccountLabel(change.old_channel, change.old_bank_bin, change.old_chain, change.old_account_masked)
   const to = publicAccountLabel(change.new_channel, change.new_bank_bin, change.new_chain, change.new_account_masked)
-  return `Từ ${formatDateTime(change.changed_at)}, chiến dịch nhận tiền vào tài khoản ${to} thay cho ${from}. Việc đổi do người tổ chức đề nghị và bộ phận tài chính của Give đã duyệt. Tiền đã vào tài khoản cũ trước thời điểm đó vẫn thuộc chiến dịch và vẫn có trong sao kê.`
+  return `Từ ${formatDateTime(change.changed_at)}, chiến dịch nhận tiền vào tài khoản ${to} thay cho ${from}. Việc đổi do người tổ chức đề nghị và bộ phận tài chính của Give đã duyệt. Tiền đã vào tài khoản cũ trước thời điểm đó vẫn thuộc chiến dịch và vẫn có trong sao kê; tiền chuyển ra khỏi tài khoản cũ sau thời điểm đó cũng ghi là khoản chi của chiến dịch, cần người tổ chức giải trình.`
 }

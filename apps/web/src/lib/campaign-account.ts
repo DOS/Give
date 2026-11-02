@@ -167,11 +167,13 @@ export async function loadEditorAccounts(
   // Money history matters only to a campaign sent back for changes (release
   // or swap), and swaps only where a swap can happen (DOS/Give#55). A failed
   // read of either shows the section without them rather than hiding it; the
-  // database refuses anything they would have prevented.
+  // database refuses anything they would have prevented. An unknown money
+  // history counts as some, so the editor offers the swap (which the database
+  // turns into "release instead" if wrong) rather than a release it refuses.
   const [refs, boundHasTransactions, swaps] = await Promise.all([
     campaignRefs(db, holders),
     binding && status === "changes_requested"
-      ? bindingHasTransactions(db, binding.id).catch(() => false)
+      ? bindingHasTransactions(db, binding.id).catch(() => true)
       : Promise.resolve(false),
     SWAP_STATUSES.includes(status) ? listCampaignSwaps(db, campaignId).catch(() => []) : Promise.resolve([]),
   ])

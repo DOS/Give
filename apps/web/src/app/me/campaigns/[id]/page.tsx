@@ -695,7 +695,9 @@ function AccountSwapBlock({
         tên chủ tài khoản không còn trùng tên pháp lý), bạn có thể đề nghị đổi sang một tài khoản khác đã xác minh, đứng
         tên bạn. Bộ phận tài chính của Give xem xét; khi được duyệt, tài khoản cũ ngừng nhận cho chiến dịch và bị khóa,
         tài khoản mới nhận tiền từ lúc đó. Tiền đã vào tài khoản cũ trước lúc đổi vẫn thuộc chiến dịch và vẫn có trong
-        sao kê. Trang chiến dịch công khai ngày đổi tài khoản.
+        sao kê. Tiền chuyển ra khỏi tài khoản cũ sau lúc đổi (kể cả khi bạn chuyển số dư sang tài khoản mới) vẫn ghi vào
+        sao kê là khoản chi của chiến dịch, và bạn cần giải trình như mọi khoản chi. Trang chiến dịch công khai ngày đổi
+        tài khoản.
       </p>
       {last && last.status === "rejected" && !pending && (
         <p className="rounded-md bg-amber-50 px-3 py-2 text-amber-900">

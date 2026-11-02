@@ -220,7 +220,7 @@ describe("loadEditorAccounts", () => {
     })
     const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "changes_requested")
     expect(view.bound?.id).toBe("here")
-    expect(view.boundHasTransactions).toBe(false)
+    expect(view.boundHasTransactions).toBe(true) // unknown history: offer the swap, not a release
     expect(view.swaps).toEqual([])
   })
 })
