@@ -57,7 +57,6 @@ export async function donate(campaignId: string, _state: ActionResult, form: For
   // it first: PostgREST rejects a forged or expired token there.
   const session = await getSession()
   const requestHeaders = await headers()
-  const { clientKey, networkKey } = requestClientKeys(requestHeaders)
   const { data: visible, error: readError } = await dbAs(session?.accessToken)
     .from("campaigns")
     .select("id")
@@ -65,6 +64,8 @@ export async function donate(campaignId: string, _state: ActionResult, form: For
     .maybeSingle()
   if (readError) return fail(dbErrorMessage(readError))
   if (!visible) return fail(NOT_ACCEPTING)
+  // Signed-in donors are counted by account, so only guests get address keys.
+  const { clientKey, networkKey } = session ? { clientKey: null, networkKey: null } : requestClientKeys(requestHeaders)
 
   const { data, error } = await dbService()
     .rpc("create_donation", {

@@ -133,9 +133,25 @@ describe("donate", () => {
     await expect(donate(CAMPAIGN, null, form({ anonymous: "on" }))).rejects.toThrow("NEXT_REDIRECT")
     expect(state.userCalls[0].target).toBe("campaigns")
     expect(op(state.serviceCalls[0], "args")).toEqual([
-      expect.objectContaining({ p_contributor_user_id: USER, p_is_anonymous: true, p_public_name: null }),
+      expect.objectContaining({
+        p_contributor_user_id: USER,
+        p_is_anonymous: true,
+        p_public_name: null,
+        p_client_key: null,
+        p_client_network_key: null,
+      }),
     ])
     expect(state.cookies).toHaveLength(0)
+  })
+
+  it("logs no missing key for a signed-in donor in Production", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+    vi.stubEnv("VERCEL_ENV", "production")
+    state.session = { user: { id: USER, email: null, name: null }, accessToken: "jwt" }
+    state.serviceHandler = () => created({ status_token: null, status_token_expires_at: null })
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    expect(log).not.toHaveBeenCalled()
+    log.mockRestore()
   })
 
   it("stops when the session token is rejected, before creating anything", async () => {
