@@ -112,6 +112,7 @@ beforeEach(() => {
   account = { data: { id: ACCOUNT, channel: "statement_import", bank_bin: "970436" } }
   responses = {
     "rpc:record_inbound_event": { data: { inbound_event_id: EVENT, created: true, processed_at: null } },
+    "rpc:begin_inbound_attempt": { data: "started" },
     "rpc:stage_statement_import": {
       data: { import_batch_id: BATCH, created: true, ready: 2, duplicate: 0, ambiguous: 1 },
     },
@@ -140,11 +141,30 @@ describe("importStatementFile", () => {
     expect(serviceCalls.map((c) => c.target)).toEqual([
       "statement_import_batches",
       "rpc:record_inbound_event",
+      "rpc:begin_inbound_attempt",
       "rpc:stage_statement_import",
       "rpc:import_statement_batch",
       "rpc:complete_inbound_event",
     ])
+    expect(args("begin_inbound_attempt")).toEqual({ p_inbound_event_id: EVENT })
     expect(args("complete_inbound_event")).toEqual({ p_inbound_event_id: EVENT, p_error: null })
+  })
+
+  it("runs nothing for a file whose event is parked and says so", async () => {
+    responses["rpc:record_inbound_event"] = { data: { inbound_event_id: EVENT, created: false, processed_at: null } }
+    responses["rpc:begin_inbound_attempt"] = { data: "parked" }
+    // The earlier upload's statement is read back first.
+    responses["inbound_events"] = { data: { payload: null } }
+    const result = await upload()
+    expect(result).toEqual({ status: "parked", inboundEventId: EVENT, replayed: true, parser: "test-csv" })
+    expect(rpc("stage_statement_import")).toBeUndefined()
+    expect(rpc("complete_inbound_event")).toBeUndefined()
+  })
+
+  it("reports a failure without running when the attempt cannot be counted", async () => {
+    responses["rpc:begin_inbound_attempt"] = { error: { code: "08006", message: "connection lost" } }
+    expect(await upload()).toMatchObject({ status: "pending", code: "processing_failed" })
+    expect(rpc("stage_statement_import")).toBeUndefined()
   })
 
   it("reads the account as the uploader, so RLS decides who may import", async () => {
@@ -212,6 +232,7 @@ describe("importStatementFile", () => {
     responses["rpc:record_inbound_event"] = {
       data: { inbound_event_id: EVENT, created: false, processed_at: "2026-10-05T02:00:00Z" },
     }
+    responses["rpc:begin_inbound_attempt"] = { data: "processed" }
     responses["inbound_events"] = { data: { payload: first } }
     responses["rpc:stage_statement_import"] = {
       data: { import_batch_id: BATCH, created: false, ready: 0, duplicate: 0, ambiguous: 1 },
@@ -475,8 +496,8 @@ describe("statement_import processor", () => {
       if (call.target === "inbound_events") {
         if (op(call, "select")?.[1]) return { count: 0 }
         if (op(call, "maybeSingle")) return { data: { dedupe_key: event.dedupe_key, payload: payload() } }
-        // Never-tried events (error IS NULL) hold this one; no failed ones.
-        return { data: call.ops.some(([name, column]) => name === "is" && column === "error") ? [event] : [] }
+        // Never-tried events (attempts = 0) hold this one; no failed ones.
+        return { data: call.ops.some(([name, column]) => name === "eq" && column === "attempts") ? [event] : [] }
       }
       if (call.target === "rpc:complete_inbound_event") {
         const p = (op(call, "args")?.[0] as { p_error: string | null }).p_error
@@ -486,9 +507,9 @@ describe("statement_import processor", () => {
     }
     const db = fakeDb(handle, serviceCalls) as unknown as Db
     const result = await reprocessPendingInboundEvents(db, { processors: inboundProcessors, now: () => NOW.getTime() })
-    expect(result).toEqual({ processed: 1, failed: 0, waiting: 0 })
+    expect(result).toEqual({ processed: 1, failed: 0, waiting: 0, parked: 0 })
     expect(serviceCalls.filter((c) => c.target.startsWith("rpc:")).map((c) => c.target)).toEqual([
-      "rpc:complete_inbound_event",
+      "rpc:begin_inbound_attempt",
       "rpc:stage_statement_import",
       "rpc:import_statement_batch",
       "rpc:complete_inbound_event",

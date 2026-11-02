@@ -81,5 +81,9 @@ export async function uploadStatement(_state: UploadResult, form: FormData): Pro
         message: `${again}Đã nhận file, Give đang xử lý tiếp. Hãy tải lại trang sau vài phút để xem kết quả.${reason}`,
       }
     }
+    case "parked":
+      return failed(
+        `${again}Give đã thử xử lý file này nhiều lần mà chưa được, nên đã chuyển cho đội tài chính kiểm tra. Bạn không cần tải lại file này.`
+      )
   }
 }

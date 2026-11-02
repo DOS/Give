@@ -229,6 +229,7 @@ give.reward_tiers (
 give.inbound_events (                    -- toàn bộ webhook và lô import nhận được
   id, channel, dedupe_key text, received_at, signature_valid bool,
   payload jsonb, processed_at, error text,
+  attempts int, last_attempt_at, parked_at, -- tối đa 10 lần thử, rồi "đỗ" chờ tài chính/admin xử lý lại
   UNIQUE (channel, dedupe_key)
 )
 
@@ -477,7 +478,7 @@ Pipeline dùng chung cho mọi kênh, mỗi bước đều chạy lại được
        → out: ledger_entries (post 'disbursed') → chờ give.record_disbursement
 ```
 
-Webhook trả 200 ngay sau khi đã ghi `inbound_events`. Việc xử lý thất bại không làm mất dữ liệu, vì job `reprocess_inbound_events` sẽ chạy lại các dòng có `processed_at IS NULL`.
+Webhook trả 200 ngay sau khi đã ghi `inbound_events`. Việc xử lý thất bại không làm mất dữ liệu, vì job `reprocess_inbound_events` sẽ chạy lại các dòng có `processed_at IS NULL`. Mỗi lần thử được đếm trước khi chạy (`begin_inbound_attempt`); sau 10 lần thất bại, sự kiện bị "đỗ" (`parked_at`), không được chạy lại nữa và hiện trong `give.parked_inbound_events` cho tài chính/admin, người có thể gửi nó chạy lại bằng `give.retry_inbound_event`.
 
 ### 5.2 Các kênh
 
@@ -499,15 +500,15 @@ Kênh crypto nằm sau M4, nhưng schema đã có sẵn chỗ (`asset`, `vnd_equ
 
 ### 5.3 Job định kỳ (Vercel Cron → route handler có secret → RPC)
 
-| Job                  | Tần suất | Việc                                                                      |
-| -------------------- | -------- | ------------------------------------------------------------------------- |
-| `activate-scheduled` | 5 phút   | `approved` → `live` khi tới `starts_at`                                   |
-| `finalize-ended`     | 5 phút   | `finalize_campaign` cho các campaign đã quá `ends_at`                     |
-| `lapse-pledges`      | 1 giờ    | `lapse_overdue_pledges`                                                   |
-| `reprocess-inbound`  | 5 phút   | Xử lý lại `inbound_events` còn treo                                       |
-| `reconcile-accounts` | 1 ngày   | `fetchTransactions` cho các kênh có hỗ trợ; báo lệch khi số dư không khớp |
-| `send-outbox`        | 1 phút   | Gửi email/thông báo, có retry và backoff                                  |
-| `remind-unexplained` | 1 ngày   | Nhắc người tổ chức giải trình các khoản chi                               |
+| Job                  | Tần suất | Việc                                                                                                                  |
+| -------------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
+| `activate-scheduled` | 5 phút   | `approved` → `live` khi tới `starts_at`                                                                               |
+| `finalize-ended`     | 5 phút   | `finalize_campaign` cho từng campaign đã quá `ends_at`; campaign lỗi được ghi `audit_log` và không chặn campaign khác |
+| `lapse-pledges`      | 1 giờ    | `lapse_overdue_pledges`                                                                                               |
+| `reprocess-inbound`  | 5 phút   | Xử lý lại `inbound_events` còn treo; đỗ sự kiện sau 10 lần thử                                                        |
+| `reconcile-accounts` | 1 ngày   | `fetchTransactions` cho các kênh có hỗ trợ; báo lệch khi số dư không khớp                                             |
+| `send-outbox`        | 1 phút   | Gửi email/thông báo, có retry và backoff                                                                              |
+| `remind-unexplained` | 1 ngày   | Nhắc người tổ chức giải trình các khoản chi                                                                           |
 
 Mọi job đều idempotent. Nếu một lần chạy bị trùng hoặc bị bỏ lỡ, lần chạy sau sửa lại được.
 
