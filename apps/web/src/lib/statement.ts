@@ -165,7 +165,7 @@ const STATEMENT_COLUMNS =
  */
 export const INBOUND_EXPLANATION_KINDS = {
   organizer_top_up: "Người tổ chức nạp thêm tiền",
-  bank_refund: "Ngân hàng hoàn tiền",
+  bank_adjustment: "Ngân hàng hoàn phí hoặc điều chỉnh",
   interest: "Lãi ngân hàng",
   other: "Khoản khác, không phải tiền ủng hộ",
 } as const

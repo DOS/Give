@@ -167,7 +167,7 @@ describe("listInboundExplanations", () => {
         data: [
           {
             bank_transaction_id: "t",
-            kind: "bank_refund",
+            kind: "bank_adjustment",
             reason: "Bounced payment",
             evidence: "Bank letter",
             explained_at: "2026-11-02T00:00:00Z",

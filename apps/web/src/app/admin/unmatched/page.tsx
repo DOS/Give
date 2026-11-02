@@ -51,8 +51,8 @@ export default async function AdminUnmatchedPage() {
           chiến dịch không đổi. Mỗi giao dịch chỉ khớp được một lần, và mỗi lần được ghi vào nhật ký kiểm toán.
         </p>
         <p className="mt-2 text-sm text-gray-600">
-          Khoản không phải tiền ủng hộ (người tổ chức nạp thêm, ngân hàng hoàn tiền, lãi) thì giải trình thay vì khớp,
-          kể cả khi chiến dịch đã hủy hoặc đã đóng: ghi lý do và bằng chứng đã kiểm tra. Sao kê công khai chỉ hiện loại
+          Khoản không phải tiền ủng hộ (người tổ chức nạp thêm, ngân hàng hoàn phí, lãi) thì giải trình thay vì khớp, kể
+          cả khi chiến dịch đã hủy hoặc đã đóng: ghi lý do và bằng chứng đã kiểm tra. Sao kê công khai chỉ hiện loại
           khoản tiền; tổng đã thanh toán không đổi, và giao dịch không còn chặn việc nhả tài khoản nhận.
         </p>
       </div>

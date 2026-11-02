@@ -173,11 +173,11 @@ describe("explainTransaction", () => {
 
   it("explains a closed campaign's late transfer and still answers when the totals cannot be re-read", async () => {
     state.ledger = [{ data: BEFORE }, { error: { code: "57014", message: "timeout" } }]
-    const result = await explainTransaction(TX, null, form({ ...VALID, kind: "bank_refund" }))
+    const result = await explainTransaction(TX, null, form({ ...VALID, kind: "bank_adjustment" }))
     expect(result).toEqual({
       ok: true,
       message: vnd(
-        'Đã giải trình giao dịch 300.000 ₫ là "Ngân hàng hoàn tiền". Giao dịch không còn chặn việc nhả tài khoản nhận.'
+        'Đã giải trình giao dịch 300.000 ₫ là "Ngân hàng hoàn phí hoặc điều chỉnh". Giao dịch không còn chặn việc nhả tài khoản nhận.'
       ),
     })
   })

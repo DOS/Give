@@ -141,6 +141,10 @@ function ExplainInboundForm({
         confirm={`Giải trình giao dịch ${formatVnd(tx.amount)} là không phải tiền ủng hộ? Loại khoản tiền sẽ hiện trên sao kê công khai; giải trình đã ghi thì không sửa được, và giao dịch không khớp được với lượt ủng hộ nào nữa.`}
         className="mt-3 grid gap-3"
       >
+        <p className="text-sm text-amber-800">
+          Không dùng cho tiền chuyển đi bị ngân hàng trả lại (khoản chi hoặc khoản hoàn tiền không thành công): khoản đó
+          vẫn đang được tính là đã chi hoặc đã hoàn, nên để nguyên và báo quản trị viên.
+        </p>
         <div>
           <label htmlFor={`kind-${tx.id}`} className="label">
             Loại khoản tiền

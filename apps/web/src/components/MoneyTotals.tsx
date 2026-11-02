@@ -37,7 +37,7 @@ export function MoneyTotals({ totals, statementHref }: { totals: Totals; stateme
         {totals.other_in_amount > 0 && (
           <p className="mt-2 text-xs text-gray-500">
             Trong đó <span data-figure="other_in">{formatVnd(totals.other_in_amount)}</span> không phải tiền ủng hộ
-            (người tổ chức nạp thêm, ngân hàng hoàn tiền hoặc trả lãi), đã được Give giải trình trên sao kê.
+            (người tổ chức nạp thêm, ngân hàng hoàn phí hoặc trả lãi), đã được Give giải trình trên sao kê.
           </p>
         )}
       </dl>

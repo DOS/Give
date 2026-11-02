@@ -59,7 +59,8 @@ export async function explainTransaction(
   if (!isInboundExplanationKind(kind)) return fail(EXPLAIN_MESSAGES.GIVE_EXPLANATION_KIND_INVALID)
   if (!reason) return fail(EXPLAIN_MESSAGES.GIVE_REASON_REQUIRED)
   if (!evidence) return fail(EXPLAIN_MESSAGES.GIVE_EVIDENCE_REQUIRED)
-  if (reason.length > MAX_EXPLANATION_LENGTH || evidence.length > MAX_EXPLANATION_LENGTH) {
+  // Counted in characters (code points), as the database's char_length does.
+  if ([...reason].length > MAX_EXPLANATION_LENGTH || [...evidence].length > MAX_EXPLANATION_LENGTH) {
     return fail(EXPLAIN_MESSAGES.GIVE_EXPLANATION_TOO_LONG)
   }
 
