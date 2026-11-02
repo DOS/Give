@@ -12,7 +12,8 @@ export const maxDuration = 60
  * Vercel Cron (every 5 minutes, see vercel.json): pending inbound events are
  * processed again by their channel's processor. Processing and
  * give.complete_inbound_event are idempotent, so a duplicate or missed run is
- * harmless.
+ * harmless. An event is parked after 10 attempts and waits for finance/admin
+ * staff; the response counts parked events.
  */
 export async function GET(request: NextRequest) {
   if (!isAuthorizedCron(request.headers.get("authorization"), process.env.CRON_SECRET)) {
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest) {
   try {
     const result = await reprocessPendingInboundEvents(dbService(), { processors: inboundProcessors })
     if (result.waiting > 0) console.warn("inbound events waiting for a channel processor", result.waiting)
+    if (result.parked > 0) console.error("inbound events parked, waiting for finance staff", result.parked)
     return NextResponse.json(result)
   } catch (err) {
     console.error("reprocess-inbound failed", err instanceof Error ? err.message : err)

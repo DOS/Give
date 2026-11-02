@@ -3,7 +3,7 @@ import { createHash } from "node:crypto"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { Db } from "@/lib/campaigns"
-import { PROCESSOR_TIMEOUT_MS, reprocessPendingInboundEvents, REPROCESS_GRACE_MS } from "@/server/inbound"
+import { InboundError, PROCESSOR_TIMEOUT_MS, reprocessPendingInboundEvents, REPROCESS_GRACE_MS } from "@/server/inbound"
 import { inboundProcessors } from "@/server/inbound/processors"
 import { ParserRegistry } from "@/server/statement-parsers/registry"
 import { CSV_COLUMNS, csvFile, csvStatementParser } from "@/test/csv-statement-parser"
@@ -112,6 +112,7 @@ beforeEach(() => {
   account = { data: { id: ACCOUNT, channel: "statement_import", bank_bin: "970436" } }
   responses = {
     "rpc:record_inbound_event": { data: { inbound_event_id: EVENT, created: true, processed_at: null } },
+    "rpc:begin_inbound_attempt": { data: "started" },
     "rpc:stage_statement_import": {
       data: { import_batch_id: BATCH, created: true, ready: 2, duplicate: 0, ambiguous: 1 },
     },
@@ -140,11 +141,47 @@ describe("importStatementFile", () => {
     expect(serviceCalls.map((c) => c.target)).toEqual([
       "statement_import_batches",
       "rpc:record_inbound_event",
+      "rpc:begin_inbound_attempt",
       "rpc:stage_statement_import",
       "rpc:import_statement_batch",
       "rpc:complete_inbound_event",
     ])
-    expect(args("complete_inbound_event")).toEqual({ p_inbound_event_id: EVENT, p_error: null })
+    expect(args("begin_inbound_attempt")).toEqual({ p_inbound_event_id: EVENT, p_resume: true })
+    expect(args("complete_inbound_event")).toEqual({ p_inbound_event_id: EVENT, p_error: null, p_final: false })
+  })
+
+  it("resumes a parked event as the current uploader and imports it", async () => {
+    // The first uploader lost access, so the cron's attempts failed and the
+    // event was parked; begin_inbound_attempt (p_resume) gives one more.
+    const OTHER = "55555555-5555-4555-8555-555555555555"
+    responses["rpc:record_inbound_event"] = { data: { inbound_event_id: EVENT, created: false, processed_at: null } }
+    responses["inbound_events"] = { data: { payload: { ...payload(), actor_id: OTHER } } }
+    const result = await upload()
+    expect(result).toMatchObject({ status: "imported", replayed: true, imported: 2 })
+    expect(args("begin_inbound_attempt")).toEqual({ p_inbound_event_id: EVENT, p_resume: true })
+    expect(args("stage_statement_import")).toMatchObject({ p_actor_id: ACTOR })
+  })
+
+  it("keeps access refusals and unreadable payloads open for the cron, unlike content refusals", async () => {
+    for (const message of ["GIVE_ACCOUNT_NOT_FOUND", "GIVE_NOT_ALLOWED"]) {
+      serviceCalls.length = 0
+      responses["rpc:stage_statement_import"] = { error: { code: "P0001", message } }
+      expect(await upload()).toMatchObject({ status: "refused", code: message })
+      expect(args("complete_inbound_event")).toMatchObject({ p_error: message, p_final: false })
+    }
+  })
+
+  it("says parked when this upload's failure used up the last attempt", async () => {
+    responses["rpc:stage_statement_import"] = { error: { code: "57014", message: "canceling statement" } }
+    responses["rpc:complete_inbound_event"] = { data: null }
+    responses["inbound_events"] = { data: { parked_at: "2026-10-05T03:00:01Z" } }
+    expect(await upload()).toEqual({ status: "parked", inboundEventId: EVENT, replayed: false, parser: "test-csv" })
+  })
+
+  it("reports a failure without running when the attempt cannot be counted", async () => {
+    responses["rpc:begin_inbound_attempt"] = { error: { code: "08006", message: "connection lost" } }
+    expect(await upload()).toMatchObject({ status: "pending", code: "processing_failed" })
+    expect(rpc("stage_statement_import")).toBeUndefined()
   })
 
   it("reads the account as the uploader, so RLS decides who may import", async () => {
@@ -212,6 +249,7 @@ describe("importStatementFile", () => {
     responses["rpc:record_inbound_event"] = {
       data: { inbound_event_id: EVENT, created: false, processed_at: "2026-10-05T02:00:00Z" },
     }
+    responses["rpc:begin_inbound_attempt"] = { data: "processed" }
     responses["inbound_events"] = { data: { payload: first } }
     responses["rpc:stage_statement_import"] = {
       data: { import_batch_id: BATCH, created: false, ready: 0, duplicate: 0, ambiguous: 1 },
@@ -257,6 +295,56 @@ describe("importStatementFile", () => {
   it("keeps a period refusal pending: it depends on the database's clock", async () => {
     responses["rpc:stage_statement_import"] = { error: { code: "23514", message: "GIVE_IMPORT_PERIOD_INVALID" } }
     expect(await upload()).toMatchObject({ status: "pending", code: "GIVE_IMPORT_PERIOD_INVALID" })
+    // Not final: the cron retries it.
+    expect(args("complete_inbound_event")).toMatchObject({ p_final: false })
+  })
+
+  it("refuses again a file whose earlier upload the database refused for good", async () => {
+    // The first upload ended the event with its refusal (processed, error kept).
+    responses["rpc:record_inbound_event"] = {
+      data: { inbound_event_id: EVENT, created: false, processed_at: "2026-10-05T02:00:00Z" },
+    }
+    responses["rpc:begin_inbound_attempt"] = { data: "processed" }
+    responses["inbound_events"] = { data: { payload: null, error: "GIVE_IMPORT_ROWS_NOT_CHRONOLOGICAL" } }
+    responses["rpc:stage_statement_import"] = {
+      error: { code: "P0001", message: "GIVE_IMPORT_ROWS_NOT_CHRONOLOGICAL: row 2" },
+    }
+    expect(await upload()).toEqual({
+      status: "refused",
+      inboundEventId: EVENT,
+      replayed: true,
+      parser: "test-csv",
+      code: "GIVE_IMPORT_ROWS_NOT_CHRONOLOGICAL",
+      row: 2,
+    })
+    expect(rpc("complete_inbound_event")).toBeUndefined()
+  })
+
+  it("lets the cron's processor end a final refusal and retry anything else", async () => {
+    const refusing = (message: string) => fakeDb(() => ({ error: { code: "P0001", message } }), []) as unknown as Db
+    const event = {
+      id: EVENT,
+      channel: "statement_import" as const,
+      dedupe_key: "k",
+      received_at: "",
+      payload: payload(),
+    }
+    const signal = new AbortController().signal
+    const final = await statementImportProcessor(refusing("GIVE_IMPORT_ROW_INVALID: row 1"), event, signal).catch(
+      (e: unknown) => e
+    )
+    expect(final).toBeInstanceOf(InboundError)
+    expect(final).toMatchObject({ code: "GIVE_IMPORT_ROW_INVALID", final: true })
+    const transient = await statementImportProcessor(refusing("GIVE_IMPORT_PERIOD_INVALID"), event, signal).catch(
+      (e: unknown) => e
+    )
+    expect(transient).toMatchObject({ code: "GIVE_IMPORT_PERIOD_INVALID", final: false })
+    // The cron stages as the stored uploader, who may have lost access: the
+    // statement is fine, so the event is retried and parked for staff.
+    for (const code of ["GIVE_ACCOUNT_NOT_FOUND", "GIVE_NOT_ALLOWED"]) {
+      const access = await statementImportProcessor(refusing(code), event, signal).catch((e: unknown) => e)
+      expect(access).toMatchObject({ code, final: false })
+    }
   })
 
   it("refuses before recording when the parser was used with other format flags", async () => {
@@ -283,7 +371,11 @@ describe("importStatementFile", () => {
       row: 3,
     })
     expect(rpc("import_statement_batch")).toBeUndefined()
-    expect(args("complete_inbound_event")).toEqual({ p_inbound_event_id: EVENT, p_error: "GIVE_IMPORT_ROW_INVALID" })
+    expect(args("complete_inbound_event")).toEqual({
+      p_inbound_event_id: EVENT,
+      p_error: "GIVE_IMPORT_ROW_INVALID",
+      p_final: true,
+    })
   })
 
   it("stores only a generic code for a failure that is not a GIVE_* error", async () => {
@@ -314,7 +406,11 @@ describe("importStatementFile", () => {
       )
       await vi.advanceTimersByTimeAsync(PROCESSOR_TIMEOUT_MS + 1)
       expect(await result).toMatchObject({ status: "pending", code: "processing_timeout" })
-      expect(args("complete_inbound_event")).toEqual({ p_inbound_event_id: EVENT, p_error: "processing_timeout" })
+      expect(args("complete_inbound_event")).toEqual({
+        p_inbound_event_id: EVENT,
+        p_error: "processing_timeout",
+        p_final: false,
+      })
     } finally {
       vi.useRealTimers()
     }
@@ -475,8 +571,8 @@ describe("statement_import processor", () => {
       if (call.target === "inbound_events") {
         if (op(call, "select")?.[1]) return { count: 0 }
         if (op(call, "maybeSingle")) return { data: { dedupe_key: event.dedupe_key, payload: payload() } }
-        // Never-tried events (error IS NULL) hold this one; no failed ones.
-        return { data: call.ops.some(([name, column]) => name === "is" && column === "error") ? [event] : [] }
+        // Never-tried events (attempts = 0) hold this one; no failed ones.
+        return { data: call.ops.some(([name, column]) => name === "eq" && column === "attempts") ? [event] : [] }
       }
       if (call.target === "rpc:complete_inbound_event") {
         const p = (op(call, "args")?.[0] as { p_error: string | null }).p_error
@@ -486,9 +582,9 @@ describe("statement_import processor", () => {
     }
     const db = fakeDb(handle, serviceCalls) as unknown as Db
     const result = await reprocessPendingInboundEvents(db, { processors: inboundProcessors, now: () => NOW.getTime() })
-    expect(result).toEqual({ processed: 1, failed: 0, waiting: 0 })
+    expect(result).toEqual({ processed: 1, failed: 0, waiting: 0, parked: 0 })
     expect(serviceCalls.filter((c) => c.target.startsWith("rpc:")).map((c) => c.target)).toEqual([
-      "rpc:complete_inbound_event",
+      "rpc:begin_inbound_attempt",
       "rpc:stage_statement_import",
       "rpc:import_statement_batch",
       "rpc:complete_inbound_event",

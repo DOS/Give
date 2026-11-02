@@ -10,6 +10,7 @@ import {
   REPROCESS_BUDGET_MS,
   REPROCESS_GRACE_MS,
   failureCode,
+  processInboundEvent,
   reprocessPendingInboundEvents,
   type InboundEvent,
   type InboundProcessor,
@@ -27,10 +28,19 @@ interface Row {
   payload: unknown
   processed_at: string | null
   error: string | null
+  attempts: number
+  parked_at: string | null
+  /** The run whose attempt last started: stands in for last_attempt_at. */
+  attempt_run?: number
 }
+
+/** give.inbound_event_max_attempts() */
+const MAX_ATTEMPTS = 10
 
 let rows: Row[]
 let calls: Call[]
+/** Cron runs so far; each starts at least five minutes after the last. */
+let runs: number
 
 function row(id: string, overrides: Partial<Row> = {}): Row {
   return {
@@ -42,6 +52,8 @@ function row(id: string, overrides: Partial<Row> = {}): Row {
     payload: { n: id },
     processed_at: null,
     error: null,
+    attempts: 0,
+    parked_at: null,
     ...overrides,
   }
 }
@@ -56,6 +68,7 @@ function select(call: Call) {
     if (name === "is") result = result.filter((r) => r[column] === a)
     if (name === "eq") result = result.filter((r) => r[column] === a)
     if (name === "lt") result = result.filter((r) => String(r[column]) < String(a))
+    if (name === "gt") result = result.filter((r) => Number(r[column]) > Number(a))
     if (name === "in") result = result.filter((r) => (a as unknown[]).includes(r[column]))
     if (name === "not" && a === "is") result = result.filter((r) => r[column] !== b)
     if (name === "not" && a === "in") {
@@ -74,36 +87,74 @@ function select(call: Call) {
   return { data: op(call, "maybeSingle") ? (data[0] ?? null) : data }
 }
 
+/** give.begin_inbound_attempt as the migration defines it. */
+function begin(args: { p_inbound_event_id: string; p_resume?: boolean }) {
+  const r = rows.find((x) => x.id === args.p_inbound_event_id)!
+  if (r.processed_at) return { data: "processed" }
+  if (r.parked_at) {
+    if (!args.p_resume) return { data: "parked" }
+    r.parked_at = null
+    r.attempts = MAX_ATTEMPTS - 1
+  } else if (r.attempt_run === runs) {
+    // last_attempt_at newer than two minutes: an attempt of this same run.
+    return { data: "busy" }
+  } else if (r.attempts >= MAX_ATTEMPTS && args.p_resume) {
+    r.attempts = MAX_ATTEMPTS - 1
+  }
+  if (r.attempts >= MAX_ATTEMPTS) {
+    r.parked_at = new Date(NOW).toISOString()
+    r.error = `processing_unfinished${r.error ? `; before: ${r.error}` : ""}`
+    return { data: "parked" }
+  }
+  r.attempts += 1
+  r.attempt_run = runs
+  return { data: "started" }
+}
+
 /** give.complete_inbound_event as the migration defines it. */
-function complete(args: { p_inbound_event_id: string; p_error: string | null }) {
+function complete(args: { p_inbound_event_id: string; p_error: string | null; p_final?: boolean }) {
   const r = rows.find((x) => x.id === args.p_inbound_event_id)!
   if (r.processed_at) return { data: r.processed_at }
   if (!args.p_error?.trim()) {
     r.processed_at = new Date(NOW).toISOString()
     r.error = null
+    r.parked_at = null
     return { data: r.processed_at }
   }
   r.error = args.p_error.trim().slice(0, 2000)
+  if (args.p_final) {
+    r.processed_at = new Date(NOW).toISOString()
+    r.parked_at = null
+    return { data: null }
+  }
+  if (!r.parked_at && r.attempts >= MAX_ATTEMPTS) r.parked_at = new Date(NOW).toISOString()
   return { data: null }
 }
 
+function rpc(call: Call) {
+  const args = op(call, "args")![0]
+  if (call.target === "rpc:begin_inbound_attempt") {
+    return begin(args as { p_inbound_event_id: string; p_resume?: boolean })
+  }
+  if (call.target === "rpc:complete_inbound_event") {
+    return complete(args as { p_inbound_event_id: string; p_error: string | null })
+  }
+  throw new Error(`unexpected ${call.target}`)
+}
+
 function db(): Db {
-  return fakeDb((call) => {
-    if (call.target === "inbound_events") return select(call)
-    if (call.target === "rpc:complete_inbound_event") {
-      return complete(op(call, "args")![0] as { p_inbound_event_id: string; p_error: string | null })
-    }
-    throw new Error(`unexpected ${call.target}`)
-  }, calls) as unknown as Db
+  return fakeDb((call) => (call.target === "inbound_events" ? select(call) : rpc(call)), calls) as unknown as Db
 }
 
 function run(processors: InboundProcessors, options: { now?: () => number; random?: () => number } = {}) {
+  runs += 1
   return reprocessPendingInboundEvents(db(), { processors, now: () => NOW, random: () => 0, ...options })
 }
 
 beforeEach(() => {
   rows = []
   calls = []
+  runs = 0
   vi.spyOn(console, "warn").mockImplementation(() => {})
   vi.spyOn(console, "error").mockImplementation(() => {})
 })
@@ -122,7 +173,7 @@ describe("reprocessPendingInboundEvents", () => {
       },
     }
 
-    expect(await run(processors)).toEqual({ processed: 2, failed: 0, waiting: 0 })
+    expect(await run(processors)).toEqual({ processed: 2, failed: 0, waiting: 0, parked: 0 })
     expect(seen.map((e) => e.id)).toEqual(["1", "2"])
     expect(seen[0]).toEqual({
       id: "1",
@@ -135,7 +186,7 @@ describe("reprocessPendingInboundEvents", () => {
     const after = structuredClone(rows)
 
     calls.length = 0
-    expect(await run(processors)).toEqual({ processed: 0, failed: 0, waiting: 0 })
+    expect(await run(processors)).toEqual({ processed: 0, failed: 0, waiting: 0, parked: 0 })
     expect(seen).toHaveLength(2)
     expect(rows).toEqual(after)
     expect(calls.some((c) => c.target.startsWith("rpc:"))).toBe(false)
@@ -164,7 +215,7 @@ describe("reprocessPendingInboundEvents", () => {
     }
 
     expect(await run(processors)).toMatchObject({ processed: 0, failed: 1 })
-    expect(rows[0]).toMatchObject({ processed_at: null, error: "GIVE_ACCOUNT_NOT_FOUND" })
+    expect(rows[0]).toMatchObject({ processed_at: null, error: "GIVE_ACCOUNT_NOT_FOUND", attempts: 1 })
 
     expect(await run(processors)).toMatchObject({ processed: 1, failed: 0 })
     expect(rows[0]).toMatchObject({ error: null })
@@ -183,7 +234,7 @@ describe("reprocessPendingInboundEvents", () => {
     }
     const result = run({ statement_import: processor })
     await vi.advanceTimersByTimeAsync(PROCESSOR_TIMEOUT_MS)
-    expect(await result).toEqual({ processed: 1, failed: 1, waiting: 0 })
+    expect(await result).toEqual({ processed: 1, failed: 1, waiting: 0, parked: 0 })
     expect(signal?.aborted).toBe(true)
     expect(rows[0]).toMatchObject({ processed_at: null, error: "processing_timeout" })
     expect(rows[1].processed_at).not.toBeNull()
@@ -196,7 +247,7 @@ describe("reprocessPendingInboundEvents", () => {
       row("new", { received_at: new Date(NOW - REPROCESS_GRACE_MS + 1000).toISOString() }),
     ]
     const processor = vi.fn(async () => {})
-    expect(await run({ statement_import: processor })).toEqual({ processed: 0, failed: 0, waiting: 0 })
+    expect(await run({ statement_import: processor })).toEqual({ processed: 0, failed: 0, waiting: 0, parked: 0 })
     expect(processor).not.toHaveBeenCalled()
   })
 
@@ -204,10 +255,10 @@ describe("reprocessPendingInboundEvents", () => {
     rows = [row("1", { channel: "payos" }), row("2", { channel: "bank_api" }), row("3")]
     const processor = vi.fn(async () => {})
 
-    expect(await run({})).toEqual({ processed: 0, failed: 0, waiting: 3 })
-    expect(calls).toHaveLength(1)
+    expect(await run({})).toEqual({ processed: 0, failed: 0, waiting: 3, parked: 0 })
+    expect(calls).toHaveLength(2) // the waiting and the parked counts
 
-    expect(await run({ statement_import: processor })).toEqual({ processed: 1, failed: 0, waiting: 2 })
+    expect(await run({ statement_import: processor })).toEqual({ processed: 1, failed: 0, waiting: 2, parked: 0 })
     expect(processor).toHaveBeenCalledTimes(1)
     expect(rows.filter((r) => r.processed_at).map((r) => r.id)).toEqual(["3"])
   })
@@ -215,7 +266,9 @@ describe("reprocessPendingInboundEvents", () => {
   it("tries never-tried events before ones that already failed", async () => {
     const old = new Date(NOW - 60 * 60 * 1000).toISOString()
     rows = [
-      ...Array.from({ length: REPROCESS_BATCH }, (_, i) => row(`failed-${i}`, { received_at: old, error: "boom" })),
+      ...Array.from({ length: REPROCESS_BATCH }, (_, i) =>
+        row(`failed-${i}`, { received_at: old, error: "boom", attempts: 1 })
+      ),
       row("fresh"),
     ]
     const seen: string[] = []
@@ -233,9 +286,13 @@ describe("reprocessPendingInboundEvents", () => {
     const at = (minutes: number) => new Date(NOW - minutes * 60 * 1000).toISOString()
     rows = [
       ...Array.from({ length: REPROCESS_BATCH }, (_, i) =>
-        row(`poison-${String(i).padStart(2, "0")}`, { received_at: at(120 - i), error: "GIVE_ACCOUNT_NOT_FOUND" })
+        row(`poison-${String(i).padStart(2, "0")}`, {
+          received_at: at(120 - i),
+          error: "GIVE_ACCOUNT_NOT_FOUND",
+          attempts: 1,
+        })
       ),
-      row("transient", { received_at: at(30), error: "GIVE_BINDING_CHANGED" }),
+      row("transient", { received_at: at(30), error: "GIVE_BINDING_CHANGED", attempts: 1 }),
     ]
     const seen: string[] = []
     const processors: InboundProcessors = {
@@ -259,10 +316,16 @@ describe("reprocessPendingInboundEvents", () => {
     const at = (minutes: number) => new Date(NOW - minutes * 60 * 1000).toISOString()
     const total = 4 * REPROCESS_BATCH
     rows = Array.from({ length: total }, (_, i) =>
-      row(`failed-${String(i).padStart(3, "0")}`, { received_at: at(1000 - i), error: "GIVE_ACCOUNT_NOT_FOUND" })
+      row(`failed-${String(i).padStart(3, "0")}`, {
+        received_at: at(1000 - i),
+        error: "GIVE_ACCOUNT_NOT_FOUND",
+        attempts: 1,
+      })
     )
     const newest = rows[total - 1].id
     const picked = async (random: number) => {
+      // Every run is a first retry, so no event reaches its attempt limit.
+      for (const r of rows) Object.assign(r, { attempts: 1, parked_at: null })
       const seen: string[] = []
       await run(
         {
@@ -291,23 +354,85 @@ describe("reprocessPendingInboundEvents", () => {
     expect(windows).toBe(REPROCESS_BATCH)
   })
 
-  it("marks the attempt before loading the payload, so a killed run is not retried first", async () => {
+  it("counts the attempt before loading the payload, so a killed run is not retried first", async () => {
     rows = [row("1")]
     const handler = (call: Call) => {
       if (call.target === "inbound_events" && op(call, "maybeSingle")) return { error: { code: "57014" } }
       if (call.target === "inbound_events") return select(call)
-      return complete(op(call, "args")![0] as { p_inbound_event_id: string; p_error: string | null })
+      return rpc(call)
     }
     const processor = vi.fn(async () => {})
     const result = await reprocessPendingInboundEvents(fakeDb(handler, calls) as unknown as Db, {
       processors: { statement_import: processor },
       now: () => NOW,
     })
-    expect(result).toEqual({ processed: 0, failed: 1, waiting: 0 })
+    expect(result).toEqual({ processed: 0, failed: 1, waiting: 0, parked: 0 })
     expect(processor).not.toHaveBeenCalled()
-    expect(rows[0]).toMatchObject({ processed_at: null, error: "processing_started" })
+    expect(rows[0]).toMatchObject({ processed_at: null, error: null, attempts: 1 })
     const targets = calls.map((c) => c.target + (op(c, "maybeSingle") ? ":load" : ""))
-    expect(targets.indexOf("rpc:complete_inbound_event")).toBeLessThan(targets.indexOf("inbound_events:load"))
+    expect(targets.indexOf("rpc:begin_inbound_attempt")).toBeLessThan(targets.indexOf("inbound_events:load"))
+  })
+
+  it("parks an event after its last failed attempt and never picks it again", async () => {
+    rows = [row("poison"), row("other", { received_at: new Date(NOW - REPROCESS_GRACE_MS - 1000).toISOString() })]
+    const seen: string[] = []
+    const processors: InboundProcessors = {
+      statement_import: async (_db, event) => {
+        seen.push(event.id)
+        if (event.id === "poison") throw new Error("GIVE_IMPORT_ROW_INVALID")
+      },
+    }
+
+    for (let attempt = 1; attempt < MAX_ATTEMPTS; attempt += 1) {
+      expect(await run(processors)).toMatchObject({ failed: 1, parked: 0 })
+    }
+    expect(rows[0]).toMatchObject({ attempts: MAX_ATTEMPTS - 1, parked_at: null })
+    expect(await run(processors)).toMatchObject({ processed: 0, failed: 1, parked: 1 })
+    expect(rows[0]).toMatchObject({ attempts: MAX_ATTEMPTS, error: "GIVE_IMPORT_ROW_INVALID", processed_at: null })
+    expect(rows[0].parked_at).not.toBeNull()
+    expect(seen.filter((id) => id === "poison")).toHaveLength(MAX_ATTEMPTS)
+
+    calls.length = 0
+    expect(await run(processors)).toEqual({ processed: 0, failed: 0, waiting: 0, parked: 1 })
+    expect(seen.filter((id) => id === "poison")).toHaveLength(MAX_ATTEMPTS)
+    expect(calls.some((c) => c.target.startsWith("rpc:"))).toBe(false)
+  })
+
+  it("parks an event whose attempts all died without an outcome", async () => {
+    rows = [row("1", { attempts: MAX_ATTEMPTS })]
+    const processor = vi.fn(async () => {})
+    expect(await run({ statement_import: processor })).toEqual({ processed: 0, failed: 0, waiting: 0, parked: 1 })
+    expect(processor).not.toHaveBeenCalled()
+    expect(rows[0]).toMatchObject({ error: "processing_unfinished", processed_at: null })
+    expect(rows[0].parked_at).not.toBeNull()
+  })
+
+  it("skips an event another run is attempting, without counting it", async () => {
+    // An overlapping run (number 1, like the one below) started its attempt first.
+    rows = [row("1", { attempts: 3, error: "boom", attempt_run: 1 })]
+    const processor = vi.fn(async () => {})
+    expect(await run({ statement_import: processor })).toEqual({ processed: 0, failed: 0, waiting: 0, parked: 0 })
+    expect(processor).not.toHaveBeenCalled()
+    expect(rows[0].attempts).toBe(3)
+  })
+
+  it("takes an event staff sent back with the never-tried events", async () => {
+    const old = new Date(NOW - 60 * 60 * 1000).toISOString()
+    rows = [
+      ...Array.from({ length: REPROCESS_BATCH }, (_, i) =>
+        row(`failed-${i}`, { received_at: old, error: "boom", attempts: 3 })
+      ),
+      // give.retry_inbound_event resets attempts and keeps the last error.
+      row("retried", { received_at: old, error: "GIVE_IMPORT_ROW_INVALID", attempts: 0 }),
+    ]
+    const seen: string[] = []
+    await run({
+      statement_import: async (_db, event) => {
+        seen.push(event.id)
+      },
+    })
+    expect(seen[0]).toBe("retried")
+    expect(rows.find((r) => r.id === "retried")!.processed_at).not.toBeNull()
   })
 
   it("stops taking new events once the time budget is spent", async () => {
@@ -338,6 +463,125 @@ describe("reprocessPendingInboundEvents", () => {
   it("throws when the pending events cannot be read", async () => {
     const broken = fakeDb(() => ({ error: { message: "permission denied" } })) as unknown as Db
     await expect(reprocessPendingInboundEvents(broken, { processors: {} })).rejects.toThrow("permission denied")
+  })
+})
+
+describe("processInboundEvent", () => {
+  const event = (r: Row): InboundEvent => ({
+    id: r.id,
+    channel: r.channel,
+    dedupe_key: r.dedupe_key,
+    received_at: r.received_at,
+    payload: r.payload,
+  })
+
+  it("counts the attempt, runs the processor and records the outcome", async () => {
+    rows = [row("1")]
+    const processor = vi.fn(async () => {})
+    expect(await processInboundEvent(db(), event(rows[0]), processor)).toBe("processed")
+    expect(processor).toHaveBeenCalledTimes(1)
+    expect(rows[0]).toMatchObject({ attempts: 1, error: null })
+    expect(calls.map((c) => c.target)).toEqual(["rpc:begin_inbound_attempt", "rpc:complete_inbound_event"])
+  })
+
+  it("leaves a failed event pending with its failure code", async () => {
+    rows = [row("1")]
+    const outcome = await processInboundEvent(db(), event(rows[0]), async () => {
+      throw new InboundError("STATEMENT_PAYLOAD_INVALID")
+    })
+    expect(outcome).toBe("pending")
+    expect(rows[0]).toMatchObject({ attempts: 1, error: "STATEMENT_PAYLOAD_INVALID", parked_at: null })
+  })
+
+  it("says when its failure used up the last attempt and parked the event", async () => {
+    rows = [row("1", { attempts: MAX_ATTEMPTS - 1, error: "processing_timeout" })]
+    const outcome = await processInboundEvent(db(), event(rows[0]), async () => {
+      throw new Error("GIVE_BINDING_CHANGED")
+    })
+    expect(outcome).toBe("parked")
+    expect(rows[0]).toMatchObject({ attempts: MAX_ATTEMPTS, error: "GIVE_BINDING_CHANGED" })
+    expect(rows[0].parked_at).not.toBeNull()
+  })
+
+  it("treats an unexpected answer from begin_inbound_attempt as an attempt not counted", async () => {
+    rows = [row("1")]
+    const processor = vi.fn(async () => {})
+    const odd = fakeDb(() => ({ data: "weird" }), calls) as unknown as Db
+    expect(await processInboundEvent(odd, event(rows[0]), processor)).toBe("pending")
+    expect(processor).not.toHaveBeenCalled()
+  })
+
+  it("does not run an event whose attempt started moments ago, and counts nothing", async () => {
+    rows = [row("1", { attempts: 3, attempt_run: runs })]
+    const processor = vi.fn(async () => {})
+    expect(await processInboundEvent(db(), event(rows[0]), processor)).toBe("pending")
+    expect(processor).not.toHaveBeenCalled()
+    expect(rows[0].attempts).toBe(3)
+  })
+
+  it("ends an event at once on a final failure, keeping its code", async () => {
+    rows = [row("1")]
+    const outcome = await processInboundEvent(db(), event(rows[0]), async () => {
+      throw new InboundError("GIVE_IMPORT_ROW_INVALID", true)
+    })
+    expect(outcome).toBe("pending")
+    expect(rows[0]).toMatchObject({ attempts: 1, error: "GIVE_IMPORT_ROW_INVALID", parked_at: null })
+    expect(rows[0].processed_at).not.toBeNull()
+    expect(
+      op(
+        calls.find((c) => c.target === "rpc:complete_inbound_event"),
+        "args"
+      )?.[0]
+    ).toEqual({
+      p_inbound_event_id: "1",
+      p_error: "GIVE_IMPORT_ROW_INVALID",
+      p_final: true,
+    })
+  })
+
+  it("gives a parked event one more attempt when a person sends it again", async () => {
+    rows = [row("1", { attempts: MAX_ATTEMPTS, parked_at: "2026-11-01T09:00:00Z", error: "GIVE_ACCOUNT_NOT_FOUND" })]
+    const processor = vi.fn(async () => {})
+    expect(await processInboundEvent(db(), event(rows[0]), processor, { resume: true })).toBe("processed")
+    expect(processor).toHaveBeenCalledTimes(1)
+    expect(rows[0]).toMatchObject({ attempts: MAX_ATTEMPTS, parked_at: null, error: null })
+  })
+
+  it("parks it again when that attempt fails", async () => {
+    rows = [row("1", { attempts: MAX_ATTEMPTS, parked_at: "2026-11-01T09:00:00Z", error: "boom" })]
+    const outcome = await processInboundEvent(
+      db(),
+      event(rows[0]),
+      async () => {
+        throw new Error("GIVE_ACCOUNT_NOT_FOUND")
+      },
+      { resume: true }
+    )
+    expect(outcome).toBe("parked")
+    expect(rows[0]).toMatchObject({ attempts: MAX_ATTEMPTS, error: "GIVE_ACCOUNT_NOT_FOUND" })
+  })
+
+  it("does not run a parked event", async () => {
+    rows = [row("1", { attempts: MAX_ATTEMPTS, parked_at: "2026-11-01T09:00:00Z", error: "boom" })]
+    const processor = vi.fn(async () => {})
+    expect(await processInboundEvent(db(), event(rows[0]), processor)).toBe("parked")
+    expect(processor).not.toHaveBeenCalled()
+    expect(rows[0]).toMatchObject({ attempts: MAX_ATTEMPTS, error: "boom" })
+  })
+
+  it("does not run an event another run already processed", async () => {
+    rows = [row("1", { processed_at: "2026-11-01T09:00:00Z" })]
+    const processor = vi.fn(async () => {})
+    expect(await processInboundEvent(db(), event(rows[0]), processor)).toBe("processed")
+    expect(processor).not.toHaveBeenCalled()
+  })
+
+  it("runs nothing when the attempt cannot be counted", async () => {
+    rows = [row("1")]
+    const processor = vi.fn(async () => {})
+    const broken = fakeDb(() => ({ error: { code: "57014" } }), calls) as unknown as Db
+    expect(await processInboundEvent(broken, event(rows[0]), processor)).toBe("pending")
+    expect(processor).not.toHaveBeenCalled()
   })
 })
 

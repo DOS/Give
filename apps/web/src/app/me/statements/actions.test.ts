@@ -67,6 +67,7 @@ beforeEach(() => {
       : undefined
   state.serviceResponses = {
     "rpc:record_inbound_event": { data: { inbound_event_id: EVENT, created: true, processed_at: null } },
+    "rpc:begin_inbound_attempt": { data: "started" },
     "rpc:stage_statement_import": {
       data: { import_batch_id: BATCH, created: true, ready: 2, duplicate: 0, ambiguous: 1 },
     },
@@ -100,10 +101,30 @@ describe("uploadStatement", () => {
     state.serviceResponses["rpc:record_inbound_event"] = {
       data: { inbound_event_id: EVENT, created: false, processed_at: "2026-11-01T00:00:00Z" },
     }
+    state.serviceResponses["rpc:begin_inbound_attempt"] = { data: "processed" }
     state.serviceResponses.inbound_events = { data: { payload: null } }
     const result = await upload()
     expect(result?.ok).toBe(true)
     expect(result?.message).toMatch(/^File này đã được tải lên trước đây/)
+  })
+
+  it("says when this upload's failed attempt parked the file for finance staff", async () => {
+    state.serviceResponses["rpc:import_statement_batch"] = { error: { code: "57014", message: "canceling statement" } }
+    state.serviceResponses["rpc:complete_inbound_event"] = { data: null }
+    state.serviceResponses.inbound_events = { data: { parked_at: "2026-11-02T03:00:01Z" } }
+    const result = await upload()
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toContain("đã chuyển cho đội tài chính kiểm tra")
+    expect(result?.message).toContain("tải lại đúng file này sau")
+  })
+
+  it("does not ask to fix the file when the account or uploader was refused", async () => {
+    state.serviceResponses["rpc:stage_statement_import"] = {
+      error: { code: "P0001", message: "GIVE_ACCOUNT_NOT_FOUND" },
+    }
+    const result = await upload()
+    expect(result?.ok).toBe(false)
+    expect(result?.message).not.toContain("Hãy sửa file")
   })
 
   it("refuses a format no parser reads, before anything is recorded", async () => {
