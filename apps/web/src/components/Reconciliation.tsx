@@ -1,7 +1,11 @@
 import { formatDateTime, formatVnd } from "@/lib/format"
-import type { ManualMatch, PaidBreakdown } from "@/lib/reconciliation"
+import type { InboundExplanation, ManualMatch, PaidBreakdown } from "@/lib/reconciliation"
+import { inboundExplanationLabel } from "@/lib/statement"
 
-/** "Đã thanh toán" and its two parts; a manual match moves money between the parts only. */
+/**
+ * "Đã thanh toán" and its parts; a manual match or an explanation moves money
+ * between the parts only.
+ */
 export function PaidBreakdownCard({ breakdown }: { breakdown: PaidBreakdown }) {
   return (
     <section className="card p-6">
@@ -20,6 +24,12 @@ export function PaidBreakdownCard({ breakdown }: { breakdown: PaidBreakdown }) {
             {formatVnd(breakdown.unmatched)}
           </dd>
         </div>
+        {breakdown.other !== 0 && (
+          <div>
+            <dt className="text-gray-500">Không phải tiền ủng hộ (đã giải trình)</dt>
+            <dd className="text-xl font-semibold text-gray-700">{formatVnd(breakdown.other)}</dd>
+          </div>
+        )}
       </dl>
     </section>
   )
@@ -41,6 +51,40 @@ export function ManualMatchList({ matches, titles }: { matches: ManualMatch[]; t
                 {titles && <span className="text-gray-500"> · {titles.get(m.tx.campaign_id) ?? "Chiến dịch"}</span>}
               </span>
               <span className="text-gray-500">Khớp lúc {formatDateTime(m.matched_at)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+/** Recent explanations of incoming money that is not a donation, with their private reason and evidence. */
+export function InboundExplanationList({
+  explanations,
+  titles,
+}: {
+  explanations: InboundExplanation[]
+  titles?: Map<string, string>
+}) {
+  return (
+    <section>
+      <h2 className="mb-4 text-xl font-bold">Đã giải trình gần đây ({explanations.length})</h2>
+      {explanations.length === 0 ? (
+        <p className="card p-6 text-gray-600">Chưa có khoản tiền vào nào được giải trình là không phải tiền ủng hộ.</p>
+      ) : (
+        <ul className="divide-y divide-gray-100 card text-sm">
+          {explanations.map((e) => (
+            <li key={e.bank_transaction_id} className="space-y-1 p-4">
+              <p className="flex flex-wrap justify-between gap-2">
+                <span>
+                  +{formatVnd(e.tx.amount)} · {inboundExplanationLabel(e.kind)}
+                  {titles && <span className="text-gray-500"> · {titles.get(e.tx.campaign_id) ?? "Chiến dịch"}</span>}
+                </span>
+                <span className="text-gray-500">Giải trình lúc {formatDateTime(e.explained_at)}</span>
+              </p>
+              <p className="break-words text-gray-700">Lý do: {e.reason}</p>
+              <p className="break-words text-gray-500">Bằng chứng: {e.evidence}</p>
             </li>
           ))}
         </ul>

@@ -28,7 +28,7 @@ export interface MoneyTotals {
   goal_amount: number
   /** SUM(pledged); only meaningful for back campaigns. */
   pledged_amount: number
-  /** Money that reached the receiving account: SUM(received) + SUM(unmatched_in). */
+  /** Money that reached the receiving account: SUM(received) + SUM(unmatched_in) + SUM(other_in). */
   paid_amount: number
   /** Equal to paid_amount: the money is already the organizer's. Published, not enforced. */
   disbursable_amount: number
@@ -39,11 +39,16 @@ export interface MoneyTotals {
   unexplained_out_amount: number
   unexplained_out_count: number
   supporters_count: number
+  /**
+   * SUM(other_in): the part of paid_amount that finance staff explained as
+   * not a donation (an organizer top-up, a bank refund, interest; DOS/Give#49).
+   */
+  other_in_amount: number
 }
 
 const TOTALS_COLUMNS =
   "id, type, asset, goal_amount, pledged_amount, paid_amount, disbursable_amount, disbursed_amount, " +
-  "refunded_amount, unexplained_out_amount, unexplained_out_count, supporters_count"
+  "refunded_amount, unexplained_out_amount, unexplained_out_count, supporters_count, other_in_amount"
 
 type TotalsRow = Omit<MoneyTotals, "campaign_id"> & { id: string }
 
@@ -67,6 +72,7 @@ function toTotals(row: TotalsRow): MoneyTotals {
     unexplained_out_amount: num(row.unexplained_out_amount),
     unexplained_out_count: num(row.unexplained_out_count),
     supporters_count: num(row.supporters_count),
+    other_in_amount: num(row.other_in_amount),
   }
 }
 
@@ -90,11 +96,13 @@ export async function listMoneyTotals(db: Db, campaignIds: readonly string[]): P
 
 /**
  * The headline amount: what a give campaign has received, or what a back
- * campaign has been pledged (payment only follows success).
+ * campaign has been pledged (payment only follows success). Money explained
+ * as not a donation (other_in) is in the account but does not count towards
+ * the goal.
  */
 export function raisedAmount(totals: MoneyTotals | null | undefined, type: CampaignType): number {
   if (!totals) return 0
-  return type === "back" ? totals.pledged_amount : totals.paid_amount
+  return type === "back" ? totals.pledged_amount : Math.max(0, totals.paid_amount - totals.other_in_amount)
 }
 
 /**
@@ -138,6 +146,9 @@ export interface StatementRow {
   donor_name: string | null
   /** For a matched incoming row, whether the donor chose anonymity; null otherwise. */
   donor_anonymous: boolean | null
+  /** For an incoming row explained as not a donation, its kind (INBOUND_EXPLANATION_KINDS); null otherwise. */
+  in_explanation: string | null
+  in_explained_at: string | null
 }
 
 // counterparty_name is left out on purpose: the bank's account-holder name is
@@ -145,7 +156,30 @@ export interface StatementRow {
 const STATEMENT_COLUMNS =
   "id, direction, asset, amount, booked_at, booked_date_only, after_close, matched, " +
   "counterparty_account_masked, explained, purpose, category, recipient, is_refund, explained_at, " +
-  "donor_name, donor_anonymous"
+  "donor_name, donor_anonymous, in_explanation, in_explained_at"
+
+/**
+ * Kinds of incoming money that is not a donation, as finance staff explain
+ * it (give.inbound_explanations.kind, DOS/Give#49). The reason and evidence
+ * behind an explanation stay private; the public sees this label only.
+ */
+export const INBOUND_EXPLANATION_KINDS = {
+  organizer_top_up: "Người tổ chức nạp thêm tiền",
+  bank_refund: "Ngân hàng hoàn tiền",
+  interest: "Lãi ngân hàng",
+  other: "Khoản khác, không phải tiền ủng hộ",
+} as const
+
+export type InboundExplanationKind = keyof typeof INBOUND_EXPLANATION_KINDS
+
+export function isInboundExplanationKind(value: unknown): value is InboundExplanationKind {
+  return typeof value === "string" && Object.hasOwn(INBOUND_EXPLANATION_KINDS, value)
+}
+
+/** Label of a stored kind; a kind this app does not know yet still reads as "not a donation". */
+export function inboundExplanationLabel(kind: string): string {
+  return isInboundExplanationKind(kind) ? INBOUND_EXPLANATION_KINDS[kind] : INBOUND_EXPLANATION_KINDS.other
+}
 
 export const STATEMENT_FILTERS = ["all", "in", "out", "unexplained"] as const
 export type StatementFilter = (typeof STATEMENT_FILTERS)[number]
@@ -232,15 +266,18 @@ export const ANONYMOUS_LABEL = "Ẩn danh"
  * Who is on the other side of a statement row, as far as the public may
  * know (owner decision on DOS/Give#58): for money in, the donor's chosen
  * display name or "Ẩn danh", never the bank account-holder name; an
- * unmatched transfer has no name.
+ * unmatched transfer has no name, and one explained as not a donation shows
+ * its kind only.
  */
 export function counterpartyLabel(
-  row: Pick<StatementRow, "direction" | "matched" | "donor_name" | "donor_anonymous" | "recipient" | "explained">
+  row: Pick<StatementRow, "direction" | "matched" | "donor_name" | "donor_anonymous" | "recipient" | "explained"> &
+    Partial<Pick<StatementRow, "in_explanation">>
 ): string {
   if (row.direction === "out") {
     if (!row.explained) return "Chưa rõ người nhận"
     return row.recipient ?? "Không công khai"
   }
+  if (!row.matched && row.in_explanation) return inboundExplanationLabel(row.in_explanation)
   if (!row.matched) return "Chưa khớp với lượt ủng hộ nào"
   if (row.donor_anonymous) return ANONYMOUS_LABEL
   return row.donor_name ?? "Người ủng hộ"

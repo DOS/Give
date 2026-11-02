@@ -34,6 +34,12 @@ export function MoneyTotals({ totals, statementHref }: { totals: Totals; stateme
           <Figure label="Đã hoàn lại người ủng hộ" value={totals.refunded_amount} testId="refunded" />
           <Figure label="Còn lại trong tài khoản" value={remainingAmount(totals)} testId="remaining" />
         </div>
+        {totals.other_in_amount > 0 && (
+          <p className="mt-2 text-xs text-gray-500">
+            Trong đó <span data-figure="other_in">{formatVnd(totals.other_in_amount)}</span> không phải tiền ủng hộ
+            (người tổ chức nạp thêm, ngân hàng hoàn tiền hoặc trả lãi), đã được Give giải trình trên sao kê.
+          </p>
+        )}
       </dl>
       <dl className="grid grid-cols-2 gap-3 border-t border-gray-100 pt-4 text-sm">
         {isBack && <Figure label="Đã cam kết" value={totals.pledged_amount} testId="pledged" />}

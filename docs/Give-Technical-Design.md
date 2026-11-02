@@ -270,7 +270,7 @@ give.disbursement_evidence (id, bank_transaction_id, storage_path, kind ('invoic
 give.ledger_entries (                    -- chỉ ghi thêm; trigger chặn UPDATE/DELETE
   id bigserial PK,
   campaign_id uuid,
-  bucket text CHECK IN ('pledged','received','disbursed','refunded','unmatched_in'),
+  bucket text CHECK IN ('pledged','received','disbursed','refunded','unmatched_in','other_in'),
   entry_kind text CHECK IN ('post','reversal'),
   amount bigint,                          -- có dấu: bỏ cam kết thì ghi số âm vào 'pledged'
   reverses_entry_id bigint NULL UNIQUE,   -- reversal trỏ tới đúng 1 dòng post; mỗi dòng chỉ bị đảo 1 lần
@@ -284,23 +284,24 @@ CREATE UNIQUE INDEX ... ON give.ledger_entries(bank_transaction_id, bucket)
   WHERE entry_kind='post' AND bank_transaction_id IS NOT NULL;
 ```
 
-**Phân loại lại (reclassification)** không bao giờ sửa dòng cũ. Nó ghi một cặp dòng trong cùng transaction: một `reversal` đảo dòng `post` cũ (số tiền ngược dấu, trỏ `reverses_entry_id`), và một `post` vào bucket mới. Có hai trường hợp:
+**Phân loại lại (reclassification)** không bao giờ sửa dòng cũ. Nó ghi một cặp dòng trong cùng transaction: một `reversal` đảo dòng `post` cũ (số tiền ngược dấu, trỏ `reverses_entry_id`), và một `post` vào bucket mới. Có ba trường hợp:
 
-| Từ             | Sang       | Khi nào                                                                                        |
-| -------------- | ---------- | ---------------------------------------------------------------------------------------------- |
-| `unmatched_in` | `received` | Người tổ chức hoặc admin khớp tay một giao dịch không có mã với một contribution               |
-| `disbursed`    | `refunded` | Khoản chi được giải trình là hoàn tiền cho một contribution (`record_disbursement(is_refund)`) |
+| Từ             | Sang       | Khi nào                                                                                                                                                                                                                               |
+| -------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unmatched_in` | `received` | Người tổ chức hoặc admin khớp tay một giao dịch không có mã với một contribution                                                                                                                                                      |
+| `disbursed`    | `refunded` | Khoản chi được giải trình là hoàn tiền cho một contribution (`record_disbursement(is_refund)`)                                                                                                                                        |
+| `unmatched_in` | `other_in` | Nhân viên tài chính hoặc quản trị viên giải trình một khoản vào không phải tiền ủng hộ (người tổ chức nạp thêm, ngân hàng hoàn tiền, lãi), kèm lý do và bằng chứng, ghi `audit_log` (`give.explain_inbound_transaction`, DOS/Give#49) |
 
 Vì index unique chỉ áp lên dòng `post`, và `reverses_entry_id` là UNIQUE, mỗi giao dịch đổi bucket được đúng một lần. Nếu admin cần sửa một lần khớp sai, việc đó đi qua hàm riêng `give.admin_correct_match()`, có lý do bắt buộc và ghi `audit_log`; hàm này nằm ngoài MVP.
 
 Bốn con số mà handoff yêu cầu, áp dụng cho mô hình không giữ tiền:
 
-| Con số              | Tính từ                                                                                 | Ghi chú                                                                                                                |
-| ------------------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Cam kết             | `SUM(pledged)`                                                                          | Chỉ có ở back                                                                                                          |
-| Đã thanh toán       | `SUM(received)` + `SUM(unmatched_in)` (đã tính cả các dòng reversal)                    | Tiền đã vào tài khoản nhận. Khớp tay sau này chỉ chuyển tiền giữa hai bucket, tổng không đổi.                          |
-| Được phép giải ngân | give: bằng "đã thanh toán". back: bằng "đã thanh toán", vì chỉ thu sau khi đạt mục tiêu | Tiền đã nằm trong tài khoản của người tổ chức, Give không chặn được. Con số này để công khai, không phải để kiểm soát. |
-| Đã chi / đã hoàn    | `SUM(disbursed)`, `SUM(refunded)`                                                       | Kèm phần chưa giải trình: các khoản chi chưa có dòng trong `disbursements`                                             |
+| Con số              | Tính từ                                                                                 | Ghi chú                                                                                                                                                                 |
+| ------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cam kết             | `SUM(pledged)`                                                                          | Chỉ có ở back                                                                                                                                                           |
+| Đã thanh toán       | `SUM(received)` + `SUM(unmatched_in)` + `SUM(other_in)` (đã tính cả các dòng reversal)  | Tiền đã vào tài khoản nhận. Khớp tay hay giải trình sau này chỉ chuyển tiền giữa các bucket, tổng không đổi. Số "đã gây quỹ" của chiến dịch give không tính `other_in`. |
+| Được phép giải ngân | give: bằng "đã thanh toán". back: bằng "đã thanh toán", vì chỉ thu sau khi đạt mục tiêu | Tiền đã nằm trong tài khoản của người tổ chức, Give không chặn được. Con số này để công khai, không phải để kiểm soát.                                                  |
+| Đã chi / đã hoàn    | `SUM(disbursed)`, `SUM(refunded)`                                                       | Kèm phần chưa giải trình: các khoản chi chưa có dòng trong `disbursements`                                                                                              |
 
 View công khai (client chỉ được đọc các view này):
 

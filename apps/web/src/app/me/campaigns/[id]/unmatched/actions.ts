@@ -39,6 +39,8 @@ const MATCH_MESSAGES: Record<string, string> = {
   GIVE_CONTRIBUTION_NOT_MATCHABLE:
     "Lượt ủng hộ này không nhận thêm tiền được (đã hủy, đã hoàn tiền hoặc không thuộc chiến dịch của giao dịch).",
   GIVE_TRANSACTION_NOT_INBOUND: "Chỉ khớp được các khoản tiền vào.",
+  GIVE_TRANSACTION_EXPLAINED:
+    "Giao dịch này đã được nhân viên tài chính giải trình là không phải tiền ủng hộ, nên không khớp được nữa.",
   GIVE_TRANSACTION_UNATTRIBUTED:
     "Giao dịch này chưa thuộc chiến dịch nào (tài khoản không gắn với chiến dịch lúc nhận tiền), nên chưa khớp được.",
 }
@@ -73,6 +75,7 @@ export async function matchTransaction(
     }
     contribution = await findContribution(db, campaign.id, picked ? { id: picked } : { referenceCode: typed })
     if (!contribution) return fail("Không tìm thấy lượt ủng hộ này trong chiến dịch của giao dịch.")
+    if (tx.explained_as) return fail(MATCH_MESSAGES.GIVE_TRANSACTION_EXPLAINED)
     if (tx.matched_to) {
       return tx.matched_to === contribution.id
         ? done(`Giao dịch đã được khớp với lượt ủng hộ ${contribution.reference_code} từ trước.`)
