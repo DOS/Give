@@ -182,66 +182,73 @@ describe("listWaitingForAccount", () => {
 
 describe("waitingAdvice", () => {
   const now = new Date("2026-11-10T00:00:00Z")
+  const PAST = "2026-11-01T00:00:00Z"
   const row = (
     account_problem: string,
-    overrides: Partial<{ account_has_transactions: boolean; ends_at: string | null; verified: boolean }> = {}
+    overrides: Partial<{ money: boolean; ends_at: string | null; verified: boolean }> = {}
   ) => ({
     account_problem,
-    account_has_transactions: overrides.account_has_transactions ?? false,
+    account_has_transactions: overrides.money ?? false,
     ends_at: overrides.ends_at === undefined ? "2026-12-01T00:00:00Z" : overrides.ends_at,
     organizer: { verification_status: overrides.verified === false ? ("pending" as const) : ("verified" as const) },
   })
+  const advise = (...args: Parameters<typeof row>) => waitingAdvice(row(...args), now)
 
-  it("prefills a send-back reason when the organizer can replace the account", () => {
-    const disabled = waitingAdvice(row("account_not_verified"), now)
+  it("sends back to replace an unusable account", () => {
+    const disabled = advise("account_not_verified")
     expect(disabled.note).toBeNull()
-    expect(disabled.sendBackReason).toContain("Hãy nhả tài khoản đó")
-    expect(disabled.sendBackReason).toContain("liên hệ đội ngũ Give")
-    expect(waitingAdvice(row("name_mismatch"), now).sendBackReason).toContain("tên pháp lý hiện tại")
-    expect(waitingAdvice(row("something_new"), now).sendBackReason).toContain("không còn dùng được")
+    expect(disabled.sendBackReason).toBe(
+      "Tài khoản nhận tiền đang gắn không còn dùng được. Hãy nhả tài khoản đang gắn, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại của bạn rồi gửi duyệt lại. Nếu không nhả được tài khoản, hãy liên hệ đội ngũ Give."
+    )
+    expect(advise("name_mismatch").sendBackReason).toMatch(/^Tên chủ tài khoản nhận tiền đang gắn không còn trùng/)
+    expect(advise("something_new").sendBackReason).toContain("Hãy nhả tài khoản đang gắn")
   })
 
-  it("lets the organizer bind in the editor when no account is bound", () => {
-    const advice = waitingAdvice(row("no_account"), now)
-    expect(advice.sendBackReason).toBeNull()
-    expect(advice.note).toContain("trang sửa chiến dịch")
-  })
-
-  it("asks to re-verify the organizer before anything else", () => {
+  it("does not send back what heals without the organizer editing", () => {
+    const unbound = advise("no_account")
+    expect(unbound.sendBackReason).toBeNull()
+    expect(unbound.note).toContain("trang sửa chiến dịch")
     for (const problem of ["organizer_not_verified", "account_not_verified", "no_account"]) {
-      const advice = waitingAdvice(row(problem, { verified: false }), now)
-      expect(advice.sendBackReason).toBeNull()
-      expect(advice.note).toContain("xác minh lại hồ sơ")
+      const unverified = advise(problem, { verified: false })
+      expect(unverified.sendBackReason).toBeNull()
+      expect(unverified.note).toContain("xác minh lại hồ sơ")
     }
+    const money = advise("account_not_verified", { money: true })
+    expect(money.sendBackReason).toBeNull()
+    expect(money.note).toContain("bộ phận tài chính để mở lại tài khoản")
   })
 
-  it("sends an ended campaign back to fix its dates, never promising it opens by itself", () => {
-    const ended = waitingAdvice(row("account_not_verified", { ends_at: "2026-11-01T00:00:00Z" }), now)
-    expect(ended.sendBackReason).toContain("sửa ngày kết thúc")
-    expect(ended.note).toBeNull()
-    const unverified = waitingAdvice(
-      row("organizer_not_verified", { ends_at: "2026-11-01T00:00:00Z", verified: false }),
-      now
-    )
-    expect(unverified.sendBackReason).toContain("sửa ngày kết thúc")
-    expect(unverified.note).toContain("không tự mở")
-    expect(unverified.note).toContain("yêu cầu chỉnh sửa ngay bây giờ")
-    expect(unverified.note).not.toContain("chiến dịch tự mở")
+  it("leaves no way forward for a foreign account, or a renamed one with money history", () => {
+    for (const r of [
+      row("account_not_owned"),
+      row("name_mismatch", { money: true }),
+      row("account_not_owned", { ends_at: PAST }),
+    ]) {
+      const advice = waitingAdvice(r, now)
+      expect(advice.sendBackReason).toBeNull()
+      expect(advice.note).toContain("quản trị viên hệ thống")
+    }
+    expect(advise("organizer_not_verified", { money: true, verified: false }).note).toContain("xác minh lại hồ sơ")
   })
 
-  it("offers no send-back when the account cannot be released, unless the campaign must fix its dates", () => {
-    const withMoney = waitingAdvice(row("account_not_verified", { account_has_transactions: true }), now)
-    expect(withMoney.sendBackReason).toBeNull()
-    expect(withMoney.note).toContain("30 ngày sau khi chiến dịch bị hủy hoặc kết thúc")
-    const endedWithMoney = waitingAdvice(
-      row("account_not_verified", { account_has_transactions: true, ends_at: "2026-11-01T00:00:00Z" }),
-      now
+  it("always sends back an ended campaign to fix its dates, saying what else it needs", () => {
+    const ended = advise("account_not_verified", { ends_at: PAST })
+    expect(ended.sendBackReason).toContain("Hãy sửa ngày kết thúc, nhả tài khoản đang gắn")
+    expect(ended.sendBackReason).toContain("hủy chiến dịch")
+    expect(ended.note).toContain("không tự mở")
+
+    const unverified = advise("organizer_not_verified", { ends_at: PAST, verified: false })
+    expect(unverified.sendBackReason).toContain("Hãy sửa ngày kết thúc rồi gửi duyệt lại.")
+    expect(unverified.sendBackReason).toContain("cần được xác minh lại")
+    expect(unverified.note).toContain("xác minh lại hồ sơ")
+
+    const money = advise("account_not_verified", { ends_at: PAST, money: true })
+    expect(money.sendBackReason).toContain("bộ phận tài chính mở lại tài khoản")
+    expect(money.sendBackReason).not.toContain("nhả tài khoản đang gắn")
+    expect(money.note).toContain("bộ phận tài chính")
+
+    expect(advise("no_account", { ends_at: PAST }).sendBackReason).toContain(
+      "Hãy sửa ngày kết thúc, gắn một tài khoản đã xác minh đứng tên bạn rồi gửi duyệt lại."
     )
-    expect(endedWithMoney.sendBackReason).toContain("sửa ngày kết thúc")
-    expect(endedWithMoney.sendBackReason).toContain("bộ phận tài chính mở lại tài khoản")
-    expect(endedWithMoney.sendBackReason).not.toContain("Hãy nhả")
-    const notOwned = waitingAdvice(row("account_not_owned"), now)
-    expect(notOwned.sendBackReason).toBeNull()
-    expect(notOwned.note).toContain("không thuộc người tổ chức")
   })
 })
