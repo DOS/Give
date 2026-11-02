@@ -96,7 +96,7 @@ function begin(args: { p_inbound_event_id: string }) {
   if (r.attempt_run === runs) return { data: "busy" }
   if (r.attempts >= MAX_ATTEMPTS) {
     r.parked_at = new Date(NOW).toISOString()
-    r.error ??= "processing_unfinished"
+    r.error = `processing_unfinished${r.error ? `; before: ${r.error}` : ""}`
     return { data: "parked" }
   }
   r.attempts += 1
@@ -105,7 +105,7 @@ function begin(args: { p_inbound_event_id: string }) {
 }
 
 /** give.complete_inbound_event as the migration defines it. */
-function complete(args: { p_inbound_event_id: string; p_error: string | null }) {
+function complete(args: { p_inbound_event_id: string; p_error: string | null; p_final?: boolean }) {
   const r = rows.find((x) => x.id === args.p_inbound_event_id)!
   if (r.processed_at) return { data: r.processed_at }
   if (!args.p_error?.trim()) {
@@ -115,6 +115,11 @@ function complete(args: { p_inbound_event_id: string; p_error: string | null }) 
     return { data: r.processed_at }
   }
   r.error = args.p_error.trim().slice(0, 2000)
+  if (args.p_final) {
+    r.processed_at = new Date(NOW).toISOString()
+    r.parked_at = null
+    return { data: null }
+  }
   if (!r.parked_at && r.attempts >= MAX_ATTEMPTS) r.parked_at = new Date(NOW).toISOString()
   return { data: null }
 }
@@ -492,7 +497,7 @@ describe("processInboundEvent", () => {
   it("treats an unexpected answer from begin_inbound_attempt as an attempt not counted", async () => {
     rows = [row("1")]
     const processor = vi.fn(async () => {})
-    const odd = fakeDb(() => ({ data: "busy" }), calls) as unknown as Db
+    const odd = fakeDb(() => ({ data: "weird" }), calls) as unknown as Db
     expect(await processInboundEvent(odd, event(rows[0]), processor)).toBe("pending")
     expect(processor).not.toHaveBeenCalled()
   })
@@ -503,6 +508,26 @@ describe("processInboundEvent", () => {
     expect(await processInboundEvent(db(), event(rows[0]), processor)).toBe("pending")
     expect(processor).not.toHaveBeenCalled()
     expect(rows[0].attempts).toBe(3)
+  })
+
+  it("ends an event at once on a final failure, keeping its code", async () => {
+    rows = [row("1")]
+    const outcome = await processInboundEvent(db(), event(rows[0]), async () => {
+      throw new InboundError("GIVE_IMPORT_ROW_INVALID", true)
+    })
+    expect(outcome).toBe("pending")
+    expect(rows[0]).toMatchObject({ attempts: 1, error: "GIVE_IMPORT_ROW_INVALID", parked_at: null })
+    expect(rows[0].processed_at).not.toBeNull()
+    expect(
+      op(
+        calls.find((c) => c.target === "rpc:complete_inbound_event"),
+        "args"
+      )?.[0]
+    ).toEqual({
+      p_inbound_event_id: "1",
+      p_error: "GIVE_IMPORT_ROW_INVALID",
+      p_final: true,
+    })
   })
 
   it("does not run a parked event", async () => {

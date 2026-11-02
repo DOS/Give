@@ -47,10 +47,15 @@ export type InboundProcessors = Partial<Record<InboundChannel, InboundProcessor>
 /**
  * A failure a processor reports with a stable code. Only codes are stored on
  * the event and logged: messages from SDKs or built from a payload can carry
- * tokens or unmasked account numbers.
+ * tokens or unmasked account numbers. A final failure is one that retrying
+ * the same event cannot fix (the database refuses its content): the event
+ * ends at once, with the code kept, and is neither retried nor parked.
  */
 export class InboundError extends Error {
-  constructor(readonly code: string) {
+  constructor(
+    readonly code: string,
+    readonly final = false
+  ) {
     super(code)
     this.name = "InboundError"
   }
@@ -129,14 +134,17 @@ async function runWithTimeout(db: Db, event: InboundEvent, processor: InboundPro
 /** Runs a started attempt and records its outcome. */
 async function runAttempt(db: Db, event: InboundEvent, processor: InboundProcessor): Promise<InboundOutcome> {
   let failure: string | null = null
+  let final = false
   try {
     await runWithTimeout(db, event, processor)
   } catch (err) {
     failure = err instanceof Timeout ? "processing_timeout" : failureCode(err)
+    final = err instanceof InboundError && err.final && failure === err.code
   }
   const { data, error } = await db.rpc("complete_inbound_event", {
     p_inbound_event_id: event.id,
     p_error: failure,
+    p_final: final,
   })
   if (error) {
     console.error("complete_inbound_event failed", event.id, error.code)
@@ -145,7 +153,8 @@ async function runAttempt(db: Db, event: InboundEvent, processor: InboundProcess
   // A replay of an event another run already processed returns its
   // processed_at even when this attempt failed.
   if (data !== null) return "processed"
-  console.warn("inbound event attempt failed", event.id, event.channel, failure)
+  console.warn("inbound event attempt failed", event.id, event.channel, failure, final ? "final" : "")
+  if (final) return "pending" // ended with its error; never retried
   // The failure that uses up the last attempt parks the event.
   const state = await db.from("inbound_events").select("parked_at").eq("id", event.id).maybeSingle()
   return (state.data as { parked_at: string | null } | null)?.parked_at ? "parked" : "pending"

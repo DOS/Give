@@ -478,7 +478,7 @@ Pipeline dùng chung cho mọi kênh, mỗi bước đều chạy lại được
        → out: ledger_entries (post 'disbursed') → chờ give.record_disbursement
 ```
 
-Webhook trả 200 ngay sau khi đã ghi `inbound_events`. Việc xử lý thất bại không làm mất dữ liệu, vì job `reprocess_inbound_events` sẽ chạy lại các dòng có `processed_at IS NULL`. Mỗi lần thử được đếm trước khi chạy (`begin_inbound_attempt`); sau 10 lần thất bại, sự kiện bị "đỗ" (`parked_at`), không được chạy lại nữa và hiện trong `give.parked_inbound_events` cho tài chính/admin, người có thể gửi nó chạy lại bằng `give.retry_inbound_event`.
+Webhook trả 200 ngay sau khi đã ghi `inbound_events`. Việc xử lý thất bại không làm mất dữ liệu, vì job `reprocess_inbound_events` sẽ chạy lại các dòng có `processed_at IS NULL`. Mỗi lần thử được đếm trước khi chạy (`begin_inbound_attempt`); sau 10 lần thất bại, sự kiện bị "đỗ" (`parked_at`), không được chạy lại nữa và hiện trong `give.parked_inbound_events` cho tài chính/admin, người có thể gửi nó chạy lại bằng `give.retry_inbound_event`. Lỗi mà thử lại cũng không qua (ví dụ cơ sở dữ liệu từ chối nội dung sao kê) được báo là lỗi cuối (`p_final`): sự kiện kết thúc ngay, giữ mã lỗi, không chạy lại và không bị "đỗ".
 
 ### 5.2 Các kênh
 

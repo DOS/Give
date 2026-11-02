@@ -7,6 +7,7 @@ import { z } from "zod"
 import type { Db } from "@/lib/campaigns"
 import {
   failureCode,
+  InboundError,
   processInboundEvent,
   PROCESSOR_TIMEOUT_MS,
   type InboundEvent,
@@ -110,9 +111,23 @@ export async function runStatementEvent(
   return { importBatchId: batch.importBatchId, created: batch.created, ...counts }
 }
 
+/**
+ * A refusal no retry of the same statement can pass becomes a final
+ * InboundError, so the event ends with its code instead of being retried
+ * until it is parked.
+ */
+function asInboundFailure(err: unknown): unknown {
+  const code = failureCode(err)
+  return isFinalRefusal(code) ? new InboundError(code, true) : err
+}
+
 /** The statement_import channel's processor for the reprocess-inbound cron. */
 export const statementImportProcessor: InboundProcessor = async (db, event, signal) => {
-  await runStatementEvent(db, event, signal)
+  try {
+    await runStatementEvent(db, event, signal)
+  } catch (err) {
+    throw asInboundFailure(err)
+  }
 }
 
 export interface StatementUpload {
@@ -292,26 +307,31 @@ export async function importStatementFile(
       if (!signal.aborted) outcome = result
     } catch (err) {
       if (!signal.aborted) failure = err
-      throw err
+      throw asInboundFailure(err)
     }
   })
   if (!outcome && state === "processed") {
-    // Another run (the cron, a parallel upload) processed the event: replaying
-    // it is idempotent and returns its counts.
+    // Another run (the cron, a parallel upload) processed the event, or an
+    // earlier upload of this file ended it with a final refusal: replaying it
+    // is idempotent and returns its counts, or the refusal again (as this
+    // uploader, with the statement as stored or as uploaded now).
     try {
       outcome = await runStatementEvent(service, event, AbortSignal.timeout(PROCESSOR_TIMEOUT_MS))
-    } catch {
-      // Reported as pending below; the event itself is processed.
+    } catch (err) {
+      failure = err
     }
   }
   if (outcome) return { status: "imported", ...base, ...outcome }
   // No attempt ran when it could not be counted, or when the event was
-  // already parked: then its last recorded failure says why.
+  // already parked (its last recorded failure says why) or processed (the
+  // replay's failure says why).
   const code =
     attempt === undefined
       ? state === "parked"
         ? storedError
-        : "processing_failed"
+        : failure !== undefined
+          ? failureCode(failure)
+          : "processing_failed"
       : attempt.aborted || failure === undefined
         ? "processing_timeout"
         : failureCode(failure)
