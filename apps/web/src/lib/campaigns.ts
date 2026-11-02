@@ -496,6 +496,10 @@ export function waitingAdvice(
           ? "chờ đội ngũ Give nhả tài khoản không đứng tên bạn, sau đó gắn một tài khoản đã xác minh đứng tên bạn"
           : "nhả tài khoản đang gắn, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại của bạn"
 
+  // A send-back helps only when the organizer then has something to do.
+  // Staff release a foreign account whatever the organizer's state.
+  const sendBack = ended || problem === "account_not_owned" || (verified && !waitFinance && problem !== "no_account")
+
   const notes: string[] = []
   if (!verified) {
     notes.push(
@@ -504,7 +508,7 @@ export function waitingAdvice(
           ? " Nếu tên pháp lý không đổi, tài khoản đang gắn dùng được trở lại."
           : problem === "no_account"
             ? " Sau đó người tổ chức gắn tài khoản trong trang sửa chiến dịch."
-            : problem === "account_not_owned" || waitFinance
+            : sendBack || waitFinance
               ? ""
               : " Sau đó, nếu tài khoản vẫn không dùng được, hãy yêu cầu chỉnh sửa để người tổ chức đổi tài khoản.")
     )
@@ -520,14 +524,11 @@ export function waitingAdvice(
     )
   }
 
-  // A send-back helps only when the organizer then has something to do.
-  // Staff release a foreign account whatever the organizer's state.
-  const sendBack = ended || problem === "account_not_owned" || (verified && !waitFinance && problem !== "no_account")
   if (!sendBack) {
     notes.push(
       verified && problem === "no_account"
         ? "Chiến dịch đã duyệt vẫn gắn được tài khoản: người tổ chức chỉ cần gắn một tài khoản đã xác minh trong trang sửa chiến dịch, rồi chiến dịch tự mở. Không cần yêu cầu chỉnh sửa."
-        : problem === "organizer_not_verified" || waitFinance
+        : problem === "organizer_not_verified" || problem === "no_account" || waitFinance
           ? "Không cần yêu cầu chỉnh sửa lúc này; khi tài khoản dùng được, chiến dịch tự mở."
           : "Chưa cần yêu cầu chỉnh sửa lúc này."
     )
@@ -535,7 +536,7 @@ export function waitingAdvice(
   }
   if (ended) {
     notes.push(
-      "Chiến dịch đã quá ngày kết thúc nên không tự mở kể cả khi tài khoản dùng được trở lại: hãy yêu cầu chỉnh sửa ngay để người tổ chức sửa ngày."
+      "Chiến dịch đã quá ngày kết thúc nên không tự mở kể cả khi có tài khoản dùng được: hãy yêu cầu chỉnh sửa ngay để người tổ chức sửa ngày."
     )
   }
 

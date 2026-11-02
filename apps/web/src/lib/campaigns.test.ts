@@ -248,6 +248,10 @@ describe("waitingAdvice", () => {
       expect(advice.note).toContain("nếu tài khoản vẫn không dùng được, hãy yêu cầu chỉnh sửa")
       expect(advice.note).not.toContain("tự mở")
     }
+    const ended = advise("name_mismatch", { verified: false, ends_at: PAST })
+    expect(ended.sendBackReason).toContain("sửa ngày kết thúc")
+    expect(ended.note).not.toContain("nếu tài khoản vẫn không dùng được")
+    expect(advise("no_account", { verified: false }).note).toContain("chiến dịch tự mở")
   })
 
   it("trusts the queue when the organizer row already reads verified", () => {
