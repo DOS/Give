@@ -30,6 +30,8 @@ interface Row {
   error: string | null
   attempts: number
   parked_at: string | null
+  /** The run whose attempt last started: stands in for last_attempt_at. */
+  attempt_run?: number
 }
 
 /** give.inbound_event_max_attempts() */
@@ -37,6 +39,8 @@ const MAX_ATTEMPTS = 10
 
 let rows: Row[]
 let calls: Call[]
+/** Cron runs so far; each starts at least five minutes after the last. */
+let runs: number
 
 function row(id: string, overrides: Partial<Row> = {}): Row {
   return {
@@ -88,12 +92,15 @@ function begin(args: { p_inbound_event_id: string }) {
   const r = rows.find((x) => x.id === args.p_inbound_event_id)!
   if (r.processed_at) return { data: "processed" }
   if (r.parked_at) return { data: "parked" }
+  // last_attempt_at newer than two minutes: an attempt of this same run.
+  if (r.attempt_run === runs) return { data: "busy" }
   if (r.attempts >= MAX_ATTEMPTS) {
     r.parked_at = new Date(NOW).toISOString()
     r.error ??= "processing_unfinished"
     return { data: "parked" }
   }
   r.attempts += 1
+  r.attempt_run = runs
   return { data: "started" }
 }
 
@@ -126,12 +133,14 @@ function db(): Db {
 }
 
 function run(processors: InboundProcessors, options: { now?: () => number; random?: () => number } = {}) {
+  runs += 1
   return reprocessPendingInboundEvents(db(), { processors, now: () => NOW, random: () => 0, ...options })
 }
 
 beforeEach(() => {
   rows = []
   calls = []
+  runs = 0
   vi.spyOn(console, "warn").mockImplementation(() => {})
   vi.spyOn(console, "error").mockImplementation(() => {})
 })
@@ -233,7 +242,7 @@ describe("reprocessPendingInboundEvents", () => {
     const processor = vi.fn(async () => {})
 
     expect(await run({})).toEqual({ processed: 0, failed: 0, waiting: 3, parked: 0 })
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(2) // the waiting and the parked counts
 
     expect(await run({ statement_import: processor })).toEqual({ processed: 1, failed: 0, waiting: 2, parked: 0 })
     expect(processor).toHaveBeenCalledTimes(1)
@@ -384,6 +393,15 @@ describe("reprocessPendingInboundEvents", () => {
     expect(rows[0].parked_at).not.toBeNull()
   })
 
+  it("skips an event another run is attempting, without counting it", async () => {
+    // An overlapping run (number 1, like the one below) started its attempt first.
+    rows = [row("1", { attempts: 3, error: "boom", attempt_run: 1 })]
+    const processor = vi.fn(async () => {})
+    expect(await run({ statement_import: processor })).toEqual({ processed: 0, failed: 0, waiting: 0, parked: 0 })
+    expect(processor).not.toHaveBeenCalled()
+    expect(rows[0].attempts).toBe(3)
+  })
+
   it("takes an event staff sent back with the never-tried events", async () => {
     const old = new Date(NOW - 60 * 60 * 1000).toISOString()
     rows = [
@@ -459,6 +477,32 @@ describe("processInboundEvent", () => {
     })
     expect(outcome).toBe("pending")
     expect(rows[0]).toMatchObject({ attempts: 1, error: "STATEMENT_PAYLOAD_INVALID", parked_at: null })
+  })
+
+  it("says when its failure used up the last attempt and parked the event", async () => {
+    rows = [row("1", { attempts: MAX_ATTEMPTS - 1, error: "processing_timeout" })]
+    const outcome = await processInboundEvent(db(), event(rows[0]), async () => {
+      throw new Error("GIVE_BINDING_CHANGED")
+    })
+    expect(outcome).toBe("parked")
+    expect(rows[0]).toMatchObject({ attempts: MAX_ATTEMPTS, error: "GIVE_BINDING_CHANGED" })
+    expect(rows[0].parked_at).not.toBeNull()
+  })
+
+  it("treats an unexpected answer from begin_inbound_attempt as an attempt not counted", async () => {
+    rows = [row("1")]
+    const processor = vi.fn(async () => {})
+    const odd = fakeDb(() => ({ data: "busy" }), calls) as unknown as Db
+    expect(await processInboundEvent(odd, event(rows[0]), processor)).toBe("pending")
+    expect(processor).not.toHaveBeenCalled()
+  })
+
+  it("does not run an event whose attempt started moments ago, and counts nothing", async () => {
+    rows = [row("1", { attempts: 3, attempt_run: runs })]
+    const processor = vi.fn(async () => {})
+    expect(await processInboundEvent(db(), event(rows[0]), processor)).toBe("pending")
+    expect(processor).not.toHaveBeenCalled()
+    expect(rows[0].attempts).toBe(3)
   })
 
   it("does not run a parked event", async () => {

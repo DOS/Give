@@ -103,6 +103,21 @@ describe("GET /api/cron/finalize-ended", () => {
     expect(await response.json()).toEqual({ closed: 1, failed: 0 })
   })
 
+  it("reads the bare count of the function before the per-campaign version", async () => {
+    state.handler = () => ({ data: 3 })
+    const response = await GET(request(`Bearer ${SECRET}`))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ closed: 3, failed: 0 })
+  })
+
+  it.each([[null], ["3"], [{ closed: 1 }], [[]]])("answers 500 on an unexpected result %j", async (data) => {
+    state.handler = () => ({ data })
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    const response = await GET(request(`Bearer ${SECRET}`))
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ error: "finalize_failed" })
+  })
+
   it("answers 500 without details when the RPC fails", async () => {
     state.handler = () => ({ error: { code: "57014", message: "canceling statement due to statement timeout" } })
     vi.spyOn(console, "error").mockImplementation(() => {})

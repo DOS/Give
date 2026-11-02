@@ -161,6 +161,21 @@ describe("importStatementFile", () => {
     expect(rpc("complete_inbound_event")).toBeUndefined()
   })
 
+  it("reports a parked file the database refused as refused, so the uploader fixes it", async () => {
+    responses["rpc:record_inbound_event"] = { data: { inbound_event_id: EVENT, created: false, processed_at: null } }
+    responses["rpc:begin_inbound_attempt"] = { data: "parked" }
+    responses["inbound_events"] = { data: { payload: null, error: "GIVE_IMPORT_ROWS_NOT_CHRONOLOGICAL" } }
+    expect(await upload()).toMatchObject({ status: "refused", code: "GIVE_IMPORT_ROWS_NOT_CHRONOLOGICAL" })
+    expect(rpc("stage_statement_import")).toBeUndefined()
+  })
+
+  it("says parked when this upload's failure used up the last attempt", async () => {
+    responses["rpc:stage_statement_import"] = { error: { code: "57014", message: "canceling statement" } }
+    responses["rpc:complete_inbound_event"] = { data: null }
+    responses["inbound_events"] = { data: { parked_at: "2026-10-05T03:00:01Z" } }
+    expect(await upload()).toEqual({ status: "parked", inboundEventId: EVENT, replayed: false, parser: "test-csv" })
+  })
+
   it("reports a failure without running when the attempt cannot be counted", async () => {
     responses["rpc:begin_inbound_attempt"] = { error: { code: "08006", message: "connection lost" } }
     expect(await upload()).toMatchObject({ status: "pending", code: "processing_failed" })

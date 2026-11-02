@@ -158,8 +158,9 @@ export type StatementImportResult =
    */
   | ({ status: "refused"; code: string; row?: number } & ResultBase)
   /**
-   * The same file was uploaded before and its event is parked: its attempts
-   * are used up and it waits for finance/admin staff. Nothing ran.
+   * The event is parked: its attempts are used up, for a reason that is not
+   * a refusal of the file (a timeout, an outage), and it waits for
+   * finance/admin staff.
    */
   | ({ status: "parked" } & ResultBase)
 
@@ -252,9 +253,15 @@ export async function importStatementFile(
   // uploader is not part of the statement, and the first one may have lost
   // access since.
   let stored: StatementPayload = payload
+  let storedError: string | null = null
   if (!recorded.created) {
-    const body = await service.from("inbound_events").select("payload").eq("id", recorded.inboundEventId).maybeSingle()
+    const body = await service
+      .from("inbound_events")
+      .select("payload, error")
+      .eq("id", recorded.inboundEventId)
+      .maybeSingle()
     if (body.error || !body.data) throw new Error(`inbound_events read failed: ${body.error?.code ?? "missing"}`)
+    storedError = (body.data as { error?: string | null }).error ?? null
     const earlierPayload = payloadSchema.safeParse((body.data as { payload: unknown }).payload)
     // A recorded payload this schema no longer reads (an older version) is
     // replaced by this upload's statement inline; the cron cannot read it
@@ -298,14 +305,19 @@ export async function importStatementFile(
     }
   }
   if (outcome) return { status: "imported", ...base, ...outcome }
-  if (state === "parked") return { status: "parked", ...base }
-  // No attempt ran when it could not be counted.
+  // No attempt ran when it could not be counted, or when the event was
+  // already parked: then its last recorded failure says why.
   const code =
     attempt === undefined
-      ? "processing_failed"
+      ? state === "parked"
+        ? storedError
+        : "processing_failed"
       : attempt.aborted || failure === undefined
         ? "processing_timeout"
         : failureCode(failure)
   const row = failure instanceof StatementImportError ? failure.row : undefined
-  return { status: isFinalRefusal(code) ? "refused" : "pending", ...base, code, ...(row !== undefined ? { row } : {}) }
+  // A statement the database refuses is the uploader's to fix, parked or not.
+  if (code && isFinalRefusal(code)) return { status: "refused", ...base, code, ...(row !== undefined ? { row } : {}) }
+  if (state === "parked") return { status: "parked", ...base }
+  return { status: "pending", ...base, code: code ?? "processing_failed", ...(row !== undefined ? { row } : {}) }
 }

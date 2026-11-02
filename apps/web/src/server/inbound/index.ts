@@ -91,17 +91,23 @@ class Timeout extends Error {}
 /** What became of an event: processed (final), still pending, or parked for staff. */
 export type InboundOutcome = "processed" | "pending" | "parked"
 
+type AttemptStart = "started" | "processed" | "parked" | "busy"
+
 /**
  * Counts an attempt before anything that can hang or crash, so attempts that
- * never finish still use up the event's limit. Null when it could not.
+ * never finish still use up the event's limit. Busy: an attempt started less
+ * than two minutes ago may still run (an overlapping cron run, an upload
+ * during a cron attempt); nothing is counted. Null when it could not.
  */
-async function beginAttempt(db: Db, id: string): Promise<"started" | "processed" | "parked" | null> {
+async function beginAttempt(db: Db, id: string): Promise<AttemptStart | null> {
   const { data, error } = await db.rpc("begin_inbound_attempt", { p_inbound_event_id: id })
   if (error) {
     console.error("begin_inbound_attempt failed", id, error.code)
     return null
   }
-  return data as "started" | "processed" | "parked"
+  if (data === "started" || data === "processed" || data === "parked" || data === "busy") return data
+  console.error("begin_inbound_attempt answered unexpectedly", id)
+  return null
 }
 
 async function runWithTimeout(db: Db, event: InboundEvent, processor: InboundProcessor): Promise<void> {
@@ -136,11 +142,13 @@ async function runAttempt(db: Db, event: InboundEvent, processor: InboundProcess
     console.error("complete_inbound_event failed", event.id, error.code)
     return "pending"
   }
-  if (failure) console.warn("inbound event attempt failed", event.id, event.channel, failure)
   // A replay of an event another run already processed returns its
-  // processed_at even when this attempt failed. A failure that used up the
-  // last attempt parked the event; the cron reports parked events.
-  return data !== null ? "processed" : "pending"
+  // processed_at even when this attempt failed.
+  if (data !== null) return "processed"
+  console.warn("inbound event attempt failed", event.id, event.channel, failure)
+  // The failure that uses up the last attempt parks the event.
+  const state = await db.from("inbound_events").select("parked_at").eq("id", event.id).maybeSingle()
+  return (state.data as { parked_at: string | null } | null)?.parked_at ? "parked" : "pending"
 }
 
 /**
@@ -154,7 +162,7 @@ export async function processInboundEvent(
   processor: InboundProcessor
 ): Promise<InboundOutcome> {
   const started = await beginAttempt(db, event.id)
-  if (started === null) return "pending"
+  if (started === null || started === "busy") return "pending"
   if (started !== "started") return started
   return runAttempt(db, event, processor)
 }
@@ -164,7 +172,10 @@ export interface ReprocessResult {
   failed: number
   /** Pending events of channels without a processor yet. */
   waiting: number
-  /** Parked events waiting for staff: all of them, not only this run's. */
+  /**
+   * Parked events waiting for staff: all of them, not only this run's. An
+   * event this run's failure parked is counted in `failed` too.
+   */
   parked: number
 }
 
@@ -209,7 +220,10 @@ export async function reprocessPendingInboundEvents(
   if (waiting.error) throw new Error(`inbound_events count failed: ${waiting.error.message}`)
   result.waiting = waiting.count ?? 0
 
-  if (handled.length === 0) return result
+  if (handled.length === 0) {
+    result.parked = await countParked(db)
+    return result
+  }
 
   const fresh = await pending("id, channel, received_at")
     .in("channel", handled)
@@ -261,6 +275,7 @@ export async function reprocessPendingInboundEvents(
       continue
     }
     if (attempt === "parked") continue // counted below
+    if (attempt === "busy") continue // another run's attempt; not this run's to count
     const body = await db.from("inbound_events").select("dedupe_key, payload").eq("id", head.id).maybeSingle()
     if (body.error || !body.data) {
       console.error("inbound event could not be loaded", head.id, body.error?.code)
@@ -272,12 +287,16 @@ export async function reprocessPendingInboundEvents(
     else result.failed += 1
   }
 
+  result.parked = await countParked(db)
+  return result
+}
+
+async function countParked(db: Db): Promise<number> {
   const parked = await db
     .from("inbound_events")
     .select("id", { count: "exact", head: true })
     .is("processed_at", null)
     .not("parked_at", "is", null)
   if (parked.error) throw new Error(`inbound_events count failed: ${parked.error.message}`)
-  result.parked = parked.count ?? 0
-  return result
+  return parked.count ?? 0
 }
