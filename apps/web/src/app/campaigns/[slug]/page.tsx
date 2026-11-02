@@ -4,10 +4,12 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { cache } from "react"
 
+import { AccountChanges } from "@/components/AccountChanges"
 import { StatusBadge, TypeBadge, VerificationBadge } from "@/components/badges"
 import { Markdown } from "@/components/Markdown"
 import { MoneyTotals } from "@/components/MoneyTotals"
 import { ProgressBar } from "@/components/ProgressBar"
+import { listPublicAccountChanges } from "@/lib/account-swaps"
 import { getSession } from "@/lib/auth/session"
 import {
   getCampaignBySlug,
@@ -67,7 +69,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
 
   const isGive = campaign.type === "give"
   const donationsOpen = !preview && acceptsDonations(campaign)
-  const [milestones, updates, organizer, account, session, totals] = await Promise.all([
+  const [milestones, updates, organizer, account, session, totals, accountChanges] = await Promise.all([
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
     preview ? Promise.resolve(null) : getPublicOrganizer(db, campaign.id),
@@ -75,6 +77,8 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
     getSession(),
     // Public views only: a preview has no public totals yet.
     preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
+    // A failed read hides the notice rather than the page; the statement shows it too.
+    preview ? Promise.resolve([]) : listPublicAccountChanges(dbAs(), campaign.id).catch(() => []),
   ])
   const canDonate = donationsOpen && account !== null
   const closedNote =
@@ -238,6 +242,8 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
           </div>
 
           {totals && <MoneyTotals totals={totals} statementHref={statementHref(campaign.slug, "all")} />}
+
+          <AccountChanges changes={accountChanges} />
 
           {(organizer || (isGive && campaign.beneficiary_name)) && (
             <div className="space-y-3 card p-6 text-sm">

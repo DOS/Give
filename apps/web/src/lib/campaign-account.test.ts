@@ -65,6 +65,13 @@ describe("submitAccountProblem", () => {
   it("passes a verified account in the verified organizer's name", () => {
     expect(submitAccountProblem(account("a"), organizer)).toBeNull()
   })
+
+  it("asks for a swap, not a release, when the unusable account holds money history (DOS/Give#77)", () => {
+    const text = submitAccountProblem(account("a", { verification_status: "disabled" }), organizer, true)
+    expect(text).toBe(submitUnusableAccount("Tài khoản chưa được xác minh.", true))
+    expect(text).toContain("yêu cầu đổi tài khoản")
+    expect(text).not.toContain("Hãy nhả")
+  })
 })
 
 describe("boundAccountOf", () => {
@@ -160,6 +167,35 @@ describe("loadEditorAccounts", () => {
     const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN)
     expect(view.submitBlocked).toBeNull()
     expect(view.choices).toEqual([])
+    expect(view.boundHasTransactions).toBe(false)
+  })
+
+  it("reads whether the bound account recorded money and the campaign's swap requests", async () => {
+    const calls: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "receiving_accounts")
+        return { data: [account("here", { verification_status: "disabled", bindings: bound(CAMPAIGN) })] }
+      if (call.target === "organizers") return { data: organizer }
+      if (call.target === "bank_transactions") return { data: [{ id: "t" }] }
+      if (call.target === "account_swap_requests") return { data: [{ id: "s", status: "pending" }] }
+      return undefined
+    }, calls)
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN)
+    expect(view.boundHasTransactions).toBe(true)
+    expect(view.swaps.map((s) => s.id)).toEqual(["s"])
+    expect(view.submitBlocked).toBe(submitUnusableAccount("Tài khoản chưa được xác minh.", true))
+    expect(
+      op(
+        calls.find((c) => c.target === "bank_transactions"),
+        "eq"
+      )
+    ).toEqual(["binding_id", `b-${CAMPAIGN}`])
+    expect(
+      op(
+        calls.find((c) => c.target === "account_swap_requests"),
+        "eq"
+      )
+    ).toEqual(["campaign_id", CAMPAIGN])
   })
 })
 

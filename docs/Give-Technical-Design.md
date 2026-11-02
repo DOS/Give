@@ -162,6 +162,8 @@ Chỉ hàm `give.release_account_binding()` được nhả binding, và chỉ kh
 
 Mỗi giao dịch được gắn `campaign_id` theo binding đang hiệu lực tại lúc ghi nhận, và không bao giờ đổi sau đó (mục 2.4). Nhờ vậy, khi tài khoản được dùng lại cho campaign sau, sao kê, tiền chưa khớp và báo cáo chi của campaign cũ vẫn tách bạch.
 
+**Đổi tài khoản khi chiến dịch có thể đã có tiền (DOS/Give#55).** Chiến dịch `give` đang `live` hoặc `suspended`, hoặc `changes_requested` mà tài khoản đã nhận giao dịch, không nhả được tài khoản. Khi tài khoản đó không dùng được nữa, người tổ chức gửi yêu cầu đổi sang một tài khoản khác đã xác minh, đứng tên mình (`give.request_account_swap`); nhân viên tài chính hoặc quản trị viên duyệt hay từ chối (`give.decide_account_swap`, không duyệt chiến dịch của chính mình). Khi duyệt, trong một transaction: binding cũ kết thúc (`released_at`) và binding mới bắt đầu ở cùng một thời điểm, tài khoản cũ bị khóa nếu còn `verified`, và `audit_log` ghi lại. Giao dịch gắn theo thời điểm ngân hàng hạch toán: giao dịch của tài khoản cũ hạch toán trước lúc đổi, dù được ghi nhận sau (sao kê nhập muộn), vẫn thuộc chiến dịch qua binding đã kết thúc; giao dịch hạch toán từ lúc đổi trở đi thì không. Chỉ binding kết thúc do đổi tài khoản mới được tra theo cách này; binding nhả theo cách thường không đổi. Lịch sử tiền không bao giờ được nhả: tài khoản cũ chỉ gắn được cho chiến dịch khác khi chiến dịch cũ đã đủ điều kiện nhả như trên (`GIVE_ACCOUNT_HISTORY_OPEN`). View `give.public_account_changes` công khai ngày đổi, ngân hàng và số tài khoản đã che của hai tài khoản.
+
 Cách xác minh quyền sở hữu tài khoản trong MVP:
 
 1. Tên chủ tài khoản phải khớp `organizers.legal_name`.

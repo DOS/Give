@@ -85,6 +85,22 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_EVIDENCE_PATH_INVALID:
     "Ảnh chứng từ không nằm đúng thư mục của khoản chi này, hoặc đã được lưu trước đó. Hãy tải lại ảnh.",
   GIVE_EVIDENCE_LIMIT: "Mỗi khoản chi có tối đa 20 ảnh chứng từ (không tính ảnh đã bị ẩn).",
+  // Account swaps of give campaigns that may hold money (DOS/Give#55).
+  GIVE_SWAP_NOT_ALLOWED:
+    "Chỉ đổi được tài khoản nhận của chiến dịch từ thiện đang gây quỹ, đang tạm dừng, hoặc cần chỉnh sửa mà tài khoản cũ đã nhận giao dịch.",
+  GIVE_SWAP_USE_RELEASE:
+    "Tài khoản đang gắn chưa nhận giao dịch nào: người tổ chức nhả nó rồi gắn tài khoản khác được ngay, không cần đổi qua tài chính.",
+  GIVE_SWAP_SAME_ACCOUNT: "Hãy chọn một tài khoản khác với tài khoản đang gắn.",
+  GIVE_SWAP_ALREADY_PENDING: "Chiến dịch đã có một yêu cầu đổi tài khoản đang chờ duyệt.",
+  GIVE_SWAP_NOT_FOUND: "Không tìm thấy yêu cầu đổi tài khoản, hoặc bạn không có quyền với yêu cầu này.",
+  GIVE_SWAP_NOT_PENDING: "Yêu cầu đổi tài khoản này đã được xử lý. Hãy tải lại trang.",
+  GIVE_SWAP_STALE:
+    "Tài khoản đang gắn của chiến dịch đã thay đổi từ khi yêu cầu được gửi. Hãy từ chối yêu cầu này; người tổ chức gửi yêu cầu mới nếu cần.",
+  GIVE_SWAP_DECISION_INVALID: "Thao tác không hợp lệ.",
+  GIVE_SWAP_REQUEST_IMMUTABLE: "Yêu cầu đã được xử lý nên không sửa được.",
+  GIVE_REASON_TOO_LONG: "Lý do hoặc ghi chú quá dài (lý do tối đa 1000 ký tự, ghi chú công khai tối đa 300 ký tự).",
+  GIVE_ACCOUNT_HISTORY_OPEN:
+    "Tài khoản này đã được đổi ra khỏi một chiến dịch mà phần tiền chưa xong (chiến dịch chưa kết thúc đủ 30 ngày, hoặc còn giao dịch chưa đối chiếu, chưa giải trình), nên chưa dùng cho chiến dịch khác được.",
   // Staff roles.
   GIVE_ADMIN_REQUIRED: "Chỉ quản trị viên mới được cấp hoặc thu quyền.",
   GIVE_ROLE_INVALID: "Quyền không hợp lệ.",

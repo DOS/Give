@@ -7,7 +7,14 @@ import { AccountStatusBadge, StatusBadge, TypeBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { requireSession } from "@/lib/auth/session"
 import { bankLabel } from "@/lib/banks"
-import { canPickAccount, loadEditorAccounts, openingBlock, type EditorAccounts } from "@/lib/campaign-account"
+import { canAskSwap, lastDecidedSwap, pendingSwap, SWAP_REASON_MAX, type AccountSwapRequest } from "@/lib/account-swaps"
+import {
+  canPickAccount,
+  loadEditorAccounts,
+  openingBlock,
+  type AccountChoice,
+  type EditorAccounts,
+} from "@/lib/campaign-account"
 import {
   canPostUpdate,
   type CampaignStatus,
@@ -21,7 +28,7 @@ import {
   listMilestones,
   organizerCanCancel,
 } from "@/lib/campaigns"
-import { formatDate, formatVnd, toVietnamLocalInput } from "@/lib/format"
+import { formatDate, formatDateTime, formatVnd, toVietnamLocalInput } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { privateCoverUrl } from "@/lib/cover-urls"
 import { canAskRelease, isBindableStatus } from "@/lib/receiving-accounts"
@@ -29,6 +36,7 @@ import { getMoneyTotals } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
 import { bindAccount, releaseAccount } from "../../accounts/actions"
+import { cancelAccountSwap, requestAccountSwap } from "../swap-actions"
 
 import {
   addMilestone,
@@ -493,13 +501,19 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               <p role="alert" className="mb-3 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900">
                 Chưa gửi duyệt được: chiến dịch từ thiện cần gắn một tài khoản nhận tiền đã xác minh, đứng tên bạn.{" "}
                 {accounts?.bound
-                  ? "Tài khoản đang gắn không còn dùng được: nhả nó trong mục "
+                  ? accounts.boundHasTransactions
+                    ? "Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: gửi yêu cầu đổi tài khoản trong mục "
+                    : "Tài khoản đang gắn không còn dùng được: nhả nó trong mục "
                   : "Chiến dịch này chưa gắn tài khoản: chọn tài khoản trong mục "}
                 <a href="#receiving-account" className="underline">
                   Tài khoản nhận tiền
                 </a>{" "}
-                {accounts?.bound ? "ở trên rồi gắn tài khoản khác" : "ở trên"}, hoặc khai báo và xác minh tài khoản tại
-                trang{" "}
+                {accounts?.bound
+                  ? accounts.boundHasTransactions
+                    ? "ở trên để bộ phận tài chính duyệt"
+                    : "ở trên rồi gắn tài khoản khác"
+                  : "ở trên"}
+                , hoặc khai báo và xác minh tài khoản tại trang{" "}
                 <Link href="/me/accounts" className="font-medium underline">
                   Tài khoản nhận tiền
                 </Link>
@@ -556,7 +570,9 @@ function ReceivingAccountSection({
   type: CampaignType
   accounts: EditorAccounts
 }) {
-  const { bound, boundUnusable, choices } = accounts
+  const { bound, boundUnusable, boundHasTransactions, choices, swaps } = accounts
+  // A binding that recorded money is never released early; it is swapped instead (DOS/Give#55).
+  const releasable = canAskRelease(status, type) && !(status === "changes_requested" && boundHasTransactions)
   return (
     <section id="receiving-account" className="space-y-4 card p-6">
       <div>
@@ -588,7 +604,7 @@ function ReceivingAccountSection({
               Tài khoản đang gắn tạm không dùng được: {boundUnusable} Chiến dịch không nhận được tiền qua tài khoản này.
             </p>
           )}
-          {canAskRelease(status, type) ? (
+          {releasable ? (
             <ActionForm
               action={releaseAccount.bind(null, bound.id)}
               confirm={
@@ -601,9 +617,13 @@ function ReceivingAccountSection({
             </ActionForm>
           ) : (
             <p className="text-sm text-gray-600">
-              Khi chiến dịch đang chờ duyệt, đã duyệt hoặc đang chạy, tài khoản không nhả được; tài khoản được nhả khi
-              chiến dịch đã xong hẳn phần tiền.
+              {boundHasTransactions && status === "changes_requested"
+                ? "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy đề nghị đổi tài khoản bên dưới."
+                : "Khi chiến dịch đang chờ duyệt, đã duyệt hoặc đang chạy, tài khoản không nhả được; tài khoản được nhả khi chiến dịch đã xong hẳn phần tiền."}
             </p>
+          )}
+          {canAskSwap(status, type, boundHasTransactions) && (
+            <AccountSwapBlock campaignId={campaignId} choices={choices} swaps={swaps} />
           )}
         </div>
       ) : !canPickAccount(status, bound) ? (
@@ -643,6 +663,106 @@ function ReceivingAccountSection({
         </ul>
       )}
     </section>
+  )
+}
+
+/**
+ * The organizer's request to replace the bound account of a give campaign
+ * that may hold money (DOS/Give#55): finance approves, and the old binding
+ * ends and the new one starts at the same instant.
+ */
+function AccountSwapBlock({
+  campaignId,
+  choices,
+  swaps,
+}: {
+  campaignId: string
+  choices: AccountChoice[]
+  swaps: AccountSwapRequest[]
+}) {
+  const pending = pendingSwap(swaps)
+  const last = lastDecidedSwap(swaps)
+  const usable = choices.filter((c) => !c.blockedReason).map((c) => c.account)
+  const requested = pending ? choices.find((c) => c.account.id === pending.new_receiving_account_id)?.account : null
+
+  return (
+    <div className="space-y-3 border-t border-gray-100 pt-3 text-sm">
+      <h3 className="font-semibold">Đổi tài khoản nhận</h3>
+      <p className="text-gray-600">
+        Nếu tài khoản đang gắn không dùng được nữa (ngân hàng đóng tài khoản, tài khoản bị khóa khi kiểm tra gian lận,
+        tên chủ tài khoản không còn trùng tên pháp lý), bạn có thể đề nghị đổi sang một tài khoản khác đã xác minh, đứng
+        tên bạn. Bộ phận tài chính của Give xem xét; khi được duyệt, tài khoản cũ ngừng nhận cho chiến dịch và bị khóa,
+        tài khoản mới nhận tiền từ lúc đó. Tiền đã vào tài khoản cũ trước lúc đổi vẫn thuộc chiến dịch và vẫn có trong
+        sao kê. Trang chiến dịch công khai ngày đổi tài khoản.
+      </p>
+      {last && last.status === "rejected" && !pending && (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-amber-900">
+          Yêu cầu gần nhất bị từ chối lúc {formatDateTime(last.decided_at)}
+          {last.decision_note ? `: ${last.decision_note}` : "."}
+        </p>
+      )}
+      {last && last.status === "approved" && !pending && (
+        <p className="rounded-md bg-green-50 px-3 py-2 text-green-900">
+          Lần đổi tài khoản gần nhất được duyệt lúc {formatDateTime(last.decided_at)}
+          {last.decision_note ? `: ${last.decision_note}` : "."}
+        </p>
+      )}
+      {pending ? (
+        <div className="space-y-2 rounded-md bg-sky-50 px-3 py-2 text-sky-900">
+          <p>
+            Đang chờ bộ phận tài chính duyệt yêu cầu gửi lúc {formatDateTime(pending.created_at)}: đổi sang{" "}
+            {requested ? `${bankLabel(requested.bank_bin)} · ${requested.account_number}` : "tài khoản bạn đã chọn"}.
+            Trong lúc chờ, chiến dịch vẫn dùng tài khoản đang gắn.
+          </p>
+          <p className="break-words whitespace-pre-line">Lý do: {pending.reason}</p>
+          <ActionForm
+            action={cancelAccountSwap.bind(null, pending.id, campaignId)}
+            confirm="Rút yêu cầu đổi tài khoản này?"
+          >
+            <SubmitButton className="btn-secondary">Rút yêu cầu</SubmitButton>
+          </ActionForm>
+        </div>
+      ) : usable.length === 0 ? (
+        <p className="text-gray-600">
+          Bạn chưa có tài khoản nào khác dùng được (đã xác minh, chưa gắn với chiến dịch nào). Khai báo và xác minh tài
+          khoản mới tại trang{" "}
+          <Link href="/me/accounts" className="font-medium text-brand-600">
+            Tài khoản nhận tiền
+          </Link>
+          , rồi quay lại đây.
+        </p>
+      ) : (
+        <ActionForm
+          action={requestAccountSwap.bind(null, campaignId)}
+          confirm="Gửi yêu cầu đổi tài khoản nhận cho bộ phận tài chính?"
+          className="space-y-2"
+        >
+          <label htmlFor="swap_account" className="label">
+            Tài khoản mới
+          </label>
+          <select id="swap_account" name="account_id" className="field" required>
+            {usable.map((account) => (
+              <option key={account.id} value={account.id}>
+                {bankLabel(account.bank_bin)} · {account.account_number} · {account.account_name}
+              </option>
+            ))}
+          </select>
+          <label htmlFor="swap_reason" className="label">
+            Vì sao tài khoản đang gắn không dùng được nữa
+          </label>
+          <textarea
+            id="swap_reason"
+            name="reason"
+            className="field"
+            rows={3}
+            required
+            maxLength={SWAP_REASON_MAX}
+            placeholder="Ví dụ: ngân hàng đã đóng tài khoản ngày 01/11 sau khi kiểm tra. Bộ phận tài chính có thể liên hệ bạn để đối chiếu."
+          />
+          <SubmitButton>Gửi yêu cầu đổi tài khoản</SubmitButton>
+        </ActionForm>
+      )}
+    </div>
   )
 }
 
