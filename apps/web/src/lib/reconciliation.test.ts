@@ -48,6 +48,13 @@ describe("paidBreakdown", () => {
     const failing = fakeDb(() => ({ error: { code: "PGRST301", message: "JWT expired" } })) as unknown as Db
     await expect(paidBreakdown(failing, CAMPAIGN)).rejects.toMatchObject({ code: "PGRST301" })
   })
+
+  it("is null while the database does not have campaign_paid yet", async () => {
+    const missing = fakeDb(() => ({
+      error: { code: "PGRST202", message: "Could not find the function" },
+    })) as unknown as Db
+    expect(await paidBreakdown(missing, CAMPAIGN)).toBeNull()
+  })
 })
 
 describe("paidAfterMatch", () => {

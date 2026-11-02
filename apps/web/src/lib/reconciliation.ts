@@ -213,10 +213,13 @@ export interface PaidBreakdown {
  * The campaign's 'received', 'unmatched_in' and 'other_in' ledger sums,
  * reversals included, in one read (give.campaign_paid, DOS/Give#56). It runs
  * with the caller's rights, so it reads the ledger under the same RLS as the
- * pages around it. Null when the database returns no row.
+ * pages around it. Null when the database returns no row, or does not have
+ * the function yet (the breakdown is only shown, so an app deployed before
+ * the migration still matches and explains).
  */
 export async function paidBreakdown(db: Db, campaignId: string): Promise<PaidBreakdown | null> {
   const { data, error } = await db.rpc("campaign_paid", { p_campaign_id: campaignId }).maybeSingle()
+  if (error?.code === "PGRST202" || error?.code === "42883") return null
   if (error) throw error
   if (!data) return null
   const row = data as Record<"received_amount" | "unmatched_amount" | "other_amount" | "paid_amount", number | string>
