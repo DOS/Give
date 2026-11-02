@@ -218,17 +218,28 @@ describe("waitingAdvice", () => {
     expect(money.note).toContain("bộ phận tài chính để mở lại tài khoản")
   })
 
-  it("leaves no way forward for a foreign account, or a renamed one with money history", () => {
-    for (const r of [
-      row("account_not_owned"),
-      row("name_mismatch", { money: true }),
-      row("account_not_owned", { ends_at: PAST }),
-    ]) {
-      const advice = waitingAdvice(r, now)
+  it("leaves no way forward for an account with money history and another problem", () => {
+    for (const problem of ["name_mismatch", "account_not_owned", "something_new"]) {
+      const advice = advise(problem, { money: true })
       expect(advice.sendBackReason).toBeNull()
       expect(advice.note).toContain("quản trị viên hệ thống")
     }
+    expect(advise("name_mismatch", { money: true, ends_at: PAST }).note).toContain("sẽ không bao giờ tự mở")
     expect(advise("organizer_not_verified", { money: true, verified: false }).note).toContain("xác minh lại hồ sơ")
+  })
+
+  it("sends back a foreign account for staff to release", () => {
+    const advice = advise("account_not_owned")
+    expect(advice.sendBackReason).toMatch(/^Tài khoản nhận tiền đang gắn không đứng tên bạn\. Hãy chờ đội ngũ Give nhả/)
+    expect(advice.note).toContain("nhờ bộ phận tài chính hoặc quản trị viên nhả tài khoản đó")
+  })
+
+  it("trusts the queue when the organizer row already reads verified", () => {
+    const advice = advise("organizer_not_verified")
+    expect(advice.sendBackReason).toBeNull()
+    expect(advice.note).toContain("tài khoản đang gắn dùng được trở lại")
+    expect(advise("no_account", { verified: false }).note).toContain("gắn tài khoản trong trang sửa chiến dịch")
+    expect(advise("account_not_verified", { verified: false }).note).not.toContain("dùng được trở lại")
   })
 
   it("always sends back an ended campaign to fix its dates, saying what else it needs", () => {

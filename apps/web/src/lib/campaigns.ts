@@ -450,8 +450,10 @@ export interface WaitingAdvice {
  * account, from what the organizer can do after a send-back:
  * - A binding that recorded a transaction is never released before the
  *   campaign ends (money history; the swap is DOS/Give#55), so only finance
- *   re-enabling a disabled account heals it; a name mismatch or a foreign
- *   account with money history has no way forward in Give yet.
+ *   re-enabling a disabled account heals it; any other problem with money
+ *   history has no way forward in Give yet.
+ * - An account the organizer does not own (a data defect) is released by
+ *   finance or an admin once the campaign is sent back.
  * - An unverified organizer can neither verify nor bind an account until a
  *   moderator verifies the profile again, which alone may heal it (when the
  *   legal name did not change; otherwise it comes back as name_mismatch).
@@ -467,51 +469,63 @@ export function waitingAdvice(
   now = new Date()
 ): WaitingAdvice {
   const ended = row.ends_at !== null && new Date(row.ends_at) <= now
-  const verified = row.organizer?.verification_status === "verified"
-  const money = row.account_has_transactions
   const problem = row.account_problem
+  // The queue and the organizer row are read separately; trust the queue.
+  const verified = row.organizer?.verification_status === "verified" && problem !== "organizer_not_verified"
+  const money = row.account_has_transactions
+  const waitFinance = money && problem === "account_not_verified"
 
-  if (problem === "account_not_owned" || (money && problem === "name_mismatch")) {
+  if (money && !waitFinance && problem !== "organizer_not_verified") {
     return {
       sendBackReason: null,
       note:
-        (problem === "account_not_owned"
-          ? "Tài khoản đang gắn không thuộc người tổ chức"
-          : "Tài khoản đang gắn đã nhận giao dịch (lịch sử tiền của chiến dịch, chỉ nhả được 30 ngày sau khi chiến dịch bị hủy hoặc kết thúc) nhưng không còn trùng tên pháp lý") +
-        ", và Give chưa hỗ trợ đổi tài khoản trong trường hợp này. Hãy liên hệ quản trị viên hệ thống, hoặc hủy chiến dịch nếu không thể chờ.",
+        "Tài khoản đang gắn đã nhận giao dịch (lịch sử tiền của chiến dịch, chỉ nhả được 30 ngày sau khi chiến dịch bị hủy hoặc kết thúc) nhưng không dùng được vì lý do khác, và Give chưa hỗ trợ đổi tài khoản trong trường hợp này. Hãy liên hệ quản trị viên hệ thống." +
+        (ended
+          ? " Chiến dịch đã quá ngày kết thúc nên sẽ không bao giờ tự mở: nếu không xử lý được tài khoản, hãy hủy chiến dịch."
+          : " Nếu không thể chờ, hãy hủy chiến dịch."),
     }
   }
 
   // What the organizer does about the account after a send-back, if anything.
-  const waitFinance = money && problem === "account_not_verified"
   const accountStep =
     problem === "organizer_not_verified" || waitFinance
       ? null
       : problem === "no_account"
         ? "gắn một tài khoản đã xác minh đứng tên bạn"
-        : "nhả tài khoản đang gắn, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại của bạn"
+        : problem === "account_not_owned"
+          ? "chờ đội ngũ Give nhả tài khoản không đứng tên bạn, rồi gắn một tài khoản đã xác minh đứng tên bạn"
+          : "nhả tài khoản đang gắn, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại của bạn"
 
   const notes: string[] = []
   if (!verified) {
     notes.push(
-      "Hồ sơ người tổ chức chưa được xác minh, nên người tổ chức không gắn được tài khoản nào: hãy xác minh lại hồ sơ (với tên pháp lý hiện tại) ở mục Xác minh người tổ chức. Nếu tên pháp lý không đổi, tài khoản đang gắn có thể dùng được trở lại."
+      "Hồ sơ người tổ chức chưa được xác minh, nên người tổ chức không gắn được tài khoản nào: hãy xác minh lại hồ sơ (với tên pháp lý hiện tại) ở mục Xác minh người tổ chức." +
+        (problem === "organizer_not_verified"
+          ? " Nếu tên pháp lý không đổi, tài khoản đang gắn dùng được trở lại."
+          : problem === "no_account"
+            ? " Sau đó người tổ chức gắn tài khoản trong trang sửa chiến dịch."
+            : "")
     )
   }
   if (waitFinance) {
     notes.push(
-      "Tài khoản đang gắn đã nhận giao dịch: đó là lịch sử tiền của chiến dịch, nên chỉ nhả được 30 ngày sau khi chiến dịch bị hủy hoặc kết thúc. Hãy liên hệ bộ phận tài chính để mở lại tài khoản nếu được."
+      "Tài khoản đang gắn đã nhận giao dịch: đó là lịch sử tiền của chiến dịch, nên chỉ nhả được 30 ngày sau khi chiến dịch bị hủy hoặc kết thúc. Hãy liên hệ bộ phận tài chính để mở lại tài khoản nếu được; nếu không, hãy hủy chiến dịch."
+    )
+  }
+  if (problem === "account_not_owned") {
+    notes.push(
+      "Tài khoản đang gắn không thuộc người tổ chức: sau khi yêu cầu chỉnh sửa, hãy nhờ bộ phận tài chính hoặc quản trị viên nhả tài khoản đó."
     )
   }
 
   // A send-back helps only when the organizer then has something to do.
   const sendBack = ended || (verified && !waitFinance && problem !== "no_account")
   if (!sendBack) {
-    if (problem === "no_account" && verified) {
-      notes.push(
-        "Chiến dịch đã duyệt vẫn gắn được tài khoản: người tổ chức chỉ cần gắn một tài khoản đã xác minh trong trang sửa chiến dịch, rồi chiến dịch tự mở."
-      )
-    }
-    notes.push("Không cần yêu cầu chỉnh sửa lúc này; khi tài khoản dùng được, chiến dịch tự mở.")
+    notes.push(
+      verified && problem === "no_account"
+        ? "Chiến dịch đã duyệt vẫn gắn được tài khoản: người tổ chức chỉ cần gắn một tài khoản đã xác minh trong trang sửa chiến dịch, rồi chiến dịch tự mở. Không cần yêu cầu chỉnh sửa."
+        : "Không cần yêu cầu chỉnh sửa lúc này; khi tài khoản dùng được, chiến dịch tự mở."
+    )
     return { sendBackReason: null, note: notes.join(" ") }
   }
   if (ended) {
@@ -524,7 +538,11 @@ export function waitingAdvice(
     ? "Chiến dịch đã quá ngày kết thúc mà chưa mở được vì không có tài khoản nhận tiền dùng được."
     : problem === "name_mismatch"
       ? "Tên chủ tài khoản nhận tiền đang gắn không còn trùng tên pháp lý của bạn."
-      : "Tài khoản nhận tiền đang gắn không còn dùng được."
+      : problem === "account_not_owned"
+        ? "Tài khoản nhận tiền đang gắn không đứng tên bạn."
+        : "Tài khoản nhận tiền đang gắn không còn dùng được."
+  // Non-empty: an ended campaign fixes its dates, and any other send-back
+  // has a verified organizer, no finance wait and an account step.
   const steps = [ended ? "sửa ngày kết thúc" : null, accountStep].filter((x): x is string => x !== null)
   const parts = [lead, `Hãy ${steps.join(", ")} rồi gửi duyệt lại.`]
   if (!verified) parts.push("Hồ sơ người tổ chức của bạn cần được xác minh lại trước khi gắn hay dùng được tài khoản.")
