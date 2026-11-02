@@ -35,6 +35,7 @@ describe("labels", () => {
         "balance_break",
         "file_mismatch",
         "possible_recorded",
+        "event_dismissed",
       ].sort()
     )
     expect(ambiguousReasonLabel("balance_break")).toContain("Số dư chạy")

@@ -35,6 +35,7 @@ export function fakeDb(handler: Handler, log: Call[] = []) {
       "lte",
       "in",
       "is",
+      "like",
       "not",
       "or",
       "order",
