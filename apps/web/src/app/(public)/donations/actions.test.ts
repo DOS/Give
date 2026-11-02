@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto"
+
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { formatVnd } from "@/lib/format"
@@ -6,6 +8,9 @@ import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 const USER = "11111111-1111-4111-8111-111111111111"
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
 const TOKEN = "f".repeat(64)
+const SERVICE_KEY = "test-service-role-key"
+const clientKey = (address: string) =>
+  createHmac("sha256", SERVICE_KEY).update(`give:donation-rate:${address}`).digest("hex")
 
 const state = vi.hoisted(() => ({
   session: null as { user: { id: string; email: null; name: null }; accessToken: string } | null,
@@ -17,6 +22,7 @@ const state = vi.hoisted(() => ({
   serviceCalls: [] as Call[],
   cookies: [] as [string, string, Record<string, unknown>][],
   existingCookies: [] as string[],
+  requestHeaders: {} as Record<string, string>,
 }))
 
 vi.mock("next/navigation", () => ({
@@ -25,7 +31,7 @@ vi.mock("next/navigation", () => ({
   }),
 }))
 vi.mock("next/headers", () => ({
-  headers: async () => new Headers({ host: "give.example.com" }),
+  headers: async () => new Headers({ host: "give.example.com", ...state.requestHeaders }),
   cookies: async () => ({
     getAll: () => state.existingCookies.map((name) => ({ name, value: "x" })),
     set: (name: string, value: string, options: Record<string, unknown>) => state.cookies.push([name, value, options]),
@@ -61,7 +67,11 @@ const created = (overrides: Record<string, unknown> = {}) => ({
 })
 
 beforeEach(() => {
+  vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", SERVICE_KEY)
+  vi.stubEnv("GIVE_RATE_LIMIT_SECRET", "")
+  vi.stubEnv("VERCEL_ENV", "preview")
   state.session = null
+  state.requestHeaders = { "x-real-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.1, 10.0.0.1" }
   state.anonHandler = (call) => (call.target === "campaigns" ? { data: { id: CAMPAIGN } } : undefined)
   state.userHandler = (call) => (call.target === "campaigns" ? { data: { id: CAMPAIGN } } : undefined)
   state.serviceHandler = (call) => (call.target === "rpc:create_donation" ? created() : undefined)
@@ -85,6 +95,8 @@ describe("donate", () => {
         p_public_name: "Lan",
         p_is_anonymous: false,
         p_message: "Cố lên",
+        p_client_key: clientKey("203.0.113.7"),
+        p_client_network_key: null,
       },
     ])
     expect(state.cookies).toEqual([
@@ -121,9 +133,25 @@ describe("donate", () => {
     await expect(donate(CAMPAIGN, null, form({ anonymous: "on" }))).rejects.toThrow("NEXT_REDIRECT")
     expect(state.userCalls[0].target).toBe("campaigns")
     expect(op(state.serviceCalls[0], "args")).toEqual([
-      expect.objectContaining({ p_contributor_user_id: USER, p_is_anonymous: true, p_public_name: null }),
+      expect.objectContaining({
+        p_contributor_user_id: USER,
+        p_is_anonymous: true,
+        p_public_name: null,
+        p_client_key: null,
+        p_client_network_key: null,
+      }),
     ])
     expect(state.cookies).toHaveLength(0)
+  })
+
+  it("logs no missing key for a signed-in donor in Production", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+    vi.stubEnv("VERCEL_ENV", "production")
+    state.session = { user: { id: USER, email: null, name: null }, accessToken: "jwt" }
+    state.serviceHandler = () => created({ status_token: null, status_token_expires_at: null })
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    expect(log).not.toHaveBeenCalled()
+    log.mockRestore()
   })
 
   it("stops when the session token is rejected, before creating anything", async () => {
@@ -164,6 +192,97 @@ describe("donate", () => {
     expect(await donate(CAMPAIGN, null, form({ amount: "5000" }))).toEqual({
       ok: false,
       message: `Số tiền ủng hộ tối thiểu là ${formatVnd(10000)}.`,
+    })
+  })
+
+  it("counts a guest by a keyed hash of their address, never the address itself", async () => {
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    const args = op(state.serviceCalls[0], "args")?.[0] as Record<string, unknown>
+    expect(args.p_client_key).toMatch(/^[0-9a-f]{64}$/)
+    expect(JSON.stringify(state.serviceCalls)).not.toContain("203.0.113.7")
+  })
+
+  it("keys by GIVE_RATE_LIMIT_SECRET when it is set", async () => {
+    vi.stubEnv("GIVE_RATE_LIMIT_SECRET", "dedicated-secret")
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    expect(op(state.serviceCalls[0], "args")).toEqual([
+      expect.objectContaining({
+        p_client_key: createHmac("sha256", "dedicated-secret").update("give:donation-rate:203.0.113.7").digest("hex"),
+      }),
+    ])
+  })
+
+  it("also counts an IPv6 guest by their /48 network", async () => {
+    state.requestHeaders = { "x-real-ip": "2001:db8:abcd:12:1:2:3:4" }
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    expect(op(state.serviceCalls[0], "args")).toEqual([
+      expect.objectContaining({
+        p_client_key: clientKey("2001:db8:abcd:12::/64"),
+        p_client_network_key: clientKey("2001:db8:abcd::/48"),
+      }),
+    ])
+  })
+
+  it.each([[""], ["development"]])(
+    "trusts the address headers only on Vercel deployments (VERCEL_ENV=%j)",
+    async (deployment) => {
+      vi.stubEnv("VERCEL", "1")
+      vi.stubEnv("VERCEL_ENV", deployment)
+      await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+      expect(op(state.serviceCalls[0], "args")).toEqual([
+        expect.objectContaining({ p_client_key: null, p_client_network_key: null }),
+      ])
+    }
+  )
+
+  it("needs the dedicated secret in Production and says so when it is missing", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+    vi.stubEnv("VERCEL_ENV", "production")
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    expect(op(state.serviceCalls[0], "args")).toEqual([expect.objectContaining({ p_client_key: null })])
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("GIVE_RATE_LIMIT_SECRET is not set"))
+
+    vi.stubEnv("GIVE_RATE_LIMIT_SECRET", "dedicated-secret")
+    state.serviceCalls.length = 0
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    expect(op(state.serviceCalls[0], "args")).toEqual([
+      expect.objectContaining({
+        p_client_key: createHmac("sha256", "dedicated-secret").update("give:donation-rate:203.0.113.7").digest("hex"),
+      }),
+    ])
+    log.mockRestore()
+  })
+
+  it("sends no client key when the request carries no address, and logs it", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+    state.requestHeaders = {}
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    expect(op(state.serviceCalls[0], "args")).toEqual([expect.objectContaining({ p_client_key: null })])
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("no address header"))
+    log.mockRestore()
+  })
+
+  it("tells a limited guest when to retry and that signing in lifts the limit", async () => {
+    state.serviceHandler = () => ({ error: { code: "PT429", message: "GIVE_RATE_LIMITED: 125" } })
+    expect(await donate(CAMPAIGN, null, form())).toEqual({
+      ok: false,
+      message:
+        "Có nhiều lượt ủng hộ từ cùng mạng của bạn trong thời gian ngắn. Hãy thử lại sau khoảng 3 phút, hoặc đăng nhập để ủng hộ tiếp.",
+    })
+    expect(state.cookies).toHaveLength(0)
+  })
+
+  it("assumes a full window when the limit error carries no wait", async () => {
+    state.serviceHandler = () => ({ error: { code: "PT429", message: "GIVE_RATE_LIMITED" } })
+    expect((await donate(CAMPAIGN, null, form()))?.message).toContain("khoảng 10 phút")
+  })
+
+  it("tells a limited signed-in donor when to retry", async () => {
+    state.session = { user: { id: USER, email: null, name: null }, accessToken: "jwt" }
+    state.serviceHandler = () => ({ error: { code: "PT429", message: "GIVE_RATE_LIMITED: 30" } })
+    expect(await donate(CAMPAIGN, null, form())).toEqual({
+      ok: false,
+      message: "Bạn vừa tạo nhiều lượt ủng hộ trong thời gian ngắn. Hãy thử lại sau khoảng 1 phút.",
     })
   })
 
