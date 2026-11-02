@@ -50,7 +50,7 @@ const GIVE_MESSAGES: Record<string, string> = {
     "Tài khoản này đang gắn với một chiến dịch khác. Hãy nhả tài khoản khỏi chiến dịch đó trước: bản nháp, hay chiến dịch từ thiện được yêu cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào, nhả được ngay; các chiến dịch khác đã gửi duyệt chỉ nhả được khi đã xong hẳn phần tiền.",
   GIVE_BINDING_NOT_FOUND: "Tài khoản này hiện không gắn với chiến dịch nào.",
   GIVE_BINDING_NOT_RELEASABLE:
-    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, chiến dịch từ thiện được yêu cầu chỉnh sửa, hoặc đã hủy, mà tài khoản chưa nhận giao dịch nào; hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày). Giao dịch đã vào tài khoản là lịch sử tiền của chiến dịch nên tài khoản không nhả sớm được.",
+    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, chiến dịch từ thiện được yêu cầu chỉnh sửa, hoặc đã hủy, mà tài khoản chưa nhận giao dịch nào; hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày). Giao dịch đã vào tài khoản là lịch sử tiền của chiến dịch nên tài khoản không nhả sớm được. Nếu tài khoản không dùng được nữa khi chiến dịch đang gây quỹ, tạm dừng hoặc cần chỉnh sửa, hãy gửi yêu cầu đổi tài khoản ở mục Tài khoản nhận tiền của chiến dịch.",
   GIVE_BINDING_HAS_OPEN_TRANSACTIONS:
     "Chưa nhả được tài khoản: còn giao dịch của chiến dịch chưa được đối chiếu hoặc chưa được giải trình.",
   GIVE_CAMPAIGN_ALREADY_BOUND: "Chiến dịch này đã có tài khoản nhận khác.",
@@ -89,7 +89,7 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_SWAP_NOT_ALLOWED:
     "Chỉ đổi được tài khoản nhận của chiến dịch từ thiện đang gây quỹ, đang tạm dừng, hoặc cần chỉnh sửa mà tài khoản cũ đã nhận giao dịch.",
   GIVE_SWAP_USE_RELEASE:
-    "Tài khoản đang gắn chưa nhận giao dịch nào: người tổ chức nhả nó rồi gắn tài khoản khác được ngay, không cần đổi qua tài chính.",
+    "Tài khoản đang gắn chưa nhận giao dịch nào: bạn nhả tài khoản đó rồi gắn tài khoản khác được ngay, không cần chờ tài chính duyệt.",
   GIVE_SWAP_SAME_ACCOUNT: "Hãy chọn một tài khoản khác với tài khoản đang gắn.",
   GIVE_SWAP_ALREADY_PENDING: "Chiến dịch đã có một yêu cầu đổi tài khoản đang chờ duyệt.",
   GIVE_SWAP_NOT_FOUND: "Không tìm thấy yêu cầu đổi tài khoản, hoặc bạn không có quyền với yêu cầu này.",
@@ -152,7 +152,7 @@ export function dbErrorMessage(error: DbErrorLike | null | undefined, overrides:
  */
 export const SUBMIT_MESSAGES: Record<string, string> = {
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
-    "Chưa gửi duyệt được: chiến dịch từ thiện cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác. Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại, và tài khoản nhận tiền phải đứng tên pháp lý mới.",
+    "Chưa gửi duyệt được: chiến dịch từ thiện cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác (tài khoản đã nhận giao dịch thì không nhả được: gửi yêu cầu đổi tài khoản trong cùng mục). Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại, và tài khoản nhận tiền phải đứng tên pháp lý mới.",
 }
 
 /** The same code worded for a moderator approving or opening a campaign. */

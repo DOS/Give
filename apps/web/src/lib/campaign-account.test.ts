@@ -141,7 +141,7 @@ describe("loadEditorAccounts", () => {
       if (call.target === "campaigns") return { data: [{ id: OTHER, slug: "khac", title: "Quỹ khác", status: "live" }] }
       return undefined
     }, calls)
-    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN)
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft")
     expect(view.bound?.id).toBe("here")
     expect(view.boundUnusable).toBe("Tài khoản chưa được xác minh.")
     expect(view.submitBlocked).toBe(submitUnusableAccount("Tài khoản chưa được xác minh."))
@@ -164,7 +164,7 @@ describe("loadEditorAccounts", () => {
           ? { data: organizer }
           : undefined
     )
-    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN)
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft")
     expect(view.submitBlocked).toBeNull()
     expect(view.choices).toEqual([])
     expect(view.boundHasTransactions).toBe(false)
@@ -180,7 +180,7 @@ describe("loadEditorAccounts", () => {
       if (call.target === "account_swap_requests") return { data: [{ id: "s", status: "pending" }] }
       return undefined
     }, calls)
-    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN)
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "changes_requested")
     expect(view.boundHasTransactions).toBe(true)
     expect(view.swaps.map((s) => s.id)).toEqual(["s"])
     expect(view.submitBlocked).toBe(submitUnusableAccount("Tài khoản chưa được xác minh.", true))
@@ -196,6 +196,32 @@ describe("loadEditorAccounts", () => {
         "eq"
       )
     ).toEqual(["campaign_id", CAMPAIGN])
+  })
+
+  it("skips the swap reads where no swap can happen", async () => {
+    const calls: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "receiving_accounts") return { data: [account("here", { bindings: bound(CAMPAIGN) })] }
+      if (call.target === "organizers") return { data: organizer }
+      return undefined
+    }, calls)
+    await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft")
+    expect(calls.map((c) => c.target)).not.toContain("bank_transactions")
+    expect(calls.map((c) => c.target)).not.toContain("account_swap_requests")
+  })
+
+  it("keeps the account section when the swap reads fail", async () => {
+    const db = fakeDb((call) => {
+      if (call.target === "receiving_accounts") return { data: [account("here", { bindings: bound(CAMPAIGN) })] }
+      if (call.target === "organizers") return { data: organizer }
+      if (call.target === "bank_transactions" || call.target === "account_swap_requests")
+        return { error: { code: "42P01", message: "relation does not exist" } }
+      return undefined
+    })
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "changes_requested")
+    expect(view.bound?.id).toBe("here")
+    expect(view.boundHasTransactions).toBe(false)
+    expect(view.swaps).toEqual([])
   })
 })
 

@@ -94,7 +94,7 @@ export default async function AdminAccountSwapsPage() {
   )
 }
 
-function AccountLine({ account }: { account: SwapForReview["new_account"] }) {
+function AccountLine({ account }: { account: NonNullable<SwapForReview["old_binding"]>["account"] }) {
   if (!account) return <dd>—</dd>
   return (
     <dd className="flex flex-wrap items-center gap-2">
@@ -118,7 +118,8 @@ function SwapCard({
   selfId: string
 }) {
   const campaign = swap.campaign
-  const own = campaign?.organizer_id === selfId
+  const organizer = swap.new_account?.organizer ?? null
+  const own = swap.new_account?.owner_user_id === selfId
   const block = oldTransactions === null ? null : approvalBlock(swap, oldTransactions)
 
   return (
@@ -141,10 +142,10 @@ function SwapCard({
           <div className="sm:col-span-2">
             <dt className="text-gray-500">Người tổ chức</dt>
             <dd className="flex flex-wrap items-center gap-2">
-              {campaign?.organizer ? (
+              {organizer ? (
                 <>
-                  {campaign.organizer.display_name} (tên pháp lý: {campaign.organizer.legal_name})
-                  <VerificationBadge status={campaign.organizer.verification_status} />
+                  {organizer.display_name} (tên pháp lý: {organizer.legal_name})
+                  <VerificationBadge status={organizer.verification_status} />
                 </>
               ) : (
                 "—"

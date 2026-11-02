@@ -97,34 +97,41 @@ export async function bindingHasTransactions(db: Db, bindingId: string): Promise
 
 type SwapAccount = Pick<
   ReceivingAccount,
-  "id" | "channel" | "bank_bin" | "account_number" | "account_name" | "verification_status" | "review_note"
+  | "id"
+  | "owner_user_id"
+  | "channel"
+  | "bank_bin"
+  | "account_number"
+  | "account_name"
+  | "verification_status"
+  | "review_note"
 >
 
 export interface SwapForReview extends AccountSwapRequest {
-  campaign: {
-    id: string
-    slug: string
-    title: string
-    status: CampaignStatus
-    type: CampaignType
-    organizer_id: string
-    organizer: {
-      legal_name: string | null
-      display_name: string | null
-      verification_status: VerificationStatus
-    } | null
-  } | null
-  new_account: SwapAccount | null
+  campaign: { id: string; slug: string; title: string; status: CampaignStatus; type: CampaignType } | null
+  /** The requested account; its owner is the campaign's organizer (the RPCs require it). */
+  new_account:
+    | (SwapAccount & {
+        organizer: {
+          legal_name: string | null
+          display_name: string | null
+          verification_status: VerificationStatus
+        } | null
+      })
+    | null
   old_binding: { id: string; bound_at: string; released_at: string | null; account: SwapAccount | null } | null
 }
 
-const ACCOUNT_FIELDS = "id, channel, bank_bin, account_number, account_name, verification_status, review_note"
+const ACCOUNT_FIELDS =
+  "id, owner_user_id, channel, bank_bin, account_number, account_name, verification_status, review_note"
 
-// Two foreign keys point at account_bindings, so the old binding is named by its constraint.
-const REVIEW_COLUMNS = `${SWAP_COLUMNS},
-  campaign:campaigns(id, slug, title, status, type, organizer_id,
+// authenticated may not read campaigns.organizer_id (20261101090000_give_campaign_read_hardening),
+// so the organizer comes through the new account, whose owner it is. Two foreign
+// keys point at account_bindings, so the old binding is named by its constraint.
+export const REVIEW_COLUMNS = `${SWAP_COLUMNS},
+  campaign:campaigns(id, slug, title, status, type),
+  new_account:receiving_accounts(${ACCOUNT_FIELDS},
     organizer:organizers(legal_name, display_name, verification_status)),
-  new_account:receiving_accounts(${ACCOUNT_FIELDS}),
   old_binding:account_bindings!account_swap_requests_old_binding_id_fkey(id, bound_at, released_at,
     account:receiving_accounts(${ACCOUNT_FIELDS}))`.replace(/\s+/g, " ")
 
@@ -152,17 +159,24 @@ export async function listDecidedSwaps(db: Db, limit = 30): Promise<SwapForRevie
   return (data ?? []) as unknown as SwapForReview[]
 }
 
-/** How many transactions each binding recorded, by binding id (finance/admin staff). */
+/**
+ * How many transactions each binding recorded, by binding id (finance/admin
+ * staff). One count per binding: a row read would stop at PostgREST's row
+ * cap and undercount.
+ */
 export async function transactionCounts(db: Db, bindingIds: readonly string[]): Promise<Map<string, number>> {
   const unique = [...new Set(bindingIds)]
-  const counts = new Map<string, number>(unique.map((id) => [id, 0]))
-  if (unique.length === 0) return counts
-  const { data, error } = await db.from("bank_transactions").select("binding_id").in("binding_id", unique)
-  if (error) throw error
-  for (const row of (data ?? []) as { binding_id: string }[]) {
-    counts.set(row.binding_id, (counts.get(row.binding_id) ?? 0) + 1)
-  }
-  return counts
+  const counts = await Promise.all(
+    unique.map(async (id) => {
+      const { count, error } = await db
+        .from("bank_transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("binding_id", id)
+      if (error) throw error
+      return [id, count ?? 0] as const
+    })
+  )
+  return new Map(counts)
 }
 
 /**
@@ -182,7 +196,7 @@ export function approvalBlock(swap: SwapForReview, oldBindingTransactions: numbe
     return "Tài khoản cũ chưa nhận giao dịch nào: người tổ chức tự nhả và gắn tài khoản khác được, không cần đổi."
   }
   if (swap.new_account?.verification_status !== "verified") return "Tài khoản mới không còn ở trạng thái đã xác minh."
-  if (campaign.organizer?.verification_status !== "verified") return "Hồ sơ người tổ chức chưa được xác minh."
+  if (swap.new_account.organizer?.verification_status !== "verified") return "Hồ sơ người tổ chức chưa được xác minh."
   return null
 }
 

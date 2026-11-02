@@ -67,7 +67,9 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
     isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
     // A failed account read shows a notice in its section instead of failing the
     // whole editor; submitForReview still checks the account on the server.
-    isGive ? loadEditorAccounts(db, session.user.id, campaign.id).catch(() => null) : Promise.resolve(null),
+    isGive
+      ? loadEditorAccounts(db, session.user.id, campaign.id, campaign.status).catch(() => null)
+      : Promise.resolve(null),
   ])
   const editable = isEditableStatus(campaign.status)
   const submitBlocked = accounts?.submitBlocked ?? null

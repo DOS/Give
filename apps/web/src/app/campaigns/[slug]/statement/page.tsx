@@ -68,7 +68,8 @@ export default async function StatementPage({
     getMoneyTotals(db, campaign.id),
     listStatement(db, campaign.id, filter, page),
     getSession(),
-    listPublicAccountChanges(db, campaign.id),
+    // A failed read hides the notice rather than the statement.
+    listPublicAccountChanges(db, campaign.id).catch(() => []),
   ])
   if (!totals) notFound()
   const pages = Math.max(1, Math.ceil(total / STATEMENT_PAGE_SIZE))

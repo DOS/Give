@@ -46,7 +46,7 @@ describe("dbErrorMessage", () => {
 
   it("explains that an account that received money is not released early", () => {
     expect(dbErrorMessage({ message: "GIVE_BINDING_NOT_RELEASABLE: campaign live since " })).toMatch(
-      /Giao dịch đã vào tài khoản là lịch sử tiền của chiến dịch nên tài khoản không nhả sớm được\.$/
+      /Giao dịch đã vào tài khoản là lịch sử tiền của chiến dịch nên tài khoản không nhả sớm được. Nếu tài khoản không dùng được nữa.*yêu cầu đổi tài khoản/
     )
   })
 

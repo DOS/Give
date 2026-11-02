@@ -1,4 +1,4 @@
-import { bindingHasTransactions, listCampaignSwaps, type AccountSwapRequest } from "./account-swaps"
+import { bindingHasTransactions, listCampaignSwaps, SWAP_STATUSES, type AccountSwapRequest } from "./account-swaps"
 import type { CampaignStatus, Db, Organizer } from "./campaigns"
 import { getOrganizer } from "./campaigns"
 import {
@@ -152,17 +152,28 @@ export function openingBlock(
 }
 
 /** Everything the editor shows about a give campaign's receiving account. */
-export async function loadEditorAccounts(db: Db, organizerId: string, campaignId: string): Promise<EditorAccounts> {
+export async function loadEditorAccounts(
+  db: Db,
+  organizerId: string,
+  campaignId: string,
+  status: CampaignStatus
+): Promise<EditorAccounts> {
   const [accounts, organizer] = await Promise.all([listMyAccounts(db, organizerId), getOrganizer(db, organizerId)])
   const bound = boundAccountOf(accounts, campaignId)
   const holders = accounts
     .map((a) => activeBinding(a)?.campaign_id)
     .filter((id): id is string => Boolean(id) && id !== campaignId)
   const binding = bound ? activeBinding(bound) : null
+  // Money history matters only to a campaign sent back for changes (release
+  // or swap), and swaps only where a swap can happen (DOS/Give#55). A failed
+  // read of either shows the section without them rather than hiding it; the
+  // database refuses anything they would have prevented.
   const [refs, boundHasTransactions, swaps] = await Promise.all([
     campaignRefs(db, holders),
-    binding ? bindingHasTransactions(db, binding.id) : Promise.resolve(false),
-    listCampaignSwaps(db, campaignId),
+    binding && status === "changes_requested"
+      ? bindingHasTransactions(db, binding.id).catch(() => false)
+      : Promise.resolve(false),
+    SWAP_STATUSES.includes(status) ? listCampaignSwaps(db, campaignId).catch(() => []) : Promise.resolve([]),
   ])
   return {
     bound,

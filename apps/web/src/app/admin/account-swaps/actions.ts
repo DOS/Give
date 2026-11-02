@@ -26,7 +26,7 @@ type Decision = (typeof DECISIONS)[number]
 
 const DONE_MESSAGES: Record<Decision, string> = {
   approved:
-    "Đã đổi tài khoản nhận: tài khoản cũ đã ngừng và bị khóa, tài khoản mới nhận tiền từ bây giờ. Trang chiến dịch và sao kê hiện thông báo đổi tài khoản.",
+    "Đã đổi tài khoản nhận: tài khoản cũ đã ngừng và bị khóa, tài khoản mới nhận tiền từ bây giờ. Trang chiến dịch và sao kê hiện thông báo đổi tài khoản khi chiến dịch đang công khai.",
   rejected: "Đã từ chối yêu cầu đổi tài khoản.",
 }
 
@@ -35,6 +35,8 @@ const DECIDE_MESSAGES: Record<string, string> = {
   GIVE_SELF_REVIEW: "Không thể duyệt yêu cầu của chiến dịch do chính bạn tổ chức; một nhân viên khác cần xử lý.",
   GIVE_ACCOUNT_NOT_VERIFIED:
     "Tài khoản mới không còn dùng được (chưa xác minh, hoặc hồ sơ người tổ chức chưa xác minh hay đã đổi tên pháp lý). Hãy từ chối yêu cầu này.",
+  GIVE_SWAP_USE_RELEASE:
+    "Tài khoản cũ chưa nhận giao dịch nào: người tổ chức tự nhả và gắn tài khoản khác được, không cần đổi. Hãy từ chối yêu cầu này.",
   GIVE_ACCOUNT_ALREADY_BOUND:
     "Tài khoản mới đã được gắn với một chiến dịch khác từ khi yêu cầu được gửi. Hãy từ chối yêu cầu này.",
 }

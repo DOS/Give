@@ -9,6 +9,7 @@ import {
   lastDecidedSwap,
   listPublicAccountChanges,
   pendingSwap,
+  REVIEW_COLUMNS,
   transactionCounts,
   type AccountSwapRequest,
   type PublicAccountChange,
@@ -69,17 +70,17 @@ function review(overrides: Partial<SwapForReview> = {}): SwapForReview {
       title: "Quỹ",
       status: "live",
       type: "give",
-      organizer_id: "o",
-      organizer: { legal_name: "Nguyễn Thị Đào", display_name: "Đào", verification_status: "verified" },
     },
     new_account: {
       id: "a",
+      owner_user_id: "o",
       channel: "statement_import",
       bank_bin: "970436",
       account_number: "0002",
       account_name: "NGUYEN THI DAO",
       verification_status: "verified",
       review_note: null,
+      organizer: { legal_name: "Nguyễn Thị Đào", display_name: "Đào", verification_status: "verified" },
     },
     old_binding: { id: "b", bound_at: "2026-10-01T00:00:00Z", released_at: null, account: null },
     ...overrides,
@@ -104,19 +105,41 @@ describe("approvalBlock", () => {
     expect(
       approvalBlock(review({ new_account: { ...review().new_account!, verification_status: "disabled" } }), 3)
     ).toContain("Tài khoản mới")
+    expect(
+      approvalBlock(
+        review({
+          new_account: {
+            ...review().new_account!,
+            organizer: { ...review().new_account!.organizer!, verification_status: "pending" },
+          },
+        }),
+        3
+      )
+    ).toContain("Hồ sơ người tổ chức")
+  })
+})
+
+describe("REVIEW_COLUMNS", () => {
+  it("never reads campaigns.organizer_id, which authenticated may not select", () => {
+    const campaignEmbed = /campaign:campaigns\(([^)]*)\)/.exec(REVIEW_COLUMNS)?.[1]
+    expect(campaignEmbed).toBe("id, slug, title, status, type")
+    expect(REVIEW_COLUMNS).toContain("new_account:receiving_accounts(id, owner_user_id,")
+    expect(REVIEW_COLUMNS).toContain("organizer:organizers(legal_name, display_name, verification_status)")
+    expect(REVIEW_COLUMNS).toContain("account_bindings!account_swap_requests_old_binding_id_fkey")
   })
 })
 
 describe("transactionCounts", () => {
-  it("counts the transactions of each binding, zero for none", async () => {
+  it("counts each binding's transactions exactly, without reading rows", async () => {
     const calls: Call[] = []
-    const db = fakeDb(() => ({ data: [{ binding_id: "b1" }, { binding_id: "b1" }] }), calls)
+    const db = fakeDb((call) => ({ count: op(call, "eq")?.[1] === "b1" ? 1500 : 0 }), calls)
     const counts = await transactionCounts(db as unknown as Db, ["b1", "b2", "b1"])
     expect([...counts]).toEqual([
-      ["b1", 2],
+      ["b1", 1500],
       ["b2", 0],
     ])
-    expect(op(calls[0], "in")).toEqual(["binding_id", ["b1", "b2"]])
+    expect(calls).toHaveLength(2)
+    expect(op(calls[0], "select")).toEqual(["id", { count: "exact", head: true }])
   })
 })
 

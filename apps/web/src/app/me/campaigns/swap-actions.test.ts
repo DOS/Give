@@ -115,7 +115,7 @@ describe("requestAccountSwap", () => {
       transactions: [],
     })
     const result = await requestAccountSwap(CAMPAIGN, null, swapForm())
-    expect(result).toEqual({ ok: false, message: expect.stringContaining("nhả nó rồi gắn tài khoản khác") })
+    expect(result).toEqual({ ok: false, message: expect.stringContaining("nhả tài khoản đó rồi gắn tài khoản khác") })
     expect(state.serviceCalls).toEqual([])
   })
 
