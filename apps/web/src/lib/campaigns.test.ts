@@ -225,10 +225,11 @@ describe("waitingAdvice", () => {
     )
     expect(unverified.sendBackReason).toContain("sửa ngày kết thúc")
     expect(unverified.note).toContain("không tự mở")
+    expect(unverified.note).toContain("yêu cầu chỉnh sửa ngay bây giờ")
     expect(unverified.note).not.toContain("chiến dịch tự mở")
   })
 
-  it("offers no send-back when the account cannot be released", () => {
+  it("offers no send-back when the account cannot be released, unless the campaign must fix its dates", () => {
     const withMoney = waitingAdvice(row("account_not_verified", { account_has_transactions: true }), now)
     expect(withMoney.sendBackReason).toBeNull()
     expect(withMoney.note).toContain("30 ngày sau khi chiến dịch bị hủy hoặc kết thúc")
@@ -236,7 +237,9 @@ describe("waitingAdvice", () => {
       row("account_not_verified", { account_has_transactions: true, ends_at: "2026-11-01T00:00:00Z" }),
       now
     )
-    expect(endedWithMoney.sendBackReason).toBeNull()
+    expect(endedWithMoney.sendBackReason).toContain("sửa ngày kết thúc")
+    expect(endedWithMoney.sendBackReason).toContain("bộ phận tài chính mở lại tài khoản")
+    expect(endedWithMoney.sendBackReason).not.toContain("Hãy nhả")
     const notOwned = waitingAdvice(row("account_not_owned"), now)
     expect(notOwned.sendBackReason).toBeNull()
     expect(notOwned.note).toContain("không thuộc người tổ chức")

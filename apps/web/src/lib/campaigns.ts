@@ -490,10 +490,21 @@ export function waitingAdvice(
   const ended = row.ends_at !== null && new Date(row.ends_at) <= now
   const organizerVerified = row.organizer?.verification_status === "verified"
   if (row.account_has_transactions) {
-    return {
-      sendBackReason: null,
-      note: "Tài khoản đang gắn đã nhận giao dịch: đó là lịch sử tiền của chiến dịch, nên tài khoản chỉ nhả được 30 ngày sau khi chiến dịch bị hủy hoặc kết thúc, và Give chưa hỗ trợ đổi tài khoản trong trường hợp này. Đừng yêu cầu chỉnh sửa, vì chiến dịch sẽ rời danh sách này mà vẫn không đổi được tài khoản. Hãy liên hệ bộ phận tài chính để mở lại tài khoản nếu được, hoặc hủy chiến dịch nếu không thể chờ.",
-    }
+    const money =
+      "Tài khoản đang gắn đã nhận giao dịch: đó là lịch sử tiền của chiến dịch, nên tài khoản chỉ nhả được 30 ngày sau khi chiến dịch bị hủy hoặc kết thúc, và Give chưa hỗ trợ đổi tài khoản trong trường hợp này."
+    // An ended campaign never opens, even once finance reopens the account,
+    // so it goes back now to fix its dates; the organizer resubmits once the
+    // account is usable again.
+    return ended
+      ? {
+          sendBackReason:
+            "Chiến dịch đã quá ngày kết thúc mà chưa mở được. Hãy sửa ngày kết thúc rồi gửi duyệt lại. Tài khoản nhận tiền đang gắn đã nhận giao dịch nên không nhả được: chiến dịch chỉ gửi duyệt lại được khi bộ phận tài chính mở lại tài khoản đó. Nếu không còn cần gây quỹ, hãy hủy chiến dịch.",
+          note: money,
+        }
+      : {
+          sendBackReason: null,
+          note: `${money} Đừng yêu cầu chỉnh sửa lúc này, vì chiến dịch sẽ rời danh sách này mà vẫn không đổi được tài khoản. Hãy liên hệ bộ phận tài chính để mở lại tài khoản nếu được, hoặc hủy chiến dịch nếu không thể chờ.`,
+        }
   }
   if (row.account_problem === "account_not_owned") {
     return {
@@ -506,7 +517,7 @@ export function waitingAdvice(
       sendBackReason: SEND_BACK_ENDED,
       note: organizerVerified
         ? null
-        : `${REVERIFY_FIRST} Chiến dịch đã quá ngày kết thúc nên không tự mở; sau khi xác minh, hãy yêu cầu chỉnh sửa để người tổ chức sửa ngày.`,
+        : `${REVERIFY_FIRST} Chiến dịch đã quá ngày kết thúc nên không tự mở: hãy yêu cầu chỉnh sửa ngay bây giờ (người tổ chức sửa ngày trong lúc chờ xác minh), vì sau khi xác minh, chiến dịch có thể rời danh sách này.`,
     }
   }
   if (!organizerVerified) {
