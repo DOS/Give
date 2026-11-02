@@ -153,10 +153,15 @@ export type StatementImportResult =
   | ({ status: "pending"; code: string; row?: number } & ResultBase)
   /**
    * The database refused the recorded statement and will refuse it again
-   * (`code` is a GIVE_* code): the uploader fixes the file. The event still
-   * counts as pending until inbound events get a parked state.
+   * (`code` is a GIVE_* code): the uploader fixes the file. The cron retries
+   * the event until its attempts are used up, then parks it.
    */
   | ({ status: "refused"; code: string; row?: number } & ResultBase)
+  /**
+   * The same file was uploaded before and its event is parked: its attempts
+   * are used up and it waits for finance/admin staff. Nothing ran.
+   */
+  | ({ status: "parked" } & ResultBase)
 
 /**
  * Refusals that do not depend on timing: retrying the same statement cannot
@@ -273,7 +278,7 @@ export async function importStatementFile(
   let outcome: StatementBatchOutcome | undefined
   let failure: unknown
   let attempt: AbortSignal | undefined
-  const processed = await processInboundEvent(service, event, async (db, ev, signal) => {
+  const state = await processInboundEvent(service, event, async (db, ev, signal) => {
     attempt = signal
     try {
       const result = await runStatementEvent(db, ev, signal)
@@ -283,7 +288,7 @@ export async function importStatementFile(
       throw err
     }
   })
-  if (!outcome && processed) {
+  if (!outcome && state === "processed") {
     // Another run (the cron, a parallel upload) processed the event: replaying
     // it is idempotent and returns its counts.
     try {
@@ -293,7 +298,14 @@ export async function importStatementFile(
     }
   }
   if (outcome) return { status: "imported", ...base, ...outcome }
-  const code = attempt?.aborted || failure === undefined ? "processing_timeout" : failureCode(failure)
+  if (state === "parked") return { status: "parked", ...base }
+  // No attempt ran when it could not be counted.
+  const code =
+    attempt === undefined
+      ? "processing_failed"
+      : attempt.aborted || failure === undefined
+        ? "processing_timeout"
+        : failureCode(failure)
   const row = failure instanceof StatementImportError ? failure.row : undefined
   return { status: isFinalRefusal(code) ? "refused" : "pending", ...base, code, ...(row !== undefined ? { row } : {}) }
 }

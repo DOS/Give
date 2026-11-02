@@ -67,6 +67,7 @@ beforeEach(() => {
       : undefined
   state.serviceResponses = {
     "rpc:record_inbound_event": { data: { inbound_event_id: EVENT, created: true, processed_at: null } },
+    "rpc:begin_inbound_attempt": { data: "started" },
     "rpc:stage_statement_import": {
       data: { import_batch_id: BATCH, created: true, ready: 2, duplicate: 0, ambiguous: 1 },
     },
@@ -100,10 +101,24 @@ describe("uploadStatement", () => {
     state.serviceResponses["rpc:record_inbound_event"] = {
       data: { inbound_event_id: EVENT, created: false, processed_at: "2026-11-01T00:00:00Z" },
     }
+    state.serviceResponses["rpc:begin_inbound_attempt"] = { data: "processed" }
     state.serviceResponses.inbound_events = { data: { payload: null } }
     const result = await upload()
     expect(result?.ok).toBe(true)
     expect(result?.message).toMatch(/^File này đã được tải lên trước đây/)
+  })
+
+  it("says when the same file is parked for finance staff", async () => {
+    state.serviceResponses["rpc:record_inbound_event"] = {
+      data: { inbound_event_id: EVENT, created: false, processed_at: null },
+    }
+    state.serviceResponses["rpc:begin_inbound_attempt"] = { data: "parked" }
+    state.serviceResponses.inbound_events = { data: { payload: null } }
+    const result = await upload()
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toMatch(/^File này đã được tải lên trước đây/)
+    expect(result?.message).toContain("đã chuyển cho đội tài chính kiểm tra")
+    expect(state.serviceCalls.some((c) => c.target === "rpc:stage_statement_import")).toBe(false)
   })
 
   it("refuses a format no parser reads, before anything is recorded", async () => {

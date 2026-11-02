@@ -9,9 +9,13 @@ import type { Db } from "@/lib/campaigns"
  * give.record_inbound_event and then processes it: its processor turns the
  * payload into money facts through the money RPCs (record_bank_transaction,
  * match_transaction), and give.complete_inbound_event records the outcome.
- * An error leaves the event pending; the reprocess-inbound cron retries it.
- * A channel's inline path should call processInboundEvent too, so both paths
- * record outcomes the same way.
+ * Each attempt is counted first (give.begin_inbound_attempt). An error leaves
+ * the event pending and the reprocess-inbound cron retries it; once its
+ * attempts are used up (give.inbound_event_max_attempts, 10) the event is
+ * parked and waits for finance/admin staff (give.parked_inbound_events,
+ * give.retry_inbound_event). A channel's inline path should call
+ * processInboundEvent too, so both paths count and record attempts the same
+ * way.
  *
  * A processor must be safe to run again on the same event, including at the
  * same time as another run (a provider redelivery, a duplicate cron call):
@@ -84,6 +88,22 @@ export function failureCode(err: unknown): string {
 
 class Timeout extends Error {}
 
+/** What became of an event: processed (final), still pending, or parked for staff. */
+export type InboundOutcome = "processed" | "pending" | "parked"
+
+/**
+ * Counts an attempt before anything that can hang or crash, so attempts that
+ * never finish still use up the event's limit. Null when it could not.
+ */
+async function beginAttempt(db: Db, id: string): Promise<"started" | "processed" | "parked" | null> {
+  const { data, error } = await db.rpc("begin_inbound_attempt", { p_inbound_event_id: id })
+  if (error) {
+    console.error("begin_inbound_attempt failed", id, error.code)
+    return null
+  }
+  return data as "started" | "processed" | "parked"
+}
+
 async function runWithTimeout(db: Db, event: InboundEvent, processor: InboundProcessor): Promise<void> {
   const controller = new AbortController()
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -100,11 +120,8 @@ async function runWithTimeout(db: Db, event: InboundEvent, processor: InboundPro
   }
 }
 
-/**
- * Runs the event's processor and records the outcome. Returns true when the
- * event is now processed. Never throws: a failure is stored on the event.
- */
-export async function processInboundEvent(db: Db, event: InboundEvent, processor: InboundProcessor): Promise<boolean> {
+/** Runs a started attempt and records its outcome. */
+async function runAttempt(db: Db, event: InboundEvent, processor: InboundProcessor): Promise<InboundOutcome> {
   let failure: string | null = null
   try {
     await runWithTimeout(db, event, processor)
@@ -117,12 +134,29 @@ export async function processInboundEvent(db: Db, event: InboundEvent, processor
   })
   if (error) {
     console.error("complete_inbound_event failed", event.id, error.code)
-    return false
+    return "pending"
   }
-  if (failure) console.warn("inbound event still pending", event.id, event.channel, failure)
+  if (failure) console.warn("inbound event attempt failed", event.id, event.channel, failure)
   // A replay of an event another run already processed returns its
-  // processed_at even when this attempt failed.
-  return data !== null
+  // processed_at even when this attempt failed. A failure that used up the
+  // last attempt parked the event; the cron reports parked events.
+  return data !== null ? "processed" : "pending"
+}
+
+/**
+ * Counts an attempt, runs the event's processor and records the outcome.
+ * Never throws: a failure is stored on the event. A processed or parked event
+ * is not run again.
+ */
+export async function processInboundEvent(
+  db: Db,
+  event: InboundEvent,
+  processor: InboundProcessor
+): Promise<InboundOutcome> {
+  const started = await beginAttempt(db, event.id)
+  if (started === null) return "pending"
+  if (started !== "started") return started
+  return runAttempt(db, event, processor)
 }
 
 export interface ReprocessResult {
@@ -130,6 +164,8 @@ export interface ReprocessResult {
   failed: number
   /** Pending events of channels without a processor yet. */
   waiting: number
+  /** Parked events waiting for staff: all of them, not only this run's. */
+  parked: number
 }
 
 export interface ReprocessOptions {
@@ -143,11 +179,11 @@ type EventHead = Pick<InboundEvent, "id" | "channel" | "received_at">
 
 /**
  * The reprocess-inbound cron: retries pending authentic events. Never-tried
- * events go first, oldest first. Events that already failed fill the rest of
- * the batch from a random window, so a set of events that keep failing
- * cannot keep other failures from being retried. Forged events are stored as
- * processed, so they are never picked. Payloads (up to 1 MiB each) are
- * loaded one event at a time.
+ * events (and events staff sent back) go first, oldest first. Events that
+ * already failed fill the rest of the batch from a random window, so a set of
+ * events that keep failing cannot keep other failures from being retried.
+ * Parked events are never picked, and forged events are stored as processed.
+ * Payloads (up to 1 MiB each) are loaded one event at a time.
  */
 export async function reprocessPendingInboundEvents(
   db: Db,
@@ -156,13 +192,14 @@ export async function reprocessPendingInboundEvents(
   const started = now()
   const cutoff = new Date(started - REPROCESS_GRACE_MS).toISOString()
   const handled = (Object.keys(processors) as InboundChannel[]).filter((channel) => processors[channel])
-  const result: ReprocessResult = { processed: 0, failed: 0, waiting: 0 }
+  const result: ReprocessResult = { processed: 0, failed: 0, waiting: 0, parked: 0 }
 
   const pending = (columns: string, options?: { count: "exact"; head: true }) =>
     db
       .from("inbound_events")
       .select(columns, options)
       .is("processed_at", null)
+      .is("parked_at", null)
       .eq("signature_valid", true)
       .lt("received_at", cutoff)
 
@@ -176,7 +213,7 @@ export async function reprocessPendingInboundEvents(
 
   const fresh = await pending("id, channel, received_at")
     .in("channel", handled)
-    .is("error", null)
+    .eq("attempts", 0)
     .order("received_at", { ascending: true })
     .limit(REPROCESS_BATCH)
   if (fresh.error) throw new Error(`inbound_events read failed: ${fresh.error.message}`)
@@ -184,15 +221,13 @@ export async function reprocessPendingInboundEvents(
 
   const slots = REPROCESS_BATCH - events.length
   if (slots > 0) {
-    const failedCount = await pending("id", { count: "exact", head: true })
-      .in("channel", handled)
-      .not("error", "is", null)
+    const failedCount = await pending("id", { count: "exact", head: true }).in("channel", handled).gt("attempts", 0)
     if (failedCount.error) throw new Error(`inbound_events count failed: ${failedCount.error.message}`)
     const total = failedCount.count ?? 0
     const failedPage = async (from: number, to: number) => {
       const page = await pending("id, channel, received_at")
         .in("channel", handled)
-        .not("error", "is", null)
+        .gt("attempts", 0)
         .order("received_at", { ascending: true })
         .range(from, to)
       if (page.error) throw new Error(`inbound_events read failed: ${page.error.message}`)
@@ -213,19 +248,19 @@ export async function reprocessPendingInboundEvents(
     if (now() - started > REPROCESS_BUDGET_MS) break
     const processor = processors[head.channel]
     if (!processor) continue
-    // Marks the attempt before anything that can hang or crash the function,
-    // so an event whose attempt never finished joins the failed pool instead
-    // of staying first in the never-tried queue. A success clears it.
-    const mark = await db.rpc("complete_inbound_event", { p_inbound_event_id: head.id, p_error: "processing_started" })
-    if (mark.error) {
-      console.error("complete_inbound_event failed", head.id, mark.error.code)
+    // Counted before the payload is loaded, so an event whose attempt never
+    // finished joins the failed pool instead of staying first in the
+    // never-tried queue, and is parked once its attempts are used up.
+    const attempt = await beginAttempt(db, head.id)
+    if (attempt === null) {
       result.failed += 1
       continue
     }
-    if (mark.data !== null) {
+    if (attempt === "processed") {
       result.processed += 1 // another run processed it meanwhile
       continue
     }
+    if (attempt === "parked") continue // counted below
     const body = await db.from("inbound_events").select("dedupe_key, payload").eq("id", head.id).maybeSingle()
     if (body.error || !body.data) {
       console.error("inbound event could not be loaded", head.id, body.error?.code)
@@ -233,8 +268,16 @@ export async function reprocessPendingInboundEvents(
       continue
     }
     const event = { ...head, ...(body.data as Pick<InboundEvent, "dedupe_key" | "payload">) }
-    if (await processInboundEvent(db, event, processor)) result.processed += 1
+    if ((await runAttempt(db, event, processor)) === "processed") result.processed += 1
     else result.failed += 1
   }
+
+  const parked = await db
+    .from("inbound_events")
+    .select("id", { count: "exact", head: true })
+    .is("processed_at", null)
+    .not("parked_at", "is", null)
+  if (parked.error) throw new Error(`inbound_events count failed: ${parked.error.message}`)
+  result.parked = parked.count ?? 0
   return result
 }

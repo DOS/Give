@@ -69,21 +69,38 @@ describe("GET /api/cron/finalize-ended", () => {
       if (call.target !== "rpc:finalize_ended_campaigns") return undefined
       const due = campaigns.filter((c) => c.status === "live" && c.ended)
       for (const c of due) c.status = "closed"
-      return { data: due.length }
+      return { data: { closed: due.length, failed: 0 } }
     }
 
     const first = await GET(request(`Bearer ${SECRET}`))
     expect(first.status).toBe(200)
-    expect(await first.json()).toEqual({ finalized: 2 })
+    expect(await first.json()).toEqual({ closed: 2, failed: 0 })
     const after = structuredClone(campaigns)
 
     const second = await GET(request(`Bearer ${SECRET}`))
     expect(second.status).toBe(200)
-    expect(await second.json()).toEqual({ finalized: 0 })
+    expect(await second.json()).toEqual({ closed: 0, failed: 0 })
     expect(campaigns).toEqual(after)
     expect(campaigns.map((c) => c.status)).toEqual(["closed", "closed", "live"])
     expect(state.calls.map((c) => c.target)).toEqual(["rpc:finalize_ended_campaigns", "rpc:finalize_ended_campaigns"])
     expect(op(state.calls[0], "args")).toEqual([undefined])
+  })
+
+  it("reports campaigns that failed to close while the others close", async () => {
+    // Each campaign closes in its own subtransaction; a failure is counted and
+    // written to give.audit_log, and the next run tries it again.
+    state.handler = () => ({ data: { closed: 2, failed: 1 } })
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const response = await GET(request(`Bearer ${SECRET}`))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ closed: 2, failed: 1 })
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("failed to finalize"), 1)
+  })
+
+  it("reads the counts from a one-row array too", async () => {
+    state.handler = () => ({ data: [{ closed: 1, failed: 0 }] })
+    const response = await GET(request(`Bearer ${SECRET}`))
+    expect(await response.json()).toEqual({ closed: 1, failed: 0 })
   })
 
   it("answers 500 without details when the RPC fails", async () => {
