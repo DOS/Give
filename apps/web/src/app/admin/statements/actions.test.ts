@@ -9,7 +9,6 @@ const TX = "77777777-7777-4777-8777-777777777777"
 const state = vi.hoisted(() => ({
   userHandler: (() => undefined) as Handler,
   serviceHandler: (() => undefined) as Handler,
-  storedNote: null as string | null,
   userCalls: [] as Call[],
   serviceCalls: [] as Call[],
 }))
@@ -41,19 +40,12 @@ function rpcArgs() {
 beforeEach(() => {
   state.userCalls.length = 0
   state.serviceCalls.length = 0
-  state.userHandler = (call) => {
-    if (call.target === "rpc:is_admin") return { data: true }
-    // The stored note after the call: this reviewer's, unless it was a replay.
-    if (call.target === "statement_import_rows") return { data: { resolution_note: state.storedNote } }
-    return undefined
-  }
-  state.storedNote = null
-  state.serviceHandler = () => ({ data: { status: "imported", bank_transaction_id: TX } })
+  state.userHandler = (call) => (call.target === "rpc:is_admin" ? { data: true } : undefined)
+  state.serviceHandler = () => ({ data: { status: "imported", bank_transaction_id: TX, replayed: false } })
 })
 
 describe("resolveStatementRow", () => {
   it("imports a row with the reviewer's note, after a role check with their own token", async () => {
-    state.storedNote = "Thấy trên VCB, FT9"
     const result = await resolveStatementRow(ROW, null, form({ resolution: "import", note: "  Thấy trên VCB, FT9  " }))
 
     expect(result?.ok).toBe(true)
@@ -69,14 +61,21 @@ describe("resolveStatementRow", () => {
     })
   })
 
-  it("says so when the row was already resolved the same way and this note was not kept", async () => {
-    state.storedNote = "Ghi chú của người xử lý trước"
+  it("says so when the database reports a replay and this note was not kept", async () => {
+    state.serviceHandler = () => ({ data: { status: "imported", bank_transaction_id: TX, replayed: true } })
     const result = await resolveStatementRow(ROW, null, form({ resolution: "import", note: "Ghi chú của tôi" }))
     expect(result).toEqual({
       ok: true,
       message:
         "Dòng này đã được xử lý trước đó theo cùng cách (có thể bởi người khác); ghi chú của bạn không được lưu. Hãy tải lại trang.",
     })
+    // The flag comes with the answer: no second read of the row.
+    expect(state.userCalls.map((c) => c.target)).toEqual(["rpc:is_admin"])
+  })
+
+  it("reports a fresh resolution when the database says it is not a replay", async () => {
+    const result = await resolveStatementRow(ROW, null, form({ resolution: "import", note: "x" }))
+    expect(result?.message).toContain("Đã nhập dòng thành giao dịch")
   })
 
   it("passes the override only for an import the reviewer confirmed", async () => {
@@ -97,8 +96,7 @@ describe("resolveStatementRow", () => {
   })
 
   it("marks a duplicate of the chosen transaction without creating one", async () => {
-    state.serviceHandler = () => ({ data: { status: "duplicate", bank_transaction_id: TX } })
-    state.storedNote = "đã ghi"
+    state.serviceHandler = () => ({ data: { status: "duplicate", bank_transaction_id: TX, replayed: false } })
     const result = await resolveStatementRow(
       ROW,
       null,

@@ -66,20 +66,16 @@ export async function resolveStatementRow(rowId: string, _state: ActionResult, f
   revalidatePath("/admin/statements")
   revalidatePath("/admin/unmatched")
   revalidatePath("/me/statements", "layout")
+  const result = data as { status?: string; replayed?: boolean } | null
   // The same resolution again returns the stored outcome without writing
   // this reviewer's note or an audit row: say so, rather than report a check
   // of theirs that was not recorded.
-  const stored = await dbAs(session.accessToken)
-    .from("statement_import_rows")
-    .select("resolution_note")
-    .eq("id", rowId)
-    .maybeSingle()
-  if (!stored.error && stored.data && (stored.data as { resolution_note: string | null }).resolution_note !== note) {
+  if (result?.replayed === true) {
     return done(
       "Dòng này đã được xử lý trước đó theo cùng cách (có thể bởi người khác); ghi chú của bạn không được lưu. Hãy tải lại trang."
     )
   }
-  const status = (data as { status?: string } | null)?.status
+  const status = result?.status
   if (resolution === "duplicate")
     return done("Đã đánh dấu dòng là giao dịch đã ghi; không có giao dịch mới nào được tạo.")
   if (status === "duplicate") {

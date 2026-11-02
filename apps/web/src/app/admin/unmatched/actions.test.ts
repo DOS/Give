@@ -24,7 +24,7 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/supabase", () => ({
   dbAs: () =>
     fakeDb(
-      (call) => (call.target === "ledger_entries" ? state.ledger.shift() : state.responses[call.target]),
+      (call) => (call.target === "rpc:campaign_paid" ? state.ledger.shift() : state.responses[call.target]),
       state.userCalls
     ),
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
@@ -68,12 +68,9 @@ const tx = (extra: Record<string, unknown> = {}) => ({
   },
 })
 
-/** received 500k, unmatched_in 300k; then the reversal and the other_in post. */
-const BEFORE = [
-  { bucket: "received", amount: 500000 },
-  { bucket: "unmatched_in", amount: 300000 },
-]
-const AFTER = [...BEFORE, { bucket: "unmatched_in", amount: -300000 }, { bucket: "other_in", amount: 300000 }]
+/** give.campaign_paid: received 500k, unmatched 300k; then the 300k moves to other_in. */
+const BEFORE = { received_amount: 500000, unmatched_amount: 300000, other_amount: 0, paid_amount: 800000 }
+const AFTER = { received_amount: 500000, unmatched_amount: 0, other_amount: 300000, paid_amount: 800000 }
 
 beforeEach(() => {
   vi.mocked(revalidatePath).mockClear()
@@ -114,8 +111,8 @@ describe("explainTransaction", () => {
       "rpc:is_admin",
       "bank_transactions",
       "rpc:managed_campaigns",
-      "ledger_entries",
-      "ledger_entries",
+      "rpc:campaign_paid",
+      "rpc:campaign_paid",
     ])
     expect(op(state.userCalls[0], "args")?.[0]).toEqual({ p_roles: ["finance", "admin"] })
     expect(revalidatePath).toHaveBeenCalledWith("/admin/unmatched")

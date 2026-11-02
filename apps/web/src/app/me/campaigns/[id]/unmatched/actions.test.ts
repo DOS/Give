@@ -25,7 +25,7 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/supabase", () => ({
   dbAs: () =>
     fakeDb(
-      (call) => (call.target === "ledger_entries" ? state.ledger.shift() : state.responses[call.target]),
+      (call) => (call.target === "rpc:campaign_paid" ? state.ledger.shift() : state.responses[call.target]),
       state.userCalls
     ),
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
@@ -77,12 +77,9 @@ const contribution = (overrides: Record<string, unknown> = {}) => ({
   },
 })
 
-/** received 500k, unmatched_in 200k, before and after the reversal + post. */
-const BEFORE = [
-  { bucket: "received", amount: 500000 },
-  { bucket: "unmatched_in", amount: 200000 },
-]
-const AFTER = [...BEFORE, { bucket: "unmatched_in", amount: -200000 }, { bucket: "received", amount: 200000 }]
+/** give.campaign_paid: received 500k, unmatched 200k, before and after the match. */
+const BEFORE = { received_amount: 500000, unmatched_amount: 200000, other_amount: 0, paid_amount: 700000 }
+const AFTER = { received_amount: 700000, unmatched_amount: 0, other_amount: 0, paid_amount: 700000 }
 
 beforeEach(() => {
   vi.mocked(revalidatePath).mockClear()
@@ -117,8 +114,8 @@ describe("matchTransaction", () => {
       "bank_transactions",
       "rpc:managed_campaigns",
       "contributions",
-      "ledger_entries",
-      "ledger_entries",
+      "rpc:campaign_paid",
+      "rpc:campaign_paid",
     ])
     expect(op(state.userCalls[2], "eq")).toEqual(["campaign_id", CAMPAIGN])
     expect(revalidatePath).toHaveBeenCalledWith("/campaigns/chau-be-abcde/statement")

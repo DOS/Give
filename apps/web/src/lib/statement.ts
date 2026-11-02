@@ -623,7 +623,8 @@ export function refundOptionLabel(x: RefundableContribution, format: (amount: nu
 /**
  * The organizer's explanation of one outgoing transaction
  * (give.record_disbursement). A refund is the "refund" category together
- * with the contribution it refunds; one without the other is refused, so
+ * with the contribution it refunds; one without the other is refused here
+ * and by the database (disbursements_refund_category, DOS/Give#56), so
  * the public label and the bucket the money counts in never disagree.
  */
 export const explainSchema = z

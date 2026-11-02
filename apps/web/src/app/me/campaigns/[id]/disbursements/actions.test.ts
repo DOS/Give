@@ -60,11 +60,9 @@ function reads({
   }
 }
 
-/** Service role: every uploaded path in an evidence lookup counts as recorded. */
-const recordsAll: Handler = (call) =>
-  call.target === "disbursement_evidence"
-    ? { data: ((op(call, "in")?.[1] as string[]) ?? []).map((storage_path) => ({ storage_path })) }
-    : undefined
+/** Service role: record_disbursement stores a new explanation; anything else succeeds. */
+const recordsNew: Handler = (call) =>
+  call.target === "rpc:record_disbursement" ? { data: { outcome: "explained", replayed: false } } : undefined
 
 function form(values: Record<string, string> = {}, files: File[] = []) {
   const f = new FormData()
@@ -94,7 +92,7 @@ beforeEach(() => {
   state.serviceCalls.length = 0
   state.signedIn = true
   state.userHandler = reads()
-  state.serviceHandler = recordsAll
+  state.serviceHandler = recordsNew
 })
 
 describe("explainDisbursement", () => {
@@ -121,15 +119,30 @@ describe("explainDisbursement", () => {
     expect(state.userCalls.map((c) => c.target)).toEqual(
       expect.arrayContaining(["rpc:managed_campaigns", "bank_transactions"])
     )
+    expect(op(rpc("record_disbursement"), "single")).toEqual([])
     expect(removes()).toHaveLength(0)
   })
 
-  it("removes images a repeated submission uploaded but the database did not record", async () => {
-    // record_disbursement's replay path returns success without inserting evidence.
-    state.serviceHandler = (call) => (call.target === "disbursement_evidence" ? { data: [] } : undefined)
-    const result = await explainDisbursement(CAMPAIGN, TX, null, form({}, [png()]))
-    expect(result?.message).toContain("đã được giải trình từ trước")
-    expect(op(removes()[0], "remove")?.[0]).toEqual([op(uploads()[0], "upload")![0]])
+  it("removes the images of a repeated submission when the database reports a replay", async () => {
+    // record_disbursement's replay path writes nothing, not even the evidence.
+    state.serviceHandler = (call) =>
+      call.target === "rpc:record_disbursement" ? { data: { outcome: "explained", replayed: true } } : undefined
+    const result = await explainDisbursement(CAMPAIGN, TX, null, form({}, [png("a.png"), png("b.png")]))
+    expect(result).toEqual({
+      ok: true,
+      message: "Khoản chi này đã được giải trình từ trước. Ảnh vừa tải không được lưu, hãy thêm lại nếu cần.",
+    })
+    expect(op(removes()[0], "remove")?.[0]).toEqual(uploads().map((c) => op(c, "upload")![0]))
+    // The flag comes with the answer: no lookup of the uploaded paths.
+    expect(state.serviceCalls.some((c) => c.target === "disbursement_evidence")).toBe(false)
+  })
+
+  it("says a replay without images was already explained", async () => {
+    state.serviceHandler = (call) =>
+      call.target === "rpc:record_disbursement" ? { data: { outcome: "explained", replayed: true } } : undefined
+    const result = await explainDisbursement(CAMPAIGN, TX, null, form())
+    expect(result).toEqual({ ok: true, message: "Khoản chi này đã được giải trình từ trước." })
+    expect(removes()).toHaveLength(0)
   })
 
   it("keeps the uploads when the call failed without a database answer (it may have committed)", async () => {
@@ -303,6 +316,20 @@ describe("addEvidence", () => {
       call.target === "rpc:add_disbursement_evidence" ? { error: { message: "GIVE_EVIDENCE_INVALID" } } : undefined
     const result = await addEvidence(CAMPAIGN, TX, null, form({}, [png()]))
     expect(result).toEqual({ ok: false, message: "Chứng từ không hợp lệ." })
+    expect(removes()).toHaveLength(1)
+  })
+
+  it("words the database's cap, which only it can check against concurrent uploads", async () => {
+    state.userHandler = reads({ disbursement: explained(19) })
+    state.serviceHandler = (call) =>
+      call.target === "rpc:add_disbursement_evidence"
+        ? { error: { message: "GIVE_EVIDENCE_LIMIT: 20 of 20 already" } }
+        : undefined
+    const result = await addEvidence(CAMPAIGN, TX, null, form({}, [png()]))
+    expect(result).toEqual({
+      ok: false,
+      message: "Mỗi khoản chi có tối đa 20 ảnh chứng từ (không tính ảnh đã bị ẩn).",
+    })
     expect(removes()).toHaveLength(1)
   })
 })

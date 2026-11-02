@@ -79,6 +79,12 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_LEDGER_POST_MISSING: "Giao dịch chi chưa được ghi sổ đầy đủ. Hãy thử lại sau ít phút.",
   GIVE_EVIDENCE_INVALID: "Chứng từ không hợp lệ.",
   GIVE_DISBURSEMENT_NOT_FOUND: "Khoản chi này chưa được giải trình, nên chưa thêm được chứng từ.",
+  // Disbursement hardening (DOS/Give#56).
+  GIVE_REFUND_CATEGORY_MISMATCH:
+    "Loại “Hoàn tiền cho người ủng hộ” chỉ dùng cho khoản hoàn tiền, và khoản hoàn tiền phải có loại này.",
+  GIVE_EVIDENCE_PATH_INVALID:
+    "Ảnh chứng từ không nằm đúng thư mục của khoản chi này, hoặc đã được lưu trước đó. Hãy tải lại ảnh.",
+  GIVE_EVIDENCE_LIMIT: "Mỗi khoản chi có tối đa 20 ảnh chứng từ (không tính ảnh đã bị ẩn).",
   // Staff roles.
   GIVE_ADMIN_REQUIRED: "Chỉ quản trị viên mới được cấp hoặc thu quyền.",
   GIVE_ROLE_INVALID: "Quyền không hợp lệ.",
