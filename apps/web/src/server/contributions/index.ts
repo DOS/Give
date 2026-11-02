@@ -1,6 +1,7 @@
 import "server-only"
 
-import { createHash, timingSafeEqual } from "node:crypto"
+import { createHash, createHmac, timingSafeEqual } from "node:crypto"
+import { isIP } from "node:net"
 
 import { cookieName, isLocalhost } from "@/lib/auth/cookies"
 import type { Db } from "@/lib/campaigns"
@@ -58,6 +59,65 @@ export function donationCookie(code: string, hostname: string) {
 /** The hostname from a Host header, as getSession() reads it, so cookie names agree everywhere. */
 export function hostnameFrom(host: string | null): string {
   return (host ?? "localhost").replace(/:\d+$/, "")
+}
+
+/**
+ * The client's network address for the donation rate limit, from the
+ * headers the hosting proxy sets (Vercel overwrites both, so a client cannot
+ * pick its own). An IPv6 address counts as its /64 network, since one
+ * connection usually holds a whole /64; an IPv4-mapped IPv6 address counts as
+ * its IPv4 address. Null when neither header holds an address.
+ */
+export function clientAddress(headers: { get(name: string): string | null }): string | null {
+  const raw = (headers.get("x-real-ip") ?? headers.get("x-forwarded-for")?.split(",")[0] ?? "").trim()
+  const ip = raw.replace(/%.*$/, "")
+  if (isIP(ip) === 4) return ip
+  if (isIP(ip) !== 6) return null
+  const groups = ipv6Groups(ip)
+  if (groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff) {
+    return [groups[6] >> 8, groups[6] & 255, groups[7] >> 8, groups[7] & 255].join(".")
+  }
+  return `${groups
+    .slice(0, 4)
+    .map((g) => g.toString(16))
+    .join(":")}::/64`
+}
+
+/** The eight 16-bit groups of a valid IPv6 address (isIP has checked it). */
+function ipv6Groups(ip: string): number[] {
+  const parts = (s: string) =>
+    s === ""
+      ? []
+      : s.split(":").flatMap((p) => {
+          if (!p.includes(".")) return [parseInt(p, 16)]
+          const [a, b, c, d] = p.split(".").map(Number)
+          return [(a << 8) | b, (c << 8) | d]
+        })
+  const [head, tail] = ip.split("::")
+  const left = parts(head)
+  if (tail === undefined) return left
+  const right = parts(tail)
+  return [...left, ...Array<number>(8 - left.length - right.length).fill(0), ...right]
+}
+
+/**
+ * The key give.create_donation counts a guest's donations under: an
+ * HMAC-SHA256 of the address under a server secret, so the database never
+ * sees the address and nobody can turn a key back into one by trying every
+ * IPv4 address. Null when the address or the secret is missing; the database
+ * then counts the guest in one shared bucket per campaign.
+ */
+export function donationClientKey(address: string | null, secret: string | undefined): string | null {
+  if (!address || !secret) return null
+  return createHmac("sha256", secret).update(`give:donation-rate:${address}`).digest("hex")
+}
+
+/**
+ * donationClientKey for this request. The secret is the service-role key the
+ * server already holds; rotating it only restarts the counts.
+ */
+export function requestClientKey(headers: { get(name: string): string | null }): string | null {
+  return donationClientKey(clientAddress(headers), process.env.SUPABASE_SERVICE_ROLE_KEY)
 }
 
 /** At most this many guest donation cookies are kept; Path=/ sends each one with every request. */

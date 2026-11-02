@@ -9,9 +9,22 @@ import { dbErrorMessage, fail, giveErrorCode, type ActionResult } from "@/lib/er
 import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { dbAs, dbService } from "@/lib/supabase"
-import { donationCookie, donationCookiesToDrop, hostnameFrom } from "@/server/contributions"
+import { donationCookie, donationCookiesToDrop, hostnameFrom, requestClientKey } from "@/server/contributions"
 
 const NOT_ACCEPTING = "Chiến dịch này hiện không nhận ủng hộ."
+
+/**
+ * GIVE_RATE_LIMITED from create_donation: too many donations from this
+ * visitor in the current 10-minute window (DOS/Give#47). Guests are counted
+ * by network address, so they are pointed at signing in, which counts them by
+ * account with a higher limit.
+ */
+function rateLimitedMessage(message: string | null | undefined, signedIn: boolean): string {
+  const seconds = Number(/GIVE_RATE_LIMITED: (\d+)/.exec(message ?? "")?.[1])
+  const minutes = Math.max(1, Math.ceil((seconds > 0 ? seconds : 600) / 60))
+  const base = `Bạn vừa tạo nhiều lượt ủng hộ trong thời gian ngắn. Hãy thử lại sau khoảng ${minutes} phút`
+  return signedIn ? `${base}.` : `${base}, hoặc đăng nhập để ủng hộ tiếp.`
+}
 
 interface CreatedDonation {
   contribution_id: string
@@ -41,6 +54,7 @@ export async function donate(campaignId: string, _state: ActionResult, form: For
   // given. getSession() does not verify the token, so read the campaign with
   // it first: PostgREST rejects a forged or expired token there.
   const session = await getSession()
+  const requestHeaders = await headers()
   const { data: visible, error: readError } = await dbAs(session?.accessToken)
     .from("campaigns")
     .select("id")
@@ -57,10 +71,12 @@ export async function donate(campaignId: string, _state: ActionResult, form: For
       p_public_name: input.public_name,
       p_is_anonymous: input.anonymous,
       p_message: input.message,
+      p_client_key: requestClientKey(requestHeaders),
     })
     .select("contribution_id, reference_code, status_token, status_token_expires_at")
     .single()
   if (error) {
+    if (giveErrorCode(error) === "GIVE_RATE_LIMITED") return fail(rateLimitedMessage(error.message, !!session))
     if (giveErrorCode(error) === "GIVE_AMOUNT_BELOW_MINIMUM") {
       const min = Number(/GIVE_AMOUNT_BELOW_MINIMUM: (\d+)/.exec(error.message ?? "")?.[1])
       if (min > 0) return fail(`Số tiền ủng hộ tối thiểu là ${formatVnd(min)}.`)
@@ -73,7 +89,7 @@ export async function donate(campaignId: string, _state: ActionResult, form: For
     if (!isStatusToken(created.status_token) || !created.status_token_expires_at) {
       return fail("Có lỗi xảy ra. Hãy thử lại sau.")
     }
-    const hostname = hostnameFrom((await headers()).get("host"))
+    const hostname = hostnameFrom(requestHeaders.get("host"))
     const cookie = donationCookie(created.reference_code, hostname)
     const jar = await cookies()
     // Expire with the same attributes, or the browser keeps a __Host- cookie.

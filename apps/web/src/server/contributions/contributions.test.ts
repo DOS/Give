@@ -5,6 +5,8 @@ import { fakeDb, op, type Call } from "@/test/fake-db"
 import {
   acceptsDonations,
   accountNameMatches,
+  clientAddress,
+  donationClientKey,
   donationCookie,
   donationCookiesToDrop,
   donationCookieToken,
@@ -22,6 +24,51 @@ const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
 describe("statusTokenHash", () => {
   it("matches sha256(decode(token, 'hex')) in create_donation", () => {
     expect(statusTokenHash(TOKEN)).toBe(TOKEN_SHA256)
+  })
+})
+
+describe("clientAddress", () => {
+  const from = (values: Record<string, string>) => clientAddress(new Headers(values))
+
+  it("takes the proxy's x-real-ip, else the first x-forwarded-for entry", () => {
+    expect(from({ "x-real-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.1" })).toBe("203.0.113.7")
+    expect(from({ "x-forwarded-for": " 198.51.100.1 , 10.0.0.1" })).toBe("198.51.100.1")
+  })
+
+  it("counts an IPv6 address as its /64 network", () => {
+    expect(from({ "x-real-ip": "2001:db8:abcd:12:1:2:3:4" })).toBe("2001:db8:abcd:12::/64")
+    expect(from({ "x-real-ip": "2001:DB8::1" })).toBe("2001:db8:0:0::/64")
+    expect(from({ "x-real-ip": "2001:db8:abcd:12::ffff" })).toBe(from({ "x-real-ip": "2001:db8:abcd:12:9::1" }))
+    expect(from({ "x-real-ip": "fe80::1%eth0" })).toBe("fe80:0:0:0::/64")
+  })
+
+  it("counts an IPv4-mapped IPv6 address as its IPv4 address", () => {
+    expect(from({ "x-real-ip": "::ffff:203.0.113.7" })).toBe("203.0.113.7")
+    expect(from({ "x-real-ip": "::ffff:cb00:7107" })).toBe("203.0.113.7")
+  })
+
+  it("is null without a valid address", () => {
+    expect(from({})).toBeNull()
+    expect(from({ "x-real-ip": "" })).toBeNull()
+    expect(from({ "x-forwarded-for": "unknown" })).toBeNull()
+    expect(from({ "x-real-ip": "203.0.113.7:443" })).toBeNull()
+  })
+})
+
+describe("donationClientKey", () => {
+  it("is a 64-hex HMAC that depends on the address and the secret", () => {
+    const key = donationClientKey("203.0.113.7", "secret")
+    expect(key).toMatch(/^[0-9a-f]{64}$/)
+    expect(key).toBe(donationClientKey("203.0.113.7", "secret"))
+    expect(key).not.toBe(donationClientKey("203.0.113.8", "secret"))
+    expect(key).not.toBe(donationClientKey("203.0.113.7", "other"))
+    expect(key).not.toContain("203")
+  })
+
+  it("is null without an address or a secret", () => {
+    expect(donationClientKey(null, "secret")).toBeNull()
+    expect(donationClientKey("203.0.113.7", undefined)).toBeNull()
+    expect(donationClientKey("203.0.113.7", "")).toBeNull()
   })
 })
 
