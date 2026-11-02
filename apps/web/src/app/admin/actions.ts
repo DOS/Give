@@ -3,7 +3,15 @@
 import { revalidatePath } from "next/cache"
 
 import { getSession } from "@/lib/auth/session"
-import { dbErrorMessage, done, fail, OPEN_MESSAGES, REVIEW_MESSAGES, type ActionResult } from "@/lib/errors"
+import {
+  dbErrorMessage,
+  done,
+  fail,
+  OPEN_MESSAGES,
+  REVIEW_MESSAGES,
+  SEND_BACK_MESSAGES,
+  type ActionResult,
+} from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
 import { dbAs } from "@/lib/supabase"
 
@@ -14,6 +22,7 @@ import { dbAs } from "@/lib/supabase"
  */
 
 const SIGNED_OUT = "Phiên đăng nhập đã hết. Hãy đăng nhập lại."
+const STATUS_CHANGED = "Chiến dịch đã đổi trạng thái từ khi trang này tải. Hãy tải lại trang rồi xem lại."
 
 /** Approves a campaign; if its start time has come it also goes live now. */
 export async function approveCampaign(
@@ -52,6 +61,12 @@ export async function approveCampaign(
   return done(message)
 }
 
+/**
+ * Sends a campaign back for changes, from review or (give campaigns) after
+ * approval. Each form says which status it was shown for, so a form left
+ * open while another moderator approved the campaign does not send the
+ * approved campaign back by mistake. The database still decides.
+ */
 export async function requestChanges(campaignId: string, _state: ActionResult, form: FormData): Promise<ActionResult> {
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
@@ -60,13 +75,21 @@ export async function requestChanges(campaignId: string, _state: ActionResult, f
     .trim()
     .slice(0, 2000)
   if (!reason) return fail("Ghi rõ người tổ chức cần sửa gì.")
+  const fromStatus = String(form.get("from_status") ?? "")
+  if (fromStatus !== "in_review" && fromStatus !== "approved") return fail(STATUS_CHANGED)
+  const db = dbAs(session.accessToken)
 
-  const { error } = await dbAs(session.accessToken).rpc("transition_campaign", {
+  const { data } = await db.from("campaigns").select("status").eq("id", campaignId).maybeSingle()
+  const current = data as { status: string } | null
+  if (!current) return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_NOT_FOUND" }))
+  if (current.status !== fromStatus) return fail(STATUS_CHANGED)
+
+  const { error } = await db.rpc("transition_campaign", {
     p_campaign_id: campaignId,
     p_to_status: "changes_requested",
     p_reason: reason,
   })
-  if (error) return fail(dbErrorMessage(error))
+  if (error) return fail(dbErrorMessage(error, fromStatus === "approved" ? SEND_BACK_MESSAGES : undefined))
   revalidatePath("/admin")
   return done("Đã gửi yêu cầu chỉnh sửa cho người tổ chức.")
 }

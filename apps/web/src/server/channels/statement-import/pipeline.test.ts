@@ -7,15 +7,19 @@ import { InboundError, PROCESSOR_TIMEOUT_MS, reprocessPendingInboundEvents, REPR
 import { inboundProcessors } from "@/server/inbound/processors"
 import { ParserRegistry } from "@/server/statement-parsers/registry"
 import { CSV_COLUMNS, csvFile, csvStatementParser } from "@/test/csv-statement-parser"
+import { largeStatementFile } from "@/test/statement-fixture"
 import { fakeDb, op, type Call, type Handler, type Result } from "@/test/fake-db"
 
 import { StatementImportError } from "./errors"
+import { jsonbTextBytes } from "./normalize"
 import {
   importStatementFile,
+  INLINE_BUDGET_MS,
   MAX_PAYLOAD_BYTES,
   runStatementEvent,
   statementDedupeKey,
   statementImportProcessor,
+  statementPartDedupeKey,
   type StatementPayload,
 } from "./pipeline"
 import { importStatementBatch, recordStatementEvent, stageStatementImport } from "./rpc"
@@ -131,7 +135,9 @@ describe("importStatementFile", () => {
       inboundEventId: EVENT,
       replayed: false,
       parser: "test-csv",
+      parts: 1,
       importBatchId: BATCH,
+      importBatchIds: [BATCH],
       created: true,
       imported: 2,
       duplicate: 0,
@@ -175,7 +181,15 @@ describe("importStatementFile", () => {
     responses["rpc:stage_statement_import"] = { error: { code: "57014", message: "canceling statement" } }
     responses["rpc:complete_inbound_event"] = { data: null }
     responses["inbound_events"] = { data: { parked_at: "2026-10-05T03:00:01Z" } }
-    expect(await upload()).toEqual({ status: "parked", inboundEventId: EVENT, replayed: false, parser: "test-csv" })
+    expect(await upload()).toEqual({
+      status: "parked",
+      parts: 1,
+      part: 1,
+      importedParts: 0,
+      inboundEventId: EVENT,
+      replayed: false,
+      parser: "test-csv",
+    })
   })
 
   it("reports a failure without running when the attempt cannot be counted", async () => {
@@ -311,6 +325,9 @@ describe("importStatementFile", () => {
     }
     expect(await upload()).toEqual({
       status: "refused",
+      parts: 1,
+      part: 1,
+      importedParts: 0,
       inboundEventId: EVENT,
       replayed: true,
       parser: "test-csv",
@@ -364,6 +381,9 @@ describe("importStatementFile", () => {
     }
     expect(await upload()).toEqual({
       status: "refused",
+      parts: 1,
+      part: 1,
+      importedParts: 0,
       inboundEventId: EVENT,
       replayed: false,
       parser: "test-csv",
@@ -382,6 +402,9 @@ describe("importStatementFile", () => {
     responses["rpc:import_statement_batch"] = { error: { code: "57014", message: "canceling statement 0123456789" } }
     expect(await upload()).toEqual({
       status: "pending",
+      parts: 1,
+      part: 1,
+      importedParts: 0,
       inboundEventId: EVENT,
       replayed: false,
       parser: "test-csv",
@@ -501,7 +524,7 @@ describe("importStatementFile", () => {
       expect((await refused(upload({ parser: "test-csv-noid", file }))).code).toBe("STATEMENT_PERIOD_REQUIRED")
     })
 
-    it("a statement too large for one inbound event", async () => {
+    it("a statement with one day too large for one inbound event", async () => {
       const description = "X".repeat(900)
       const lines = Array.from(
         { length: 1100 },
@@ -511,6 +534,323 @@ describe("importStatementFile", () => {
       expect(file.byteLength).toBeGreaterThan(MAX_PAYLOAD_BYTES)
       expect((await refused(upload({ file }))).code).toBe("STATEMENT_TOO_LARGE")
     })
+  })
+})
+
+describe("importStatementFile with a large file", () => {
+  const FILE_5000 = largeStatementFile()
+  const DAYS = [
+    "2026-09-20..2026-09-21",
+    "2026-09-22..2026-09-23",
+    "2026-09-24..2026-09-25",
+    "2026-09-26..2026-09-27",
+    "2026-09-28..2026-09-29",
+  ]
+  const eventId = (key: string) => {
+    const part = /:part(\d+)of\d+/.exec(key)?.[1] ?? "0"
+    return `33333333-3333-4333-8333-${part.padStart(12, "0")}`
+  }
+  const batchId = (event: string) => event.replace(/^33333333/, "44444444")
+
+  /**
+   * A database that records each part as its own event, stages its rows as
+   * ready and keeps which events have a batch, so a part finds the part
+   * before it staged.
+   */
+  function partHandler(
+    options: { created?: boolean; refuse?: { event: string; row: number }; dismissed?: string } = {}
+  ): Handler {
+    const staged = new Set<string>()
+    return (call) => {
+      const a = op(call, "args")?.[0] as Record<string, unknown> | undefined
+      switch (call.target) {
+        case "rpc:record_inbound_event":
+          return {
+            data: {
+              inbound_event_id: eventId(String(a?.p_dedupe_key)),
+              created: options.created ?? true,
+              processed_at: null,
+            },
+          }
+        case "inbound_events": {
+          const like = op(call, "like")?.[1]
+          if (typeof like === "string") {
+            const n = Number(/:part(\d+)of/.exec(like)?.[1])
+            return { data: [{ id: eventId(like), dedupe_key: like.replace("%", DAYS[n - 1]), processed_at: null }] }
+          }
+          return responses.inbound_events
+        }
+        case "statement_import_batches": {
+          const ids = op(call, "in")?.[1] as string[] | undefined
+          return { data: ids ? ids.filter((id) => staged.has(id)).map((id) => ({ inbound_event_id: id })) : [] }
+        }
+        case "rpc:stage_statement_import": {
+          if (options.refuse && a?.p_inbound_event_id === options.refuse.event) {
+            return { error: { code: "23514", message: `GIVE_IMPORT_ROW_INVALID: row ${options.refuse.row} amount` } }
+          }
+          staged.add(String(a?.p_inbound_event_id))
+          const rows = (a?.p_rows as unknown[]).length
+          return {
+            data: {
+              import_batch_id: batchId(String(a?.p_inbound_event_id)),
+              created: true,
+              ready: rows - 1,
+              duplicate: 0,
+              ambiguous: 1,
+            },
+          }
+        }
+        case "rpc:import_statement_batch":
+          if (options.dismissed && a?.p_import_batch_id === batchId(options.dismissed)) {
+            return { error: { code: "23514", message: "GIVE_INBOUND_EVENT_DISMISSED" } }
+          }
+          return { data: { imported: 999, duplicate: 0, ambiguous: 1, ready: 0 } }
+        default:
+          return responses[call.target]
+      }
+    }
+  }
+
+  function uploadLarge(handler: Handler, clock?: () => number) {
+    return importStatementFile(
+      { receivingAccountId: ACCOUNT, actorId: ACTOR, parser: "test-csv", file: FILE_5000 },
+      { user: dbs().user, service: fakeDb(handler, serviceCalls) as unknown as Db, parsers, now: NOW, clock }
+    )
+  }
+
+  it("imports a 5000-row statement end to end as five events under the payload cap", async () => {
+    const result = await uploadLarge(partHandler())
+
+    const events = [1, 2, 3, 4, 5].map((n) => eventId(`x:part${n}of5`))
+    expect(result).toEqual({
+      status: "imported",
+      inboundEventId: events[0],
+      replayed: false,
+      parser: "test-csv",
+      parts: 5,
+      importBatchId: batchId(events[0]),
+      importBatchIds: events.map(batchId),
+      created: true,
+      imported: 5 * 999,
+      duplicate: 0,
+      ambiguous: 5,
+      ready: 0,
+    })
+
+    // Every part is recorded before any is processed, so the cron can finish
+    // the upload if this request dies; each part after the first checks that
+    // the part before it is staged.
+    const targets = serviceCalls.map((c) => c.target)
+    expect(targets.slice(0, 6)).toEqual(["statement_import_batches", ...Array(5).fill("rpc:record_inbound_event")])
+    const attempt = [
+      "rpc:begin_inbound_attempt",
+      "rpc:stage_statement_import",
+      "rpc:import_statement_batch",
+      "rpc:complete_inbound_event",
+    ]
+    const later = ["rpc:begin_inbound_attempt", "inbound_events", "statement_import_batches", ...attempt.slice(1)]
+    expect(targets.slice(6)).toEqual([...attempt, ...later, ...later, ...later, ...later])
+
+    const fileKey = statementDedupeKey(ACCOUNT, FILE_5000)
+    const recorded = serviceCalls
+      .filter((c) => c.target === "rpc:record_inbound_event")
+      .map((c) => op(c, "args")?.[0] as { p_dedupe_key: string; p_payload: StatementPayload })
+    expect(recorded.map((r) => r.p_dedupe_key)).toEqual(DAYS.map((days, i) => `${fileKey}:part${i + 1}of5:${days}`))
+    for (const { p_payload, p_dedupe_key } of recorded) {
+      expect(jsonbTextBytes(p_payload)).toBeLessThanOrEqual(MAX_PAYLOAD_BYTES)
+      expect(p_payload.rows).toHaveLength(1000)
+      expect(p_dedupe_key.length).toBeLessThanOrEqual(200)
+    }
+    // The order check looks for the previous part of the same file.
+    const lookups = serviceCalls.filter((c) => c.target === "inbound_events")
+    expect(op(lookups[0], "like")).toEqual(["dedupe_key", `${fileKey}:part1of5:%`])
+    // Staged in file order, each part as its own event and period.
+    const stages = serviceCalls
+      .filter((c) => c.target === "rpc:stage_statement_import")
+      .map((c) => op(c, "args")?.[0] as Record<string, unknown>)
+    expect(stages.map((a) => [a.p_inbound_event_id, a.p_period_from, a.p_period_to])).toEqual([
+      [events[0], "2026-09-20", "2026-09-21"],
+      [events[1], "2026-09-22", "2026-09-23"],
+      [events[2], "2026-09-24", "2026-09-25"],
+      [events[3], "2026-09-26", "2026-09-27"],
+      [events[4], "2026-09-28", "2026-09-29"],
+    ])
+  })
+
+  it("keys a part by its number and days, and a file of one part by the file alone", () => {
+    expect(
+      statementPartDedupeKey("v1:a:b", { index: 0, count: 1, firstDay: "2026-10-01", lastDay: "2026-10-02" })
+    ).toBe("v1:a:b")
+    expect(
+      statementPartDedupeKey("v1:a:b", { index: 1, count: 3, firstDay: "2026-10-03", lastDay: "2026-10-04" })
+    ).toBe("v1:a:b:part2of3:2026-10-03..2026-10-04")
+  })
+
+  it("leaves the parts after the inline budget to the cron", async () => {
+    // Each part's attempt takes 8 s on this clock.
+    let ms = 0
+    const handler = partHandler()
+    const result = await uploadLarge(
+      (call) => {
+        if (call.target === "rpc:import_statement_batch") ms += 8000
+        return handler(call)
+      },
+      () => ms
+    )
+
+    // Parts 1 to 3 start at 0, 8 and 16 s; parts 4 and 5 would start after
+    // INLINE_BUDGET_MS and stay pending, recorded, for the cron.
+    expect(INLINE_BUDGET_MS).toBe(20000)
+    expect(result).toEqual({
+      status: "pending",
+      code: "processing_deferred",
+      inboundEventId: eventId("x:part4of5"),
+      replayed: false,
+      parser: "test-csv",
+      parts: 5,
+      part: 4,
+      importedParts: 3,
+    })
+    expect(serviceCalls.filter((c) => c.target === "rpc:record_inbound_event")).toHaveLength(5)
+    expect(serviceCalls.filter((c) => c.target === "rpc:begin_inbound_attempt")).toHaveLength(3)
+  })
+
+  it("stops at a refused part and names it with the row number in the file", async () => {
+    const third = eventId("x:part3of5")
+    const result = await uploadLarge(partHandler({ refuse: { event: third, row: 7 } }))
+    expect(result).toEqual({
+      status: "refused",
+      code: "GIVE_IMPORT_ROW_INVALID",
+      row: 2007,
+      inboundEventId: third,
+      replayed: false,
+      parser: "test-csv",
+      parts: 5,
+      part: 3,
+      importedParts: 2,
+    })
+    // Parts 4 and 5 are not run after it: they would be staged without the
+    // days before them.
+    expect(serviceCalls.filter((c) => c.target === "rpc:begin_inbound_attempt")).toHaveLength(3)
+    expect(serviceCalls.filter((c) => c.target === "rpc:import_statement_batch")).toHaveLength(2)
+  })
+
+  it("replays every part of a file uploaded before", async () => {
+    responses["inbound_events"] = { data: { payload: null } } // unreadable: this upload's part is used
+    const result = await uploadLarge(partHandler({ created: false }))
+    expect(result).toMatchObject({ status: "imported", replayed: true, parts: 5, imported: 5 * 999 })
+  })
+
+  it("does not replay a dismissed part even when nothing in it is left to import", async () => {
+    const second = eventId("x:part2of5")
+    const handler = partHandler()
+    const result = await uploadLarge((call) => {
+      const a = op(call, "args")?.[0] as Record<string, unknown> | undefined
+      if (call.target === "rpc:begin_inbound_attempt") {
+        return { data: a?.p_inbound_event_id === second ? "processed" : "started" }
+      }
+      if (call.target === "inbound_events" && op(call, "eq")?.[1] === second) return { data: { error: "dismissed" } }
+      return handler(call)
+    })
+    expect(result).toMatchObject({ status: "refused", code: "GIVE_INBOUND_EVENT_DISMISSED", part: 2, importedParts: 1 })
+    const staged = serviceCalls
+      .filter((c) => c.target === "rpc:stage_statement_import")
+      .map((c) => (op(c, "args")?.[0] as Record<string, unknown>).p_inbound_event_id)
+    expect(staged).not.toContain(second)
+  })
+
+  it("refuses a file whose part staff dismissed, instead of importing it again", async () => {
+    // Part 2 was dismissed: it is processed, so the upload replays it, and the
+    // database refuses to import its rows.
+    const second = eventId("x:part2of5")
+    const handler = partHandler({ dismissed: second })
+    responses["inbound_events"] = { data: { payload: null } }
+    const result = await uploadLarge((call) => {
+      if (call.target === "rpc:begin_inbound_attempt") {
+        const a = op(call, "args")?.[0] as Record<string, unknown>
+        return { data: a.p_inbound_event_id === second ? "processed" : "started" }
+      }
+      return handler(call)
+    })
+    expect(result).toMatchObject({ status: "refused", code: "GIVE_INBOUND_EVENT_DISMISSED", part: 2, importedParts: 1 })
+  })
+})
+
+describe("statement parts in file order", () => {
+  const key = (n: number) => `v1:${ACCOUNT}:${"a".repeat(64)}:part${n}of3:2026-09-2${n}..2026-09-2${n}`
+  const PREVIOUS = "55555555-5555-4555-8555-555555555555"
+
+  function run(previous: Result, batches: Result) {
+    const db = fakeDb((call) => {
+      if (call.target === "inbound_events") return previous
+      if (call.target === "statement_import_batches") return batches
+      return responses[call.target]
+    }, serviceCalls) as unknown as Db
+    return runStatementEvent(db, { id: EVENT, payload: payload(), dedupe_key: key(2) })
+  }
+
+  it("stages a part once the part before it has a batch", async () => {
+    const result = await run(
+      { data: [{ id: PREVIOUS, dedupe_key: key(1), processed_at: null }] },
+      { data: [{ inbound_event_id: PREVIOUS }] }
+    )
+    expect(result).toMatchObject({ importBatchId: BATCH, imported: 2 })
+    expect(op(serviceCalls[0], "like")).toEqual(["dedupe_key", key(1).replace(/:2026-.*$/, ":%")])
+    expect(op(serviceCalls[1], "in")).toEqual(["inbound_event_id", [PREVIOUS]])
+  })
+
+  it("makes a part wait, retryably, while the part before it is not staged", async () => {
+    const err = await run({ data: [{ id: PREVIOUS, dedupe_key: key(1), processed_at: null }] }, { data: [] }).catch(
+      (e: unknown) => e
+    )
+    expect(err).toBeInstanceOf(InboundError)
+    expect(err).toMatchObject({ code: "STATEMENT_PART_WAITING", final: false })
+    expect(rpc("stage_statement_import")).toBeUndefined()
+  })
+
+  it("ends a part whose previous part ended without being staged", async () => {
+    const err = await run(
+      { data: [{ id: PREVIOUS, dedupe_key: key(1), processed_at: "2026-10-05T03:00:00Z" }] },
+      { data: [] }
+    ).catch((e: unknown) => e)
+    expect(err).toMatchObject({ code: "STATEMENT_PART_PREVIOUS_FAILED", final: true })
+    expect(rpc("stage_statement_import")).toBeUndefined()
+  })
+
+  it("ignores a part of the same number from a split with other days", async () => {
+    // Part 1 of another split ends on the day this part starts: not this part's predecessor.
+    const other = `v1:${ACCOUNT}:${"a".repeat(64)}:part1of3:2026-09-20..2026-09-22`
+    const result = await run(
+      { data: [{ id: PREVIOUS, dedupe_key: other, processed_at: null }] },
+      { data: [{ inbound_event_id: PREVIOUS }] }
+    )
+    // No predecessor among them: treated as never recorded, so nothing waits.
+    expect(result).toMatchObject({ imported: 2 })
+    expect(serviceCalls.map((c) => c.target)).not.toContain("statement_import_batches")
+  })
+
+  it("takes the latest-ending previous part, not an earlier one of another split", async () => {
+    const OTHER = "66666666-6666-4666-8666-666666666666"
+    const other = `v1:${ACCOUNT}:${"a".repeat(64)}:part1of3:2026-09-20..2026-09-20`
+    const err = await run(
+      {
+        data: [
+          { id: OTHER, dedupe_key: other, processed_at: null },
+          { id: PREVIOUS, dedupe_key: key(1), processed_at: null },
+        ],
+      },
+      // Its own predecessor has no batch yet; the other split's part is not even asked about.
+      { data: [] }
+    ).catch((e: unknown) => e)
+    expect(op(serviceCalls[1], "in")).toEqual(["inbound_event_id", [PREVIOUS]])
+    expect(err).toMatchObject({ code: "STATEMENT_PART_WAITING" })
+  })
+
+  it("checks nothing for the first part or a file of one part", async () => {
+    const db = fakeDb(handler, serviceCalls) as unknown as Db
+    await runStatementEvent(db, { id: EVENT, payload: payload(), dedupe_key: key(1) })
+    await runStatementEvent(db, { id: EVENT, payload: payload(), dedupe_key: `v1:${ACCOUNT}:${"a".repeat(64)}` })
+    expect(serviceCalls.map((c) => c.target)).not.toContain("inbound_events")
   })
 })
 

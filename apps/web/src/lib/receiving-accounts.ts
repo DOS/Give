@@ -183,19 +183,20 @@ type OrganizerIdentity = Pick<Organizer, "legal_name" | "verification_status"> |
 
 /**
  * Why an account cannot receive money or be bound right now, or null when it
- * can. Mirrors the checks in give.bind_receiving_account and
- * give.create_donation: a verified account stops being usable when the
- * organizer's verification resets or their legal name no longer matches.
+ * can. Mirrors the checks in give.bind_receiving_account, give.create_donation
+ * and give.campaign_has_usable_account: a verified account stops being usable
+ * when the organizer's verification resets or, for a bank account, the legal
+ * name no longer matches. A crypto wallet has no holder name to match.
  */
 export function accountUnusableReason(
-  account: Pick<ReceivingAccount, "verification_status" | "account_name">,
+  account: Pick<ReceivingAccount, "channel" | "verification_status" | "account_name">,
   organizer: OrganizerIdentity
 ): string | null {
   if (account.verification_status !== "verified") return "Tài khoản chưa được xác minh."
   if (organizer?.verification_status !== "verified") {
     return "Hồ sơ người tổ chức chưa được xác minh (hoặc cần xác minh lại sau khi đổi thông tin)."
   }
-  if (!accountNameMatches(account.account_name, organizer.legal_name)) {
+  if (account.channel !== "crypto" && !accountNameMatches(account.account_name, organizer.legal_name)) {
     return "Tên chủ tài khoản không còn trùng tên pháp lý trong hồ sơ người tổ chức."
   }
   return null
@@ -218,7 +219,7 @@ export interface ReviewOptions {
 
 /** What a finance reviewer may do with an account, mirroring give.review_receiving_account. */
 export function reviewOptions(
-  account: Pick<ReceivingAccount, "verification_status" | "account_name" | "bindings">,
+  account: Pick<ReceivingAccount, "channel" | "verification_status" | "account_name" | "bindings">,
   organizer: OrganizerIdentity
 ): ReviewOptions {
   const status = account.verification_status
@@ -226,7 +227,7 @@ export function reviewOptions(
   if (status === "pending") {
     if (organizer?.verification_status !== "verified") {
       verifyBlocked = "Người tổ chức chưa được xác minh danh tính; xác minh hồ sơ trước."
-    } else if (!accountNameMatches(account.account_name, organizer.legal_name)) {
+    } else if (account.channel !== "crypto" && !accountNameMatches(account.account_name, organizer.legal_name)) {
       verifyBlocked = "Tên chủ tài khoản đã khai không trùng tên pháp lý hiện tại."
     }
   }

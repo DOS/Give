@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { CSV_COLUMNS, csvFile } from "@/test/csv-statement-parser"
 import { fakeDb, op, type Call, type Handler, type Result } from "@/test/fake-db"
+import { largeStatementFile } from "@/test/statement-fixture"
 
 const UPLOADER = "22222222-2222-4222-8222-222222222222"
 const ACCOUNT = "11111111-1111-4111-8111-111111111111"
@@ -95,6 +96,31 @@ describe("uploadStatement", () => {
     )?.[0] as Record<string, unknown>
     expect(staged).toMatchObject({ p_receiving_account_id: ACCOUNT, p_actor_id: UPLOADER, p_parser: "test-csv" })
     expect(staged.p_rows).toHaveLength(3)
+  })
+
+  it("imports a large file in parts and says so", async () => {
+    const big = largeStatementFile()
+    const result = await upload({ file: new File([big.slice()], "saoke.csv") })
+    expect(result).toEqual({
+      ok: true,
+      message:
+        "Đã nhập sao kê (chia thành 5 phần theo ngày): 10 giao dịch được ghi, 0 dòng trùng đã bỏ qua, 5 dòng chờ nhân viên tài chính xem.",
+      batchId: BATCH,
+    })
+    expect(state.serviceCalls.filter((c) => c.target === "rpc:record_inbound_event")).toHaveLength(5)
+  })
+
+  it("names the part and the file row of a large file the database refuses", async () => {
+    state.serviceResponses["rpc:stage_statement_import"] = {
+      error: { code: "23514", message: "GIVE_IMPORT_ROW_INVALID: row 3 amount" },
+    }
+    const big = largeStatementFile()
+    const result = await upload({ file: new File([big.slice()], "saoke.csv") })
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toMatch(
+      /^Phần 1\/5 của sao kê không nhập được \(đã nhập 0 phần trước nó; các phần sau không được nhập\)\./
+    )
+    expect(result?.message).toContain("Hãy sửa file rồi tải lại.")
   })
 
   it("says when the same file was uploaded before", async () => {

@@ -26,6 +26,7 @@ export type AmbiguousReason =
   | "balance_break"
   | "file_mismatch"
   | "possible_recorded"
+  | "event_dismissed"
 export type Resolution = "import" | "duplicate"
 
 export const ROW_STATUS_LABELS: Record<RowStatus, string> = {
@@ -48,6 +49,8 @@ export const AMBIGUOUS_REASON_LABELS: Record<AmbiguousReason, string> = {
   file_mismatch:
     "Một ngày khác trong file không khớp với lần tải trước (ngân hàng có thể đã chuyển dòng sang ngày khác).",
   possible_recorded: "Có thể đã được ghi nhận: đã có giao dịch cùng chiều, cùng số tiền vào khoảng ngày này.",
+  event_dismissed:
+    "Dòng của một lần tải sao kê mà đội tài chính đã bỏ qua. Đối chiếu với sao kê của ngân hàng: nhập nếu đây là giao dịch thật, hoặc đánh dấu là trùng nếu giao dịch đã được ghi. Dòng không có thật (file thử) chưa xử lý được ở đây; hãy báo đội ngũ Give.",
 }
 
 export const RESOLUTION_LABELS: Record<Resolution, string> = {
@@ -90,7 +93,11 @@ const UPLOAD_MESSAGES: Record<string, string> = {
   STATEMENT_PERIOD_INVALID: "Khoảng thời gian của sao kê không hợp lệ (ngày kết thúc không được sau hôm nay).",
   STATEMENT_PERIOD_REQUIRED: "Sao kê của định dạng này cần ghi rõ từ ngày, đến ngày.",
   STATEMENT_BALANCE_INVALID: "Số dư ghi trên sao kê không hợp lệ.",
-  STATEMENT_TOO_LARGE: "Sao kê quá lớn. Hãy xuất thành nhiều file theo khoảng thời gian ngắn hơn.",
+  GIVE_INBOUND_EVENT_DISMISSED:
+    "Đội tài chính đã bỏ qua file này (hoặc một phần của nó), nên Give không nhập nữa. Hãy liên hệ đội tài chính nếu cần nhập lại.",
+  STATEMENT_PART_PREVIOUS_FAILED: "Phần trước của file không nhập được, nên phần này cũng không được nhập.",
+  STATEMENT_TOO_LARGE:
+    "Sao kê có một ngày nhiều giao dịch quá mức Give nhập được trong một lần. Hãy liên hệ đội tài chính của Give.",
   GIVE_IMPORT_CHANNEL_NOT_SUPPORTED: "Tài khoản này không nhận tiền qua sao kê tải lên.",
   GIVE_IMPORT_PARSER_INVALID: "Định dạng sao kê này chưa được hỗ trợ.",
   GIVE_IMPORT_PARSER_FLAGS_CHANGED:

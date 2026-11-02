@@ -417,6 +417,189 @@ export async function listReviewQueue(db: Db): Promise<ReviewItem[]> {
 }
 
 /**
+ * Why an approved give campaign has no usable receiving account, as
+ * give.campaigns_waiting_for_account reports it (DOS/Give#64).
+ */
+export type AccountProblem =
+  "no_account" | "account_not_verified" | "account_not_owned" | "organizer_not_verified" | "name_mismatch"
+
+export const ACCOUNT_PROBLEM_LABELS: Record<AccountProblem, string> = {
+  no_account: "Không có tài khoản nhận tiền nào đang gắn.",
+  account_not_verified: "Tài khoản đang gắn không còn ở trạng thái đã xác minh (có thể đã bị bộ phận tài chính khóa).",
+  account_not_owned: "Tài khoản đang gắn không đứng tên người tổ chức của chiến dịch.",
+  organizer_not_verified:
+    "Hồ sơ người tổ chức chưa được xác minh (người tổ chức vừa đổi tên hoặc loại hồ sơ, hoặc hồ sơ bị đặt lại trạng thái xác minh).",
+  name_mismatch: "Tên chủ tài khoản không còn trùng tên pháp lý của người tổ chức.",
+}
+
+export function accountProblemLabel(problem: string): string {
+  return Object.hasOwn(ACCOUNT_PROBLEM_LABELS, problem)
+    ? ACCOUNT_PROBLEM_LABELS[problem as AccountProblem]
+    : "Tài khoản nhận tiền không dùng được."
+}
+
+export interface WaitingAdvice {
+  /** The reason prefilled in the send-back form, or null when sending back would not help now. */
+  sendBackReason: string | null
+  /** What the moderator should know or do (instead of, or besides, sending it back), or null. */
+  note: string | null
+}
+
+/**
+ * What a moderator should do with an approved campaign waiting for an
+ * account, from what the organizer can do after a send-back:
+ * - A binding that recorded a transaction is never released before the
+ *   campaign ends (money history; the swap is DOS/Give#55), so only finance
+ *   re-enabling a disabled account heals it; any other problem with money
+ *   history has no way forward in Give yet.
+ * - An account the organizer does not own (a data defect) is released by
+ *   finance or an admin once the campaign is sent back.
+ * - An unverified organizer can neither verify nor bind an account until a
+ *   moderator verifies the profile again, which alone may heal it (when the
+ *   legal name did not change; otherwise it comes back as name_mismatch).
+ * - An approved campaign may still take an account in the editor.
+ * - A campaign past its end date never opens, so it is always sent back to
+ *   fix its dates (the organizer resubmits once its account is usable).
+ * Anything else is sent back to replace the account.
+ */
+export function waitingAdvice(
+  row: Pick<WaitingForAccount, "account_problem" | "account_has_transactions" | "ends_at"> & {
+    organizer: Pick<Organizer, "verification_status"> | null
+  },
+  now = new Date()
+): WaitingAdvice {
+  const ended = row.ends_at !== null && new Date(row.ends_at) <= now
+  const problem = row.account_problem
+  // The queue and the organizer row are read separately; trust the queue.
+  const verified = row.organizer?.verification_status === "verified" && problem !== "organizer_not_verified"
+  const money = row.account_has_transactions
+  const waitFinance = money && problem === "account_not_verified"
+
+  if (money && !waitFinance && problem !== "organizer_not_verified") {
+    return {
+      sendBackReason: null,
+      note:
+        "Tài khoản đang gắn đã nhận giao dịch (lịch sử tiền của chiến dịch, chỉ nhả được 30 ngày sau khi chiến dịch bị hủy hoặc kết thúc) nhưng không dùng được vì lý do khác, và Give chưa hỗ trợ đổi tài khoản trong trường hợp này. Hãy liên hệ quản trị viên hệ thống." +
+        (ended
+          ? " Chiến dịch đã quá ngày kết thúc nên sẽ không bao giờ tự mở: nếu không xử lý được tài khoản, hãy hủy chiến dịch."
+          : " Nếu không thể chờ, hãy hủy chiến dịch."),
+    }
+  }
+
+  // What the organizer does about the account after a send-back, if anything.
+  const accountStep =
+    problem === "organizer_not_verified" || waitFinance
+      ? null
+      : problem === "no_account"
+        ? "gắn một tài khoản đã xác minh đứng tên bạn"
+        : problem === "account_not_owned"
+          ? "chờ đội ngũ Give nhả tài khoản không đứng tên bạn, sau đó gắn một tài khoản đã xác minh đứng tên bạn"
+          : "nhả tài khoản đang gắn, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại của bạn"
+
+  // A send-back helps only when the organizer then has something to do.
+  // Staff release a foreign account whatever the organizer's state.
+  const sendBack = ended || problem === "account_not_owned" || (verified && !waitFinance && problem !== "no_account")
+
+  const notes: string[] = []
+  if (!verified) {
+    notes.push(
+      "Hồ sơ người tổ chức chưa được xác minh, nên người tổ chức không gắn được tài khoản nào: hãy xác minh lại hồ sơ (với tên pháp lý hiện tại) ở mục Xác minh người tổ chức." +
+        (problem === "organizer_not_verified"
+          ? " Nếu tên pháp lý không đổi, tài khoản đang gắn dùng được trở lại."
+          : problem === "no_account"
+            ? " Sau đó người tổ chức gắn tài khoản trong trang sửa chiến dịch."
+            : sendBack || waitFinance
+              ? ""
+              : " Sau đó, nếu tài khoản vẫn không dùng được, hãy yêu cầu chỉnh sửa để người tổ chức đổi tài khoản.")
+    )
+  }
+  if (waitFinance) {
+    notes.push(
+      "Tài khoản đang gắn đã nhận giao dịch: đó là lịch sử tiền của chiến dịch, nên chỉ nhả được 30 ngày sau khi chiến dịch bị hủy hoặc kết thúc. Hãy liên hệ bộ phận tài chính để mở lại tài khoản nếu được; nếu không, hãy hủy chiến dịch."
+    )
+  }
+  if (problem === "account_not_owned") {
+    notes.push(
+      "Tài khoản đang gắn không thuộc người tổ chức: sau khi yêu cầu chỉnh sửa, hãy nhờ bộ phận tài chính hoặc quản trị viên nhả tài khoản đó."
+    )
+  }
+
+  if (!sendBack) {
+    notes.push(
+      verified && problem === "no_account"
+        ? "Chiến dịch đã duyệt vẫn gắn được tài khoản: người tổ chức chỉ cần gắn một tài khoản đã xác minh trong trang sửa chiến dịch, rồi chiến dịch tự mở. Không cần yêu cầu chỉnh sửa."
+        : problem === "organizer_not_verified" || problem === "no_account" || waitFinance
+          ? "Không cần yêu cầu chỉnh sửa lúc này; khi tài khoản dùng được, chiến dịch tự mở."
+          : "Chưa cần yêu cầu chỉnh sửa lúc này."
+    )
+    return { sendBackReason: null, note: notes.join(" ") }
+  }
+  if (ended) {
+    notes.push(
+      "Chiến dịch đã quá ngày kết thúc nên không tự mở kể cả khi có tài khoản dùng được: hãy yêu cầu chỉnh sửa ngay để người tổ chức sửa ngày."
+    )
+  }
+
+  const lead = ended
+    ? "Chiến dịch đã quá ngày kết thúc mà chưa mở được vì không có tài khoản nhận tiền dùng được."
+    : problem === "name_mismatch"
+      ? "Tên chủ tài khoản nhận tiền đang gắn không còn trùng tên pháp lý của bạn."
+      : problem === "account_not_owned"
+        ? "Tài khoản nhận tiền đang gắn không đứng tên bạn."
+        : "Tài khoản nhận tiền đang gắn không còn dùng được."
+  // Non-empty: an ended campaign fixes its dates, and any other send-back
+  // has an account step (a foreign account, or a verified organizer with no
+  // finance wait and a bound account).
+  const steps = [ended ? "sửa ngày kết thúc" : null, accountStep].filter((x): x is string => x !== null)
+  const parts = [lead, `Hãy ${steps.join(", ")} rồi gửi duyệt lại.`]
+  if (!verified) parts.push("Hồ sơ người tổ chức của bạn cần được xác minh lại trước khi gắn hay dùng được tài khoản.")
+  if (waitFinance) {
+    parts.push(
+      "Tài khoản đang gắn đã nhận giao dịch nên không nhả được: chiến dịch chỉ gửi duyệt lại được khi bộ phận tài chính mở lại tài khoản đó."
+    )
+  }
+  if (accountStep?.startsWith("nhả")) parts.push("Nếu không nhả được tài khoản, hãy liên hệ đội ngũ Give.")
+  if (ended) parts.push("Nếu không còn cần gây quỹ, hãy hủy chiến dịch.")
+  return { sendBackReason: parts.join(" "), note: notes.length > 0 ? notes.join(" ") : null }
+}
+
+export interface WaitingForAccount extends ReviewItem {
+  account_problem: string
+  /** The bound account already recorded a bank transaction, so the organizer cannot release it. */
+  account_has_transactions: boolean
+}
+
+/**
+ * Approved give campaigns without a usable receiving account, which the
+ * activation cron skips, earliest start first (moderators and admins; others
+ * get none). The database picks them; the rows come from managed_campaigns.
+ */
+export async function listWaitingForAccount(db: Db): Promise<WaitingForAccount[]> {
+  const waiting = await db.rpc("campaigns_waiting_for_account")
+  if (waiting.error) throw waiting.error
+  const rows = (waiting.data ?? []) as {
+    campaign_id: string
+    account_problem: string
+    account_has_transactions: boolean
+  }[]
+  if (rows.length === 0) return []
+  const { data, error } = await managedCampaigns(db)
+    .select(`${CAMPAIGN_WITH_REFS}, organizer:organizers(user_id, kind, legal_name, display_name, verification_status)`)
+    .in(
+      "id",
+      rows.map((r) => r.campaign_id)
+    )
+  if (error) throw error
+  const byId = new Map(((data ?? []) as ReviewItem[]).map((c) => [c.id, c]))
+  return rows.flatMap((r) => {
+    const campaign = byId.get(r.campaign_id)
+    return campaign
+      ? [{ ...campaign, account_problem: r.account_problem, account_has_transactions: r.account_has_transactions }]
+      : []
+  })
+}
+
+/**
  * Organizers who are not verified, oldest first (staff only under RLS).
  * Rejected ones stay listed so a moderator can verify them once fixed.
  */

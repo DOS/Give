@@ -50,7 +50,7 @@ const GIVE_MESSAGES: Record<string, string> = {
     "Tài khoản này đang gắn với một chiến dịch khác. Hãy nhả tài khoản khỏi chiến dịch đó trước: bản nháp, hay chiến dịch từ thiện được yêu cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào, nhả được ngay; các chiến dịch khác đã gửi duyệt chỉ nhả được khi đã xong hẳn phần tiền.",
   GIVE_BINDING_NOT_FOUND: "Tài khoản này hiện không gắn với chiến dịch nào.",
   GIVE_BINDING_NOT_RELEASABLE:
-    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, chiến dịch từ thiện được yêu cầu chỉnh sửa, hoặc đã hủy, mà tài khoản chưa nhận giao dịch nào; hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày). Tài khoản đã nhận giao dịch là lịch sử tiền của chiến dịch nên không nhả sớm được.",
+    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, chiến dịch từ thiện được yêu cầu chỉnh sửa, hoặc đã hủy, mà tài khoản chưa nhận giao dịch nào; hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày). Giao dịch đã vào tài khoản là lịch sử tiền của chiến dịch nên tài khoản không nhả sớm được.",
   GIVE_BINDING_HAS_OPEN_TRANSACTIONS:
     "Chưa nhả được tài khoản: còn giao dịch của chiến dịch chưa được đối chiếu hoặc chưa được giải trình.",
   GIVE_CAMPAIGN_ALREADY_BOUND: "Chiến dịch này đã có tài khoản nhận khác.",
@@ -136,7 +136,7 @@ export function dbErrorMessage(error: DbErrorLike | null | undefined, overrides:
  */
 export const SUBMIT_MESSAGES: Record<string, string> = {
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
-    "Chưa gửi duyệt được: chiến dịch từ thiện cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác. Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại.",
+    "Chưa gửi duyệt được: chiến dịch từ thiện cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác. Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại, và tài khoản nhận tiền phải đứng tên pháp lý mới.",
 }
 
 /** The same code worded for a moderator approving or opening a campaign. */
@@ -147,13 +147,21 @@ export const REVIEW_MESSAGES: Record<string, string> = {
 
 /**
  * The same code when a just-approved campaign could not open: it stays
- * approved (there is no way back to changes requested, and its binding can be
- * neither released nor replaced yet, DOS/Give#64) and the cron opens it once
- * the bound account is usable again.
+ * approved, the cron opens it once the bound account is usable again, and a
+ * moderator can send it back for changes so the organizer binds another
+ * account (DOS/Give#64). Re-verifying the organizer heals only a reset whose
+ * legal name did not change: account names never change, so after a legal
+ * name change that account stays unusable.
  */
 export const OPEN_MESSAGES: Record<string, string> = {
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
-    "tài khoản nhận tiền đang gắn không còn dùng được. Chiến dịch vẫn ở trạng thái đã duyệt và sẽ tự mở khi tài khoản đó dùng được trở lại (bộ phận tài chính mở lại tài khoản, hoặc hồ sơ người tổ chức được xác minh lại); nếu không, hãy hủy chiến dịch.",
+    "tài khoản nhận tiền đang gắn không còn dùng được. Chiến dịch vẫn ở trạng thái đã duyệt và sẽ tự mở nếu tài khoản đó dùng được trở lại (bộ phận tài chính mở lại tài khoản, hoặc hồ sơ người tổ chức được xác minh lại khi tên pháp lý không đổi). Nếu không, hãy yêu cầu người tổ chức chỉnh sửa để gắn tài khoản khác, tại mục Chiến dịch đã duyệt chờ tài khoản nhận.",
+}
+
+/** The transition refusal worded for a moderator sending an approved campaign back. */
+export const SEND_BACK_MESSAGES: Record<string, string> = {
+  GIVE_TRANSITION_NOT_ALLOWED:
+    "Không yêu cầu chỉnh sửa được: chiến dịch vừa đổi trạng thái (có thể đã được mở công khai). Hãy tải lại trang.",
 }
 
 /** Result shape that form actions return to useActionState. */
