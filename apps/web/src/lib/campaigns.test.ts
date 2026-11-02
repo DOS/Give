@@ -173,7 +173,7 @@ describe("listWaitingForAccount", () => {
   })
 
   it("labels every reason in Vietnamese, with a fallback for an unknown one", () => {
-    expect(accountProblemLabel("organizer_not_verified")).toContain("xác minh lại")
+    expect(accountProblemLabel("organizer_not_verified")).toContain("đặt lại trạng thái xác minh")
     expect(accountProblemLabel("account_not_verified")).toContain("bị bộ phận tài chính khóa")
     expect(accountProblemLabel("name_mismatch")).toContain("không còn trùng tên pháp lý")
     expect(accountProblemLabel("something_new")).toBe("Tài khoản nhận tiền không dùng được.")
@@ -182,14 +182,10 @@ describe("listWaitingForAccount", () => {
 
 describe("waitingAdvice", () => {
   it("prefills a send-back reason that fits the problem", () => {
-    expect(waitingAdvice({ account_problem: "no_account", account_has_transactions: false })).toEqual({
-      hint: null,
-      sendBackReason: expect.stringMatching(/^Chiến dịch chưa có tài khoản nhận tiền đang gắn/),
-      blocked: null,
-    })
-    expect(
-      waitingAdvice({ account_problem: "no_account", account_has_transactions: false }).sendBackReason
-    ).not.toContain("nhả")
+    const noAccount = waitingAdvice({ account_problem: "no_account", account_has_transactions: false })
+    expect(noAccount.blocked).toBeNull()
+    expect(noAccount.sendBackReason).toMatch(/^Chiến dịch chưa có tài khoản nhận tiền đang gắn/)
+    expect(noAccount.sendBackReason).not.toContain("nhả")
     expect(
       waitingAdvice({ account_problem: "name_mismatch", account_has_transactions: false }).sendBackReason
     ).toContain("tên pháp lý hiện tại")
@@ -201,18 +197,18 @@ describe("waitingAdvice", () => {
     ).toContain("không còn dùng được")
   })
 
-  it("suggests re-verifying the organizer before sending the campaign back", () => {
+  it("asks to re-verify the organizer instead of sending the campaign back", () => {
     const advice = waitingAdvice({ account_problem: "organizer_not_verified", account_has_transactions: false })
-    expect(advice.hint).toContain("xác minh lại hồ sơ ở mục Xác minh người tổ chức")
-    expect(advice.sendBackReason).toContain("tên pháp lý mới")
+    expect(advice.sendBackReason).toBeNull()
+    expect(advice.blocked).toContain("Xác minh lại hồ sơ người tổ chức trước")
   })
 
-  it("offers no send-back when the account recorded a transaction", () => {
-    const advice = waitingAdvice({ account_problem: "account_not_verified", account_has_transactions: true })
-    expect(advice.sendBackReason).toBeNull()
-    expect(advice.blocked).toContain("bộ phận tài chính")
-    expect(
-      waitingAdvice({ account_problem: "organizer_not_verified", account_has_transactions: true }).hint
-    ).not.toBeNull()
+  it("offers no send-back when the organizer could not release the account", () => {
+    const withMoney = waitingAdvice({ account_problem: "account_not_verified", account_has_transactions: true })
+    expect(withMoney.sendBackReason).toBeNull()
+    expect(withMoney.blocked).toContain("chưa hỗ trợ đổi tài khoản")
+    const notOwned = waitingAdvice({ account_problem: "account_not_owned", account_has_transactions: false })
+    expect(notOwned.sendBackReason).toBeNull()
+    expect(notOwned.blocked).toContain("không thuộc người tổ chức")
   })
 })

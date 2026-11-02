@@ -119,6 +119,15 @@ export interface EditorAccounts {
   submitBlocked: string | null
 }
 
+/**
+ * True when the editor knows the give campaign has no usable receiving
+ * account (none bound, or the bound one is unusable), so an approved one
+ * does not open. False when the accounts could not be read.
+ */
+export function accountBlocksOpening(accounts: Pick<EditorAccounts, "bound" | "boundUnusable"> | null): boolean {
+  return accounts !== null && (accounts.bound === null || accounts.boundUnusable !== null)
+}
+
 /** Everything the editor shows about a give campaign's receiving account. */
 export async function loadEditorAccounts(db: Db, organizerId: string, campaignId: string): Promise<EditorAccounts> {
   const [accounts, organizer] = await Promise.all([listMyAccounts(db, organizerId), getOrganizer(db, organizerId)])

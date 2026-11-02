@@ -427,7 +427,8 @@ export const ACCOUNT_PROBLEM_LABELS: Record<AccountProblem, string> = {
   no_account: "Không có tài khoản nhận tiền nào đang gắn.",
   account_not_verified: "Tài khoản đang gắn không còn ở trạng thái đã xác minh (có thể đã bị bộ phận tài chính khóa).",
   account_not_owned: "Tài khoản đang gắn không đứng tên người tổ chức của chiến dịch.",
-  organizer_not_verified: "Hồ sơ người tổ chức cần được xác minh lại (người tổ chức vừa đổi tên hoặc loại hồ sơ).",
+  organizer_not_verified:
+    "Hồ sơ người tổ chức chưa được xác minh (người tổ chức vừa đổi tên hoặc loại hồ sơ, hoặc hồ sơ bị đặt lại trạng thái xác minh).",
   name_mismatch: "Tên chủ tài khoản không còn trùng tên pháp lý của người tổ chức.",
 }
 
@@ -440,8 +441,6 @@ export function accountProblemLabel(problem: string): string {
 const SEND_BACK_REASONS: Partial<Record<AccountProblem, string>> = {
   no_account:
     "Chiến dịch chưa có tài khoản nhận tiền đang gắn. Hãy gắn một tài khoản đã xác minh đứng tên bạn rồi gửi duyệt lại.",
-  organizer_not_verified:
-    "Bạn đã đổi tên pháp lý nên tài khoản nhận tiền đang gắn không còn trùng tên. Hãy nhả tài khoản đó, gắn một tài khoản đã xác minh đứng tên pháp lý mới rồi gửi duyệt lại.",
   name_mismatch:
     "Tên chủ tài khoản nhận tiền đang gắn không còn trùng tên pháp lý của bạn. Hãy nhả tài khoản đó, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại rồi gửi duyệt lại.",
 }
@@ -449,40 +448,50 @@ const SEND_BACK_REASONS: Partial<Record<AccountProblem, string>> = {
 const SEND_BACK_REASON =
   "Tài khoản nhận tiền đang gắn không còn dùng được. Hãy nhả tài khoản đó, gắn một tài khoản đã xác minh khác đứng tên bạn rồi gửi duyệt lại."
 
-export interface WaitingAdvice {
-  /** What to try before sending the campaign back, or null. */
-  hint: string | null
-  /** The reason prefilled in the send-back form, or null when sending back would not help. */
-  sendBackReason: string | null
-  /** Why the send-back form is not offered, or null. */
-  blocked: string | null
-}
+/** What a moderator should do with an approved campaign waiting for an account. */
+export type WaitingAdvice =
+  /** Send it back with this reason prefilled. */
+  | { sendBackReason: string; blocked: null }
+  /** Do not send it back (it would leave this queue without a way forward); do this instead. */
+  | { sendBackReason: null; blocked: string }
 
 /**
  * What a moderator should do with an approved campaign waiting for an
- * account. A reset organizer verification may heal by re-verifying the
- * profile (when only the display name or kind changed). An account that
- * recorded a transaction cannot be released by the organizer, so sending
- * the campaign back would only hide it from this queue (finance swap,
- * DOS/Give#55).
+ * account. Sending back helps only when the organizer can then release the
+ * account and bind another:
+ * - the organizer's verification was reset: no account can be verified or
+ *   bound until the profile is verified again, and that alone may heal it
+ *   (when the legal name did not change); if the name changed, the campaign
+ *   comes back here as name_mismatch;
+ * - the account recorded a transaction: nobody may release it before the
+ *   campaign ends (money history; the swap is DOS/Give#55);
+ * - the account belongs to someone else: the organizer cannot release it.
  */
 export function waitingAdvice(
   row: Pick<WaitingForAccount, "account_problem" | "account_has_transactions">
 ): WaitingAdvice {
-  const hint =
-    row.account_problem === "organizer_not_verified"
-      ? "Nếu người tổ chức chỉ đổi tên hiển thị hoặc loại hồ sơ, hãy xác minh lại hồ sơ ở mục Xác minh người tổ chức: tài khoản dùng được trở lại và chiến dịch tự mở. Nếu tên pháp lý đã đổi, tài khoản cũ không còn trùng tên nên cần yêu cầu chỉnh sửa."
-      : null
-  if (row.account_has_transactions) {
+  if (row.account_problem === "organizer_not_verified") {
     return {
-      hint,
       sendBackReason: null,
       blocked:
-        "Tài khoản đang gắn đã nhận giao dịch, nên người tổ chức không tự nhả được: đó là lịch sử tiền của chiến dịch. Việc đổi tài khoản cần bộ phận tài chính xử lý. Không yêu cầu chỉnh sửa ở đây, vì chiến dịch sẽ rời danh sách này mà vẫn chưa đổi được tài khoản.",
+        "Xác minh lại hồ sơ người tổ chức trước (với tên pháp lý hiện tại), ở mục Xác minh người tổ chức: khi hồ sơ chưa được xác minh, người tổ chức không gắn được tài khoản nào. Nếu tên pháp lý không đổi, tài khoản dùng được trở lại và chiến dịch tự mở; nếu tên đã đổi, chiến dịch sẽ hiện lại ở đây với lý do tên chủ tài khoản không trùng, khi đó mới yêu cầu chỉnh sửa.",
+    }
+  }
+  if (row.account_has_transactions) {
+    return {
+      sendBackReason: null,
+      blocked:
+        "Tài khoản đang gắn đã nhận giao dịch, nên không ai nhả được trước khi chiến dịch kết thúc: đó là lịch sử tiền của chiến dịch. Give chưa hỗ trợ đổi tài khoản trong trường hợp này. Đừng yêu cầu chỉnh sửa, vì chiến dịch sẽ rời danh sách này mà vẫn không đổi được tài khoản; hãy liên hệ bộ phận tài chính, hoặc hủy chiến dịch nếu không thể chờ.",
+    }
+  }
+  if (row.account_problem === "account_not_owned") {
+    return {
+      sendBackReason: null,
+      blocked:
+        "Tài khoản đang gắn không thuộc người tổ chức nên người tổ chức không tự nhả được. Hãy báo bộ phận tài chính kiểm tra tài khoản này trước khi yêu cầu chỉnh sửa.",
     }
   }
   return {
-    hint,
     sendBackReason: SEND_BACK_REASONS[row.account_problem as AccountProblem] ?? SEND_BACK_REASON,
     blocked: null,
   }

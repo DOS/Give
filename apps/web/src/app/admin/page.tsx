@@ -186,7 +186,9 @@ export default async function AdminPage() {
           <ul className="space-y-4">
             {waiting.map((campaign) => {
               const own = campaign.organizer_id === session.user.id
-              const due = !campaign.starts_at || new Date(campaign.starts_at) <= new Date()
+              const now = new Date()
+              const ended = campaign.ends_at !== null && new Date(campaign.ends_at) <= now
+              const due = !campaign.starts_at || new Date(campaign.starts_at) <= now
               const advice = waitingAdvice(campaign)
               return (
                 <li key={campaign.id} className="space-y-4 card p-6">
@@ -204,7 +206,7 @@ export default async function AdminPage() {
                       <dt className="text-gray-500">Ngày bắt đầu</dt>
                       <dd>
                         {campaign.starts_at ? formatDate(campaign.starts_at) : "Khi duyệt"}
-                        {due ? " (đã tới, đang chờ mở)" : ""}
+                        {ended ? " (đã quá ngày kết thúc)" : due ? " (đã tới, đang chờ mở)" : ""}
                       </dd>
                     </div>
                     <div>
@@ -225,7 +227,6 @@ export default async function AdminPage() {
                       </div>
                     )}
                   </dl>
-                  {advice.hint && <p className="text-sm text-gray-700">{advice.hint}</p>}
                   {advice.blocked ? (
                     <p className="text-sm text-amber-800">{advice.blocked}</p>
                   ) : own ? (

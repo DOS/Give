@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
 import {
+  accountBlocksOpening,
   accountChoices,
   boundAccountOf,
   canPickAccount,
@@ -168,5 +169,14 @@ describe("canPickAccount", () => {
     expect(canPickAccount("changes_requested", null)).toBe(true)
     expect(canPickAccount("draft", account("a"))).toBe(false)
     expect(canPickAccount("cancelled", null)).toBe(false)
+  })
+})
+
+describe("accountBlocksOpening", () => {
+  it("is true with no bound account or an unusable one, false when usable or unknown", () => {
+    expect(accountBlocksOpening({ bound: null, boundUnusable: null })).toBe(true)
+    expect(accountBlocksOpening({ bound: account("a"), boundUnusable: "Tài khoản chưa được xác minh." })).toBe(true)
+    expect(accountBlocksOpening({ bound: account("a"), boundUnusable: null })).toBe(false)
+    expect(accountBlocksOpening(null)).toBe(false)
   })
 })

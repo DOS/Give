@@ -7,7 +7,7 @@ import { AccountStatusBadge, StatusBadge, TypeBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { requireSession } from "@/lib/auth/session"
 import { bankLabel } from "@/lib/banks"
-import { canPickAccount, loadEditorAccounts, type EditorAccounts } from "@/lib/campaign-account"
+import { accountBlocksOpening, canPickAccount, loadEditorAccounts, type EditorAccounts } from "@/lib/campaign-account"
 import {
   canPostUpdate,
   type CampaignStatus,
@@ -84,7 +84,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
       <StatusNotice
         status={campaign.status}
         reviewNote={campaign.review_note}
-        accountBlocked={accounts !== null && (accounts.bound === null || accounts.boundUnusable !== null)}
+        accountBlocked={accountBlocksOpening(accounts)}
       />
 
       {(totals || !isEditableStatus(campaign.status)) && (
@@ -665,7 +665,7 @@ function StatusNotice({
     approved: accountBlocked
       ? {
           tone: "bg-amber-50 text-amber-900",
-          text: "Đã duyệt, nhưng chiến dịch chưa mở được vì không có tài khoản nhận tiền dùng được. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, kiểm duyệt viên sẽ yêu cầu chỉnh sửa để bạn gắn tài khoản khác.",
+          text: "Đã duyệt, nhưng chiến dịch chưa mở được vì không có tài khoản nhận tiền dùng được. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn đổi tài khoản. Cần hỗ trợ, hãy liên hệ đội ngũ Give.",
         }
       : { tone: "bg-sky-50 text-sky-900", text: "Đã duyệt. Chiến dịch tự mở khi tới ngày bắt đầu." },
     live: { tone: "bg-green-50 text-green-900", text: "Chiến dịch đang công khai." },
