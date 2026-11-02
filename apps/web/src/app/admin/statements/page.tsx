@@ -85,6 +85,9 @@ export default async function AdminStatementsPage() {
             <Link href="/admin/unmatched" className="btn-secondary">
               Giao dịch chưa khớp
             </Link>
+            <Link href="/admin/inbound" className="btn-secondary">
+              Sự kiện bị dừng
+            </Link>
             <Link href="/me/statements" className="btn-secondary">
               Tải sao kê
             </Link>

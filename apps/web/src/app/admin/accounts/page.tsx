@@ -55,6 +55,9 @@ export default async function AdminAccountsPage() {
             <Link href="/admin/unmatched" className="btn-secondary">
               Giao dịch chưa khớp
             </Link>
+            <Link href="/admin/inbound" className="btn-secondary">
+              Sự kiện bị dừng
+            </Link>
           </div>
         </div>
         <p className="mt-2 text-sm text-gray-600">

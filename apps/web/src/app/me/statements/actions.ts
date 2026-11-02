@@ -59,31 +59,40 @@ export async function uploadStatement(_state: UploadResult, form: FormData): Pro
   revalidatePath("/admin/statements")
   revalidatePath("/admin/unmatched")
   const again = result.replayed ? "File này đã được tải lên trước đây; kết quả là của lần tải đó. " : ""
+  // A large file is imported in parts of whole days (DOS/Give#73): say so,
+  // and which part a problem is in.
+  const split = result.parts > 1
   switch (result.status) {
     case "imported":
       return {
         ok: true,
-        message: `${again}Đã nhập sao kê: ${importSummary(result)}.`,
+        message: `${again}Đã nhập sao kê${split ? ` (chia thành ${result.parts} phần theo ngày)` : ""}: ${importSummary(result)}.`,
         batchId: result.importBatchId,
       }
     case "refused": {
       const reason = uploadErrorMessage(result.code, result.row)
       // An access refusal is about the account or the uploader, not the file.
       const next = isAccessRefusal(result.code) ? "" : " Hãy sửa file rồi tải lại."
-      return failed(`${again}Sao kê không nhập được. ${reason}${reason.endsWith(".") ? "" : "."}${next}`)
+      const what = split
+        ? `Phần ${result.part}/${result.parts} của sao kê không nhập được (đã nhập ${result.importedParts} phần khác).`
+        : "Sao kê không nhập được."
+      return failed(`${again}${what} ${reason}${reason.endsWith(".") ? "" : "."}${next}`)
     }
     case "pending": {
       // A known refusal that may pass later (the database's date lags near
       // midnight) is worth naming; timeouts and outages are not.
       const reason = isUploadCode(result.code) ? ` Lần thử vừa rồi: ${uploadErrorMessage(result.code, result.row)}` : ""
+      const progress = split
+        ? ` (chia thành ${result.parts} phần theo ngày, đã nhập xong ${result.importedParts} phần)`
+        : ""
       return {
         ok: true,
-        message: `${again}Đã nhận file, Give đang xử lý tiếp. Hãy tải lại trang sau vài phút để xem kết quả.${reason}`,
+        message: `${again}Đã nhận file${progress}, Give đang xử lý tiếp. Hãy tải lại trang sau vài phút để xem kết quả.${reason}`,
       }
     }
     case "parked":
       return failed(
-        `${again}Give đã thử xử lý file này nhiều lần mà chưa được, nên đã chuyển cho đội tài chính kiểm tra. Bạn có thể tải lại đúng file này sau để Give thử thêm một lần.`
+        `${again}Give đã thử xử lý ${split ? `phần ${result.part}/${result.parts} của ` : ""}file này nhiều lần mà chưa được, nên đã chuyển cho đội tài chính kiểm tra. Bạn có thể tải lại đúng file này sau để Give thử thêm một lần.`
       )
   }
 }

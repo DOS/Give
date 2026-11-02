@@ -90,7 +90,8 @@ const UPLOAD_MESSAGES: Record<string, string> = {
   STATEMENT_PERIOD_INVALID: "Khoảng thời gian của sao kê không hợp lệ (ngày kết thúc không được sau hôm nay).",
   STATEMENT_PERIOD_REQUIRED: "Sao kê của định dạng này cần ghi rõ từ ngày, đến ngày.",
   STATEMENT_BALANCE_INVALID: "Số dư ghi trên sao kê không hợp lệ.",
-  STATEMENT_TOO_LARGE: "Sao kê quá lớn. Hãy xuất thành nhiều file theo khoảng thời gian ngắn hơn.",
+  STATEMENT_TOO_LARGE:
+    "Sao kê có một ngày nhiều giao dịch quá mức Give nhập được trong một lần. Hãy liên hệ đội tài chính của Give.",
   GIVE_IMPORT_CHANNEL_NOT_SUPPORTED: "Tài khoản này không nhận tiền qua sao kê tải lên.",
   GIVE_IMPORT_PARSER_INVALID: "Định dạng sao kê này chưa được hỗ trợ.",
   GIVE_IMPORT_PARSER_FLAGS_CHANGED:

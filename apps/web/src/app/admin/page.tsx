@@ -47,6 +47,9 @@ export default async function AdminPage() {
               <Link href="/admin/statements" className="btn-secondary">
                 Đối soát sao kê
               </Link>
+              <Link href="/admin/inbound" className="btn-secondary">
+                Sự kiện bị dừng
+              </Link>
             </>
           )}
           {canManageRoles && (
