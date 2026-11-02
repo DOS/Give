@@ -292,7 +292,12 @@ export async function paymentCampaign(service: Db, campaignId: string): Promise<
   return data as PaymentCampaign | null
 }
 
-/** Mirrors the campaign checks in give.create_donation: a live give campaign inside its dates. */
+/**
+ * A live give campaign inside its dates, as give.create_donation checks it.
+ * Pages use it for wording (closed or not ready yet) and to skip the account
+ * lookup; it can only hide payment details, never show more than
+ * give.payment_account() in paymentAccount() allows.
+ */
 export function acceptsDonations(
   campaign: Pick<PaymentCampaign, "type" | "status" | "starts_at" | "ends_at">,
   now = new Date()
@@ -311,78 +316,29 @@ export interface PaymentAccount {
   account_name: string
 }
 
-interface BindingRow {
-  bound_at: string
-  account: {
-    channel: string
-    bank_bin: string | null
-    account_number: string | null
-    account_name: string | null
-    verification_status: string
-  } | null
-  campaign: { organizer: { verification_status: string; legal_name: string } | null } | null
-}
-
-// The combining diacritical marks block, U+0300 to U+036F, as in give.normalize_person_name.
-const COMBINING_MARKS = new RegExp(`[${String.fromCharCode(0x300)}-${String.fromCharCode(0x36f)}]`, "g")
-
-/**
- * give.normalize_person_name in TypeScript: drop Vietnamese tones and other
- * accents, map đ/Đ to D, upper-case, and keep letters and digits separated by
- * single spaces. The service role may not execute the database function.
- * Wherever the two could differ, this one is the stricter.
- */
-export function normalizePersonName(name: string): string | null {
-  const normalized = name
-    .replace(/đ/g, "d")
-    .replace(/Đ/g, "D")
-    .normalize("NFD")
-    .replace(COMBINING_MARKS, "")
-    // ASCII letters only: JS maps a few other letters to ASCII ("ß" -> "SS")
-    // where Postgres may not, and a mismatch must hide details, not show them.
-    .replace(/[a-z]+/g, (letters) => letters.toUpperCase())
-    .replace(/[^A-Z0-9]+/g, " ")
-    .trim()
-  return normalized === "" ? null : normalized
-}
-
-/** give.account_name_matches: both names normalise to the same non-empty value. */
-export function accountNameMatches(accountName: string | null, legalName: string | null): boolean {
-  const a = normalizePersonName(accountName ?? "")
-  return a !== null && a === normalizePersonName(legalName ?? "")
+interface PaymentAccountRow {
+  channel: string
+  bank_bin: string | null
+  account_number: string | null
+  account_name: string | null
 }
 
 /**
- * The bank account a donor pays into, under the rule give.create_donation
- * applies: an active binding to a verified bank account whose name matches
- * the verified organizer's legal name. The oldest such binding wins. When
- * none qualifies Give shows no payment details at all, also for donations
- * created earlier.
+ * The bank account a donor pays into. give.payment_account() returns the
+ * account give.create_donation accepts a donation for right now (a live give
+ * campaign inside its dates, an active binding to a verified account, the
+ * organizer verified, a bank account still in the organizer's legal name),
+ * so the rule lives in the database only. Give shows bank transfers only, so
+ * a wallet counts as no payment details. When there are none Give shows no
+ * payment details at all, also for donations created earlier.
  */
 export async function paymentAccount(service: Db, campaignId: string): Promise<PaymentAccount | null> {
   const { data, error } = await service
-    .from("account_bindings")
-    .select(
-      "bound_at, account:receiving_accounts(channel, bank_bin, account_number, account_name, verification_status), campaign:campaigns(organizer:organizers(verification_status, legal_name))"
-    )
-    .eq("campaign_id", campaignId)
-    .is("released_at", null)
-    .order("bound_at")
+    .rpc("payment_account", { p_campaign_id: campaignId })
+    .select("channel, bank_bin, account_number, account_name")
+    .maybeSingle()
   if (error) throw error
-  for (const row of (data ?? []) as unknown as BindingRow[]) {
-    const a = row.account
-    const organizer = row.campaign?.organizer
-    if (
-      a &&
-      organizer?.verification_status === "verified" &&
-      a.channel !== "crypto" &&
-      a.verification_status === "verified" &&
-      a.bank_bin &&
-      a.account_number &&
-      accountNameMatches(a.account_name, organizer.legal_name)
-    ) {
-      return { bank_bin: a.bank_bin, account_number: a.account_number, account_name: a.account_name ?? "" }
-    }
-  }
-  return null
+  const a = data as PaymentAccountRow | null
+  if (!a || a.channel === "crypto" || !a.bank_bin || !a.account_number) return null
+  return { bank_bin: a.bank_bin, account_number: a.account_number, account_name: a.account_name ?? "" }
 }

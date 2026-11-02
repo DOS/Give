@@ -77,10 +77,7 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
   const { donation, guest } = await loadDonation(code)
 
   const service = dbService()
-  const [campaign, account] = await Promise.all([
-    paymentCampaign(service, donation.campaign_id),
-    paymentAccount(service, donation.campaign_id),
-  ])
+  const campaign = await paymentCampaign(service, donation.campaign_id)
   if (!campaign) notFound()
 
   const now = new Date()
@@ -88,6 +85,9 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
   const open = acceptsDonations(campaign, now)
   const received = donation.status === "received"
   const qrExpired = donation.status === "expired" || expiresAt <= now
+  // A received donation, or one on a closed campaign, shows no payment details,
+  // so its page does not depend on the account lookup.
+  const account = !received && open ? await paymentAccount(service, donation.campaign_id) : null
 
   const closedNote = (
     <div className="card border-amber-200 bg-amber-50 p-6 text-sm text-amber-900">
