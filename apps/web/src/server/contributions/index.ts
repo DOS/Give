@@ -62,15 +62,26 @@ export function hostnameFrom(host: string | null): string {
 }
 
 /**
- * The client's network address for the donation rate limit, from the
- * headers the hosting proxy sets (Vercel overwrites both, so a client cannot
- * pick its own). An IPv6 address counts as its /64 network, since one
- * connection usually holds a whole /64; an IPv4-mapped IPv6 address counts as
- * its IPv4 address. Null when neither header holds an address.
+ * The client's network address for the donation rate limit, from
+ * x-real-ip, else the first x-forwarded-for entry. These are only as good as
+ * the proxy that sets them: Vercel overwrites both, but Next.js alone keeps
+ * whatever the client sent, so requestClientKey reads them only on Vercel. A
+ * CDN in front of Vercel would make every visitor look like the CDN.
+ *
+ * An IPv6 address counts as its /64 network, since one connection usually
+ * holds a whole /64 (a wider prefix would put many mobile subscribers in one
+ * bucket); an IPv4-mapped IPv6 address counts as its IPv4 address. Null when
+ * neither header holds an address.
  */
 export function clientAddress(headers: { get(name: string): string | null }): string | null {
-  const raw = (headers.get("x-real-ip") ?? headers.get("x-forwarded-for")?.split(",")[0] ?? "").trim()
-  const ip = raw.replace(/%.*$/, "")
+  for (const raw of [headers.get("x-real-ip"), headers.get("x-forwarded-for")?.split(",")[0]]) {
+    const address = normalizeAddress(raw?.trim().replace(/%.*$/, "") ?? "")
+    if (address) return address
+  }
+  return null
+}
+
+function normalizeAddress(ip: string): string | null {
   if (isIP(ip) === 4) return ip
   if (isIP(ip) !== 6) return null
   const groups = ipv6Groups(ip)
@@ -103,8 +114,8 @@ function ipv6Groups(ip: string): number[] {
 /**
  * The key give.create_donation counts a guest's donations under: an
  * HMAC-SHA256 of the address under a server secret, so the database never
- * sees the address and nobody can turn a key back into one by trying every
- * IPv4 address. Null when the address or the secret is missing; the database
+ * sees the address and, without the secret, nobody can turn a key back into
+ * one by trying every IPv4 address. Null when the address or the secret is missing; the database
  * then counts the guest in one shared bucket per campaign.
  */
 export function donationClientKey(address: string | null, secret: string | undefined): string | null {
@@ -113,11 +124,17 @@ export function donationClientKey(address: string | null, secret: string | undef
 }
 
 /**
- * donationClientKey for this request. The secret is the service-role key the
- * server already holds; rotating it only restarts the counts.
+ * donationClientKey for this request, or null off Vercel, where the address
+ * headers are not trustworthy (clientAddress). The secret is
+ * GIVE_RATE_LIMIT_SECRET, else the service-role key the server already
+ * holds; rotating it only restarts the counts.
  */
 export function requestClientKey(headers: { get(name: string): string | null }): string | null {
-  return donationClientKey(clientAddress(headers), process.env.SUPABASE_SERVICE_ROLE_KEY)
+  if (process.env.VERCEL !== "1") return null
+  return donationClientKey(
+    clientAddress(headers),
+    process.env.GIVE_RATE_LIMIT_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY
+  )
 }
 
 /** At most this many guest donation cookies are kept; Path=/ sends each one with every request. */

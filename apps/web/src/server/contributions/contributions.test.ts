@@ -35,6 +35,11 @@ describe("clientAddress", () => {
     expect(from({ "x-forwarded-for": " 198.51.100.1 , 10.0.0.1" })).toBe("198.51.100.1")
   })
 
+  it("falls back to x-forwarded-for when x-real-ip is empty or not an address", () => {
+    expect(from({ "x-real-ip": "", "x-forwarded-for": "198.51.100.1" })).toBe("198.51.100.1")
+    expect(from({ "x-real-ip": "unknown", "x-forwarded-for": "198.51.100.1" })).toBe("198.51.100.1")
+  })
+
   it("counts an IPv6 address as its /64 network", () => {
     expect(from({ "x-real-ip": "2001:db8:abcd:12:1:2:3:4" })).toBe("2001:db8:abcd:12::/64")
     expect(from({ "x-real-ip": "2001:DB8::1" })).toBe("2001:db8:0:0::/64")
@@ -45,6 +50,7 @@ describe("clientAddress", () => {
   it("counts an IPv4-mapped IPv6 address as its IPv4 address", () => {
     expect(from({ "x-real-ip": "::ffff:203.0.113.7" })).toBe("203.0.113.7")
     expect(from({ "x-real-ip": "::ffff:cb00:7107" })).toBe("203.0.113.7")
+    expect(from({ "x-real-ip": "::FFFF:CB00:7107" })).toBe("203.0.113.7")
   })
 
   it("is null without a valid address", () => {

@@ -68,8 +68,10 @@ const created = (overrides: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", SERVICE_KEY)
+  vi.stubEnv("GIVE_RATE_LIMIT_SECRET", "")
+  vi.stubEnv("VERCEL", "1")
   state.session = null
-  state.requestHeaders = { "x-real-ip": "203.0.113.7", "x-forwarded-for": "203.0.113.7" }
+  state.requestHeaders = { "x-real-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.1, 10.0.0.1" }
   state.anonHandler = (call) => (call.target === "campaigns" ? { data: { id: CAMPAIGN } } : undefined)
   state.userHandler = (call) => (call.target === "campaigns" ? { data: { id: CAMPAIGN } } : undefined)
   state.serviceHandler = (call) => (call.target === "rpc:create_donation" ? created() : undefined)
@@ -183,6 +185,22 @@ describe("donate", () => {
     expect(JSON.stringify(state.serviceCalls)).not.toContain("203.0.113.7")
   })
 
+  it("keys by GIVE_RATE_LIMIT_SECRET when it is set", async () => {
+    vi.stubEnv("GIVE_RATE_LIMIT_SECRET", "dedicated-secret")
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    expect(op(state.serviceCalls[0], "args")).toEqual([
+      expect.objectContaining({
+        p_client_key: createHmac("sha256", "dedicated-secret").update("give:donation-rate:203.0.113.7").digest("hex"),
+      }),
+    ])
+  })
+
+  it("trusts the address headers only on Vercel, whose proxy sets them", async () => {
+    vi.stubEnv("VERCEL", "")
+    await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
+    expect(op(state.serviceCalls[0], "args")).toEqual([expect.objectContaining({ p_client_key: null })])
+  })
+
   it("sends no client key when the request carries no address", async () => {
     state.requestHeaders = {}
     await expect(donate(CAMPAIGN, null, form())).rejects.toThrow("NEXT_REDIRECT")
@@ -194,9 +212,14 @@ describe("donate", () => {
     expect(await donate(CAMPAIGN, null, form())).toEqual({
       ok: false,
       message:
-        "Bạn vừa tạo nhiều lượt ủng hộ trong thời gian ngắn. Hãy thử lại sau khoảng 3 phút, hoặc đăng nhập để ủng hộ tiếp.",
+        "Có nhiều lượt ủng hộ từ cùng mạng của bạn trong thời gian ngắn. Hãy thử lại sau khoảng 3 phút, hoặc đăng nhập để ủng hộ tiếp.",
     })
     expect(state.cookies).toHaveLength(0)
+  })
+
+  it("assumes a full window when the limit error carries no wait", async () => {
+    state.serviceHandler = () => ({ error: { code: "54000", message: "GIVE_RATE_LIMITED" } })
+    expect((await donate(CAMPAIGN, null, form()))?.message).toContain("khoảng 10 phút")
   })
 
   it("tells a limited signed-in donor when to retry", async () => {

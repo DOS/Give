@@ -58,7 +58,7 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_CAMPAIGN_NOT_ACCEPTING: "Chiến dịch này hiện không nhận ủng hộ.",
   GIVE_AMOUNT_BELOW_MINIMUM: "Số tiền thấp hơn mức ủng hộ tối thiểu của chiến dịch.",
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau.",
-  GIVE_RATE_LIMITED: "Bạn vừa tạo nhiều lượt ủng hộ trong thời gian ngắn. Hãy thử lại sau ít phút.",
+  GIVE_RATE_LIMITED: "Có nhiều lượt ủng hộ trong thời gian ngắn. Hãy thử lại sau ít phút.",
   // Evidence reports and moderation (DOS/Give#58).
   GIVE_EVIDENCE_NOT_FOUND: "Không tìm thấy ảnh chứng từ này, hoặc ảnh đã bị ẩn.",
   GIVE_REPORT_REASON_TOO_LONG: "Lý do tối đa 500 ký tự.",

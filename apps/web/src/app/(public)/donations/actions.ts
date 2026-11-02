@@ -14,16 +14,18 @@ import { donationCookie, donationCookiesToDrop, hostnameFrom, requestClientKey }
 const NOT_ACCEPTING = "Chiến dịch này hiện không nhận ủng hộ."
 
 /**
- * GIVE_RATE_LIMITED from create_donation: too many donations from this
- * visitor in the current 10-minute window (DOS/Give#47). Guests are counted
- * by network address, so they are pointed at signing in, which counts them by
- * account with a higher limit.
+ * GIVE_RATE_LIMITED from create_donation: too many donations in the current
+ * 10-minute window (DOS/Give#47). Guests are counted by network address, which
+ * people behind a carrier's shared address have in common, so the message
+ * does not blame them and points at signing in, which counts them by account
+ * with a higher limit.
  */
 function rateLimitedMessage(message: string | null | undefined, signedIn: boolean): string {
   const seconds = Number(/GIVE_RATE_LIMITED: (\d+)/.exec(message ?? "")?.[1])
   const minutes = Math.max(1, Math.ceil((seconds > 0 ? seconds : 600) / 60))
-  const base = `Bạn vừa tạo nhiều lượt ủng hộ trong thời gian ngắn. Hãy thử lại sau khoảng ${minutes} phút`
-  return signedIn ? `${base}.` : `${base}, hoặc đăng nhập để ủng hộ tiếp.`
+  return signedIn
+    ? `Bạn vừa tạo nhiều lượt ủng hộ trong thời gian ngắn. Hãy thử lại sau khoảng ${minutes} phút.`
+    : `Có nhiều lượt ủng hộ từ cùng mạng của bạn trong thời gian ngắn. Hãy thử lại sau khoảng ${minutes} phút, hoặc đăng nhập để ủng hộ tiếp.`
 }
 
 interface CreatedDonation {
