@@ -37,7 +37,7 @@ export function submitUnusableAccount(reason: string): string {
  * active binding points at, or null when it has none.
  */
 export function submitAccountProblem(
-  bound: Pick<ReceivingAccount, "verification_status" | "account_name"> | null,
+  bound: Pick<ReceivingAccount, "channel" | "verification_status" | "account_name"> | null,
   organizer: Pick<Organizer, "legal_name" | "verification_status"> | null
 ): string | null {
   if (!bound) return SUBMIT_NO_ACCOUNT
@@ -117,6 +117,19 @@ export interface EditorAccounts {
   choices: AccountChoice[]
   /** Why the campaign cannot be sent for review because of its account, or null. */
   submitBlocked: string | null
+}
+
+/**
+ * Why the editor knows a give campaign has no usable receiving account (so an
+ * approved one does not open): none bound, or the bound one unusable. Null
+ * when it has one, or when the accounts could not be read.
+ */
+export function openingBlock(
+  accounts: Pick<EditorAccounts, "bound" | "boundUnusable"> | null
+): "no_account" | "unusable" | null {
+  if (accounts === null) return null
+  if (accounts.bound === null) return "no_account"
+  return accounts.boundUnusable !== null ? "unusable" : null
 }
 
 /** Everything the editor shows about a give campaign's receiving account. */
