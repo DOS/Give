@@ -181,9 +181,9 @@ export default async function AdminPage() {
           Chiến dịch đã duyệt chờ tài khoản nhận{waiting ? ` (${waiting.length})` : ""}
         </h2>
         <p className="mb-4 text-sm text-gray-600">
-          Chiến dịch từ thiện đã duyệt nhưng tài khoản nhận tiền không còn dùng được, nên hệ thống không tự mở. Chiến
-          dịch tự mở nếu tài khoản dùng được trở lại; nếu không, hãy yêu cầu chỉnh sửa để người tổ chức nhả tài khoản
-          cũ, gắn tài khoản khác rồi gửi duyệt lại.
+          Chiến dịch (từ thiện hoặc dự án có quà tặng) đã duyệt nhưng tài khoản nhận tiền không còn dùng được, nên hệ
+          thống không tự mở. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, hãy yêu cầu chỉnh sửa để người
+          tổ chức nhả tài khoản cũ, gắn tài khoản khác rồi gửi duyệt lại.
         </p>
         {waiting === null ? (
           <p className="card p-6 text-gray-600">Chưa tải được danh sách này. Hãy tải lại trang sau.</p>
@@ -201,7 +201,8 @@ export default async function AdminPage() {
                 <li key={campaign.id} className="space-y-4 card p-6">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0">
-                      <h3 className="text-lg font-semibold">{campaign.title}</h3>
+                      <TypeBadge type={campaign.type} />
+                      <h3 className="mt-1 text-lg font-semibold">{campaign.title}</h3>
                       <p className="text-sm text-red-700">{accountProblemLabel(campaign.account_problem)}</p>
                     </div>
                     <Link href={`/campaigns/${campaign.slug}`} className="btn-secondary" target="_blank">
