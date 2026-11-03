@@ -29,6 +29,19 @@ export function paymentRequestsStopped(campaign: Partial<PaymentStop> | null | u
   return !!campaign?.payments_stopped_at
 }
 
+/**
+ * Whether the stop holds this pledge's payment window: stopped, and the
+ * deadline was still ahead when the stop began, so the database lets it wait
+ * and a resume moves it. A pledge already overdue then lapses as usual.
+ */
+export function stopHoldsPledge(
+  campaign: Partial<PaymentStop> | null | undefined,
+  pledge: { payment_due_at: string | null }
+): boolean {
+  if (!campaign?.payments_stopped_at || !pledge.payment_due_at) return false
+  return new Date(pledge.payment_due_at) > new Date(campaign.payments_stopped_at)
+}
+
 /** A succeeded back campaign as the moderator's list shows it (give.public_campaigns). */
 export interface SucceededBackCampaign extends PaymentStop {
   id: string

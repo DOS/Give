@@ -19,7 +19,7 @@ import {
   pledgeStatusLabel,
   readShippingAddress,
 } from "@/lib/pledges"
-import { paymentRequestsStopped } from "@/lib/payment-requests"
+import { stopHoldsPledge } from "@/lib/payment-requests"
 import { dbAs, dbService } from "@/lib/supabase"
 import { cancelPledge } from "@/app/campaigns/[slug]/pledge/actions"
 import { isSessionRejected, paymentCampaign } from "@/server/contributions"
@@ -84,7 +84,6 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
     pledge.reward_tier_id ? getTierTitle(dbAs(token), pledge.reward_tier_id).catch(() => null) : null,
   ])
   if (!campaign) notFound()
-  const stopped = paymentRequestsStopped(campaign)
   // Never asks for the payment details while payment requests are stopped.
   const { payment, balance } = await loadPledgeMoney(service, pledge, campaign, userId)
   // Without the balance, amounts that refunds could change are left out.
@@ -126,7 +125,9 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
       break
     case "payment_due":
     case "partially_paid": {
-      const view = paymentView(stopped, paymentWindowClosed(pledge), payment, isDonationCode)
+      // A pledge overdue before the stop began is not held by it: "closed", and
+      // loadPledgeMoney still never asked for the payment details.
+      const view = paymentView(stopHoldsPledge(campaign, pledge), paymentWindowClosed(pledge), payment, isDonationCode)
       if (view === "stopped") {
         body = (
           <Note tone="red">
