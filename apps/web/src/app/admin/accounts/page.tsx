@@ -49,6 +49,9 @@ export default async function AdminAccountsPage() {
         <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
           <h1 className="text-3xl font-bold">Xác minh tài khoản nhận</h1>
           <div className="flex flex-wrap gap-2">
+            <Link href="/admin/account-swaps" className="btn-secondary">
+              Đổi tài khoản nhận
+            </Link>
             <Link href="/admin/statements" className="btn-secondary">
               Đối soát sao kê
             </Link>

@@ -3,8 +3,10 @@ import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { cache } from "react"
 
+import { AccountChanges } from "@/components/AccountChanges"
 import { MoneyTotals } from "@/components/MoneyTotals"
 import { PublicEvidenceList } from "@/components/PublicEvidence"
+import { listPublicAccountChanges } from "@/lib/account-swaps"
 import { getSession } from "@/lib/auth/session"
 import { getCampaignBySlug, isPublicStatus } from "@/lib/campaigns"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
@@ -62,10 +64,12 @@ export default async function StatementPage({
   const { campaign, db } = loaded
   const { filter, page } = parseStatementParams(await searchParams)
 
-  const [totals, { rows, total }, session] = await Promise.all([
+  const [totals, { rows, total }, session, accountChanges] = await Promise.all([
     getMoneyTotals(db, campaign.id),
     listStatement(db, campaign.id, filter, page),
     getSession(),
+    // A failed read hides the notice rather than the statement.
+    listPublicAccountChanges(db, campaign.id).catch(() => []),
   ])
   if (!totals) notFound()
   const pages = Math.max(1, Math.ceil(total / STATEMENT_PAGE_SIZE))
@@ -93,8 +97,9 @@ export default async function StatementPage({
       </p>
 
       <div className="mt-8 grid gap-8 lg:grid-cols-3">
-        <div className="lg:col-span-1">
+        <div className="space-y-6 lg:col-span-1">
           <MoneyTotals totals={totals} />
+          <AccountChanges changes={accountChanges} />
         </div>
 
         <section className="lg:col-span-2" aria-labelledby="statement-heading">

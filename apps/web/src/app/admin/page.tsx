@@ -57,6 +57,9 @@ export default async function AdminPage() {
               <Link href="/admin/accounts" className="btn-secondary">
                 Xác minh tài khoản nhận
               </Link>
+              <Link href="/admin/account-swaps" className="btn-secondary">
+                Đổi tài khoản nhận
+              </Link>
               <Link href="/admin/statements" className="btn-secondary">
                 Đối soát sao kê
               </Link>
