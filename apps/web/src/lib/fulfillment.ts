@@ -112,15 +112,31 @@ export async function listFulfillmentPledges(
   return { pledges, total: count ?? pledges.length }
 }
 
+/** The keys the pledge form stores (DOS/Give#31, lib/pledges.ts shippingAddressSchema), labelled. */
+const SHIPPING_LABELS: Record<string, string> = {
+  recipient: "Người nhận",
+  phone: "Số điện thoại",
+  address: "Địa chỉ",
+}
+
 /**
  * The lines of a shipping address as the pledge form stored it (a JSON
- * object, DOS/Give#31): every non-empty text or number value, in order.
+ * object, DOS/Give#31): known keys first with their labels, then any other
+ * non-empty text or number value as it is.
  */
 export function shippingLines(address: Record<string, unknown> | null): string[] {
   if (!address || typeof address !== "object" || Array.isArray(address)) return []
-  return Object.values(address)
-    .filter((v): v is string | number => (typeof v === "string" && v.trim() !== "") || typeof v === "number")
-    .map((v) => String(v).trim())
+  const text = (v: unknown) =>
+    (typeof v === "string" && v.trim() !== "") || typeof v === "number" ? String(v).trim() : null
+  const known = Object.entries(SHIPPING_LABELS).flatMap(([key, label]) => {
+    const value = text(address[key])
+    return value === null ? [] : [`${label}: ${value}`]
+  })
+  const rest = Object.entries(address).flatMap(([key, v]) => {
+    const value = Object.hasOwn(SHIPPING_LABELS, key) ? null : text(v)
+    return value === null ? [] : [value]
+  })
+  return [...known, ...rest]
 }
 
 /** How many pledges of each delivery status, "none" for not reported. */

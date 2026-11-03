@@ -36,9 +36,14 @@ describe("fulfillment rules", () => {
 
   it("shows the text values of a shipping address and counts statuses", () => {
     expect(shippingLines({ name: " Lan ", phone: "0901", line: "", extra: { a: 1 }, zip: 700000 })).toEqual([
+      "Số điện thoại: 0901",
       "Lan",
-      "0901",
       "700000",
+    ])
+    expect(shippingLines({ address: "12 Lý Thường Kiệt", recipient: "Lê Lan", phone: "0901 234 567" })).toEqual([
+      "Người nhận: Lê Lan",
+      "Số điện thoại: 0901 234 567",
+      "Địa chỉ: 12 Lý Thường Kiệt",
     ])
     expect(shippingLines(null)).toEqual([])
     expect(
