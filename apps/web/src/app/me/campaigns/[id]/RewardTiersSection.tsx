@@ -3,11 +3,11 @@ import Link from "next/link"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import type { CampaignStatus } from "@/lib/campaigns"
 import { formatVnd } from "@/lib/format"
+import { deliveryMonth } from "@/lib/pledges"
 import {
   canEditTiers,
   canRetireTier,
   deliveryMonthInput,
-  deliveryMonthLabel,
   MAX_TIERS,
   minAmountLabel,
   quantityLabel,
@@ -126,7 +126,7 @@ export function RewardTiersSection({
 }
 
 function TierSummary({ tier }: { tier: RewardTier }) {
-  const delivery = deliveryMonthLabel(tier.estimated_delivery)
+  const delivery = deliveryMonth(tier.estimated_delivery)
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-baseline justify-between gap-2">

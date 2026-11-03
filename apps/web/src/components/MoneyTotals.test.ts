@@ -26,6 +26,8 @@ const totals: Totals = {
   unexplained_out_count: 1,
   supporters_count: 3,
   other_in_amount: 0,
+  refund_owed_amount: 0,
+  backers_count: 0,
 }
 
 /** The text of each figure, by its data-figure key. */

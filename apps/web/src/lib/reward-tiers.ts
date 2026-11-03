@@ -1,6 +1,7 @@
 import type { CampaignStatus, Db } from "./campaigns"
 import { isEditableStatus } from "./campaigns"
 import { formatVnd } from "./format"
+import type { PublicRewardTier } from "./pledges"
 
 /**
  * Reward tiers of `back` campaigns (DOS/Give#83, DDL DOS.Me
@@ -11,7 +12,9 @@ import { formatVnd } from "./format"
  * the caller's token: give.reward_tiers (authenticated, RLS: own campaign,
  * staff, or a tier of a public campaign) for the editor and previews, and
  * the view give.public_reward_tiers (active tiers of public campaigns, with
- * the slots left) for everyone else.
+ * the slots left) for everyone else, read by the pledge flow's
+ * server/pledges listPublicTiers (DOS/Give#31), whose lib/pledges also holds
+ * PublicRewardTier, isSoldOut, deliveryMonth and acceptsPledges.
  */
 
 export type RewardTierStatus = "active" | "retired"
@@ -34,19 +37,11 @@ export interface RewardTier {
   retired_at: string | null
 }
 
-/** A row of give.public_reward_tiers: active tiers only, with the slots left (null = unlimited). */
-export interface PublicRewardTier extends Omit<RewardTier, "status" | "retired_at"> {
-  quantity_remaining: number | null
-}
-
 /** The database caps a campaign at 50 tiers (GIVE_REWARD_TIER_LIMIT). */
 export const MAX_TIERS = 50
 
 const TIER_COLUMNS =
   "id, campaign_id, title, description, min_amount, quantity_limit, quantity_claimed, estimated_delivery, requires_shipping, shipping_note, status, sort_order, retired_at"
-
-const PUBLIC_TIER_COLUMNS =
-  "id, campaign_id, title, description, min_amount, quantity_limit, quantity_claimed, quantity_remaining, estimated_delivery, requires_shipping, shipping_note, sort_order"
 
 // ---------------------------------------------------------------------------
 // Rules (mirror give.lock_tier_campaign and give.retire_reward_tier; the
@@ -104,22 +99,12 @@ export function remainingSlots(tier: Pick<RewardTier, "quantity_limit" | "quanti
   return tier.quantity_limit === null ? null : Math.max(tier.quantity_limit - tier.quantity_claimed, 0)
 }
 
-export function isSoldOut(tier: Pick<RewardTier, "quantity_limit" | "quantity_claimed">): boolean {
-  return remainingSlots(tier) === 0
-}
-
 /** "Còn 3/10 suất", "Hết suất" or "Không giới hạn số suất". */
 export function quantityLabel(tier: Pick<RewardTier, "quantity_limit" | "quantity_claimed">): string {
   const left = remainingSlots(tier)
   if (left === null) return "Không giới hạn số suất"
   if (left === 0) return "Hết suất"
   return `Còn ${left}/${tier.quantity_limit} suất`
-}
-
-/** "Tháng 3/2027" for a delivery month stored as its first day, or null. */
-export function deliveryMonthLabel(date: string | null): string | null {
-  const match = /^(\d{4})-(\d{2})/.exec(date ?? "")
-  return match ? `Tháng ${Number(match[2])}/${match[1]}` : null
 }
 
 /** The value a month input needs ("2027-03") for a stored delivery month. */
@@ -129,23 +114,6 @@ export function deliveryMonthInput(date: string | null): string {
 
 export function minAmountLabel(amount: number): string {
   return `Từ ${formatVnd(amount)}`
-}
-
-/**
- * Backers can pick a tier only while the campaign is live, has started and
- * has an end date still ahead (give.lock_pledge_campaign).
- */
-export function acceptsPledges(
-  campaign: { type: string; status: CampaignStatus; starts_at: string | null; ends_at: string | null },
-  now = new Date()
-): boolean {
-  return (
-    campaign.type === "back" &&
-    campaign.status === "live" &&
-    (campaign.starts_at === null || new Date(campaign.starts_at) <= now) &&
-    campaign.ends_at !== null &&
-    new Date(campaign.ends_at) > now
-  )
 }
 
 /** The pledge flow (DOS/Give#31) with this tier chosen. */
@@ -167,18 +135,6 @@ export async function listCampaignTiers(db: Db, campaignId: string): Promise<Rew
     .order("id")
   if (error) throw error
   return (data ?? []) as RewardTier[]
-}
-
-/** Active tiers of a public campaign with the slots left, for any visitor. */
-export async function listPublicTiers(db: Db, campaignId: string): Promise<PublicRewardTier[]> {
-  const { data, error } = await db
-    .from("public_reward_tiers")
-    .select(PUBLIC_TIER_COLUMNS)
-    .eq("campaign_id", campaignId)
-    .order("sort_order")
-    .order("id")
-  if (error) throw error
-  return (data ?? []) as PublicRewardTier[]
 }
 
 /** What the organizer's preview of a campaign that is not public yet shows: its active tiers. */

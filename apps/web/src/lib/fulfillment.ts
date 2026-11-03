@@ -36,7 +36,7 @@ export function isFulfillmentStatus(value: unknown): value is FulfillmentStatus 
 }
 
 /** Label of a pledge's delivery status; null means the creator has not reported anything yet. */
-export function fulfillmentLabel(status: string | null): string {
+export function fulfillmentLabel(status: string | null | undefined): string {
   return isFulfillmentStatus(status) ? FULFILLMENT_LABELS[status] : "Chưa cập nhật"
 }
 

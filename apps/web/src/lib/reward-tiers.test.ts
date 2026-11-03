@@ -4,13 +4,9 @@ import { fakeDb, op, type Call } from "@/test/fake-db"
 
 import type { CampaignStatus } from "./campaigns"
 import {
-  acceptsPledges,
   canEditTiers,
   canRetireTier,
   deliveryMonthInput,
-  deliveryMonthLabel,
-  isSoldOut,
-  listPublicTiers,
   minAmountLabel,
   moveTier,
   pledgeHref,
@@ -20,6 +16,8 @@ import {
   sortTiers,
   type RewardTier,
 } from "./reward-tiers"
+import { listPublicTiers } from "@/server/pledges"
+
 import { rewardTierSchema } from "./validation"
 
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
@@ -93,13 +91,9 @@ describe("tier display", () => {
     expect(quantityLabel(tier({ quantity_limit: 10, quantity_claimed: 10 }))).toBe("Hết suất")
     expect(quantityLabel(tier())).toBe("Không giới hạn số suất")
     expect(remainingSlots(tier())).toBeNull()
-    expect(isSoldOut(tier({ quantity_limit: 1, quantity_claimed: 1 }))).toBe(true)
-    expect(isSoldOut(tier())).toBe(false)
   })
 
-  it("shows the delivery month and round-trips it through the month input", () => {
-    expect(deliveryMonthLabel("2027-03-01")).toBe("Tháng 3/2027")
-    expect(deliveryMonthLabel(null)).toBeNull()
+  it("round-trips the delivery month through the month input", () => {
     expect(deliveryMonthInput("2027-03-01")).toBe("2027-03")
     expect(deliveryMonthInput(null)).toBe("")
   })
@@ -110,24 +104,12 @@ describe("tier display", () => {
       "/campaigns/ao-thun-abcde/pledge?tier=a0000000-0000-4000-8000-000000000001"
     )
   })
-
-  it("takes pledges only on a live back campaign before its end", () => {
-    const now = new Date("2026-11-10T00:00:00Z")
-    const live = { type: "back", status: "live" as const, starts_at: null, ends_at: "2026-12-01T00:00:00Z" }
-    expect(acceptsPledges(live, now)).toBe(true)
-    expect(acceptsPledges({ ...live, starts_at: "2026-11-09T00:00:00Z" }, now)).toBe(true)
-    expect(acceptsPledges({ ...live, starts_at: "2026-11-11T00:00:00Z" }, now)).toBe(false)
-    expect(acceptsPledges({ ...live, ends_at: null }, now)).toBe(false)
-    expect(acceptsPledges({ ...live, ends_at: "2026-11-09T00:00:00Z" }, now)).toBe(false)
-    expect(acceptsPledges({ ...live, status: "succeeded" }, now)).toBe(false)
-    expect(acceptsPledges({ ...live, type: "give" }, now)).toBe(false)
-  })
 })
 
 describe("public tier list", () => {
   it("reads active tiers of one campaign from the public view, in order", async () => {
     const calls: Call[] = []
-    const rows = [{ id: "t1", quantity_remaining: 3 }]
+    const rows = [{ id: "t1", min_amount: 200000, quantity_limit: 10, quantity_claimed: 7, quantity_remaining: 3 }]
     const db = fakeDb(() => ({ data: rows }), calls)
     expect(await listPublicTiers(db as never, CAMPAIGN)).toEqual(rows)
     expect(calls[0].target).toBe("public_reward_tiers")

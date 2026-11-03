@@ -44,11 +44,20 @@ export interface MoneyTotals {
    * not a donation (an organizer top-up, a bank fee refund or correction, interest; DOS/Give#49).
    */
   other_in_amount: number
+  /**
+   * Back campaigns: what the creator owes backers right now (refund_due
+   * pledges' received minus refunded, plus overpayment of paid pledges), shown
+   * until it is refunded (section 4.2 step 5).
+   */
+  refund_owed_amount: number
+  /** Back campaigns: pledges that hold their slot (pledged, payment_due, partially_paid, paid). */
+  backers_count: number
 }
 
 const TOTALS_COLUMNS =
   "id, type, asset, goal_amount, pledged_amount, paid_amount, disbursable_amount, disbursed_amount, " +
-  "refunded_amount, unexplained_out_amount, unexplained_out_count, supporters_count, other_in_amount"
+  "refunded_amount, unexplained_out_amount, unexplained_out_count, supporters_count, other_in_amount, " +
+  "refund_owed_amount, backers_count"
 
 type TotalsRow = Omit<MoneyTotals, "campaign_id"> & { id: string }
 
@@ -73,6 +82,8 @@ function toTotals(row: TotalsRow): MoneyTotals {
     unexplained_out_count: num(row.unexplained_out_count),
     supporters_count: num(row.supporters_count),
     other_in_amount: num(row.other_in_amount),
+    refund_owed_amount: num(row.refund_owed_amount),
+    backers_count: num(row.backers_count),
   }
 }
 

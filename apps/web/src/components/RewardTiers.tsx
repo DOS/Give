@@ -1,13 +1,7 @@
 import Link from "next/link"
 
-import {
-  deliveryMonthLabel,
-  isSoldOut,
-  minAmountLabel,
-  pledgeHref,
-  quantityLabel,
-  type PublicRewardTier,
-} from "@/lib/reward-tiers"
+import { deliveryMonth, isSoldOut, type PublicRewardTier } from "@/lib/pledges"
+import { minAmountLabel, pledgeHref, quantityLabel } from "@/lib/reward-tiers"
 
 /**
  * The reward tiers of a back campaign on its public page (DOS/Give#83).
@@ -38,7 +32,7 @@ export function RewardTiers({
       <ol className="space-y-3">
         {tiers.map((tier) => {
           const soldOut = isSoldOut(tier)
-          const delivery = deliveryMonthLabel(tier.estimated_delivery)
+          const delivery = deliveryMonth(tier.estimated_delivery)
           return (
             <li key={tier.id} className={`space-y-3 card p-5 ${soldOut ? "opacity-75" : ""}`}>
               <div>

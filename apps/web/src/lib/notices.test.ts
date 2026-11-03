@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { formatVnd } from "@/lib/format"
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
 import { countUnreadNotices, describeNotice, listNotices, NOTICE_PAGE_SIZE, unreadBadge, type Notice } from "./notices"
@@ -88,17 +89,58 @@ describe("describeNotice", () => {
     expect(view.body).not.toContain("quá 7 ngày")
   })
 
-  it("links a payment notice to the donation page of its reference code", () => {
-    const view = describeNotice(
-      notice({
-        kind: "payment_due",
-        payload: { amount: 500000, reference_code: "GVAB12CD", due_at: "2026-11-09T00:00:00Z" },
-      })
+  it("links a payment notice to the backer's pledge page with the amount still due", () => {
+    // Payload of give.pledge_notice_payload (DOS-Me 20261105150000).
+    const payload = {
+      campaign_title: "Đèn ngủ gỗ",
+      reference_code: "GVAB12CD",
+      intended_amount: 500_000,
+      received_amount: 200_000,
+      payment_due_at: "2026-11-09T03:00:00Z",
+    }
+    const due = describeNotice(notice({ kind: "payment_due", payload }))
+    expect(due.title).toBe("Đến hạn thanh toán cam kết")
+    expect(due.body).toContain("Dự án “Đèn ngủ gỗ” đã đạt mục tiêu")
+    expect(due.body).toContain(formatVnd(300_000))
+    expect(due.body).toContain("09/11/2026")
+    expect(due.href).toBe("/me/pledges/GVAB12CD")
+
+    const reminder = describeNotice(
+      notice({ kind: "payment_reminder", payload: { ...payload, amount_due: 100_000, day: 3 } })
     )
-    expect(view.title).toBe("Đến hạn thanh toán cam kết")
-    expect(view.body).toContain("09/11/2026")
-    expect(view.href).toBe("/donations/GVAB12CD")
+    expect(reminder.title).toBe("Nhắc thanh toán cam kết")
+    expect(reminder.body).toContain(formatVnd(100_000))
+    expect(reminder.body).toContain("đừng chuyển lại")
+    expect(due.body).not.toContain("đừng chuyển lại")
     expect(describeNotice(notice({ kind: "payment_reminder", payload: {} })).href).toBeNull()
+    expect(describeNotice(notice({ kind: "payment_due", payload: { reference_code: "../x" } })).href).toBeNull()
+  })
+
+  it("covers the end of a pledge: cancelled, lapsed, refund due and refund owed", () => {
+    const payload = {
+      campaign_title: "Đèn",
+      reference_code: "GVAB12CD",
+      received_amount: 150_000,
+      refund_due_at: "2026-11-20T00:00:00Z",
+    }
+    const failed = describeNotice(
+      notice({ kind: "pledge_cancelled", payload: { ...payload, reason: "campaign_failed" } })
+    )
+    expect(failed.body).toContain("không đạt mục tiêu")
+    expect(failed.body).toContain("không phải trả tiền")
+    expect(
+      describeNotice(notice({ kind: "pledge_cancelled", payload: { reason: "campaign_cancelled" } })).body
+    ).toContain("đã bị hủy")
+    expect(describeNotice(notice({ kind: "pledge_lapsed", payload })).href).toBe("/me/pledges/GVAB12CD")
+
+    const refund = describeNotice(notice({ kind: "refund_due", payload }))
+    expect(refund.body).toContain(formatVnd(150_000))
+    expect(refund.body).toContain("20/11/2026")
+
+    const owed = describeNotice(notice({ kind: "refund_owed", payload }))
+    expect(owed.title).toBe("Cần hoàn tiền cho người ủng hộ")
+    expect(owed.body).toContain("mã GVAB12CD")
+    expect(owed.href).toBe(`/me/campaigns/${notice({}).campaign_id}/disbursements`)
   })
 
   it("covers account review results", () => {
