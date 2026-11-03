@@ -8,6 +8,7 @@ import { AccountChanges } from "@/components/AccountChanges"
 import { StatusBadge, TypeBadge, VerificationBadge } from "@/components/badges"
 import { Markdown } from "@/components/Markdown"
 import { MoneyTotals } from "@/components/MoneyTotals"
+import { PledgeTotals } from "@/components/PledgeTotals"
 import { ProgressBar } from "@/components/ProgressBar"
 import { listPublicAccountChanges } from "@/lib/account-swaps"
 import { getSession } from "@/lib/auth/session"
@@ -21,11 +22,13 @@ import {
   type Db,
 } from "@/lib/campaigns"
 import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
+import { acceptsPledges } from "@/lib/pledges"
 import { SLUG_PATTERN } from "@/lib/slug"
 import { privateCoverUrl, publicCoverUrl } from "@/lib/cover-urls"
 import { getMoneyTotals, raisedAmount, statementHref } from "@/lib/statement"
 import { dbAs, dbService } from "@/lib/supabase"
 import { acceptsDonations, paymentAccount } from "@/server/contributions"
+import { organizesCampaign } from "@/server/pledges"
 
 import { DonateForm } from "./DonateForm"
 
@@ -69,6 +72,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
 
   const isGive = campaign.type === "give"
   const donationsOpen = !preview && acceptsDonations(campaign)
+  const pledgesOpen = !preview && acceptsPledges(campaign)
   const [milestones, updates, organizer, account, session, totals, accountChanges] = await Promise.all([
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
@@ -87,9 +91,15 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
     preview ? Promise.resolve([]) : listPublicAccountChanges(dbAs(), campaign.id).catch(() => []),
   ])
   const canDonate = donationsOpen && account !== null
-  const closedNote =
-    !isGive || preview
-      ? `Give sắp mở nhận ${isGive ? "ủng hộ" : "cam kết"}. Tiền sẽ đi thẳng vào tài khoản nhận của chiến dịch.`
+  // The creator cannot back their own project (the database refuses it too).
+  const ownProject =
+    pledgesOpen && session ? await organizesCampaign(dbAs(session.accessToken), campaign.id, session.user.id) : false
+  const closedNote = preview
+    ? `Give sắp mở nhận ${isGive ? "ủng hộ" : "cam kết"}. Tiền sẽ đi thẳng vào tài khoản nhận của chiến dịch.`
+    : !isGive
+      ? campaign.status === "live" && campaign.starts_at && new Date(campaign.starts_at) > new Date()
+        ? "Dự án chưa tới ngày nhận cam kết."
+        : "Dự án không còn nhận cam kết."
       : donationsOpen
         ? "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau."
         : "Chiến dịch không còn nhận ủng hộ."
@@ -201,6 +211,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               </p>
             </div>
             {options.progress_bar !== false && <ProgressBar percent={percent} />}
+            {!isGive && totals && <PledgeTotals totals={totals} />}
             <dl className="grid grid-cols-2 gap-3 text-sm">
               {options.time_remaining !== false && days !== null && (
                 <div>
@@ -211,7 +222,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               {options.backers_count !== false && totals && (
                 <div>
                   <dt className="text-gray-500">{isGive ? "Người ủng hộ" : "Người đồng hành"}</dt>
-                  <dd className="font-semibold">{totals.supporters_count}</dd>
+                  <dd className="font-semibold">{isGive ? totals.supporters_count : totals.backers_count}</dd>
                 </div>
               )}
               <div>
@@ -231,12 +242,21 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             </dl>
             {canDonate ? (
               <DonateForm campaignId={campaign.id} defaultName={session?.user.name ?? ""} signedIn={!!session} />
+            ) : pledgesOpen && !ownProject ? (
+              <>
+                <Link href={`/campaigns/${campaign.slug}/pledge`} className="btn-primary block w-full text-center">
+                  Ủng hộ dự án
+                </Link>
+                {!session && <p className="text-center text-xs text-gray-500">Cần đăng nhập để cam kết ủng hộ.</p>}
+              </>
             ) : (
               <>
                 <button type="button" disabled className="btn-primary w-full">
-                  {isGive ? "Ủng hộ" : "Đồng hành cùng dự án"}
+                  {isGive ? "Ủng hộ" : "Ủng hộ dự án"}
                 </button>
-                <p className="text-center text-xs text-gray-500">{closedNote}</p>
+                <p className="text-center text-xs text-gray-500">
+                  {ownProject ? "Đây là dự án của bạn nên bạn không cam kết ủng hộ được." : closedNote}
+                </p>
               </>
             )}
             {!isGive && (

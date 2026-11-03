@@ -24,8 +24,11 @@ function finalizeCounts(data: unknown): FinalizeCounts | null {
 }
 
 /**
- * Vercel Cron (every 5 minutes, see vercel.json): live give campaigns whose
- * end time has passed close. The RPC is idempotent (a closed campaign is not
+ * Vercel Cron (every 5 minutes, see vercel.json): live campaigns whose end
+ * time has passed are decided. A give campaign closes; a back campaign
+ * succeeds when its pledges reach the goal (pledges become payment_due and
+ * backers get a payment_due notice) and fails otherwise (pledges are
+ * cancelled; DOS-Me 20261105150000, DOS/Give#30). The RPC is idempotent (a closed campaign is not
  * picked again) and skips rows another run has locked. Each campaign closes on
  * its own: one that fails stays live, is written to give.audit_log and is
  * counted in `failed`, and the next run tries it again.

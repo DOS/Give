@@ -507,6 +507,7 @@ Kênh crypto nằm sau M4, nhưng schema đã có sẵn chỗ (`asset`, `vnd_equ
 | `activate-scheduled` | 5 phút   | `approved` → `live` khi tới `starts_at`                                                                               |
 | `finalize-ended`     | 5 phút   | `finalize_campaign` cho từng campaign đã quá `ends_at`; campaign lỗi được ghi `audit_log` và không chặn campaign khác |
 | `lapse-pledges`      | 1 giờ    | `lapse_overdue_pledges`                                                                                               |
+| `remind-pledges`     | 1 giờ    | `remind_pledge_payments`: nhắc thanh toán cam kết vào ngày 1, 3 và 6 của hạn thanh toán (mỗi ngày một lần)            |
 | `reprocess-inbound`  | 5 phút   | Xử lý lại `inbound_events` còn treo; đỗ sự kiện sau 10 lần thử                                                        |
 | `reconcile-accounts` | 1 ngày   | `fetchTransactions` cho các kênh có hỗ trợ; báo lệch khi số dư không khớp                                             |
 | `send-outbox`        | 1 phút   | Gửi email/thông báo, có retry và backoff                                                                              |
