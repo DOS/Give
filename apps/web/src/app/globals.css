@@ -1,41 +1,111 @@
 @import "tailwindcss";
 
+/*
+ * Give design tokens (DOS/Give#95, docs/Design-Principles.md): green primary,
+ * light orange accent, neutral grays, 8px spacing grid, low corner radius
+ * (rounded for buttons and images, rounded-md for cards and inputs).
+ */
 @theme {
   --font-sans:
-    "Be Vietnam Pro", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --color-brand-50: #fff1f3;
-  --color-brand-100: #ffe0e5;
-  --color-brand-500: #f43f5e;
-  --color-brand-600: #e11d48;
-  --color-brand-700: #be123c;
+    var(--font-be-vietnam-pro), "Be Vietnam Pro", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+
+  /* Primary: green, for the main action and progress. */
+  --color-brand-50: #ecfdf5;
+  --color-brand-100: #d1fae5;
+  --color-brand-200: #a7f3d0;
+  --color-brand-500: #10b981;
+  --color-brand-600: #059669;
+  --color-brand-700: #047857;
+  --color-brand-800: #065f46;
+  --color-brand-900: #064e3b;
+
+  /* Accent: light orange, for highlights only (never for text on white). */
+  --color-accent-50: #fff7ed;
+  --color-accent-100: #ffedd5;
+  --color-accent-200: #fed7aa;
+  --color-accent-700: #c2410c;
+  --color-accent-800: #9a3412;
+
+  /* Neutrals: ink for headings, body for text, muted for captions. */
+  --color-ink: #111827;
+  --color-body: #374151;
+  --color-muted: #4b5563;
+  --color-line: #e5e7eb;
+  --color-surface: #f9fafb;
+
+  --radius-sm: 0.25rem;
+  --radius: 0.25rem;
+  --radius-md: 0.375rem;
 }
 
-body {
-  @apply bg-white text-gray-900 antialiased;
+/* Base styles sit in the base layer so utilities (text-white on a dark band) win. */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-white text-base leading-relaxed text-body antialiased;
+  }
+
+  h1,
+  h2,
+  h3 {
+    @apply text-ink;
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-600;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      transition-duration: 0.01ms !important;
+      animation-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* Page width and gutters: 16px on phones, 24px from sm, 1152px wide at most. */
+@utility container-page {
+  @apply mx-auto w-full max-w-6xl px-4 sm:px-6;
+}
+
+/* Money is always tabular so figures line up and do not jump. */
+@utility figure {
+  @apply font-bold text-ink tabular-nums;
 }
 
 @utility field {
-  @apply block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm shadow-xs focus:border-brand-500 focus:ring-2 focus:ring-brand-100 focus:outline-none disabled:bg-gray-50 disabled:text-gray-500;
+  @apply block min-h-11 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-base text-ink placeholder:text-gray-500 focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:outline-none disabled:bg-surface disabled:text-muted;
 }
 
 @utility label {
-  @apply mb-1 block text-sm font-medium text-gray-700;
+  @apply mb-1 block text-base font-medium text-ink;
 }
 
 @utility hint {
-  @apply mt-1 text-xs text-gray-500;
+  @apply mt-1 text-sm text-muted;
 }
 
 @utility btn {
-  @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60;
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded px-5 py-2 text-base font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60;
 }
 
 @utility btn-primary {
-  @apply btn bg-brand-600 text-white hover:bg-brand-700;
+  @apply btn bg-brand-600 text-white shadow-xs hover:bg-brand-700 active:bg-brand-800;
 }
 
 @utility btn-secondary {
-  @apply btn border border-gray-300 bg-white text-gray-800 hover:bg-gray-50;
+  @apply btn border border-gray-300 bg-white text-ink hover:border-gray-400 hover:bg-surface;
+}
+
+@utility btn-ghost {
+  @apply btn px-3 text-ink hover:bg-surface;
 }
 
 @utility btn-danger {
@@ -43,5 +113,10 @@ body {
 }
 
 @utility card {
-  @apply rounded-lg border border-gray-200 bg-white;
+  @apply rounded-md border border-line bg-white;
+}
+
+/* An in-text link: green, underlined on hover. */
+@utility link {
+  @apply font-medium text-brand-700 underline-offset-4 hover:text-brand-800 hover:underline;
 }
