@@ -635,6 +635,9 @@ function ReceivingAccountSection({
           {boundUnusable && (
             <p className="text-sm text-amber-800">
               Tài khoản đang gắn tạm không dùng được: {boundUnusable} Chiến dịch không nhận được tiền qua tài khoản này.
+              {type === "back" && (status === "live" || status === "suspended")
+                ? " Dự án có quà tặng chưa đổi được tài khoản khi đang gây quỹ hoặc tạm dừng: hãy liên hệ đội ngũ Give."
+                : ""}
             </p>
           )}
           {releasable ? (
