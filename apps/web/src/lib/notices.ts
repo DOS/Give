@@ -166,8 +166,10 @@ export function describeNotice(notice: Notice): NoticeView {
         ? " Đừng chuyển tiền cho cam kết của bạn, kể cả theo thông tin chuyển khoản đã nhận trước đó, cho tới khi Give thông báo tiếp."
         : " Người ủng hộ không còn được nhắc thanh toán và trang thanh toán đã ẩn. Trang dự án công khai thông báo này."
       if (note) body += ` Ghi chú của Give: ${note}`
-      const dueAt = text(p, "payment_due_at")
-      if (backer && dueAt) body += ` Hạn thanh toán vẫn là ${formatDateTime(dueAt)}.`
+      if (backer) {
+        body +=
+          " Thời gian tạm dừng không tính vào hạn thanh toán: cam kết không hết hiệu lực trong lúc tạm dừng, và khi mở lại, hạn được lùi thêm đúng số ngày đã tạm dừng."
+      }
       const slug = text(p, "campaign_slug")
       return {
         title: "Tạm dừng yêu cầu thanh toán",
@@ -193,7 +195,7 @@ export function describeNotice(notice: Notice): NoticeView {
         }
       }
       let body = `Give đã mở lại yêu cầu thanh toán của ${campaignName(p, "dự án")}. Hãy thanh toán cam kết của bạn`
-      body += dueAt ? ` trước ${formatDateTime(dueAt)}.` : "."
+      body += dueAt ? ` trước ${formatDateTime(dueAt)} (hạn đã được lùi thêm đúng thời gian tạm dừng).` : "."
       body += " Quá hạn mà chưa trả đủ, cam kết hết hiệu lực."
       return { title: "Mở lại yêu cầu thanh toán", body, ...pledgeLink(p, "Thanh toán ngay") }
     }

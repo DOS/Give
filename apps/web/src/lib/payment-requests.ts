@@ -10,8 +10,9 @@ import type { Db } from "./campaigns"
  * shows no transfer details, the backers still asked to pay and the creator
  * get a notice, and the campaign page shows the public note. The internal
  * reason stays in the audit log. Resuming brings the payment pages back. The
- * payment window keeps running: pledges unpaid by the deadline lapse, and
- * partial payers are owed a refund, as without a stop.
+ * stop does not count against the backers: no pledge lapses while stopped,
+ * and resuming moves the deadlines and the reminder days of the pledges still
+ * waiting by the time it was stopped (owner decision on DOS/Give#89).
  */
 
 /** Longest internal reason and public note the database keeps. */

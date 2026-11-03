@@ -42,9 +42,9 @@ export default async function AdminPaymentRequestsPage() {
           Dự án ủng hộ đạt mục tiêu thì người ủng hộ được yêu cầu chuyển tiền thẳng vào tài khoản của người tạo dự án.
           Khi nghi gian lận, hãy tạm dừng yêu cầu thanh toán: Give ngừng nhắc thanh toán, ẩn thông tin chuyển khoản, báo
           cho người ủng hộ đang chờ thanh toán và người tạo dự án, và trang dự án hiện ghi chú công khai. Lý do nội bộ
-          chỉ lưu vào nhật ký kiểm toán. Hạn thanh toán vẫn chạy: cam kết chưa trả đủ khi hết hạn sẽ hết hiệu lực, phần
-          đã chuyển được ghi là tiền phải hoàn. Tiền vẫn chuyển tới được ghi nhận như thường. Đổi ghi chú của một lần
-          tạm dừng chỉ đổi trang dự án; thông báo đã gửi giữ ghi chú cũ.
+          chỉ lưu vào nhật ký kiểm toán. Trong lúc tạm dừng không cam kết nào hết hạn; khi mở lại, hạn thanh toán và
+          ngày nhắc của các cam kết đang chờ được lùi thêm đúng thời gian đã tạm dừng. Tiền vẫn chuyển tới được ghi nhận
+          như thường. Đổi ghi chú của một lần tạm dừng chỉ đổi trang dự án; thông báo đã gửi giữ ghi chú cũ.
         </p>
       </div>
 

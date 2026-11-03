@@ -136,9 +136,8 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
             </p>
             {campaign.payments_stopped_note && <p className="whitespace-pre-line">{campaign.payments_stopped_note}</p>}
             <p>
-              Give sẽ báo khi yêu cầu thanh toán được mở lại. Hạn thanh toán vẫn là{" "}
-              {formatDateTime(pledge.payment_due_at)}; quá hạn mà chưa trả đủ, cam kết hết hiệu lực và phần đã chuyển
-              được hoàn lại.
+              Give sẽ báo khi yêu cầu thanh toán được mở lại. Thời gian tạm dừng không tính vào hạn thanh toán: cam kết
+              không hết hiệu lực trong lúc tạm dừng, và khi mở lại, hạn được lùi thêm đúng số ngày đã tạm dừng.
             </p>
           </Note>
         )
