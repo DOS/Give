@@ -281,7 +281,7 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
         <Note>
           Cam kết này đã được hủy (bạn hủy hoặc đổi sang cam kết khác, hoặc dự án không đạt mục tiêu). Bạn không phải
           trả tiền.{" "}
-          <Link href="/me/contributions" className="font-medium text-brand-600">
+          <Link href="/me/contributions" className="font-medium text-brand-700">
             Xem các ủng hộ của tôi
           </Link>
         </Note>
@@ -294,7 +294,7 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
       <div>
         <p className="text-sm text-gray-500">Cam kết ủng hộ dự án</p>
         <h1 className="text-2xl font-bold">
-          <Link href={`/campaigns/${campaign.slug}`} className="hover:text-brand-600">
+          <Link href={`/campaigns/${campaign.slug}`} className="hover:text-brand-700">
             {campaign.title}
           </Link>
         </h1>

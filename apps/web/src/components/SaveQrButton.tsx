@@ -12,7 +12,7 @@ export function SaveQrButton({ svg, filename }: { svg: string; filename: string 
   return (
     <button
       type="button"
-      className="mt-2 text-xs font-medium text-brand-600"
+      className="mt-2 text-xs font-medium text-brand-700"
       onClick={() => {
         const image = new Image()
         image.onload = () => {

@@ -101,7 +101,7 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
       <div className="card p-6 text-sm text-gray-700">
         Mã QR của khoản này đã hết hạn hiển thị. Nếu bạn đã chuyển khoản với nội dung {donation.reference_code}, Give
         vẫn ghi nhận khi tiền về.{" "}
-        <Link href={`/campaigns/${campaign.slug}`} className="font-medium text-brand-600">
+        <Link href={`/campaigns/${campaign.slug}`} className="font-medium text-brand-700">
           Ủng hộ khoản mới
         </Link>
       </div>
@@ -159,7 +159,7 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
       <div>
         <p className="text-sm text-gray-500">Ủng hộ chiến dịch</p>
         <h1 className="text-2xl font-bold">
-          <Link href={`/campaigns/${campaign.slug}`} className="hover:text-brand-600">
+          <Link href={`/campaigns/${campaign.slug}`} className="hover:text-brand-700">
             {campaign.title}
           </Link>
         </h1>

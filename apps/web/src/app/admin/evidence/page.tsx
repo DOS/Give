@@ -107,7 +107,7 @@ function EvidenceCard({
           {campaign && (
             <>
               {" · "}
-              <Link href={`/campaigns/${campaign.slug}/statement`} className="text-brand-600" target="_blank">
+              <Link href={`/campaigns/${campaign.slug}/statement`} className="text-brand-700" target="_blank">
                 {campaign.title}
               </Link>
             </>

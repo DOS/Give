@@ -6,6 +6,7 @@ import { cache } from "react"
 import { AccountChanges } from "@/components/AccountChanges"
 import { MoneyTotals } from "@/components/MoneyTotals"
 import { PublicEvidenceList } from "@/components/PublicEvidence"
+import { FilterNav, TabNav } from "@/components/ui/Tabs"
 import { listPublicAccountChanges } from "@/lib/account-swaps"
 import { getSession } from "@/lib/auth/session"
 import { getCampaignBySlug, isPublicStatus } from "@/lib/campaigns"
@@ -84,12 +85,27 @@ export default async function StatementPage({
   const loginHref = `/auth/login?return_path=${encodeURIComponent(statementHref(campaign.slug, filter, page))}`
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      <Link href={`/campaigns/${campaign.slug}`} className="text-sm text-gray-600 hover:text-gray-900">
-        ← {campaign.title}
-      </Link>
-      <h1 className="mt-3 text-3xl font-bold tracking-tight">Sao kê chiến dịch</h1>
-      <p className="mt-2 max-w-3xl text-gray-600">
+    <div className="container-page py-10">
+      <p>
+        <Link href={`/campaigns/${campaign.slug}`} className="inline-flex min-h-11 items-center link">
+          {campaign.title}
+        </Link>
+      </p>
+      <h1 className="mt-1 text-3xl font-bold tracking-tight">Sao kê chiến dịch</h1>
+      <TabNav
+        label="Nội dung chiến dịch"
+        className="mt-6"
+        items={[
+          { href: `/campaigns/${campaign.slug}`, label: "Câu chuyện", current: false },
+          { href: statementHref(campaign.slug, "all"), label: "Sao kê", current: filter !== "in" },
+          {
+            href: statementHref(campaign.slug, "in"),
+            label: campaign.type === "give" ? "Người ủng hộ" : "Người đồng hành",
+            current: filter === "in",
+          },
+        ]}
+      />
+      <p className="mt-6 max-w-3xl text-body">
         Đây là bản sao sao kê tài khoản nhận của chiến dịch. Give không giữ tiền và không sửa số liệu: mỗi khoản chi do
         người tổ chức tự giải trình, kèm ảnh chứng từ. Tiền vào hiện tên hiển thị người ủng hộ đã chọn, hoặc &quot;Ẩn
         danh&quot;; tên chủ tài khoản ngân hàng, số tài khoản của người ủng hộ và nội dung chuyển khoản không được công
@@ -106,32 +122,24 @@ export default async function StatementPage({
           <h2 id="statement-heading" className="sr-only">
             Giao dịch
           </h2>
-          <nav className="flex flex-wrap gap-2" aria-label="Lọc giao dịch">
-            {STATEMENT_FILTERS.map((value) => (
-              <Link
-                key={value}
-                href={statementHref(campaign.slug, value)}
-                aria-current={filter === value ? "page" : undefined}
-                className={`rounded-full border px-3 py-1 text-sm ${
-                  filter === value
-                    ? "border-brand-600 bg-brand-50 text-brand-700"
-                    : "border-gray-300 text-gray-700 hover:bg-gray-50"
-                }`}
-              >
-                {STATEMENT_FILTER_LABELS[value]}
-                {value === "unexplained" && totals.unexplained_out_count > 0 && ` (${totals.unexplained_out_count})`}
-              </Link>
-            ))}
-          </nav>
+          <FilterNav
+            label="Lọc giao dịch"
+            items={STATEMENT_FILTERS.map((value) => ({
+              href: statementHref(campaign.slug, value),
+              label: STATEMENT_FILTER_LABELS[value],
+              current: filter === value,
+              count: value === "unexplained" ? totals.unexplained_out_count : undefined,
+            }))}
+          />
 
           {rows.length === 0 ? (
-            <p className="mt-6 text-gray-500">
+            <p className="mt-6 text-muted">
               {filter === "unexplained"
                 ? "Không có khoản chi nào chưa giải trình."
                 : "Chưa có giao dịch nào trong sao kê."}
             </p>
           ) : (
-            <ol className="mt-6 divide-y divide-gray-200 card">
+            <ol className="mt-6 divide-y divide-line card">
               {rows.map((row) => (
                 <StatementItem
                   key={row.id}
@@ -145,7 +153,7 @@ export default async function StatementPage({
           )}
 
           {pages > 1 && (
-            <nav className="mt-6 flex items-center justify-between text-sm" aria-label="Trang">
+            <nav className="mt-6 flex items-center justify-between" aria-label="Trang">
               {page > 1 ? (
                 <Link href={statementHref(campaign.slug, filter, page - 1)} className="btn-secondary">
                   ← Mới hơn
@@ -153,7 +161,7 @@ export default async function StatementPage({
               ) : (
                 <span />
               )}
-              <span className="text-gray-500">
+              <span className="text-muted">
                 Trang {page} / {pages}
               </span>
               {page < pages ? (
@@ -188,7 +196,7 @@ function StatementItem({
   return (
     <li className="flex flex-wrap items-start justify-between gap-3 p-4">
       <div className="min-w-0 flex-1 space-y-1">
-        <p className="text-xs text-gray-500">
+        <p className="text-sm text-muted">
           {row.booked_date_only ? formatDate(row.booked_at) : formatDateTime(row.booked_at)}
           {" · "}
           {incoming ? "Tiền vào" : "Tiền ra"}
@@ -196,13 +204,13 @@ function StatementItem({
         <p className="font-medium break-words">
           {counterpartyLabel(row)}
           {row.counterparty_account_masked && (
-            <span className="ml-2 text-sm font-normal text-gray-500">TK {row.counterparty_account_masked}</span>
+            <span className="ml-2 text-sm font-normal text-muted">TK {row.counterparty_account_masked}</span>
           )}
         </p>
         {!incoming && row.explained && (
-          <div className="text-sm text-gray-700">
+          <div className="text-body">
             <p className="break-words">{row.purpose}</p>
-            <p className="mt-1 flex flex-wrap gap-2 text-xs text-gray-500">
+            <p className="mt-1 flex flex-wrap gap-2 text-sm text-muted">
               {row.is_refund && <span className="rounded bg-sky-100 px-1.5 py-0.5 text-sky-800">Hoàn tiền</span>}
               {category && <span>{category}</span>}
               {row.explained_at && <span>Giải trình ngày {formatDate(row.explained_at)}</span>}
@@ -210,20 +218,18 @@ function StatementItem({
             <PublicEvidenceList evidence={evidence} report={report} loginHref={loginHref} />
           </div>
         )}
-        {!incoming && !row.explained && (
-          <p className="text-sm text-amber-700">Người tổ chức chưa giải trình khoản chi này.</p>
-        )}
+        {!incoming && !row.explained && <p className="text-amber-800">Người tổ chức chưa giải trình khoản chi này.</p>}
         {incoming && row.in_explanation && (
-          <p className="flex flex-wrap gap-2 text-xs text-gray-500">
+          <p className="flex flex-wrap gap-2 text-sm text-muted">
             <span className="rounded bg-gray-100 px-1.5 py-0.5 text-gray-700">Không phải tiền ủng hộ</span>
             {row.in_explained_at && <span>Give giải trình ngày {formatDate(row.in_explained_at)}</span>}
           </p>
         )}
         {incoming && row.after_close && (
-          <p className="text-xs text-amber-700">Tiền về sau khi chiến dịch đã kết thúc.</p>
+          <p className="text-sm text-amber-800">Tiền về sau khi chiến dịch đã kết thúc.</p>
         )}
       </div>
-      <p className={`shrink-0 font-semibold tabular-nums ${incoming ? "text-green-700" : "text-gray-900"}`}>
+      <p className={`shrink-0 font-semibold tabular-nums ${incoming ? "text-brand-700" : "text-ink"}`}>
         {incoming ? "+" : "−"}
         {formatVnd(row.amount)}
       </p>

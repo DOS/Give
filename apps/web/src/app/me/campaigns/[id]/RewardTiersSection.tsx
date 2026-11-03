@@ -87,7 +87,7 @@ export function RewardTiersSection({
                     </ActionForm>
                   </div>
                   <details>
-                    <summary className="cursor-pointer font-medium text-brand-600">Sửa mức này</summary>
+                    <summary className="cursor-pointer font-medium text-brand-700">Sửa mức này</summary>
                     <ActionForm action={saveRewardTier.bind(null, campaignId, tier.id)} className="mt-3 space-y-3">
                       <TierFields prefix={`tier_${tier.id}`} tier={tier} />
                       <SubmitButton>Lưu phần thưởng</SubmitButton>

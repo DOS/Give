@@ -41,8 +41,8 @@ export function DonateForm({
         />
       </div>
       <div>
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" name="anonymous" className="mt-0.5" />
+        <label className="flex min-h-11 cursor-pointer items-start gap-3 py-2">
+          <input type="checkbox" name="anonymous" className="mt-1 size-5 shrink-0 accent-brand-700" />
           <span>Ủng hộ ẩn danh</span>
         </label>
         <p className="hint">
@@ -56,8 +56,8 @@ export function DonateForm({
         </label>
         <textarea id="donate-message" name="message" rows={3} maxLength={500} className="field" />
       </div>
-      <SubmitButton className="btn-primary w-full">Ủng hộ</SubmitButton>
-      <p className="text-center text-xs text-gray-500">
+      <SubmitButton className="btn-primary min-h-12 w-full text-lg">Ủng hộ</SubmitButton>
+      <p className="text-center text-sm text-muted">
         {signedIn ? "" : "Không cần đăng nhập. "}Bạn sẽ nhận mã VietQR để chuyển khoản thẳng vào tài khoản nhận của
         chiến dịch.
       </p>

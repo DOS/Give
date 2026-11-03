@@ -89,7 +89,7 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
             {staff && (
               <>
                 {" "}
-                <Link href="/admin/statements" className="font-medium text-brand-600">
+                <Link href="/admin/statements" className="font-medium text-brand-700">
                   Mở hàng chờ xử lý →
                 </Link>
               </>

@@ -1,5 +1,5 @@
-import clsx from "clsx"
-
+import { Badge, type BadgeTone } from "@/components/ui/Badge"
+import { CheckBadgeIcon, HeartIcon, SparkIcon } from "@/components/ui/icons"
 import {
   STATUS_LABELS,
   TYPE_LABELS,
@@ -10,64 +10,68 @@ import {
 } from "@/lib/campaigns"
 import { ACCOUNT_STATUS_LABELS, type AccountStatus } from "@/lib/receiving-accounts"
 
-const pill = "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium"
+/** "Từ thiện" for give (heart), "Dự án sáng tạo" for back (spark), as the home page and discovery name them. */
+const TYPE_BADGE_LABELS: Record<CampaignType, string> = { give: TYPE_LABELS.give, back: "Dự án sáng tạo" }
 
-/** "❤️ Từ thiện" for give, "🚀 Dự án" for back (ported from the old TypeBadge). */
 export function TypeBadge({ type, className }: { type: CampaignType; className?: string }) {
   return (
-    <span
-      className={clsx(pill, type === "give" ? "bg-pink-100 text-pink-800" : "bg-blue-100 text-blue-800", className)}
+    <Badge
+      tone={type === "give" ? "brand" : "accent"}
+      icon={type === "give" ? <HeartIcon width={16} height={16} /> : <SparkIcon width={16} height={16} />}
+      className={className}
     >
-      {type === "give" ? "❤️" : "🚀"} {TYPE_LABELS[type]}
-    </span>
+      {TYPE_BADGE_LABELS[type]}
+    </Badge>
   )
 }
 
-const STATUS_COLORS: Record<CampaignStatus, string> = {
-  draft: "bg-gray-100 text-gray-700",
-  in_review: "bg-amber-100 text-amber-800",
-  changes_requested: "bg-orange-100 text-orange-800",
-  approved: "bg-sky-100 text-sky-800",
-  live: "bg-green-100 text-green-800",
-  settling: "bg-indigo-100 text-indigo-800",
-  succeeded: "bg-emerald-100 text-emerald-800",
-  failed: "bg-gray-100 text-gray-700",
-  closed: "bg-gray-100 text-gray-700",
-  suspended: "bg-red-100 text-red-800",
-  cancelled: "bg-gray-100 text-gray-500",
+const STATUS_TONES: Record<CampaignStatus, BadgeTone> = {
+  draft: "neutral",
+  in_review: "warning",
+  changes_requested: "accent",
+  approved: "info",
+  live: "brand",
+  settling: "info",
+  succeeded: "brand",
+  failed: "neutral",
+  closed: "neutral",
+  suspended: "danger",
+  cancelled: "neutral",
 }
 
 export function StatusBadge({ status, className }: { status: CampaignStatus; className?: string }) {
-  return <span className={clsx(pill, STATUS_COLORS[status], className)}>{STATUS_LABELS[status]}</span>
+  return (
+    <Badge tone={STATUS_TONES[status]} className={className}>
+      {STATUS_LABELS[status]}
+    </Badge>
+  )
 }
 
 export function VerificationBadge({ status }: { status: VerificationStatus }) {
   return (
-    <span
-      className={clsx(
-        pill,
-        status === "verified" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-600",
-        status === "rejected" && "bg-red-100 text-red-700"
-      )}
+    <Badge
+      tone={status === "verified" ? "brand" : status === "rejected" ? "danger" : "neutral"}
+      icon={status === "verified" ? <CheckBadgeIcon width={16} height={16} /> : undefined}
     >
-      {status === "verified" ? "✓ " : ""}
       {VERIFICATION_LABELS[status]}
-    </span>
+    </Badge>
   )
 }
 
-const ACCOUNT_STATUS_COLORS: Record<AccountStatus, string> = {
-  pending: "bg-amber-100 text-amber-800",
-  verified: "bg-green-100 text-green-800",
-  rejected: "bg-red-100 text-red-700",
-  disabled: "bg-gray-100 text-gray-600",
+const ACCOUNT_STATUS_TONES: Record<AccountStatus, BadgeTone> = {
+  pending: "warning",
+  verified: "brand",
+  rejected: "danger",
+  disabled: "neutral",
 }
 
 export function AccountStatusBadge({ status }: { status: AccountStatus }) {
   return (
-    <span className={clsx(pill, ACCOUNT_STATUS_COLORS[status])}>
-      {status === "verified" ? "✓ " : ""}
+    <Badge
+      tone={ACCOUNT_STATUS_TONES[status]}
+      icon={status === "verified" ? <CheckBadgeIcon width={16} height={16} /> : undefined}
+    >
       {ACCOUNT_STATUS_LABELS[status]}
-    </span>
+    </Badge>
   )
 }
