@@ -227,10 +227,29 @@ describe("submitForReview", () => {
     expect(transitioned()).toBe(false)
   })
 
-  it("leaves back campaigns alone: no account reads", async () => {
+  it("refuses a back campaign with no bound account too (DOS/Give#85)", async () => {
     state.userHandler = reads({ bindings: [], campaign: owned({ type: "back" }) })
+    expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({ ok: false, message: SUBMIT_NO_ACCOUNT })
+    expect(transitioned()).toBe(false)
+  })
+
+  it("submits a back campaign with a usable bound account", async () => {
+    state.userHandler = reads({ campaign: owned({ type: "back" }) })
     expect((await submitForReview(CAMPAIGN, null, new FormData()))?.ok).toBe(true)
-    expect(state.userCalls.map((c) => c.target)).toEqual(["rpc:managed_campaigns", "rpc:transition_campaign"])
+    expect(transitioned()).toBe(true)
+  })
+
+  it("tells a back campaign whose unusable account holds money to contact Give, not to swap", async () => {
+    const base = reads({
+      acct: account({ verification_status: "disabled" }),
+      campaign: owned({ type: "back", status: "changes_requested" }),
+    })
+    state.userHandler = (call) => (call.target === "bank_transactions" ? { data: [{ id: "t" }] } : base(call))
+    expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({
+      ok: false,
+      message: submitUnusableAccount("Tài khoản chưa được xác minh.", true, false),
+    })
+    expect(transitioned()).toBe(false)
   })
 
   it("explains that a give campaign needs a bound verified account (DOS/Give#38)", async () => {
