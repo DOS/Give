@@ -108,8 +108,7 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_REWARD_TIER_NOT_FOUND: "Không tìm thấy mức phần thưởng này. Hãy tải lại trang.",
   GIVE_REWARD_TIER_IN_USE: "Mức phần thưởng này đã có người chọn nên không xóa được.",
   GIVE_REWARD_TIER_ORDER_INVALID: "Danh sách phần thưởng vừa thay đổi. Hãy tải lại trang rồi sắp xếp lại.",
-  GIVE_REWARD_TIER_HAS_PLEDGES:
-    "Mức phần thưởng này đang có người cam kết nên không ngừng nhận được. Mức này vẫn hiện cho đến khi hết suất hoặc dự án kết thúc.",
+  GIVE_REWARD_TIER_HAS_PLEDGES: "Mức phần thưởng này đã có người cam kết nên không ngừng nhận được.",
   GIVE_REWARD_TIER_IMMUTABLE: "Không đổi được chiến dịch của một mức phần thưởng.",
   GIVE_FULFILLMENT_STATUS_INVALID: "Chọn trạng thái giao quà.",
   GIVE_FULFILLMENT_NOTE_TOO_LONG: "Ghi chú giao quà tối đa 500 ký tự.",

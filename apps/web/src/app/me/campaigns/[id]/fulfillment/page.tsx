@@ -254,7 +254,12 @@ function FulfillmentForm({
                   )}
                 </div>
               </div>
-              <div className="grid gap-2 sm:grid-cols-[10rem_1fr]">
+              {/* Keyed on the saved state: a mounted select ignores a new defaultValue, so after a bulk
+                  update the row would still show, and save back, the old status. */}
+              <div
+                key={`${pledge.fulfillment_status ?? "none"}:${pledge.fulfillment_updated_at ?? ""}`}
+                className="grid gap-2 sm:grid-cols-[10rem_1fr]"
+              >
                 <select
                   name={`status_${pledge.id}`}
                   aria-label={`Trạng thái giao quà của ${pledge.reference_code}`}

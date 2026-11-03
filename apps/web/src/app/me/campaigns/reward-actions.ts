@@ -185,10 +185,9 @@ export async function retireRewardTier(
   const tier = tiers.find((t) => t.id === tierId)
   if (!tier) return fail(dbErrorMessage({ message: "GIVE_REWARD_TIER_NOT_FOUND" }))
   if (tier.status === "retired") return done("Mức phần thưởng này đã ngừng nhận.")
+  if (canEditTiers(campaign.status)) return fail("Dự án chưa được duyệt: hãy xóa hoặc sửa mức này.")
+  if (!canRetireTier(campaign.status, { ...tier, quantity_claimed: 0 })) return fail(NOT_RETIRABLE)
   if (tier.quantity_claimed > 0) return fail(dbErrorMessage({ message: "GIVE_REWARD_TIER_HAS_PLEDGES" }))
-  if (!canRetireTier(campaign.status, tier)) {
-    return fail(canEditTiers(campaign.status) ? "Dự án chưa được duyệt: hãy xóa hoặc sửa mức này." : NOT_RETIRABLE)
-  }
 
   const { error } = await dbService().rpc("retire_reward_tier", { p_actor_id: session.user.id, p_tier_id: tier.id })
   if (error) return fail(dbErrorMessage(error, { GIVE_CAMPAIGN_NOT_EDITABLE: NOT_RETIRABLE }))

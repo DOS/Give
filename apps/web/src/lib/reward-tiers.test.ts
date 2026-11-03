@@ -113,8 +113,11 @@ describe("tier display", () => {
 
   it("takes pledges only on a live back campaign before its end", () => {
     const now = new Date("2026-11-10T00:00:00Z")
-    const live = { type: "back", status: "live" as const, ends_at: "2026-12-01T00:00:00Z" }
+    const live = { type: "back", status: "live" as const, starts_at: null, ends_at: "2026-12-01T00:00:00Z" }
     expect(acceptsPledges(live, now)).toBe(true)
+    expect(acceptsPledges({ ...live, starts_at: "2026-11-09T00:00:00Z" }, now)).toBe(true)
+    expect(acceptsPledges({ ...live, starts_at: "2026-11-11T00:00:00Z" }, now)).toBe(false)
+    expect(acceptsPledges({ ...live, ends_at: null }, now)).toBe(false)
     expect(acceptsPledges({ ...live, ends_at: "2026-11-09T00:00:00Z" }, now)).toBe(false)
     expect(acceptsPledges({ ...live, status: "succeeded" }, now)).toBe(false)
     expect(acceptsPledges({ ...live, type: "give" }, now)).toBe(false)

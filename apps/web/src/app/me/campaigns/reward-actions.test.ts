@@ -220,7 +220,7 @@ describe("retireRewardTier", () => {
   it("refuses a tier a pledge holds", async () => {
     state.userHandler = reads({ campaign: campaignIn("live"), tiers: [tier(T1, { quantity_claimed: 2 })] })
     const result = await retireRewardTier(CAMPAIGN, T1, null, new FormData())
-    expect(result?.message).toContain("đang có người cam kết")
+    expect(result?.message).toContain("đã có người cam kết")
     expect(state.serviceCalls).toEqual([])
   })
 
@@ -242,6 +242,6 @@ describe("retireRewardTier", () => {
     expect(state.serviceCalls).toEqual([])
     state.userHandler = reads({ campaign: campaignIn("live") })
     state.serviceHandler = () => ({ error: { message: "GIVE_REWARD_TIER_HAS_PLEDGES: 1" } })
-    expect((await retireRewardTier(CAMPAIGN, T1, null, new FormData()))?.message).toContain("đang có người cam kết")
+    expect((await retireRewardTier(CAMPAIGN, T1, null, new FormData()))?.message).toContain("đã có người cam kết")
   })
 })

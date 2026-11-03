@@ -131,15 +131,20 @@ export function minAmountLabel(amount: number): string {
   return `Từ ${formatVnd(amount)}`
 }
 
-/** Backers can pick a tier only while the campaign is live and before ends_at (give.create_pledge). */
+/**
+ * Backers can pick a tier only while the campaign is live, has started and
+ * has an end date still ahead (give.lock_pledge_campaign).
+ */
 export function acceptsPledges(
-  campaign: { type: string; status: CampaignStatus; ends_at: string | null },
+  campaign: { type: string; status: CampaignStatus; starts_at: string | null; ends_at: string | null },
   now = new Date()
 ): boolean {
   return (
     campaign.type === "back" &&
     campaign.status === "live" &&
-    (campaign.ends_at === null || new Date(campaign.ends_at) > now)
+    (campaign.starts_at === null || new Date(campaign.starts_at) <= now) &&
+    campaign.ends_at !== null &&
+    new Date(campaign.ends_at) > now
   )
 }
 
