@@ -127,8 +127,9 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
         // Paid in full but not matched as paid yet (e.g. part of it was refunded): no QR for 0 đồng.
         body = (
           <Note tone="amber">
-            Give đã ghi nhận đủ số tiền cam kết nhưng chưa chốt trạng thái thanh toán. Đừng chuyển thêm tiền; Give cập
-            nhật khi đối soát xong.
+            Give chưa tính được số tiền còn thiếu của cam kết này (có thể vì một phần tiền đã được hoàn lại), nên không
+            hiển thị mã chuyển khoản. Hãy liên hệ người tạo dự án trước hạn {formatDateTime(payment.payment_due_at)} để
+            biết số còn thiếu; quá hạn mà chưa đủ, cam kết hết hiệu lực và tiền đã chuyển được hoàn lại.
           </Note>
         )
       } else if (!payment.account || !isDonationCode(payment.reference_code)) {
@@ -203,9 +204,9 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
           <p>Bạn đã thanh toán đủ {formatVnd(pledge.intended_amount)}. Cảm ơn bạn đã đồng hành cùng dự án.</p>
           {overpaid(pledge) > 0 && (
             <p>
-              Give ghi nhận bạn đã chuyển {formatVnd(pledge.received_amount)}, nhiều hơn số cam kết. Người tạo dự án
-              phải hoàn lại phần thừa {formatVnd(overpaid(pledge))}; trang dự án công khai khoản này cho tới khi hoàn
-              xong.
+              Give ghi nhận bạn đã chuyển {formatVnd(pledge.received_amount)}, nhiều hơn số cam kết. Nếu chưa được hoàn,
+              người tạo dự án phải hoàn lại phần thừa {formatVnd(overpaid(pledge))}; trang dự án công khai khoản còn nợ
+              cho tới khi hoàn xong.
             </p>
           )}
           {pledge.reward_tier_id && (
