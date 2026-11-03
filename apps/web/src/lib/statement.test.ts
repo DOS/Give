@@ -83,6 +83,8 @@ describe("money totals", () => {
       other_in_amount: 250_000,
       refund_owed_amount: 40_000,
       backers_count: 2,
+      payments_stopped_at: null,
+      payments_stopped_note: null,
     })
   })
 

@@ -143,6 +143,84 @@ describe("describeNotice", () => {
     expect(owed.href).toBe(`/me/campaigns/${notice({}).campaign_id}/disbursements`)
   })
 
+  it("words refunds net of what was already refunded, and an overpayment (DOS/Give#89)", () => {
+    const payload = {
+      campaign_title: "Đèn",
+      reference_code: "GVAB12CD",
+      received_amount: 150_000,
+      refunded_amount: 50_000,
+      refund_amount: 100_000,
+      reason: "pledge_ended",
+      refund_due_at: "2026-11-20T00:00:00Z",
+    }
+    const refund = describeNotice(notice({ kind: "refund_due", payload }))
+    expect(refund.body).toContain(formatVnd(100_000))
+    expect(refund.body).not.toContain(formatVnd(150_000))
+    const owed = describeNotice(notice({ kind: "refund_owed", payload }))
+    expect(owed.body).toContain(formatVnd(100_000))
+    expect(owed.body).toContain("không còn hiệu lực")
+
+    const over = describeNotice(
+      notice({
+        kind: "refund_owed",
+        payload: { ...payload, reason: "overpaid", refund_amount: 60_000, refund_due_at: null },
+      })
+    )
+    expect(over.body).toContain("đã chuyển nhiều hơn số cam kết")
+    expect(over.body).toContain(`phần thừa ${formatVnd(60_000)}`)
+    expect(over.body).not.toContain("không còn hiệu lực")
+    expect(over.href).toBe(`/me/campaigns/${CAMPAIGN}/disbursements`)
+
+    const reminder = describeNotice(
+      notice({
+        kind: "payment_reminder",
+        payload: { intended_amount: 200_000, received_amount: 100_000, refunded_amount: 50_000 },
+      })
+    )
+    expect(reminder.body).toContain(formatVnd(150_000))
+  })
+
+  it("covers a stop and a resume of payment requests (DOS/Give#89)", () => {
+    const base = { campaign_title: "Đèn", campaign_slug: "den-ngu", public_note: "Give đang xác minh." }
+    const backer = describeNotice(
+      notice({ kind: "payment_requests_stopped", payload: { ...base, reference_code: "GVAB12CD" } })
+    )
+    expect(backer.title).toBe("Tạm dừng yêu cầu thanh toán")
+    expect(backer.body).toContain("Đừng chuyển tiền")
+    expect(backer.body).toContain("Ghi chú của Give: Give đang xác minh.")
+    expect(backer.href).toBe("/me/pledges/GVAB12CD")
+    const withDue = describeNotice(
+      notice({
+        kind: "payment_requests_stopped",
+        payload: { ...base, reference_code: "GVAB12CD", payment_due_at: "2026-11-12T05:00:00Z" },
+      })
+    )
+    expect(withDue.body).toContain("không tính vào hạn thanh toán")
+    expect(withDue.body).toContain("lùi thêm đúng số ngày đã tạm dừng")
+
+    const creator = describeNotice(notice({ kind: "payment_requests_stopped", payload: base }))
+    expect(creator.body).toContain("trang thanh toán đã ẩn")
+    expect(creator.href).toBe("/campaigns/den-ngu")
+    expect(
+      describeNotice(notice({ kind: "payment_requests_stopped", payload: { campaign_slug: "../x" } })).href
+    ).toBeNull()
+
+    const resumed = describeNotice(
+      notice({
+        kind: "payment_requests_resumed",
+        payload: { ...base, reference_code: "GVAB12CD", payment_due_at: "2026-11-12T05:00:00Z" },
+      })
+    )
+    expect(resumed.title).toBe("Mở lại yêu cầu thanh toán")
+    expect(resumed.body).toContain("12/11/2026")
+    expect(resumed.body).toContain("lùi thêm đúng thời gian tạm dừng")
+    expect(resumed.href).toBe("/me/pledges/GVAB12CD")
+    const creatorResumed = describeNotice(notice({ kind: "payment_requests_resumed", payload: base }))
+    expect(creatorResumed.body).toContain("thấy lại thông tin chuyển khoản")
+    expect(creatorResumed.href).toBe("/campaigns/den-ngu")
+    expect(creatorResumed.linkLabel).toBe("Xem dự án")
+  })
+
   it("covers account review results", () => {
     expect(describeNotice(notice({ kind: "account_verified", campaign_id: null })).href).toBe("/me/accounts")
     expect(describeNotice(notice({ kind: "account_rejected", payload: { reason: "Sai tên" } })).body).toContain(

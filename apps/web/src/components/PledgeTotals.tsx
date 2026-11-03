@@ -1,4 +1,4 @@
-import { formatVnd } from "@/lib/format"
+import { formatDateTime, formatVnd } from "@/lib/format"
 import type { MoneyTotals } from "@/lib/statement"
 
 /**
@@ -8,11 +8,21 @@ import type { MoneyTotals } from "@/lib/statement"
  * give.public_campaigns. "Đã thanh toán" leaves out money finance explained
  * as not from backers (other_in: an organizer top-up, interest), as
  * raisedAmount does for give campaigns, so a top-up cannot make the project
- * look paid.
+ * look paid. When a moderator stopped the payment requests after success
+ * (DOS/Give#89), the public notice comes first, with the moderator's note.
  */
 export function PledgeTotals({ totals }: { totals: MoneyTotals }) {
   return (
     <div className="space-y-3">
+      {totals.payments_stopped_at && (
+        <div className="space-y-1 rounded-md bg-red-50 px-3 py-2 text-sm text-red-900" data-notice="payments_stopped">
+          <p className="font-semibold">
+            Give đã tạm dừng yêu cầu thanh toán của dự án này từ {formatDateTime(totals.payments_stopped_at)}.
+          </p>
+          {totals.payments_stopped_note && <p className="whitespace-pre-line">{totals.payments_stopped_note}</p>}
+          <p>Người ủng hộ đừng chuyển thêm tiền cho tới khi Give thông báo tiếp.</p>
+        </div>
+      )}
       <dl className="grid grid-cols-3 gap-2 text-sm">
         <div>
           <dt className="text-gray-500">Cam kết</dt>

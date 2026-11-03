@@ -23,6 +23,8 @@ const totals: MoneyTotals = {
   other_in_amount: 50_000,
   refund_owed_amount: 100_000,
   backers_count: 1,
+  payments_stopped_at: null,
+  payments_stopped_note: null,
 }
 
 function figure(html: string, name: string): string | undefined {
@@ -43,5 +45,27 @@ describe("PledgeTotals", () => {
   it("hides the refund line once nothing is owed", () => {
     const html = renderToStaticMarkup(createElement(PledgeTotals, { totals: { ...totals, refund_owed_amount: 0 } }))
     expect(html).not.toContain("Hoàn tiền còn nợ")
+  })
+
+  it("shows no stop notice while payment requests run", () => {
+    const html = renderToStaticMarkup(createElement(PledgeTotals, { totals }))
+    expect(html).not.toContain('data-notice="payments_stopped"')
+  })
+
+  it("puts the moderator's public notice first when payment requests are stopped (DOS/Give#89)", () => {
+    const html = renderToStaticMarkup(
+      createElement(PledgeTotals, {
+        totals: {
+          ...totals,
+          payments_stopped_at: "2026-11-10T03:00:00Z",
+          payments_stopped_note: "Give đang xác minh dự án <b>này</b>.",
+        },
+      })
+    )
+    expect(html.indexOf('data-notice="payments_stopped"')).toBeLessThan(html.indexOf('data-figure="pledged"'))
+    expect(html).toContain("Give đã tạm dừng yêu cầu thanh toán")
+    expect(html).toContain("đừng chuyển thêm tiền")
+    // The note is text, never markup.
+    expect(html).toContain("Give đang xác minh dự án &lt;b&gt;này&lt;/b&gt;.")
   })
 })

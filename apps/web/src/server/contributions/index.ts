@@ -280,12 +280,15 @@ export interface PaymentCampaign {
   status: string
   starts_at: string | null
   ends_at: string | null
+  /** Back campaigns: set while a moderator stopped the payment requests (DOS/Give#89). */
+  payments_stopped_at: string | null
+  payments_stopped_note: string | null
 }
 
 export async function paymentCampaign(service: Db, campaignId: string): Promise<PaymentCampaign | null> {
   const { data, error } = await service
     .from("campaigns")
-    .select("id, slug, title, type, status, starts_at, ends_at")
+    .select("id, slug, title, type, status, starts_at, ends_at, payments_stopped_at, payments_stopped_note")
     .eq("id", campaignId)
     .maybeSingle()
   if (error) throw error

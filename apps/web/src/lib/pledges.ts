@@ -2,7 +2,7 @@ import { z } from "zod"
 
 import type { DbErrorLike } from "./errors"
 import { giveErrorCode } from "./errors"
-import { formatVnd, parseVnd } from "./format"
+import { formatDateTime, formatVnd, parseVnd } from "./format"
 
 /**
  * Pledges to back (reward, all-or-nothing) campaigns: docs/Give-Technical-Design.md
@@ -66,6 +66,73 @@ export function paymentWindowClosed(
 /** Statuses that still wait for the backer's transfer (give.pledge_payment answers only for these). */
 export function awaitsPayment(status: string): boolean {
   return status === "payment_due" || status === "partially_paid"
+}
+
+/**
+ * What the payment page of a pledge waiting for payment shows:
+ *   stopped      a moderator stopped the campaign's payment requests
+ *                (DOS/Give#89): no transfer details, "do not transfer";
+ *   closed       the deadline has passed (give.pledge_payment gives no row);
+ *   unavailable  no payment details although the deadline has not passed
+ *                (a stop committed meanwhile, say): reload later;
+ *   nothing_due  nothing left to pay (net of refunds), so no QR for 0 đồng;
+ *   no_account   the campaign has no usable account right now;
+ *   qr           the VietQR code and the transfer details.
+ * The stop wins over everything, so a page never shows an account while
+ * payment requests are stopped, even if give.pledge_payment answered.
+ */
+export type PaymentView = "stopped" | "closed" | "unavailable" | "nothing_due" | "no_account" | "qr"
+
+export function paymentView(
+  stopped: boolean,
+  windowClosed: boolean,
+  payment: { amount_due: number; reference_code: string; account: unknown } | null,
+  isCode: (code: string) => boolean
+): PaymentView {
+  if (stopped) return "stopped"
+  if (!payment) return windowClosed ? "closed" : "unavailable"
+  if (!(payment.amount_due > 0)) return "nothing_due"
+  if (!payment.account || !isCode(payment.reference_code)) return "no_account"
+  return "qr"
+}
+
+/**
+ * One line about a pledge's money for the backer's list of contributions,
+ * net of refunds when the balance (give.pledge_balances) is known; without it
+ * the amounts that refunds could change are left out.
+ */
+export function pledgeListSummary(
+  pledge: { status: string; intended_amount: number; received_amount: number; payment_due_at: string | null },
+  balance: { amount_due: number; refund_owed_amount: number; payments_stopped: boolean } | null,
+  now = new Date()
+): string {
+  switch (pledge.status) {
+    case "payment_due":
+    case "partially_paid":
+      if (balance?.payments_stopped) return "Give đang tạm dừng yêu cầu thanh toán · đừng chuyển tiền"
+      if (paymentWindowClosed(pledge, now))
+        return `Đã quá hạn thanh toán · đã ghi nhận ${formatVnd(pledge.received_amount)}`
+      return `${balance ? `Cần thanh toán ${formatVnd(balance.amount_due)}` : "Chờ thanh toán"}${
+        pledge.payment_due_at ? ` trước ${formatDateTime(pledge.payment_due_at)}` : ""
+      }`
+    case "paid":
+      return `Đã thanh toán ${formatVnd(pledge.received_amount)}`
+    case "refund_due":
+      return balance
+        ? `Chờ người tạo dự án hoàn ${formatVnd(balance.refund_owed_amount)}`
+        : "Chờ người tạo dự án hoàn tiền"
+    default:
+      return `Cam kết ${formatVnd(pledge.intended_amount)}`
+  }
+}
+
+/** Whether the list offers "Thanh toán" for a pledge (still waiting, before the deadline, not stopped). */
+export function offersPayment(
+  pledge: { status: string; payment_due_at: string | null },
+  balance: { payments_stopped: boolean } | null,
+  now = new Date()
+): boolean {
+  return awaitsPayment(pledge.status) && !paymentWindowClosed(pledge, now) && !balance?.payments_stopped
 }
 
 // Delivery labels are shared with the creator's fulfillment page (DOS/Give#83).

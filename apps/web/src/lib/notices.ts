@@ -1,5 +1,6 @@
 import type { Db } from "@/lib/campaigns"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
+import { SLUG_PATTERN } from "@/lib/slug"
 
 /**
  * In-app notices (give.notices, DOS/Give#52): reminders and status changes
@@ -78,9 +79,11 @@ export function describeNotice(notice: Notice): NoticeView {
     case "payment_due":
     case "payment_reminder": {
       // Payload of give.pledge_notice_payload (DOS/Give#30); reminders add amount_due and day.
+      // Net of refunds (DOS/Give#89): older payloads have no refunded_amount.
       const intended = count(p, "intended_amount")
       const received = count(p, "received_amount") ?? 0
-      const due = count(p, "amount_due") ?? (intended !== null ? Math.max(0, intended - received) : null)
+      const refunded = count(p, "refunded_amount") ?? 0
+      const due = count(p, "amount_due") ?? (intended !== null ? Math.max(0, intended - (received - refunded)) : null)
       const dueAt = text(p, "payment_due_at")
       let body =
         notice.kind === "payment_due"
@@ -122,7 +125,8 @@ export function describeNotice(notice: Notice): NoticeView {
         ...pledgeLink(p, "Xem cam kết"),
       }
     case "refund_due": {
-      const received = count(p, "received_amount")
+      // refund_amount: what is still owed, net of refunds (DOS/Give#89); older payloads only have received_amount.
+      const received = count(p, "refund_amount") ?? count(p, "received_amount")
       const by = text(p, "refund_due_at")
       let body = `Cam kết ủng hộ ${campaignName(p, "dự án")} không còn hiệu lực (chưa được thanh toán đủ trước hạn, hoặc tiền đến sau khi cam kết đã hết hiệu lực). Người tạo dự án phải hoàn lại`
       body += received ? ` ${formatVnd(received)} bạn đã chuyển` : " số tiền bạn đã chuyển"
@@ -130,14 +134,20 @@ export function describeNotice(notice: Notice): NoticeView {
       return { title: "Bạn sẽ được hoàn tiền", body: capitalize(body), ...pledgeLink(p, "Xem cam kết") }
     }
     case "refund_owed": {
-      const received = count(p, "received_amount")
+      const owed = count(p, "refund_amount") ?? count(p, "received_amount")
       const by = text(p, "refund_due_at")
       const code = text(p, "reference_code")
       let body = `Một người ủng hộ ${campaignName(p, "dự án")}`
       if (code) body += ` (mã ${code})`
-      body += " có khoản đã chuyển cho một cam kết không còn hiệu lực. Bạn cần hoàn lại"
-      body += received ? ` ${formatVnd(received)}` : " số tiền họ đã chuyển"
-      body += by ? ` trước ${formatDate(by)}` : ""
+      if (text(p, "reason") === "overpaid") {
+        // A paid pledge that received more than it pledged (DOS/Give#89).
+        body += " đã chuyển nhiều hơn số cam kết. Bạn cần hoàn lại phần thừa"
+        body += owed ? ` ${formatVnd(owed)}` : ""
+      } else {
+        body += " có khoản đã chuyển cho một cam kết không còn hiệu lực. Bạn cần hoàn lại"
+        body += owed ? ` ${formatVnd(owed)}` : " số tiền họ đã chuyển"
+        body += by ? ` trước ${formatDate(by)}` : ""
+      }
       body +=
         ", rồi giải trình khoản chuyển đó là hoàn tiền. Trang dự án công khai số tiền hoàn còn nợ cho tới khi hoàn xong."
       return {
@@ -146,6 +156,48 @@ export function describeNotice(notice: Notice): NoticeView {
         href: notice.campaign_id ? `/me/campaigns/${notice.campaign_id}/disbursements` : null,
         linkLabel: notice.campaign_id ? "Giải trình hoàn tiền" : null,
       }
+    }
+    case "payment_requests_stopped": {
+      // To each backer still asked to pay (their pledge in the payload) and to the creator (DOS/Give#89).
+      const note = text(p, "public_note")
+      const backer = text(p, "reference_code") !== null
+      let body = `Give đã tạm dừng yêu cầu thanh toán của ${campaignName(p, "dự án")}.`
+      body += backer
+        ? " Đừng chuyển tiền cho cam kết của bạn, kể cả theo thông tin chuyển khoản đã nhận trước đó, cho tới khi Give thông báo tiếp."
+        : " Người ủng hộ không còn được nhắc thanh toán và trang thanh toán đã ẩn. Trang dự án công khai thông báo này."
+      if (note) body += ` Ghi chú của Give: ${note}`
+      if (backer) {
+        body +=
+          " Thời gian tạm dừng không tính vào hạn thanh toán: cam kết không hết hiệu lực trong lúc tạm dừng, và khi mở lại, hạn được lùi thêm đúng số ngày đã tạm dừng."
+      }
+      const slug = text(p, "campaign_slug")
+      return {
+        title: "Tạm dừng yêu cầu thanh toán",
+        body,
+        ...(backer
+          ? pledgeLink(p, "Xem cam kết")
+          : slug && SLUG_PATTERN.test(slug)
+            ? { href: `/campaigns/${slug}`, linkLabel: "Xem dự án" }
+            : { href: null, linkLabel: null }),
+      }
+    }
+    case "payment_requests_resumed": {
+      const dueAt = text(p, "payment_due_at")
+      const slug = text(p, "campaign_slug")
+      if (text(p, "reference_code") === null) {
+        // The creator's copy: no pledge in the payload.
+        return {
+          title: "Mở lại yêu cầu thanh toán",
+          body: `Give đã mở lại yêu cầu thanh toán của ${campaignName(p, "dự án")}: người ủng hộ đang chờ thanh toán thấy lại thông tin chuyển khoản và được nhắc như trước.`,
+          ...(slug && SLUG_PATTERN.test(slug)
+            ? { href: `/campaigns/${slug}`, linkLabel: "Xem dự án" }
+            : { href: null, linkLabel: null }),
+        }
+      }
+      let body = `Give đã mở lại yêu cầu thanh toán của ${campaignName(p, "dự án")}. Hãy thanh toán cam kết của bạn`
+      body += dueAt ? ` trước ${formatDateTime(dueAt)} (hạn đã được lùi thêm đúng thời gian tạm dừng).` : "."
+      body += " Quá hạn mà chưa trả đủ, cam kết hết hiệu lực."
+      return { title: "Mở lại yêu cầu thanh toán", body, ...pledgeLink(p, "Thanh toán ngay") }
     }
     case "account_verified":
       return {

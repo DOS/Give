@@ -52,6 +52,9 @@ export default async function AdminPage() {
           <Link href="/admin/evidence" className="btn-secondary">
             Ảnh chứng từ bị báo cáo
           </Link>
+          <Link href="/admin/payment-requests" className="btn-secondary">
+            Yêu cầu thanh toán
+          </Link>
           {reviewsAccounts && (
             <>
               <Link href="/admin/accounts" className="btn-secondary">

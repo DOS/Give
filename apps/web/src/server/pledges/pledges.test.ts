@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest"
 
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
-import { listPublicTiers, organizesCampaign, ownPledgeByCode, PLEDGE_COLUMNS, pledgePayment } from "./index"
+import {
+  listPublicTiers,
+  organizesCampaign,
+  ownPledgeByCode,
+  PLEDGE_COLUMNS,
+  loadPledgeMoney,
+  pledgeBalances,
+  pledgePayment,
+} from "./index"
 
 const USER = "11111111-1111-4111-8111-111111111111"
 const PLEDGE = "33333333-3333-4333-8333-333333333333"
@@ -50,6 +58,81 @@ describe("pledgePayment", () => {
     await expect(
       pledgePayment(fakeDb(() => ({ error: { code: "42501", message: "denied" } })) as never, PLEDGE, USER)
     ).rejects.toMatchObject({ code: "42501" })
+  })
+})
+
+const balanceRow = {
+  contribution_id: PLEDGE,
+  status: "partially_paid",
+  received_amount: "100000",
+  refunded_amount: 50_000,
+  amount_due: "150000",
+  refund_owed_amount: 0,
+  payments_stopped: false,
+}
+
+describe("pledgeBalances", () => {
+  it("asks give.pledge_balances for the backer's pledges and converts the amounts", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(() => ({ data: [balanceRow] }), calls)
+    expect((await pledgeBalances(db as never, USER, PLEDGE)).get(PLEDGE)).toEqual({
+      status: "partially_paid",
+      received_amount: 100_000,
+      refunded_amount: 50_000,
+      amount_due: 150_000,
+      refund_owed_amount: 0,
+      payments_stopped: false,
+    })
+    expect(calls[0].target).toBe("rpc:pledge_balances")
+    expect(op(calls[0], "args")).toEqual([{ p_user_id: USER, p_contribution_id: PLEDGE }])
+    await pledgeBalances(db as never, USER)
+    expect(op(calls[1], "args")).toEqual([{ p_user_id: USER, p_contribution_id: null }])
+  })
+
+  it("throws database errors", async () => {
+    await expect(
+      pledgeBalances(fakeDb(() => ({ error: { code: "42501", message: "denied" } })) as never, USER)
+    ).rejects.toMatchObject({ code: "42501" })
+  })
+})
+
+describe("loadPledgeMoney (the payment page, DOS/Give#89)", () => {
+  const waiting = { id: PLEDGE, status: "partially_paid" }
+
+  it("never asks for the payment details while payment requests are stopped", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      (call) => (call.target === "rpc:pledge_payment" ? { data: paymentRow } : { data: [balanceRow] }),
+      calls
+    )
+    const money = await loadPledgeMoney(db as never, waiting, { payments_stopped_at: "2026-11-05T00:00:00Z" }, USER)
+    expect(money.payment).toBeNull()
+    expect(money.balance?.amount_due).toBe(150_000)
+    expect(calls.map((c) => c.target)).toEqual(["rpc:pledge_balances"])
+  })
+
+  it("reads the payment details of a pledge waiting for payment when not stopped", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      (call) => (call.target === "rpc:pledge_payment" ? { data: paymentRow } : { data: [balanceRow] }),
+      calls
+    )
+    const money = await loadPledgeMoney(db as never, waiting, { payments_stopped_at: null }, USER)
+    expect(money.payment?.account?.account_number).toBe("0123456789")
+    expect(calls.map((c) => c.target).sort()).toEqual(["rpc:pledge_balances", "rpc:pledge_payment"])
+  })
+
+  it("skips the payment details for a paid pledge, and a failed balance read gives null", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(() => ({ error: { code: "XX000", message: "boom" } }), calls)
+    const money = await loadPledgeMoney(
+      db as never,
+      { id: PLEDGE, status: "paid" },
+      { payments_stopped_at: null },
+      USER
+    )
+    expect(money).toEqual({ payment: null, balance: null })
+    expect(calls.map((c) => c.target)).toEqual(["rpc:pledge_balances"])
   })
 })
 
