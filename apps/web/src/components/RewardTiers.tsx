@@ -1,5 +1,9 @@
+import clsx from "clsx"
 import Link from "next/link"
 
+import { Badge } from "@/components/ui/Badge"
+import { buttonClass } from "@/components/ui/Button"
+import { GiftIcon } from "@/components/ui/icons"
 import { deliveryMonth, isSoldOut, type PublicRewardTier } from "@/lib/pledges"
 import { minAmountLabel, pledgeHref, quantityLabel } from "@/lib/reward-tiers"
 
@@ -24,57 +28,62 @@ export function RewardTiers({
 }) {
   if (tiers.length === 0) return null
   return (
-    <section aria-labelledby="reward-tiers" className="space-y-3">
-      <h2 id="reward-tiers" className="text-lg font-bold">
-        Các mức ủng hộ
-      </h2>
-      {!open && <p className="text-xs text-gray-500">{closedNote}</p>}
-      <ol className="space-y-3">
+    <section aria-labelledby="reward-tiers" className="space-y-4">
+      <div>
+        <h2 id="reward-tiers" className="flex items-center gap-2 text-xl font-bold">
+          <GiftIcon className="text-accent-700" />
+          Các mức ủng hộ
+        </h2>
+        {!open && <p className="mt-1 text-muted">{closedNote}</p>}
+      </div>
+      <ol className="space-y-4">
         {tiers.map((tier) => {
           const soldOut = isSoldOut(tier)
           const delivery = deliveryMonth(tier.estimated_delivery)
           return (
-            <li key={tier.id} className={`space-y-3 card p-5 ${soldOut ? "opacity-75" : ""}`}>
-              <div>
-                <p className="text-sm font-semibold text-brand-600">{minAmountLabel(tier.min_amount)}</p>
-                <h3 className="mt-1 font-semibold break-words">{tier.title}</h3>
+            <li key={tier.id} className={clsx("space-y-4 card p-5", soldOut && "bg-surface")}>
+              <div className="space-y-1">
+                <p className="text-lg font-bold text-ink tabular-nums">{minAmountLabel(tier.min_amount)}</p>
+                <h3 className="font-semibold break-words">{tier.title}</h3>
               </div>
-              {tier.description && (
-                <p className="text-sm break-words whitespace-pre-line text-gray-700">{tier.description}</p>
-              )}
-              <dl className="space-y-1 text-xs text-gray-600">
+              {tier.description && <p className="break-words whitespace-pre-line text-body">{tier.description}</p>}
+              <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line pt-4">
                 {delivery && (
-                  <div className="flex gap-1">
-                    <dt>Dự kiến giao:</dt>
-                    <dd className="font-medium text-gray-800">{delivery}</dd>
+                  <div>
+                    <dt className="text-sm text-muted">Dự kiến giao</dt>
+                    <dd className="font-medium text-ink">{delivery}</dd>
                   </div>
                 )}
-                <div className="flex gap-1">
-                  <dt>Nhận quà:</dt>
-                  <dd className="font-medium text-gray-800">
+                <div className={delivery ? undefined : "col-span-2"}>
+                  <dt className="text-sm text-muted">Nhận quà</dt>
+                  <dd className="font-medium text-ink">
                     {tier.requires_shipping ? "Giao tận nơi (cần địa chỉ nhận)" : "Không cần giao hàng"}
                   </dd>
                 </div>
                 {tier.requires_shipping && tier.shipping_note && (
-                  <div>
+                  <div className="col-span-2">
                     <dt className="sr-only">Ghi chú giao hàng</dt>
-                    <dd className="break-words whitespace-pre-line">{tier.shipping_note}</dd>
+                    <dd className="text-sm break-words whitespace-pre-line text-muted">{tier.shipping_note}</dd>
                   </div>
                 )}
-                <div className="flex flex-wrap gap-x-3">
+                <div className="col-span-2 flex flex-wrap items-center gap-x-3 gap-y-1">
                   <dt className="sr-only">Số suất</dt>
-                  <dd className={soldOut ? "font-semibold text-red-700" : "font-medium text-gray-800"}>
-                    {quantityLabel(tier)}
+                  <dd>
+                    {soldOut ? (
+                      <Badge tone="danger">{quantityLabel(tier)}</Badge>
+                    ) : (
+                      <span className="font-medium text-ink">{quantityLabel(tier)}</span>
+                    )}
                   </dd>
-                  {tier.quantity_claimed > 0 && <dd>{tier.quantity_claimed} người đã chọn</dd>}
+                  {tier.quantity_claimed > 0 && <dd className="text-muted">{tier.quantity_claimed} người đã chọn</dd>}
                 </div>
               </dl>
               {open && !soldOut ? (
-                <Link href={pledgeHref(slug, tier.id)} className="btn-primary w-full">
+                <Link href={pledgeHref(slug, tier.id)} className={buttonClass({ full: true })}>
                   Chọn mức này
                 </Link>
               ) : (
-                <button type="button" disabled className="btn-secondary w-full">
+                <button type="button" disabled className={buttonClass({ variant: "secondary", full: true })}>
                   {soldOut ? "Đã hết suất" : "Chọn mức này"}
                 </button>
               )}

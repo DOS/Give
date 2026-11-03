@@ -114,7 +114,7 @@ export function UploadForm({
           >
             <p>{state.message}</p>
             {state.batchId && (
-              <Link href={`/me/statements/${state.batchId}`} className="mt-1 inline-block font-medium text-brand-600">
+              <Link href={`/me/statements/${state.batchId}`} className="mt-1 inline-block font-medium text-brand-700">
                 Xem từng dòng của sao kê →
               </Link>
             )}

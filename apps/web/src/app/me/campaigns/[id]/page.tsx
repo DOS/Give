@@ -91,7 +91,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
           <StatusBadge status={campaign.status} />
         </div>
         <h1 className="mt-2 text-3xl font-bold">{campaign.title}</h1>
-        <Link href={`/campaigns/${campaign.slug}`} className="mt-1 inline-block text-sm text-brand-600">
+        <Link href={`/campaigns/${campaign.slug}`} className="mt-1 inline-block text-sm text-brand-700">
           {isPublicStatus(campaign.status) ? "Xem trang công khai" : "Xem trước trang chiến dịch"} →
         </Link>
       </div>
@@ -613,7 +613,7 @@ function ReceivingAccountSection({
             : "Khi dự án gây quỹ thành công, người ủng hộ thanh toán cam kết thẳng vào tài khoản này qua mã VietQR."}{" "}
           Chiến dịch cần gắn một tài khoản đã xác minh, đứng tên bạn, trước khi gửi duyệt. Khai báo và xác minh tài
           khoản tại trang{" "}
-          <Link href="/me/accounts" className="font-medium text-brand-600">
+          <Link href="/me/accounts" className="font-medium text-brand-700">
             Tài khoản nhận tiền
           </Link>
           .
@@ -669,7 +669,7 @@ function ReceivingAccountSection({
       ) : choices.length === 0 ? (
         <p className="text-sm text-gray-600">
           Bạn chưa có tài khoản nhận tiền nào.{" "}
-          <Link href="/me/accounts" className="font-medium text-brand-600">
+          <Link href="/me/accounts" className="font-medium text-brand-700">
             Khai báo tài khoản
           </Link>{" "}
           rồi chuyển khoản xác minh; khi tài khoản đã được xác minh, quay lại đây để gắn.
@@ -766,7 +766,7 @@ function AccountSwapBlock({
         <p className="text-gray-600">
           Bạn chưa có tài khoản nào khác dùng được (đã xác minh, chưa gắn với chiến dịch nào). Khai báo và xác minh tài
           khoản mới tại trang{" "}
-          <Link href="/me/accounts" className="font-medium text-brand-600">
+          <Link href="/me/accounts" className="font-medium text-brand-700">
             Tài khoản nhận tiền
           </Link>
           , rồi quay lại đây.

@@ -2,6 +2,9 @@ import type { Metadata } from "next"
 import Link from "next/link"
 
 import { CampaignCard } from "@/components/CampaignCard"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { SearchIcon } from "@/components/ui/icons"
+import { FilterNav, TabNav } from "@/components/ui/Tabs"
 import {
   categoriesFor,
   discoveryHref,
@@ -17,8 +20,8 @@ export const metadata: Metadata = { title: "Khám phá chiến dịch" }
 
 const TYPE_TABS: { value: CampaignType | null; label: string }[] = [
   { value: null, label: "Tất cả" },
-  { value: "give", label: "❤️ Từ thiện" },
-  { value: "back", label: "🚀 Dự án" },
+  { value: "give", label: "Từ thiện" },
+  { value: "back", label: "Dự án sáng tạo" },
 ]
 
 export default async function CampaignsPage({
@@ -37,75 +40,63 @@ export default async function CampaignsPage({
   const visibleCategories = filters.type ? categoriesFor(categories, filters.type) : categories
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="text-3xl font-bold">Khám phá chiến dịch</h1>
+    <div className="container-page py-10 sm:py-12">
+      <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Khám phá chiến dịch</h1>
+      <p className="mt-2 max-w-2xl text-lg text-body">
+        Chiến dịch đang gây quỹ, mới duyệt trước. Lọc theo hình thức hoặc danh mục.
+      </p>
 
-      <form action="/campaigns" method="get" className="mt-6 flex flex-col gap-3 sm:flex-row" role="search">
+      <form action="/campaigns" method="get" className="mt-6 flex max-w-2xl gap-2" role="search">
         {filters.type && <input type="hidden" name="type" value={filters.type} />}
         {filters.category && <input type="hidden" name="category" value={filters.category} />}
         <label htmlFor="q" className="sr-only">
           Tìm chiến dịch
         </label>
-        <input
-          id="q"
-          name="q"
-          type="search"
-          defaultValue={filters.q ?? ""}
-          placeholder="Tìm theo tên hoặc tóm tắt…"
-          className="field sm:max-w-md"
-          maxLength={80}
-        />
+        <div className="relative flex-1">
+          <SearchIcon className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
+          <input
+            id="q"
+            name="q"
+            type="search"
+            defaultValue={filters.q ?? ""}
+            placeholder="Tìm theo tên hoặc tóm tắt…"
+            className="field pl-10"
+            maxLength={80}
+          />
+        </div>
         <button type="submit" className="btn-primary">
           Tìm
         </button>
       </form>
 
-      <nav aria-label="Loại chiến dịch" className="mt-6 flex flex-wrap gap-2">
-        {TYPE_TABS.map((tab) => {
-          const active = filters.type === tab.value
-          return (
-            <Link
-              key={tab.label}
-              href={discoveryHref({ type: tab.value, q: filters.q })}
-              aria-current={active ? "page" : undefined}
-              className={`rounded-full px-4 py-1.5 text-sm font-medium ${
-                active ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              {tab.label}
-            </Link>
-          )
-        })}
-      </nav>
+      <TabNav
+        label="Loại chiến dịch"
+        className="mt-8"
+        items={TYPE_TABS.map((tab) => ({
+          href: discoveryHref({ type: tab.value, q: filters.q }),
+          label: tab.label,
+          current: filters.type === tab.value,
+        }))}
+      />
 
-      <nav aria-label="Danh mục" className="mt-3 flex flex-wrap gap-2">
-        <Link
-          href={discoveryHref({ type: filters.type, q: filters.q })}
-          aria-current={!filters.category ? "page" : undefined}
-          className={`rounded-full border px-3 py-1 text-sm ${
-            !filters.category ? "border-gray-900 font-medium" : "border-gray-200 text-gray-600 hover:bg-gray-50"
-          }`}
-        >
-          Mọi danh mục
-        </Link>
-        {visibleCategories.map((category) => {
-          const active = filters.category === category.slug
-          return (
-            <Link
-              key={category.id}
-              href={discoveryHref({ ...filters, category: category.slug })}
-              aria-current={active ? "page" : undefined}
-              className={`rounded-full border px-3 py-1 text-sm ${
-                active ? "border-gray-900 font-medium" : "border-gray-200 text-gray-600 hover:bg-gray-50"
-              }`}
-            >
-              {category.icon} {category.name}
-            </Link>
-          )
-        })}
-      </nav>
+      <FilterNav
+        label="Danh mục"
+        className="mt-4"
+        items={[
+          {
+            href: discoveryHref({ type: filters.type, q: filters.q }),
+            label: "Mọi danh mục",
+            current: !filters.category,
+          },
+          ...visibleCategories.map((category) => ({
+            href: discoveryHref({ ...filters, category: category.slug }),
+            label: category.name,
+            current: filters.category === category.slug,
+          })),
+        ]}
+      />
 
-      <section className="mt-8" aria-live="polite">
+      <section className="mt-8" aria-live="polite" aria-label="Kết quả">
         {campaigns.length > 0 ? (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {campaigns.map((campaign) => (
@@ -117,12 +108,16 @@ export default async function CampaignsPage({
             ))}
           </div>
         ) : (
-          <div className="card p-10 text-center">
-            <p className="text-gray-700">Không có chiến dịch nào khớp bộ lọc.</p>
-            <Link href="/campaigns" className="mt-3 inline-block text-sm font-medium text-brand-600">
-              Xóa bộ lọc
-            </Link>
-          </div>
+          <EmptyState
+            title="Không có chiến dịch nào khớp bộ lọc"
+            action={
+              <Link href="/campaigns" className="btn-secondary">
+                Xóa bộ lọc
+              </Link>
+            }
+          >
+            Thử từ khóa ngắn hơn hoặc chọn danh mục khác.
+          </EmptyState>
         )}
       </section>
     </div>

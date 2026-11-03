@@ -132,7 +132,7 @@ export function DonationStatus({
             Phiên đăng nhập đã hết.{" "}
             <a
               href={`/auth/login?return_path=${encodeURIComponent(`/donations/${code}`)}`}
-              className="font-medium text-brand-600"
+              className="font-medium text-brand-700"
             >
               Đăng nhập lại
             </a>{" "}

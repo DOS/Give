@@ -25,7 +25,7 @@ export default async function MyCampaignsPage() {
       {campaigns.length === 0 ? (
         <div className="mt-8 card p-10 text-center text-gray-600">
           Bạn chưa có chiến dịch nào.{" "}
-          <Link href="/start" className="font-medium text-brand-600">
+          <Link href="/start" className="font-medium text-brand-700">
             Bắt đầu ngay
           </Link>
         </div>
@@ -40,7 +40,7 @@ export default async function MyCampaignsPage() {
                 </div>
                 <Link
                   href={`/me/campaigns/${campaign.id}`}
-                  className="mt-1 block truncate font-semibold hover:text-brand-600"
+                  className="mt-1 block truncate font-semibold hover:text-brand-700"
                 >
                   {campaign.title}
                 </Link>

@@ -115,7 +115,7 @@ export default async function FulfillmentPage({
               Lọc
             </button>
             {filtered && (
-              <Link href={`/me/campaigns/${campaign.id}/fulfillment`} className="text-sm text-brand-600">
+              <Link href={`/me/campaigns/${campaign.id}/fulfillment`} className="text-sm text-brand-700">
                 Bỏ lọc
               </Link>
             )}

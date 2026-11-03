@@ -83,7 +83,7 @@ export default async function MyContributionsPage() {
       {contributions.length === 0 ? (
         <div className="mt-8 card p-10 text-center text-gray-600">
           Bạn chưa ủng hộ chiến dịch hay dự án nào.{" "}
-          <Link href="/campaigns" className="font-medium text-brand-600">
+          <Link href="/campaigns" className="font-medium text-brand-700">
             Khám phá chiến dịch
           </Link>
         </div>
@@ -105,7 +105,7 @@ export default async function MyContributionsPage() {
                 {c.campaign ? (
                   <Link
                     href={`/campaigns/${c.campaign.slug}`}
-                    className="mt-1 block truncate font-semibold hover:text-brand-600"
+                    className="mt-1 block truncate font-semibold hover:text-brand-700"
                   >
                     {c.campaign.title}
                   </Link>

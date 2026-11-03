@@ -74,7 +74,7 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
           khai. Giải trình đã gửi thì không sửa được, nhưng có thể thêm chứng từ.
         </p>
         {isPublicStatus(campaign.status) && (
-          <Link href={statementHref(campaign.slug, "all")} className="mt-2 inline-block text-sm text-brand-600">
+          <Link href={statementHref(campaign.slug, "all")} className="mt-2 inline-block text-sm text-brand-700">
             Xem sao kê công khai →
           </Link>
         )}
@@ -321,7 +321,7 @@ function Explanation({
                 href={evidenceUrl(e.storage_path)}
                 target="_blank"
                 rel="noreferrer"
-                className="text-brand-600 hover:text-brand-700"
+                className="text-brand-700 hover:text-brand-800"
               >
                 {EVIDENCE_KINDS[e.kind] ?? e.kind} ({formatDate(e.created_at)})
               </a>

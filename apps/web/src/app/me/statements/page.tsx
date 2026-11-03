@@ -68,7 +68,7 @@ export default async function StatementsPage() {
         {choices.length === 0 ? (
           <p className="card p-6 text-gray-600">
             Bạn chưa có tài khoản nhận nào nhận tiền qua sao kê.{" "}
-            <Link href="/me/accounts" className="font-medium text-brand-600">
+            <Link href="/me/accounts" className="font-medium text-brand-700">
               Khai báo tài khoản
             </Link>
           </p>
@@ -100,7 +100,7 @@ export default async function StatementsPage() {
                   return (
                     <tr key={batch.id} className="border-b border-gray-100 last:border-0">
                       <td className="p-3">
-                        <Link href={`/me/statements/${batch.id}`} className="font-medium text-brand-600">
+                        <Link href={`/me/statements/${batch.id}`} className="font-medium text-brand-700">
                           #{batch.batch_no}
                         </Link>
                       </td>

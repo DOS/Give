@@ -173,7 +173,7 @@ function AccountCard({
               <dd className="break-all">
                 <a
                   href={account.public_statement_url}
-                  className="text-brand-600"
+                  className="text-brand-700"
                   target="_blank"
                   rel="noopener noreferrer nofollow"
                 >

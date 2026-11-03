@@ -75,7 +75,7 @@ export default async function PledgePage({
       <div>
         <p className="text-sm text-gray-500">Ủng hộ dự án</p>
         <h1 className="text-2xl font-bold">
-          <Link href={`/campaigns/${campaign.slug}`} className="hover:text-brand-600">
+          <Link href={`/campaigns/${campaign.slug}`} className="hover:text-brand-700">
             {campaign.title}
           </Link>
         </h1>
@@ -89,7 +89,7 @@ export default async function PledgePage({
         <div className="card p-6 text-sm">
           Cam kết của bạn ({formatVnd(later.intended_amount)}) đang ở trạng thái{" "}
           <span className="font-semibold">{pledgeStatusLabel(later.status)}</span>.{" "}
-          <Link href={`/me/pledges/${later.reference_code}`} className="font-medium text-brand-600">
+          <Link href={`/me/pledges/${later.reference_code}`} className="font-medium text-brand-700">
             Xem cam kết
           </Link>
         </div>
@@ -123,7 +123,7 @@ export default async function PledgePage({
       {own ? (
         <div className="card p-6 text-sm text-gray-700">
           Đây là dự án của bạn nên bạn không cam kết ủng hộ được.{" "}
-          <Link href={`/campaigns/${campaign.slug}`} className="font-medium text-brand-600">
+          <Link href={`/campaigns/${campaign.slug}`} className="font-medium text-brand-700">
             Về trang dự án
           </Link>
         </div>
@@ -139,7 +139,7 @@ export default async function PledgePage({
         !later && (
           <div className="card p-6 text-sm text-gray-700">
             Dự án hiện không nhận cam kết.{" "}
-            <Link href={`/campaigns/${campaign.slug}`} className="font-medium text-brand-600">
+            <Link href={`/campaigns/${campaign.slug}`} className="font-medium text-brand-700">
               Về trang dự án
             </Link>
           </div>

@@ -51,7 +51,7 @@ export function PublicEvidenceList({
                   <SubmitButton className="btn-secondary text-xs">Gửi báo cáo</SubmitButton>
                 </ActionForm>
               ) : (
-                <a href={loginHref} className="mt-1 block text-brand-600 hover:text-brand-700">
+                <a href={loginHref} className="mt-1 block text-brand-700 hover:text-brand-800">
                   Đăng nhập để báo cáo
                 </a>
               )}

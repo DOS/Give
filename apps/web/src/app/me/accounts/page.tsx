@@ -36,7 +36,7 @@ export default async function MyAccountsPage() {
         <div className="mt-8 card p-8 text-gray-700">
           Bạn cần tạo hồ sơ người tổ chức (tên pháp lý trùng với tên chủ tài khoản ngân hàng) trước khi khai báo tài
           khoản nhận.{" "}
-          <Link href="/start" className="font-medium text-brand-600">
+          <Link href="/start" className="font-medium text-brand-700">
             Tạo hồ sơ
           </Link>
         </div>
@@ -233,7 +233,7 @@ function AccountItem({
           {account.public_statement_url && (
             <a
               href={account.public_statement_url}
-              className="text-brand-600"
+              className="text-brand-700"
               target="_blank"
               rel="noopener noreferrer nofollow"
             >
@@ -265,7 +265,7 @@ function AccountItem({
       {holder && (
         <p className="text-sm">
           Đang gắn với chiến dịch{" "}
-          <Link href={`/me/campaigns/${holder.campaign_id}`} className="font-medium text-brand-600">
+          <Link href={`/me/campaigns/${holder.campaign_id}`} className="font-medium text-brand-700">
             {boundTitle(holder.campaign_id)}
           </Link>{" "}
           từ ngày {formatDate(holder.bound_at)}. Khi chiến dịch còn là bản nháp, hoặc được yêu cầu chỉnh sửa mà tài
@@ -294,7 +294,7 @@ function AccountItem({
         (bindChoices.length === 0 ? (
           <p className="border-t border-gray-100 pt-4 text-sm text-gray-600">
             Tạo chiến dịch, rồi quay lại đây để gắn tài khoản trước khi gửi duyệt.{" "}
-            <Link href="/start" className="font-medium text-brand-600">
+            <Link href="/start" className="font-medium text-brand-700">
               Tạo chiến dịch
             </Link>
           </p>

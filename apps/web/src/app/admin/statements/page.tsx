@@ -184,7 +184,7 @@ function QueueCard({
       <div className="space-y-2 text-sm">
         <p className="text-gray-500">
           {account ?? "Tài khoản"} ·{" "}
-          <Link href={`/me/statements/${row.batch.id}`} className="text-brand-600">
+          <Link href={`/me/statements/${row.batch.id}`} className="text-brand-700">
             lần tải #{row.batch.batch_no}
           </Link>{" "}
           ({row.batch.parser}) · dòng {row.row_no}
