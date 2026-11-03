@@ -9,6 +9,7 @@ import { StatusBadge, TypeBadge, VerificationBadge } from "@/components/badges"
 import { Markdown } from "@/components/Markdown"
 import { MoneyTotals } from "@/components/MoneyTotals"
 import { ProgressBar } from "@/components/ProgressBar"
+import { RewardTiers } from "@/components/RewardTiers"
 import { listPublicAccountChanges } from "@/lib/account-swaps"
 import { getSession } from "@/lib/auth/session"
 import {
@@ -21,6 +22,7 @@ import {
   type Db,
 } from "@/lib/campaigns"
 import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
+import { acceptsPledges, listCampaignTiers, listPublicTiers, previewTiers } from "@/lib/reward-tiers"
 import { SLUG_PATTERN } from "@/lib/slug"
 import { privateCoverUrl, publicCoverUrl } from "@/lib/cover-urls"
 import { getMoneyTotals, raisedAmount, statementHref } from "@/lib/statement"
@@ -69,7 +71,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
 
   const isGive = campaign.type === "give"
   const donationsOpen = !preview && acceptsDonations(campaign)
-  const [milestones, updates, organizer, account, session, totals, accountChanges] = await Promise.all([
+  const [milestones, updates, organizer, account, session, totals, accountChanges, tiers] = await Promise.all([
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
     preview ? Promise.resolve(null) : getPublicOrganizer(db, campaign.id),
@@ -85,7 +87,18 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
     preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
     // A failed read hides the notice rather than the page; the statement shows it too.
     preview ? Promise.resolve([]) : listPublicAccountChanges(dbAs(), campaign.id).catch(() => []),
+    // Reward tiers (DOS/Give#83): the public view, or the organizer's own active tiers in a preview.
+    // A failed read hides the tiers rather than the page.
+    isGive
+      ? Promise.resolve([])
+      : (preview ? listCampaignTiers(db, campaign.id).then(previewTiers) : listPublicTiers(dbAs(), campaign.id)).catch(
+          (error: unknown) => {
+            console.error("campaign page: reward tiers lookup failed", error)
+            return []
+          }
+        ),
   ])
+  const pledgesOpen = !preview && acceptsPledges(campaign)
   const canDonate = donationsOpen && account !== null
   const closedNote =
     !isGive || preview
@@ -246,6 +259,19 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               </p>
             )}
           </div>
+
+          {!isGive && (
+            <RewardTiers
+              tiers={tiers}
+              slug={campaign.slug}
+              open={pledgesOpen}
+              closedNote={
+                preview
+                  ? "Bản xem trước: người ủng hộ chọn được mức khi dự án mở gây quỹ."
+                  : "Dự án không còn nhận cam kết mới."
+              }
+            />
+          )}
 
           {totals && <MoneyTotals totals={totals} statementHref={statementHref(campaign.slug, "all")} />}
 

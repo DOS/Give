@@ -101,6 +101,22 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_REASON_TOO_LONG: "Lý do hoặc ghi chú quá dài (lý do tối đa 1000 ký tự, ghi chú công khai tối đa 300 ký tự).",
   GIVE_ACCOUNT_HISTORY_OPEN:
     "Tài khoản này đã được đổi ra khỏi một chiến dịch mà phần tiền chưa xong (chiến dịch chưa kết thúc đủ 30 ngày, hoặc còn giao dịch chưa đối chiếu, chưa giải trình, hoặc còn dòng sao kê chưa ghi nhận), nên chưa dùng cho chiến dịch khác được.",
+  // Reward tiers and fulfillment of back campaigns (DOS/Give#30, #83).
+  GIVE_REWARD_TIERS_BACK_ONLY: "Chỉ dự án có quà tặng mới có các mức phần thưởng.",
+  GIVE_REWARD_TIER_INVALID: "Thông tin phần thưởng không hợp lệ.",
+  GIVE_REWARD_TIER_LIMIT: "Mỗi dự án có tối đa 50 mức phần thưởng.",
+  GIVE_REWARD_TIER_NOT_FOUND: "Không tìm thấy mức phần thưởng này. Hãy tải lại trang.",
+  GIVE_REWARD_TIER_IN_USE: "Mức phần thưởng này đã có người chọn nên không xóa được.",
+  GIVE_REWARD_TIER_ORDER_INVALID: "Danh sách phần thưởng vừa thay đổi. Hãy tải lại trang rồi sắp xếp lại.",
+  GIVE_REWARD_TIER_HAS_PLEDGES:
+    "Mức phần thưởng này đang có người cam kết nên không ngừng nhận được. Mức này vẫn hiện cho đến khi hết suất hoặc dự án kết thúc.",
+  GIVE_REWARD_TIER_IMMUTABLE: "Không đổi được chiến dịch của một mức phần thưởng.",
+  GIVE_FULFILLMENT_STATUS_INVALID: "Chọn trạng thái giao quà.",
+  GIVE_FULFILLMENT_NOTE_TOO_LONG: "Ghi chú giao quà tối đa 500 ký tự.",
+  GIVE_FULFILLMENT_BATCH_INVALID: "Chọn từ 1 đến 500 lượt ủng hộ để cập nhật.",
+  GIVE_CAMPAIGN_NOT_FULFILLING: "Chỉ cập nhật giao quà được khi dự án đã gây quỹ thành công.",
+  GIVE_PLEDGE_NOT_FULFILLABLE:
+    "Có lượt ủng hộ không còn ở trạng thái đã thanh toán (có thể vừa được hoàn tiền). Hãy tải lại trang và chọn lại.",
   // Staff roles.
   GIVE_ADMIN_REQUIRED: "Chỉ quản trị viên mới được cấp hoặc thu quyền.",
   GIVE_ROLE_INVALID: "Quyền không hợp lệ.",

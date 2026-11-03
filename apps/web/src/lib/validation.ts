@@ -112,6 +112,46 @@ export const milestoneSchema = z.object({
   description: optionalText(2000),
 })
 
+/** Empty = unlimited; otherwise a whole number of slots (give.reward_tiers.quantity_limit). */
+const optionalQuantity = z.string().transform((value, ctx) => {
+  const text = value.trim()
+  if (text === "") return null
+  // Like parseVnd: separators only between groups of three digits, so "2.5" is refused, not read as 25.
+  const grouped = /^\d+$/.test(text) || /^\d{1,3}([.,\s]\d{3})+$/.test(text)
+  const n = Number(text.replace(/[.,\s]/g, ""))
+  if (!grouped || !Number.isInteger(n) || n < 1 || n > 1_000_000) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Số suất phải là số nguyên từ 1 đến 1.000.000, hoặc để trống nếu không giới hạn",
+    })
+    return z.NEVER
+  }
+  return n
+})
+
+/** A month input value ("2027-03"), stored as the first day of that month. */
+const optionalMonth = z.string().transform((value, ctx) => {
+  const text = value.trim()
+  if (text === "") return null
+  const match = /^(\d{4})-(\d{2})$/.exec(text)
+  const month = match ? Number(match[2]) : 0
+  if (!match || month < 1 || month > 12 || Number(match[1]) < 2000) {
+    ctx.addIssue({ code: "custom", message: "Tháng giao quà dự kiến không hợp lệ" })
+    return z.NEVER
+  }
+  return `${text}-01`
+})
+
+export const rewardTierSchema = z.object({
+  title: z.string().trim().min(2, "Tên phần thưởng cần ít nhất 2 ký tự").max(120, "Tên phần thưởng tối đa 120 ký tự"),
+  min_amount: money,
+  description: optionalText(2000),
+  quantity_limit: optionalQuantity,
+  estimated_delivery: optionalMonth,
+  requires_shipping: z.string().transform((v) => v === "on"),
+  shipping_note: optionalText(500),
+})
+
 export const updateSchema = z.object({
   title: z.string().trim().min(2, "Nhập tiêu đề").max(200),
   body: z.string().trim().min(1, "Nhập nội dung").max(50000),
