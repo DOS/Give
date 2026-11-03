@@ -11,6 +11,7 @@ import { formatDateTime, formatVnd } from "@/lib/format"
 import {
   acceptsPledges,
   awaitsPayment,
+  overpaid,
   deliveryMonth,
   fulfillmentLabel,
   pledgeStatusColor,
@@ -104,8 +105,13 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
             </ActionForm>
           </div>
         </Note>
-      ) : (
+      ) : campaign.status === "live" && campaign.ends_at && new Date(campaign.ends_at) <= new Date() ? (
         <Note>Dự án đã hết thời gian nhận cam kết. Give đang chốt kết quả; bạn sẽ nhận thông báo khi có kết quả.</Note>
+      ) : (
+        <Note tone="amber">
+          Dự án đang tạm dừng nên chưa đổi hay hủy được cam kết. Bạn chưa phải chuyển tiền; Give sẽ báo khi dự án tiếp
+          tục hoặc có kết quả.
+        </Note>
       )
       break
     case "payment_due":
@@ -115,6 +121,14 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
           <Note tone="amber">
             Đã quá hạn thanh toán của cam kết này. Đừng chuyển thêm tiền. Nếu bạn đã chuyển, Give vẫn ghi nhận khi đối
             soát được khoản này.
+          </Note>
+        )
+      } else if (payment.amount_due <= 0) {
+        // Paid in full but not matched as paid yet (e.g. part of it was refunded): no QR for 0 đồng.
+        body = (
+          <Note tone="amber">
+            Give đã ghi nhận đủ số tiền cam kết nhưng chưa chốt trạng thái thanh toán. Đừng chuyển thêm tiền; Give cập
+            nhật khi đối soát xong.
           </Note>
         )
       } else if (!payment.account || !isDonationCode(payment.reference_code)) {
@@ -143,7 +157,9 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
                 {payment.received_amount > 0 && ` Give đã ghi nhận ${formatVnd(payment.received_amount)}.`}
               </p>
               <p>
-                Quá hạn mà chưa chuyển đủ, cam kết hết hiệu lực và suất quà được nhả; phần đã chuyển sẽ được hoàn lại.
+                Nếu bạn đã chuyển khoản, đừng chuyển lại: Give cập nhật trạng thái khi đối soát sao kê, có thể sau vài
+                ngày. Quá hạn mà chưa chuyển đủ, cam kết hết hiệu lực và suất quà được nhả; phần đã chuyển sẽ được hoàn
+                lại.
               </p>
             </Note>
             <div className="grid gap-6 card p-6 sm:grid-cols-2">
@@ -185,10 +201,16 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
       body = (
         <Note tone="green">
           <p>Bạn đã thanh toán đủ {formatVnd(pledge.intended_amount)}. Cảm ơn bạn đã đồng hành cùng dự án.</p>
+          {overpaid(pledge) > 0 && (
+            <p>
+              Give ghi nhận bạn đã chuyển {formatVnd(pledge.received_amount)}, nhiều hơn số cam kết. Người tạo dự án
+              phải hoàn lại phần thừa {formatVnd(overpaid(pledge))}; trang dự án công khai khoản này cho tới khi hoàn
+              xong.
+            </p>
+          )}
           {pledge.reward_tier_id && (
             <p>
-              Tình trạng giao quà:{" "}
-              <span className="font-semibold">{fulfillment ?? "Chờ người tạo dự án cập nhật"}</span>
+              Tình trạng giao quà: <span className="font-semibold">{fulfillment}</span>
               {pledge.fulfillment_updated_at && ` (cập nhật ${formatDateTime(pledge.fulfillment_updated_at)})`}
             </p>
           )}
@@ -199,8 +221,8 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
     case "refund_due":
       body = (
         <Note tone="red">
-          Cam kết chưa được thanh toán đủ trước hạn nên đã hết hiệu lực. Người tạo dự án phải hoàn lại{" "}
-          {formatVnd(pledge.received_amount)} bạn đã chuyển
+          Cam kết này không còn hiệu lực (chưa được thanh toán đủ trước hạn, hoặc tiền đến sau khi cam kết đã hết hiệu
+          lực), nên người tạo dự án phải hoàn lại số tiền bạn đã chuyển ({formatVnd(pledge.received_amount)})
           {pledge.refund_due_at ? ` trước ${formatDateTime(pledge.refund_due_at)}` : ""}. Trang dự án công khai số tiền
           hoàn còn nợ cho tới khi hoàn xong.
         </Note>

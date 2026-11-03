@@ -58,7 +58,12 @@ export async function savePledge(
   // The address is asked for, and kept, only for a tier that ships something.
   let shipping: Record<string, string> | null = null
   if (input.tier) {
-    const tier = await getPublicTier(db, campaignId, input.tier).catch(() => null)
+    let tier
+    try {
+      tier = await getPublicTier(db, campaignId, input.tier)
+    } catch (error) {
+      return fail(dbErrorMessage(error as { code?: string; message?: string }))
+    }
     if (!tier) return fail(PLEDGE_MESSAGES.GIVE_REWARD_TIER_UNAVAILABLE)
     if (tier.requires_shipping) {
       const address = shippingAddressSchema.safeParse({

@@ -105,6 +105,21 @@ function toTier(row: Record<string, unknown>): PublicRewardTier {
   }
 }
 
+/**
+ * Whether the signed-in user organizes this campaign, so pages can skip a
+ * form that give.create_pledge would refuse (GIVE_OWN_CAMPAIGN). Staff also
+ * see other organizers' campaigns in managed_campaigns, hence the id check.
+ * False on any error: the database still refuses.
+ */
+export async function organizesCampaign(db: Db, campaignId: string, userId: string): Promise<boolean> {
+  const { data, error } = await db
+    .rpc("managed_campaigns", { p_campaign_id: campaignId })
+    .select("organizer_id")
+    .maybeSingle()
+  if (error || !data) return false
+  return (data as { organizer_id: string }).organizer_id === userId
+}
+
 /** Active tiers of a public campaign, in the creator's order. */
 export async function listPublicTiers(db: Db, campaignId: string): Promise<PublicRewardTier[]> {
   const { data, error } = await db

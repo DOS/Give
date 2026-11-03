@@ -4,7 +4,13 @@ import Link from "next/link"
 import { requireSession } from "@/lib/auth/session"
 import { donationStatusLabel } from "@/lib/contributions"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
-import { fulfillmentLabel, pledgeStatusColor, pledgeStatusLabel, withoutReplacedPledges } from "@/lib/pledges"
+import {
+  fulfillmentLabel,
+  paymentWindowClosed,
+  pledgeStatusColor,
+  pledgeStatusLabel,
+  withoutReplacedPledges,
+} from "@/lib/pledges"
 import { dbAs } from "@/lib/supabase"
 
 export const metadata: Metadata = { title: "Ủng hộ của tôi", robots: { index: false } }
@@ -43,6 +49,7 @@ function pledgeSummary(c: MyContribution): string {
   switch (c.status) {
     case "payment_due":
     case "partially_paid":
+      if (paymentWindowClosed(c)) return `Đã quá hạn thanh toán · đã ghi nhận ${formatVnd(c.received_amount)}`
       return `Cần thanh toán ${formatVnd(Math.max(0, c.intended_amount - c.received_amount))}${
         c.payment_due_at ? ` trước ${formatDateTime(c.payment_due_at)}` : ""
       }`
@@ -96,9 +103,7 @@ export default async function MyContributionsPage() {
                   </span>
                   {c.kind === "pledge" && <span className="text-xs text-gray-500">Cam kết dự án</span>}
                   {c.kind === "pledge" && c.status === "paid" && c.reward_tier_id && (
-                    <span className="text-xs text-gray-600">
-                      {fulfillmentLabel(c.fulfillment_status) ?? "Chờ cập nhật giao quà"}
-                    </span>
+                    <span className="text-xs text-gray-600">Giao quà: {fulfillmentLabel(c.fulfillment_status)}</span>
                   )}
                   {c.is_anonymous && <span className="text-xs text-gray-500">Ẩn danh</span>}
                 </div>
@@ -123,7 +128,9 @@ export default async function MyContributionsPage() {
               </div>
               {c.kind === "pledge" ? (
                 <Link href={`/me/pledges/${c.reference_code}`} className="btn-secondary">
-                  {c.status === "payment_due" || c.status === "partially_paid" ? "Thanh toán" : "Xem cam kết"}
+                  {(c.status === "payment_due" || c.status === "partially_paid") && !paymentWindowClosed(c)
+                    ? "Thanh toán"
+                    : "Xem cam kết"}
                 </Link>
               ) : (
                 c.status !== "received" && (

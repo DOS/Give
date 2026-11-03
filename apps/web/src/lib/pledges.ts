@@ -50,6 +50,19 @@ export function pledgeStatusColor(status: string): string {
   return PLEDGE_STATUS_COLORS[status as PledgeStatus] ?? "bg-gray-100 text-gray-700"
 }
 
+/** What a paid pledge received beyond its amount, which the creator owes back (give.public_campaigns counts it). */
+export function overpaid(pledge: { status: string; intended_amount: number; received_amount: number }): number {
+  return pledge.status === "paid" ? Math.max(0, pledge.received_amount - pledge.intended_amount) : 0
+}
+
+/** True once a pledge waiting for payment is past payment_due_at (the lapse job may not have run yet). */
+export function paymentWindowClosed(
+  pledge: { status: string; payment_due_at: string | null },
+  now = new Date()
+): boolean {
+  return awaitsPayment(pledge.status) && !!pledge.payment_due_at && new Date(pledge.payment_due_at) <= now
+}
+
 /** Statuses that still wait for the backer's transfer (give.pledge_payment answers only for these). */
 export function awaitsPayment(status: string): boolean {
   return status === "payment_due" || status === "partially_paid"
@@ -57,16 +70,18 @@ export function awaitsPayment(status: string): boolean {
 
 export type FulfillmentStatus = "pending" | "in_progress" | "shipped" | "delivered" | "issue"
 
+// Same words as the creator's fulfillment page (DOS/Give#83, lib/fulfillment.ts).
 export const FULFILLMENT_LABELS: Record<FulfillmentStatus, string> = {
-  pending: "Chờ chuẩn bị quà",
-  in_progress: "Đang chuẩn bị quà",
-  shipped: "Đã gửi quà",
-  delivered: "Đã giao quà",
-  issue: "Có vấn đề khi giao quà",
+  pending: "Chờ chuẩn bị",
+  in_progress: "Đang chuẩn bị",
+  shipped: "Đã gửi đi",
+  delivered: "Đã giao",
+  issue: "Có vấn đề",
 }
 
-export function fulfillmentLabel(status: string | null | undefined): string | null {
-  if (!status) return null
+/** null = the creator has not reported delivery yet. */
+export function fulfillmentLabel(status: string | null | undefined): string {
+  if (!status) return "Chưa cập nhật"
   return FULFILLMENT_LABELS[status as FulfillmentStatus] ?? status
 }
 
@@ -230,9 +245,11 @@ export interface ListedContribution {
 }
 
 /**
- * Hides pledges that change_pledge replaced: a cancelled pledge followed by a
- * newer pledge of the same backer on the same campaign. A pledge cancelled
- * on its own (or by a failed campaign) stays listed. Expects newest first.
+ * Hides cancelled pledges that a newer pledge of the same backer on the same
+ * campaign followed: those change_pledge replaced, and those the backer
+ * cancelled before pledging again. The newest cancelled pledge of a campaign
+ * (cancelled on its own, or by a failed campaign) stays listed. Expects
+ * newest first.
  */
 export function withoutReplacedPledges<T extends ListedContribution>(rows: readonly T[]): T[] {
   const seen = new Set<string>()

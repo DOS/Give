@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
-import { listPublicTiers, ownPledgeByCode, PLEDGE_COLUMNS, pledgePayment } from "./index"
+import { listPublicTiers, organizesCampaign, ownPledgeByCode, PLEDGE_COLUMNS, pledgePayment } from "./index"
 
 const USER = "11111111-1111-4111-8111-111111111111"
 const PLEDGE = "33333333-3333-4333-8333-333333333333"
@@ -50,6 +50,20 @@ describe("pledgePayment", () => {
     await expect(
       pledgePayment(fakeDb(() => ({ error: { code: "42501", message: "denied" } })) as never, PLEDGE, USER)
     ).rejects.toMatchObject({ code: "42501" })
+  })
+})
+
+describe("organizesCampaign", () => {
+  it("is true only for the campaign's own organizer", async () => {
+    const calls: Call[] = []
+    expect(await organizesCampaign(fakeDb(() => ({ data: { organizer_id: USER } }), calls) as never, "c", USER)).toBe(
+      true
+    )
+    expect(op(calls[0], "args")).toEqual([{ p_campaign_id: "c" }])
+    // Staff see other organizers' campaigns in managed_campaigns too.
+    expect(await organizesCampaign(fakeDb(() => ({ data: { organizer_id: "other" } })) as never, "c", USER)).toBe(false)
+    expect(await organizesCampaign(fakeDb(() => ({ data: null })) as never, "c", USER)).toBe(false)
+    expect(await organizesCampaign(fakeDb(() => ({ error: { code: "PGRST301" } })) as never, "c", USER)).toBe(false)
   })
 })
 

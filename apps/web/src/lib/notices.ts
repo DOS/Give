@@ -84,10 +84,14 @@ export function describeNotice(notice: Notice): NoticeView {
       const dueAt = text(p, "payment_due_at")
       let body =
         notice.kind === "payment_due"
-          ? `${campaignName(p, "dự án")} đã đạt mục tiêu. Hãy thanh toán cam kết của bạn`
-          : `Cam kết ủng hộ ${campaignName(p, "dự án")} chưa được thanh toán đủ. Hãy thanh toán`
+          ? `${campaignName(p, "dự án")} đã đạt mục tiêu. Hãy thanh toán`
+          : `Cam kết ủng hộ ${campaignName(p, "dự án")} chưa được ghi nhận thanh toán đủ. Hãy thanh toán`
       if (due) body += ` ${formatVnd(due)}`
+      body += " cho cam kết của bạn"
       body += dueAt ? ` trước ${formatDateTime(dueAt)}.` : "."
+      if (notice.kind === "payment_reminder") {
+        body += " Nếu bạn đã chuyển khoản, đừng chuyển lại: Give cập nhật khi đối soát sao kê."
+      }
       body += " Quá hạn mà chưa trả đủ, cam kết hết hiệu lực và suất quà được nhả."
       return {
         title: notice.kind === "payment_due" ? "Đến hạn thanh toán cam kết" : "Nhắc thanh toán cam kết",
@@ -120,7 +124,7 @@ export function describeNotice(notice: Notice): NoticeView {
     case "refund_due": {
       const received = count(p, "received_amount")
       const by = text(p, "refund_due_at")
-      let body = `Cam kết ủng hộ ${campaignName(p, "dự án")} chưa được thanh toán đủ trước hạn nên đã hết hiệu lực. Người tạo dự án phải hoàn lại`
+      let body = `Cam kết ủng hộ ${campaignName(p, "dự án")} không còn hiệu lực (chưa được thanh toán đủ trước hạn, hoặc tiền đến sau khi cam kết đã hết hiệu lực). Người tạo dự án phải hoàn lại`
       body += received ? ` ${formatVnd(received)} bạn đã chuyển` : " số tiền bạn đã chuyển"
       body += by ? ` trước ${formatDate(by)}.` : "."
       return { title: "Bạn sẽ được hoàn tiền", body: capitalize(body), ...pledgeLink(p, "Xem cam kết") }
@@ -131,7 +135,7 @@ export function describeNotice(notice: Notice): NoticeView {
       const code = text(p, "reference_code")
       let body = `Một người ủng hộ ${campaignName(p, "dự án")}`
       if (code) body += ` (mã ${code})`
-      body += " chưa thanh toán đủ trước hạn. Bạn cần hoàn lại"
+      body += " có khoản đã chuyển cho một cam kết không còn hiệu lực. Bạn cần hoàn lại"
       body += received ? ` ${formatVnd(received)}` : " số tiền họ đã chuyển"
       body += by ? ` trước ${formatDate(by)}` : ""
       body +=

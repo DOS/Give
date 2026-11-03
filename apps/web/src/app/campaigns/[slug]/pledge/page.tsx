@@ -11,7 +11,7 @@ import { acceptsPledges, isSoldOut, NO_REWARD, pledgeStatusLabel, readShippingAd
 import { SLUG_PATTERN } from "@/lib/slug"
 import { dbAs } from "@/lib/supabase"
 import { isSessionRejected } from "@/server/contributions"
-import { listPublicTiers, ownPledgesOnCampaign } from "@/server/pledges"
+import { listPublicTiers, organizesCampaign, ownPledgesOnCampaign } from "@/server/pledges"
 
 import { cancelPledge, savePledge } from "./actions"
 import { PledgeForm, type PledgeDefaults } from "./PledgeForm"
@@ -39,14 +39,15 @@ export default async function PledgePage({
   const session = await requireSession(returnPath)
   const db = dbAs(session.accessToken)
 
-  let campaign, tiers, pledges
+  let campaign, tiers, pledges, own
   try {
     campaign = await getCampaignBySlug(db, slug)
     if (!campaign || !isPublicStatus(campaign.status)) notFound()
     if (campaign.type !== "back") redirect(`/campaigns/${slug}`)
-    ;[tiers, pledges] = await Promise.all([
+    ;[tiers, pledges, own] = await Promise.all([
       listPublicTiers(db, campaign.id),
       ownPledgesOnCampaign(db, session.user.id, campaign.id),
+      organizesCampaign(db, campaign.id, session.user.id),
     ])
   } catch (error) {
     if (isSessionRejected(error)) redirect(`/auth/login?return_path=${encodeURIComponent(returnPath)}`)
@@ -119,7 +120,14 @@ export default async function PledgePage({
         </div>
       )}
 
-      {accepting && !later ? (
+      {own ? (
+        <div className="card p-6 text-sm text-gray-700">
+          Đây là dự án của bạn nên bạn không cam kết ủng hộ được.{" "}
+          <Link href={`/campaigns/${campaign.slug}`} className="font-medium text-brand-600">
+            Về trang dự án
+          </Link>
+        </div>
+      ) : accepting && !later ? (
         <PledgeForm
           action={savePledge.bind(null, campaign.id, open?.id ?? null)}
           changing={!!open}

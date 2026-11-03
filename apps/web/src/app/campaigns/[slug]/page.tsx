@@ -28,6 +28,7 @@ import { privateCoverUrl, publicCoverUrl } from "@/lib/cover-urls"
 import { getMoneyTotals, raisedAmount, statementHref } from "@/lib/statement"
 import { dbAs, dbService } from "@/lib/supabase"
 import { acceptsDonations, paymentAccount } from "@/server/contributions"
+import { organizesCampaign } from "@/server/pledges"
 
 import { DonateForm } from "./DonateForm"
 
@@ -90,6 +91,9 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
     preview ? Promise.resolve([]) : listPublicAccountChanges(dbAs(), campaign.id).catch(() => []),
   ])
   const canDonate = donationsOpen && account !== null
+  // The creator cannot back their own project (the database refuses it too).
+  const ownProject =
+    pledgesOpen && session ? await organizesCampaign(dbAs(session.accessToken), campaign.id, session.user.id) : false
   const closedNote = preview
     ? `Give sắp mở nhận ${isGive ? "ủng hộ" : "cam kết"}. Tiền sẽ đi thẳng vào tài khoản nhận của chiến dịch.`
     : !isGive
@@ -238,7 +242,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             </dl>
             {canDonate ? (
               <DonateForm campaignId={campaign.id} defaultName={session?.user.name ?? ""} signedIn={!!session} />
-            ) : pledgesOpen ? (
+            ) : pledgesOpen && !ownProject ? (
               <>
                 <Link href={`/campaigns/${campaign.slug}/pledge`} className="btn-primary block w-full text-center">
                   Ủng hộ dự án
@@ -248,9 +252,11 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             ) : (
               <>
                 <button type="button" disabled className="btn-primary w-full">
-                  {isGive ? "Ủng hộ" : "Đồng hành cùng dự án"}
+                  {isGive ? "Ủng hộ" : "Ủng hộ dự án"}
                 </button>
-                <p className="text-center text-xs text-gray-500">{closedNote}</p>
+                <p className="text-center text-xs text-gray-500">
+                  {ownProject ? "Đây là dự án của bạn nên bạn không cam kết ủng hộ được." : closedNote}
+                </p>
               </>
             )}
             {!isGive && (

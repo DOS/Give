@@ -8,6 +8,8 @@ import {
   fulfillmentLabel,
   isSoldOut,
   NO_REWARD,
+  overpaid,
+  paymentWindowClosed,
   pledgeErrorMessage,
   pledgeSchema,
   pledgeStatusLabel,
@@ -113,12 +115,27 @@ describe("labels", () => {
   })
 
   it("names fulfillment and delivery months", () => {
-    expect(fulfillmentLabel("shipped")).toBe("Đã gửi quà")
-    expect(fulfillmentLabel(null)).toBeNull()
+    expect(fulfillmentLabel("shipped")).toBe("Đã gửi đi")
+    expect(fulfillmentLabel(null)).toBe("Chưa cập nhật")
     expect(deliveryMonth("2027-03-01")).toBe("Tháng 3/2027")
     expect(deliveryMonth(null)).toBeNull()
     expect(isSoldOut({ quantity_remaining: 0 })).toBe(true)
     expect(isSoldOut({ quantity_remaining: null })).toBe(false)
+  })
+})
+
+describe("payment helpers", () => {
+  it("counts what a paid pledge received beyond its amount", () => {
+    expect(overpaid({ status: "paid", intended_amount: 200_000, received_amount: 250_000 })).toBe(50_000)
+    expect(overpaid({ status: "paid", intended_amount: 200_000, received_amount: 200_000 })).toBe(0)
+    expect(overpaid({ status: "refund_due", intended_amount: 200_000, received_amount: 250_000 })).toBe(0)
+  })
+
+  it("closes the payment window at payment_due_at, before the lapse job runs", () => {
+    const now = new Date("2026-11-10T00:00:00Z")
+    expect(paymentWindowClosed({ status: "payment_due", payment_due_at: "2026-11-09T23:00:00Z" }, now)).toBe(true)
+    expect(paymentWindowClosed({ status: "partially_paid", payment_due_at: "2026-11-10T01:00:00Z" }, now)).toBe(false)
+    expect(paymentWindowClosed({ status: "paid", payment_due_at: "2026-11-09T23:00:00Z" }, now)).toBe(false)
   })
 })
 
@@ -160,5 +177,11 @@ describe("withoutReplacedPledges", () => {
       row("donation", "donation", "c", "expired"),
     ]
     expect(withoutReplacedPledges(rows).map((r) => r.id)).toEqual(["new", "alone", "donation"])
+  })
+
+  it("keeps the newest cancelled pledge of a campaign and hides older ones before a new pledge", () => {
+    const rows = [row("again", "pledge", "a", "pledged"), row("self", "pledge", "a", "cancelled")]
+    expect(withoutReplacedPledges(rows).map((r) => r.id)).toEqual(["again"])
+    expect(withoutReplacedPledges([row("self", "pledge", "a", "cancelled")]).map((r) => r.id)).toEqual(["self"])
   })
 })

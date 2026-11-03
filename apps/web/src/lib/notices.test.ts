@@ -110,6 +110,8 @@ describe("describeNotice", () => {
     )
     expect(reminder.title).toBe("Nhắc thanh toán cam kết")
     expect(reminder.body).toContain(formatVnd(100_000))
+    expect(reminder.body).toContain("đừng chuyển lại")
+    expect(due.body).not.toContain("đừng chuyển lại")
     expect(describeNotice(notice({ kind: "payment_reminder", payload: {} })).href).toBeNull()
     expect(describeNotice(notice({ kind: "payment_due", payload: { reference_code: "../x" } })).href).toBeNull()
   })
