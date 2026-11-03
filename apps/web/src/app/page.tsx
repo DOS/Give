@@ -50,7 +50,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             </h1>
             <p className="mt-4 text-lg text-body sm:mt-6">
               Ủng hộ chiến dịch từ thiện hoặc đồng hành cùng dự án sáng tạo. Tiền đi thẳng vào tài khoản nhận của chiến
-              dịch, Give chỉ ghi nhận và công khai mọi giao dịch.
+              dịch; Give đối chiếu sao kê của tài khoản đó và công khai từng khoản vào, ra.
             </p>
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3">
               <ButtonLink href="/campaigns" size="lg">
@@ -76,7 +76,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </section>
       ) : (
         <>
-          <CampaignGrid id="dang-quan-tam" title="Đang được quan tâm" campaigns={trending} totals={totals} />
+          <CampaignGrid id="sap-dat-muc-tieu" title="Sắp đạt mục tiêu" campaigns={trending} totals={totals} />
           <CampaignGrid
             id="moi"
             title="Chiến dịch mới"
@@ -99,8 +99,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               title="Từ thiện"
               points={[
                 "Chọn số tiền bạn muốn góp và chuyển khoản bằng mã VietQR.",
-                "Tiền vào tài khoản nhận của chiến dịch ngay khi bạn chuyển.",
-                "Người tổ chức giải trình từng khoản chi, kèm chứng từ.",
+                "Tiền chuyển thẳng vào tài khoản nhận của chiến dịch, không qua Give.",
+                "Người tổ chức phải giải trình từng khoản chi; khoản chưa giải trình được đánh dấu công khai.",
               ]}
               links={categoriesFor(categories, "give").map((c) => ({
                 href: discoveryHref({ type: "give", category: c.slug }),
@@ -139,7 +139,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               Mã VietQR trỏ tới tài khoản ngân hàng đã xác minh của chiến dịch, không qua tài khoản của Give.
             </TrustPoint>
             <TrustPoint icon={<LedgerIcon width={24} height={24} />} title="Sao kê công khai">
-              Mọi khoản vào và ra của tài khoản đó hiện trên trang sao kê, ai cũng xem được.
+              Give đối chiếu sao kê của tài khoản nhận và đưa từng khoản vào, ra lên trang sao kê để ai cũng xem được.
             </TrustPoint>
             <TrustPoint icon={<ShieldIcon width={24} height={24} />} title="Tài khoản nhận đã xác minh">
               Give kiểm tra tài khoản ngân hàng thuộc về người tổ chức trước khi chiến dịch được nhận tiền.
@@ -153,14 +153,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           <div className="max-w-xl">
             <h2 className="text-2xl font-bold text-white">Bạn có một việc tốt hay một ý tưởng cần gây quỹ?</h2>
             <p className="mt-2 text-brand-100">
-              Viết câu chuyện, liên kết tài khoản ngân hàng của bạn và bắt đầu nhận ủng hộ khi chiến dịch được duyệt.
+              Viết câu chuyện, đăng ký tài khoản nhận của bạn và bắt đầu nhận ủng hộ khi chiến dịch được duyệt.
             </p>
           </div>
           <ButtonLink
             href="/start"
             variant="secondary"
             size="lg"
-            className="shrink-0 border-white bg-white hover:bg-brand-50"
+            className="shrink-0 border-white bg-white hover:bg-brand-50 focus-visible:outline-white"
           >
             <GiftIcon width={20} height={20} />
             Tạo chiến dịch

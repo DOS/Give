@@ -43,7 +43,7 @@ export default async function CampaignsPage({
     <div className="container-page py-10 sm:py-12">
       <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Khám phá chiến dịch</h1>
       <p className="mt-2 max-w-2xl text-lg text-body">
-        Chiến dịch đang gây quỹ, mới duyệt trước. Lọc theo hình thức hoặc danh mục.
+        Chiến dịch mới được duyệt hiện trước. Lọc theo hình thức hoặc danh mục.
       </p>
 
       <form action="/campaigns" method="get" className="mt-6 flex max-w-2xl gap-2" role="search">

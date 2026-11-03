@@ -56,7 +56,8 @@ export function MoneyRow({
     <div className="flex flex-wrap items-baseline gap-x-2 py-1.5">
       <dt
         className={clsx(
-          "flex min-w-0 flex-1 items-baseline gap-2 after:min-w-4 after:flex-1 after:translate-y-[-0.25em] after:border-b after:border-dotted after:border-gray-300 after:content-['']",
+          // Grows but never shrinks: a long label pushes the amount to its own line instead of wrapping.
+          "flex flex-[1_0_auto] items-baseline gap-2 after:min-w-4 after:flex-1 after:translate-y-[-0.25em] after:border-b after:border-dotted after:border-gray-300 after:content-['']",
           strong ? "font-semibold text-ink" : "text-body"
         )}
       >
@@ -64,10 +65,10 @@ export function MoneyRow({
       </dt>
       <dd
         className={clsx(
-          "shrink-0 tabular-nums",
-          strong ? "text-lg font-bold text-ink" : "font-semibold text-ink",
-          tone === "warn" && "text-amber-800",
-          tone === "muted" && "text-muted"
+          // One colour class only: Tailwind's order, not this list's, decides which of two wins.
+          "ml-auto shrink-0 tabular-nums",
+          strong ? "text-lg font-bold" : "font-semibold",
+          tone === "warn" ? "text-amber-800" : tone === "muted" ? "text-muted" : "text-ink"
         )}
         data-figure={figure}
       >

@@ -41,8 +41,8 @@ export function SiteFooter() {
         <div className="space-y-3">
           <Logo />
           <p className="max-w-xs text-body">
-            Give không giữ tiền: tiền ủng hộ đi thẳng vào tài khoản nhận của từng chiến dịch, và mọi giao dịch đều có
-            sao kê công khai.
+            Give không giữ tiền: tiền ủng hộ đi thẳng vào tài khoản nhận của từng chiến dịch, và sao kê của tài khoản đó
+            được công khai.
           </p>
         </div>
         {SECTIONS.map((section) => (

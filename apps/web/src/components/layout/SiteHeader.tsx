@@ -70,7 +70,7 @@ export function SiteHeader({ session, unread }: { session: Session | null; unrea
         href="#main"
         className="sr-only z-50 rounded bg-white px-4 py-2 font-medium text-ink focus:not-sr-only focus:absolute focus:top-2 focus:left-2"
       >
-        Bỏ qua, tới nội dung chính
+        Chuyển tới nội dung chính
       </a>
       <nav aria-label="Chính" className="container-page flex h-16 items-center gap-2 lg:gap-4">
         <Logo />

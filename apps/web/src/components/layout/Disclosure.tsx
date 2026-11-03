@@ -65,7 +65,14 @@ export function Disclosure({
   }, [open])
 
   return (
-    <div ref={root} className={clsx("relative", className)}>
+    <div
+      ref={root}
+      className={clsx("relative", className)}
+      // Tabbing out of the menu closes it, so focus never sits under an open panel.
+      onBlur={(event) => {
+        if (open && event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setOpen(false)
+      }}
+    >
       <button
         ref={trigger}
         type="button"
@@ -77,7 +84,17 @@ export function Disclosure({
       >
         {open ? (openButton ?? button) : button}
       </button>
-      <div id={id} hidden={!open} className={panelClassName}>
+      <div
+        id={id}
+        hidden={!open}
+        className={panelClassName}
+        // A link or a search inside closes the panel even when only the query
+        // string changes (the pathname check above would miss that).
+        onClick={(event) => {
+          if ((event.target as Element).closest("a")) setOpen(false)
+        }}
+        onSubmit={() => setOpen(false)}
+      >
         {children}
       </div>
     </div>

@@ -91,9 +91,7 @@ export default async function StatementPage({
           {campaign.title}
         </Link>
       </p>
-      <h1 className="mt-1 text-3xl font-bold tracking-tight">
-        {filter === "in" ? (campaign.type === "give" ? "Người ủng hộ" : "Người đồng hành") : "Sao kê chiến dịch"}
-      </h1>
+      <h1 className="mt-1 text-3xl font-bold tracking-tight">Sao kê chiến dịch</h1>
       <TabNav
         label="Nội dung chiến dịch"
         className="mt-6"
@@ -104,7 +102,6 @@ export default async function StatementPage({
             href: statementHref(campaign.slug, "in"),
             label: campaign.type === "give" ? "Người ủng hộ" : "Người đồng hành",
             current: filter === "in",
-            count: campaign.type === "give" ? totals.supporters_count : totals.backers_count,
           },
         ]}
       />

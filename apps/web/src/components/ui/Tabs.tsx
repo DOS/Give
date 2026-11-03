@@ -24,7 +24,7 @@ export function TabNav({ label, items, className }: { label: string; items: read
               href={item.href}
               aria-current={item.current ? "page" : undefined}
               className={clsx(
-                "inline-flex min-h-12 items-center gap-2 border-b-2 px-2 text-base font-medium sm:px-0",
+                "inline-flex min-h-12 items-center gap-2 border-b-2 px-2 text-base font-medium focus-visible:-outline-offset-2 sm:px-0",
                 item.current
                   ? "border-brand-600 text-ink"
                   : "border-transparent text-muted hover:border-gray-300 hover:text-ink"

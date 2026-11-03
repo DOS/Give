@@ -43,8 +43,8 @@ export function RewardTiers({
           return (
             <li key={tier.id} className={clsx("space-y-4 card p-5", soldOut && "bg-surface")}>
               <div className="space-y-1">
-                <p className="text-lg font-bold text-ink tabular-nums">{minAmountLabel(tier.min_amount)}</p>
                 <h3 className="font-semibold break-words">{tier.title}</h3>
+                <p className="text-lg font-bold text-ink tabular-nums">{minAmountLabel(tier.min_amount)}</p>
               </div>
               {tier.description && <p className="break-words whitespace-pre-line text-body">{tier.description}</p>}
               <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-line pt-4">

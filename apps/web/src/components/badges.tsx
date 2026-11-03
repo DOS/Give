@@ -10,7 +10,9 @@ import {
 } from "@/lib/campaigns"
 import { ACCOUNT_STATUS_LABELS, type AccountStatus } from "@/lib/receiving-accounts"
 
-/** "Từ thiện" for give (heart), "Dự án" for back (spark). */
+/** "Từ thiện" for give (heart), "Dự án sáng tạo" for back (spark), as the home page and discovery name them. */
+const TYPE_BADGE_LABELS: Record<CampaignType, string> = { give: TYPE_LABELS.give, back: "Dự án sáng tạo" }
+
 export function TypeBadge({ type, className }: { type: CampaignType; className?: string }) {
   return (
     <Badge
@@ -18,7 +20,7 @@ export function TypeBadge({ type, className }: { type: CampaignType; className?:
       icon={type === "give" ? <HeartIcon width={16} height={16} /> : <SparkIcon width={16} height={16} />}
       className={className}
     >
-      {TYPE_LABELS[type]}
+      {TYPE_BADGE_LABELS[type]}
     </Badge>
   )
 }

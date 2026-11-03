@@ -11,14 +11,16 @@ const noSubscribe = () => () => {}
  * Share a campaign: the phone's share sheet where there is one, otherwise
  * the link is copied. Facebook gets its own link because it is how most
  * Vietnamese campaigns spread. `path` is the campaign's own path; the full
- * URL uses the page's own origin (previews included).
+ * URL uses the site origin, or the page's own on previews.
  */
-export function ShareButtons({ path, title }: { path: string; title: string }) {
+export function ShareButtons({ path, title, origin: siteOrigin }: { path: string; title: string; origin?: string }) {
   const [status, setStatus] = useState<string | null>(null)
+  // The canonical origin when the server knows it (so the Facebook link works
+  // before hydration), else this page's own origin (previews).
   const origin = useSyncExternalStore(
     noSubscribe,
-    () => window.location.origin,
-    () => ""
+    () => siteOrigin ?? window.location.origin,
+    () => siteOrigin ?? ""
   )
   const url = `${origin}${path}`
 
@@ -58,7 +60,7 @@ export function ShareButtons({ path, title }: { path: string; title: string }) {
           <span className="sr-only"> (mở thẻ mới)</span>
         </a>
       </div>
-      <p className="min-h-6 text-center text-sm text-muted" aria-live="polite">
+      <p className="text-center text-sm text-muted" aria-live="polite">
         {status}
       </p>
     </div>

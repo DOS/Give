@@ -57,7 +57,7 @@ export function CampaignCard({
         <Heading className="line-clamp-2 text-lg leading-snug font-semibold">
           <Link
             href={`/campaigns/${campaign.slug}`}
-            className="group-hover:underline group-hover:underline-offset-4 after:absolute after:inset-0 after:content-['']"
+            className="group-hover:underline group-hover:underline-offset-4 after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-brand-600"
           >
             {campaign.title}
           </Link>
@@ -70,7 +70,7 @@ export function CampaignCard({
               <span className="figure">{formatVnd(raised)}</span>{" "}
               <span className="text-muted">{isGive ? "đã nhận" : "đã cam kết"}</span>
             </span>
-            <span className={clsx("text-muted tabular-nums", percent >= 100 && "font-semibold text-brand-700")}>
+            <span className={clsx("tabular-nums", percent >= 100 ? "font-semibold text-brand-700" : "text-muted")}>
               {percent}%
             </span>
           </p>
