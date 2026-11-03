@@ -69,11 +69,10 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
     listMilestones(db, campaign.id),
     listAllUpdates(db, campaign.id),
     isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
-    // A failed account read shows a notice in its section instead of failing the
-    // whole editor; submitForReview still checks the account on the server.
-    isGive
-      ? loadEditorAccounts(db, session.user.id, campaign.id, campaign.status).catch(() => null)
-      : Promise.resolve(null),
+    // Both types need a usable account before review (DOS/Give#85). A failed
+    // account read shows a notice in its section instead of failing the whole
+    // editor; submitForReview still checks the account on the server.
+    loadEditorAccounts(db, session.user.id, campaign.id, campaign.status, campaign.type).catch(() => null),
     // Reward tiers of a back campaign (DOS/Give#83); a failed read degrades its section only.
     isGive ? Promise.resolve(null) : listCampaignTiers(db, campaign.id).catch(() => null),
   ])
@@ -485,7 +484,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
         </section>
       )}
 
-      {isGive && !accounts && (
+      {!accounts && (
         <section id="receiving-account" className="card p-6">
           <h2 className="text-lg font-semibold">Tài khoản nhận tiền</h2>
           <p className="text-sm text-red-700">
@@ -518,25 +517,34 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             </p>
             {submitBlocked && (
               <p role="alert" className="mb-3 rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Chưa gửi duyệt được: chiến dịch từ thiện cần gắn một tài khoản nhận tiền đã xác minh, đứng tên bạn.{" "}
-                {accounts?.bound
-                  ? accounts.boundHasTransactions
-                    ? "Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: gửi yêu cầu đổi tài khoản trong mục "
-                    : "Tài khoản đang gắn không còn dùng được: nhả nó trong mục "
-                  : "Chiến dịch này chưa gắn tài khoản: chọn tài khoản trong mục "}
-                <a href="#receiving-account" className="underline">
-                  Tài khoản nhận tiền
-                </a>{" "}
-                {accounts?.bound
-                  ? accounts.boundHasTransactions
-                    ? "ở trên để bộ phận tài chính duyệt"
-                    : "ở trên rồi gắn tài khoản khác"
-                  : "ở trên"}
-                , hoặc khai báo và xác minh tài khoản tại trang{" "}
-                <Link href="/me/accounts" className="font-medium underline">
-                  Tài khoản nhận tiền
-                </Link>
-                .
+                Chưa gửi duyệt được: chiến dịch cần gắn một tài khoản nhận tiền đã xác minh, đứng tên bạn.{" "}
+                {accounts?.bound && accounts.boundHasTransactions && !isGive ? (
+                  <>
+                    Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: hãy liên hệ đội ngũ
+                    Give để được hỗ trợ.
+                  </>
+                ) : (
+                  <>
+                    {accounts?.bound
+                      ? accounts.boundHasTransactions
+                        ? "Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: gửi yêu cầu đổi tài khoản trong mục "
+                        : "Tài khoản đang gắn không còn dùng được: nhả nó trong mục "
+                      : "Chiến dịch này chưa gắn tài khoản: chọn tài khoản trong mục "}
+                    <a href="#receiving-account" className="underline">
+                      Tài khoản nhận tiền
+                    </a>{" "}
+                    {accounts?.bound
+                      ? accounts.boundHasTransactions
+                        ? "ở trên để bộ phận tài chính duyệt"
+                        : "ở trên rồi gắn tài khoản khác"
+                      : "ở trên"}
+                    , hoặc khai báo và xác minh tài khoản tại trang{" "}
+                    <Link href="/me/accounts" className="font-medium underline">
+                      Tài khoản nhận tiền
+                    </Link>
+                    .
+                  </>
+                )}
               </p>
             )}
             <SubmitButton disabled={Boolean(submitBlocked)}>Gửi duyệt</SubmitButton>
@@ -575,9 +583,12 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
 }
 
 const BIND_CONFIRM =
-  "Gắn tài khoản này với chiến dịch? Sau khi gửi duyệt, tài khoản chỉ được nhả khi chiến dịch đã xong hẳn phần tiền, hoặc khi chiến dịch từ thiện được yêu cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào."
+  "Gắn tài khoản này với chiến dịch? Sau khi gửi duyệt, tài khoản chỉ được nhả khi chiến dịch đã xong hẳn phần tiền, hoặc khi chiến dịch được yêu cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào."
 
-/** The give campaign's receiving account: the bound one with a release, or a picker (DOS/Give#32). */
+/**
+ * The campaign's receiving account: the bound one with a release, or a picker
+ * (DOS/Give#32; back campaigns too since DOS/Give#85).
+ */
 function ReceivingAccountSection({
   campaignId,
   status,
@@ -597,8 +608,11 @@ function ReceivingAccountSection({
       <div>
         <h2 className="text-lg font-semibold">Tài khoản nhận tiền</h2>
         <p className="text-sm text-gray-600">
-          Người ủng hộ chuyển khoản thẳng vào tài khoản này qua mã VietQR. Chiến dịch từ thiện cần gắn một tài khoản đã
-          xác minh, đứng tên bạn, trước khi gửi duyệt. Khai báo và xác minh tài khoản tại trang{" "}
+          {type === "give"
+            ? "Người ủng hộ chuyển khoản thẳng vào tài khoản này qua mã VietQR."
+            : "Khi dự án gây quỹ thành công, người ủng hộ thanh toán cam kết thẳng vào tài khoản này qua mã VietQR."}{" "}
+          Chiến dịch cần gắn một tài khoản đã xác minh, đứng tên bạn, trước khi gửi duyệt. Khai báo và xác minh tài
+          khoản tại trang{" "}
           <Link href="/me/accounts" className="font-medium text-brand-600">
             Tài khoản nhận tiền
           </Link>
@@ -621,6 +635,9 @@ function ReceivingAccountSection({
           {boundUnusable && (
             <p className="text-sm text-amber-800">
               Tài khoản đang gắn tạm không dùng được: {boundUnusable} Chiến dịch không nhận được tiền qua tài khoản này.
+              {type === "back" && (status === "live" || status === "suspended")
+                ? " Dự án có quà tặng chưa đổi được tài khoản khi đang gây quỹ hoặc tạm dừng: hãy liên hệ đội ngũ Give."
+                : ""}
             </p>
           )}
           {releasable ? (
@@ -637,7 +654,9 @@ function ReceivingAccountSection({
           ) : (
             <p className="text-sm text-gray-600">
               {boundHasTransactions && status === "changes_requested"
-                ? "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy đề nghị đổi tài khoản bên dưới."
+                ? type === "give"
+                  ? "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy đề nghị đổi tài khoản bên dưới."
+                  : "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give."
                 : "Khi chiến dịch đang chờ duyệt, đã duyệt hoặc đang chạy, tài khoản không nhả được; tài khoản được nhả khi chiến dịch đã xong hẳn phần tiền."}
             </p>
           )}
@@ -795,7 +814,7 @@ function StatusNotice({
 }: {
   status: string
   reviewNote: string | null
-  /** Why a give campaign has no usable receiving account (an approved one does not open), or null. */
+  /** Why the campaign has no usable receiving account (an approved one does not open), or null. */
   accountBlock: "no_account" | "unusable" | null
   ended: boolean
 }) {

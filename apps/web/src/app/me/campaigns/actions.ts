@@ -249,17 +249,15 @@ export async function submitForReview(
   if (!session) return fail(SIGNED_OUT)
   const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
-  // A charity campaign needs a usable bound account before review (DOS/Give#32);
-  // give.transition_campaign re-checks it under its locks (DOS/Give#38).
-  if (campaign.type === "give") {
-    let problem
-    try {
-      problem = await checkSubmitAccount(dbAs(session.accessToken), campaign.id, session.user.id)
-    } catch (error) {
-      return fail(dbErrorMessage(error as { message?: string; code?: string }))
-    }
-    if (problem) return fail(problem)
+  // Every campaign needs a usable bound account before review (give: DOS/Give#32,
+  // back: DOS/Give#85); give.transition_campaign re-checks it under its locks.
+  let problem
+  try {
+    problem = await checkSubmitAccount(dbAs(session.accessToken), campaign.id, session.user.id, campaign.type)
+  } catch (error) {
+    return fail(dbErrorMessage(error as { message?: string; code?: string }))
   }
+  if (problem) return fail(problem)
   const failed = await transition(session, campaign, "in_review")
   if (failed) return failed
   refresh(campaign)

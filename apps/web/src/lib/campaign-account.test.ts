@@ -69,6 +69,11 @@ describe("submitAccountProblem", () => {
   it("asks for a swap, not a release, when the unusable account holds money history (DOS/Give#77)", () => {
     const text = submitAccountProblem(account("a", { verification_status: "disabled" }), organizer, true)
     expect(text).toBe(submitUnusableAccount("Tài khoản chưa được xác minh.", true))
+    // A back campaign has no swap: its organizer contacts Give (DOS/Give#85).
+    const back = submitAccountProblem(account("a", { verification_status: "disabled" }), organizer, true, false)
+    expect(back).toBe(submitUnusableAccount("Tài khoản chưa được xác minh.", true, false))
+    expect(back).toContain("liên hệ đội ngũ Give")
+    expect(back).not.toContain("đổi tài khoản")
     expect(text).toContain("yêu cầu đổi tài khoản")
     expect(text).not.toContain("Hãy nhả")
   })
@@ -141,7 +146,7 @@ describe("loadEditorAccounts", () => {
       if (call.target === "campaigns") return { data: [{ id: OTHER, slug: "khac", title: "Quỹ khác", status: "live" }] }
       return undefined
     }, calls)
-    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft")
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft", "give")
     expect(view.bound?.id).toBe("here")
     expect(view.boundUnusable).toBe("Tài khoản chưa được xác minh.")
     expect(view.submitBlocked).toBe(submitUnusableAccount("Tài khoản chưa được xác minh."))
@@ -164,7 +169,7 @@ describe("loadEditorAccounts", () => {
           ? { data: organizer }
           : undefined
     )
-    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft")
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft", "give")
     expect(view.submitBlocked).toBeNull()
     expect(view.choices).toEqual([])
     expect(view.boundHasTransactions).toBe(false)
@@ -180,7 +185,7 @@ describe("loadEditorAccounts", () => {
       if (call.target === "account_swap_requests") return { data: [{ id: "s", status: "pending" }] }
       return undefined
     }, calls)
-    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "changes_requested")
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "changes_requested", "give")
     expect(view.boundHasTransactions).toBe(true)
     expect(view.swaps.map((s) => s.id)).toEqual(["s"])
     expect(view.submitBlocked).toBe(submitUnusableAccount("Tài khoản chưa được xác minh.", true))
@@ -205,7 +210,7 @@ describe("loadEditorAccounts", () => {
       if (call.target === "organizers") return { data: organizer }
       return undefined
     }, calls)
-    await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft")
+    await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft", "give")
     expect(calls.map((c) => c.target)).not.toContain("bank_transactions")
     expect(calls.map((c) => c.target)).not.toContain("account_swap_requests")
   })
@@ -218,10 +223,40 @@ describe("loadEditorAccounts", () => {
         return { error: { code: "42P01", message: "relation does not exist" } }
       return undefined
     })
-    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "changes_requested")
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "changes_requested", "give")
     expect(view.bound?.id).toBe("here")
     expect(view.boundHasTransactions).toBe(true) // unknown history: offer the swap, not a release
     expect(view.swaps).toEqual([])
+  })
+
+  it("shows a back campaign's account and blocks its submission without one (DOS/Give#85)", async () => {
+    const db = fakeDb((call) =>
+      call.target === "receiving_accounts"
+        ? { data: [account("spare")] }
+        : call.target === "organizers"
+          ? { data: organizer }
+          : undefined
+    )
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft", "back")
+    expect(view.bound).toBeNull()
+    expect(view.submitBlocked).toBe(SUBMIT_NO_ACCOUNT)
+    expect(view.choices.map((c) => [c.account.id, c.blockedReason])).toEqual([["spare", null]])
+  })
+
+  it("never reads swaps for a back campaign, and words its money-history block without a swap", async () => {
+    const calls: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "receiving_accounts")
+        return { data: [account("here", { verification_status: "disabled", bindings: bound(CAMPAIGN) })] }
+      if (call.target === "organizers") return { data: organizer }
+      if (call.target === "bank_transactions") return { data: [{ id: "t" }] }
+      return undefined
+    }, calls)
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "changes_requested", "back")
+    expect(view.boundHasTransactions).toBe(true)
+    expect(view.swaps).toEqual([])
+    expect(calls.map((c) => c.target)).not.toContain("account_swap_requests")
+    expect(view.submitBlocked).toBe(submitUnusableAccount("Tài khoản chưa được xác minh.", true, false))
   })
 })
 

@@ -102,15 +102,17 @@ export function isBindableStatus(status: CampaignStatus): boolean {
  * to free the account: a draft at once (to change its account), an ended
  * campaign once the database's terms hold (no transaction for a draft
  * cancelled without submission; otherwise 30 days and every transaction
- * matched or explained). A give campaign sent back for changes also releases
- * at once when no transaction reached the account, so the organizer can
- * replace an account that stopped being usable (DOS/Give#38). The database
- * decides and explains a refusal.
+ * matched or explained). A campaign sent back for changes also releases at
+ * once when no transaction reached the account, so the organizer can replace
+ * an account that stopped being usable (give: DOS/Give#38, back:
+ * DOS/Give#85); that case needs the campaign's `type`, so a caller that does
+ * not know the campaign is refused. The database decides and explains a
+ * refusal.
  */
 export const RELEASE_STATUSES: readonly CampaignStatus[] = ["draft", "cancelled", "closed", "failed", "succeeded"]
 
 export function canAskRelease(status: CampaignStatus | undefined, type?: CampaignType): boolean {
-  if (status === "changes_requested") return type === "give"
+  if (status === "changes_requested") return type !== undefined
   return status !== undefined && RELEASE_STATUSES.includes(status)
 }
 

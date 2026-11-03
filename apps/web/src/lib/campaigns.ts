@@ -570,7 +570,7 @@ export interface WaitingForAccount extends ReviewItem {
 }
 
 /**
- * Approved give campaigns without a usable receiving account, which the
+ * Approved campaigns (give and, since DOS/Give#85, back) without a usable receiving account, which the
  * activation cron skips, earliest start first (moderators and admins; others
  * get none). The database picks them; the rows come from managed_campaigns.
  */

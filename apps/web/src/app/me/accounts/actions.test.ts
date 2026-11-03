@@ -306,13 +306,14 @@ describe("releaseAccount", () => {
     expect(result?.message).toContain("Giao dịch đã vào tài khoản là lịch sử tiền")
   })
 
-  it("does not ask for a back project sent back for changes", async () => {
+  it("releases the account of a back project sent back for changes too (DOS/Give#85)", async () => {
     state.userHandler = bindReads({
       acc: account({ bindings: [bound] }),
       camp: campaign({ status: "changes_requested", type: "back" }),
     })
-    expect((await releaseAccount(ACCOUNT, null, new FormData()))?.ok).toBe(false)
-    expect(state.serviceCalls).toHaveLength(0)
+    state.serviceHandler = () => ({ data: "b" })
+    expect((await releaseAccount(ACCOUNT, null, new FormData()))?.ok).toBe(true)
+    expect(state.serviceCalls.some((c) => c.target === "rpc:release_account_binding")).toBe(true)
   })
 
   it("does not ask while the campaign is in review or live", async () => {
