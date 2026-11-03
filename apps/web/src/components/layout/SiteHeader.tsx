@@ -24,7 +24,7 @@ function SearchForm({ id, className }: { id: string; className?: string }) {
           name="q"
           type="search"
           maxLength={80}
-          placeholder="Tìm chiến dịch, dự án, người tổ chức"
+          placeholder="Tìm chiến dịch, dự án"
           className="field bg-surface pl-10"
         />
       </div>
@@ -65,7 +65,7 @@ export function SiteHeader({ session, unread }: { session: Session | null; unrea
   )
 
   return (
-    <header className="sticky top-0 z-40 border-b border-line bg-white/95 backdrop-blur supports-[backdrop-filter]:bg-white/85">
+    <header className="sticky top-0 z-40 border-b border-line bg-white">
       <a
         href="#main"
         className="sr-only z-50 rounded bg-white px-4 py-2 font-medium text-ink focus:not-sr-only focus:absolute focus:top-2 focus:left-2"

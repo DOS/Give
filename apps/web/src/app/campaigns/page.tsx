@@ -96,7 +96,10 @@ export default async function CampaignsPage({
         ]}
       />
 
-      <section className="mt-8" aria-live="polite" aria-label="Kết quả">
+      <section className="mt-8" aria-live="polite" aria-labelledby="results-heading">
+        <h2 id="results-heading" className="sr-only">
+          Kết quả
+        </h2>
         {campaigns.length > 0 ? (
           <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {campaigns.map((campaign) => (
