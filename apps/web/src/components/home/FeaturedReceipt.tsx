@@ -76,20 +76,22 @@ export function FeaturedReceipt({ campaign, totals }: { campaign: PublicCampaign
             Trong đó {formatVnd(totals.other_in_amount)} không phải tiền ủng hộ, đã được Give giải trình.
           </p>
         )}
-        <div className="space-y-2">
-          {options.progress_bar !== false && <ProgressBar percent={percent} />}
-          <p className="flex flex-wrap justify-between gap-x-4 text-muted">
-            {options.progress_bar !== false && <span>{percent}% mục tiêu</span>}
-            {options.backers_count !== false && (
-              <span>
-                {people} {isGive ? "người ủng hộ" : "người đồng hành"}
-              </span>
-            )}
-            {options.time_remaining !== false && days !== null && (
-              <span>{days > 0 ? `Còn ${days} ngày` : "Đã hết hạn"}</span>
-            )}
-          </p>
-        </div>
+        {(options.progress_bar !== false || options.backers_count !== false || options.time_remaining !== false) && (
+          <div className="space-y-2">
+            {options.progress_bar !== false && <ProgressBar percent={percent} />}
+            <p className="flex flex-wrap justify-between gap-x-4 text-muted">
+              {options.progress_bar !== false && <span>{percent}% mục tiêu</span>}
+              {options.backers_count !== false && (
+                <span>
+                  {people} {isGive ? "người ủng hộ" : "người đồng hành"}
+                </span>
+              )}
+              {options.time_remaining !== false && days !== null && (
+                <span>{days > 0 ? `Còn ${days} ngày` : "Đã hết hạn"}</span>
+              )}
+            </p>
+          </div>
+        )}
         <Link href={statementHref(campaign.slug, "all")} className="inline-flex min-h-11 items-center link">
           Xem sao kê của chiến dịch
         </Link>

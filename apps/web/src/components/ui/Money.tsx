@@ -57,7 +57,7 @@ export function MoneyRow({
       <dt
         className={clsx(
           // Grows but never shrinks: a long label pushes the amount to its own line instead of wrapping.
-          "flex flex-[1_0_auto] items-baseline gap-2 after:min-w-4 after:flex-1 after:translate-y-[-0.25em] after:border-b after:border-dotted after:border-gray-300 after:content-['']",
+          "flex max-w-full flex-[1_0_auto] items-baseline gap-2 after:min-w-4 after:flex-1 after:translate-y-[-0.25em] after:border-b after:border-dotted after:border-gray-300 after:content-['']",
           strong ? "font-semibold text-ink" : "text-body"
         )}
       >
