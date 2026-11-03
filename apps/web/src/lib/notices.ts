@@ -1,5 +1,5 @@
 import type { Db } from "@/lib/campaigns"
-import { formatDate, formatVnd } from "@/lib/format"
+import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 
 /**
  * In-app notices (give.notices, DOS/Give#52): reminders and status changes
@@ -39,9 +39,21 @@ function count(payload: Notice["payload"], key: string): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : null
 }
 
-function campaignName(payload: Notice["payload"]): string {
+function campaignName(payload: Notice["payload"], noun = "chiến dịch"): string {
   const title = text(payload, "campaign_title")
-  return title ? `chiến dịch “${title}”` : "chiến dịch của bạn"
+  return title ? `${noun} “${title}”` : `${noun} của bạn`
+}
+
+function capitalize(sentence: string): string {
+  return sentence.charAt(0).toUpperCase() + sentence.slice(1)
+}
+
+/** The backer's pledge page, by the reference code in the payload. */
+function pledgeLink(payload: Notice["payload"], label: string): Pick<NoticeView, "href" | "linkLabel"> {
+  const code = text(payload, "reference_code")
+  return code && /^GV[0-9A-Z]{6,7}$/.test(code)
+    ? { href: `/me/pledges/${code}`, linkLabel: label }
+    : { href: null, linkLabel: null }
 }
 
 /** Vietnamese title, body and link of a notice, from its kind and payload. */
@@ -65,17 +77,70 @@ export function describeNotice(notice: Notice): NoticeView {
     }
     case "payment_due":
     case "payment_reminder": {
-      const amount = count(p, "amount")
-      const due = text(p, "due_at")
-      const code = text(p, "reference_code")
-      let body = `Cam kết ủng hộ ${campaignName(p)}`
-      if (amount) body += ` (${formatVnd(amount)})`
-      body += due ? ` cần được thanh toán trước ngày ${formatDate(due)}.` : " đã đến lúc thanh toán."
+      // Payload of give.pledge_notice_payload (DOS/Give#30); reminders add amount_due and day.
+      const intended = count(p, "intended_amount")
+      const received = count(p, "received_amount") ?? 0
+      const due = count(p, "amount_due") ?? (intended !== null ? Math.max(0, intended - received) : null)
+      const dueAt = text(p, "payment_due_at")
+      let body =
+        notice.kind === "payment_due"
+          ? `${campaignName(p, "dự án")} đã đạt mục tiêu. Hãy thanh toán cam kết của bạn`
+          : `Cam kết ủng hộ ${campaignName(p, "dự án")} chưa được thanh toán đủ. Hãy thanh toán`
+      if (due) body += ` ${formatVnd(due)}`
+      body += dueAt ? ` trước ${formatDateTime(dueAt)}.` : "."
+      body += " Quá hạn mà chưa trả đủ, cam kết hết hiệu lực và suất quà được nhả."
       return {
         title: notice.kind === "payment_due" ? "Đến hạn thanh toán cam kết" : "Nhắc thanh toán cam kết",
-        body,
-        href: code ? `/donations/${encodeURIComponent(code)}` : null,
-        linkLabel: code ? "Xem cách chuyển khoản" : null,
+        body: capitalize(body),
+        ...pledgeLink(p, "Thanh toán ngay"),
+      }
+    }
+    case "pledge_cancelled": {
+      const reason = text(p, "reason")
+      const why =
+        reason === "campaign_failed"
+          ? "không đạt mục tiêu khi kết thúc"
+          : reason === "campaign_cancelled"
+            ? "đã bị hủy"
+            : "đã dừng"
+      return {
+        title: "Cam kết đã được hủy",
+        body: capitalize(`${campaignName(p, "dự án")} ${why}, nên cam kết của bạn được hủy. Bạn không phải trả tiền.`),
+        ...pledgeLink(p, "Xem cam kết"),
+      }
+    }
+    case "pledge_lapsed":
+      return {
+        title: "Cam kết đã quá hạn thanh toán",
+        body: capitalize(
+          `Cam kết ủng hộ ${campaignName(p, "dự án")} chưa được thanh toán trước hạn nên đã hết hiệu lực, và suất quà được nhả cho người khác.`
+        ),
+        ...pledgeLink(p, "Xem cam kết"),
+      }
+    case "refund_due": {
+      const received = count(p, "received_amount")
+      const by = text(p, "refund_due_at")
+      let body = `Cam kết ủng hộ ${campaignName(p, "dự án")} chưa được thanh toán đủ trước hạn nên đã hết hiệu lực. Người tạo dự án phải hoàn lại`
+      body += received ? ` ${formatVnd(received)} bạn đã chuyển` : " số tiền bạn đã chuyển"
+      body += by ? ` trước ${formatDate(by)}.` : "."
+      return { title: "Bạn sẽ được hoàn tiền", body: capitalize(body), ...pledgeLink(p, "Xem cam kết") }
+    }
+    case "refund_owed": {
+      const received = count(p, "received_amount")
+      const by = text(p, "refund_due_at")
+      const code = text(p, "reference_code")
+      let body = `Một người ủng hộ ${campaignName(p, "dự án")}`
+      if (code) body += ` (mã ${code})`
+      body += " chưa thanh toán đủ trước hạn. Bạn cần hoàn lại"
+      body += received ? ` ${formatVnd(received)}` : " số tiền họ đã chuyển"
+      body += by ? ` trước ${formatDate(by)}` : ""
+      body +=
+        ", rồi giải trình khoản chuyển đó là hoàn tiền. Trang dự án công khai số tiền hoàn còn nợ cho tới khi hoàn xong."
+      return {
+        title: "Cần hoàn tiền cho người ủng hộ",
+        body: capitalize(body),
+        href: notice.campaign_id ? `/me/campaigns/${notice.campaign_id}/disbursements` : null,
+        linkLabel: notice.campaign_id ? "Giải trình hoàn tiền" : null,
       }
     }
     case "account_verified":

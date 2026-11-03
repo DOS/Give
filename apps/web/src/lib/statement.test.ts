@@ -50,6 +50,8 @@ const viewRow = {
   unexplained_out_count: 1,
   supporters_count: 3,
   other_in_amount: "250000",
+  refund_owed_amount: "40000",
+  backers_count: 2,
 }
 
 function selected(call: Call | undefined): string {
@@ -79,6 +81,8 @@ describe("money totals", () => {
       unexplained_out_count: 1,
       supporters_count: 3,
       other_in_amount: 250_000,
+      refund_owed_amount: 40_000,
+      backers_count: 2,
     })
   })
 
