@@ -31,12 +31,16 @@ import {
 import { formatDate, formatDateTime, formatVnd, toVietnamLocalInput } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { privateCoverUrl } from "@/lib/cover-urls"
+import { canUpdateFulfillment } from "@/lib/fulfillment"
 import { canAskRelease, isBindableStatus } from "@/lib/receiving-accounts"
+import { listCampaignTiers } from "@/lib/reward-tiers"
 import { getMoneyTotals } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
 import { bindAccount, releaseAccount } from "../../accounts/actions"
 import { cancelAccountSwap, requestAccountSwap } from "../swap-actions"
+
+import { FulfillmentLink, RewardTiersSection } from "./RewardTiersSection"
 
 import {
   addMilestone,
@@ -60,7 +64,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   if (!campaign || campaign.organizer_id !== session.user.id) notFound()
 
   const isGive = campaign.type === "give"
-  const [categories, milestones, updates, totals, accounts] = await Promise.all([
+  const [categories, milestones, updates, totals, accounts, tiers] = await Promise.all([
     listCategories(db),
     listMilestones(db, campaign.id),
     listAllUpdates(db, campaign.id),
@@ -70,6 +74,8 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
     isGive
       ? loadEditorAccounts(db, session.user.id, campaign.id, campaign.status).catch(() => null)
       : Promise.resolve(null),
+    // Reward tiers of a back campaign (DOS/Give#83); a failed read degrades its section only.
+    isGive ? Promise.resolve(null) : listCampaignTiers(db, campaign.id).catch(() => null),
   ])
   const editable = isEditableStatus(campaign.status)
   const submitBlocked = accounts?.submitBlocked ?? null
@@ -97,6 +103,8 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
         accountBlock={openingBlock(accounts)}
         ended={campaign.ends_at !== null && new Date(campaign.ends_at) <= new Date()}
       />
+
+      {!isGive && canUpdateFulfillment(campaign) && <FulfillmentLink campaignId={campaign.id} />}
 
       {(totals || !isEditableStatus(campaign.status)) && (
         <section className="flex flex-wrap items-center justify-between gap-3 card p-6">
@@ -431,6 +439,15 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
           </ActionForm>
         )}
       </section>
+
+      {!isGive && (
+        <RewardTiersSection
+          campaignId={campaign.id}
+          status={campaign.status}
+          minContribution={campaign.min_contribution}
+          tiers={tiers}
+        />
+      )}
 
       {showUpdates && (
         <section className="card p-6">

@@ -68,22 +68,8 @@ export function awaitsPayment(status: string): boolean {
   return status === "payment_due" || status === "partially_paid"
 }
 
-export type FulfillmentStatus = "pending" | "in_progress" | "shipped" | "delivered" | "issue"
-
-// Same words as the creator's fulfillment page (DOS/Give#83, lib/fulfillment.ts).
-export const FULFILLMENT_LABELS: Record<FulfillmentStatus, string> = {
-  pending: "Chờ chuẩn bị",
-  in_progress: "Đang chuẩn bị",
-  shipped: "Đã gửi đi",
-  delivered: "Đã giao",
-  issue: "Có vấn đề",
-}
-
-/** null = the creator has not reported delivery yet. */
-export function fulfillmentLabel(status: string | null | undefined): string {
-  if (!status) return "Chưa cập nhật"
-  return FULFILLMENT_LABELS[status as FulfillmentStatus] ?? status
-}
+// Delivery labels are shared with the creator's fulfillment page (DOS/Give#83).
+export { FULFILLMENT_LABELS, fulfillmentLabel, type FulfillmentStatus } from "./fulfillment"
 
 /** "Tháng 3/2027" for a tier's estimated_delivery (always the first day of a month). */
 export function deliveryMonth(date: string | null | undefined): string | null {
