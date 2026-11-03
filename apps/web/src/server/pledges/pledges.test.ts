@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest"
 
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
-import { listPublicTiers, organizesCampaign, ownPledgeByCode, PLEDGE_COLUMNS, pledgePayment } from "./index"
+import {
+  listPublicTiers,
+  organizesCampaign,
+  ownPledgeByCode,
+  PLEDGE_COLUMNS,
+  pledgeBalance,
+  pledgePayment,
+} from "./index"
 
 const USER = "11111111-1111-4111-8111-111111111111"
 const PLEDGE = "33333333-3333-4333-8333-333333333333"
@@ -49,6 +56,33 @@ describe("pledgePayment", () => {
     expect(await pledgePayment(fakeDb(() => ({ data: null })) as never, PLEDGE, USER)).toBeNull()
     await expect(
       pledgePayment(fakeDb(() => ({ error: { code: "42501", message: "denied" } })) as never, PLEDGE, USER)
+    ).rejects.toMatchObject({ code: "42501" })
+  })
+})
+
+describe("pledgeBalance", () => {
+  it("asks give.pledge_balance for the backer's own pledge and converts the amounts", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: { received_amount: "120000", refunded_amount: 50_000, amount_due: 0, refund_owed_amount: "70000" },
+      }),
+      calls
+    )
+    expect(await pledgeBalance(db as never, PLEDGE, USER)).toEqual({
+      received_amount: 120_000,
+      refunded_amount: 50_000,
+      amount_due: 0,
+      refund_owed_amount: 70_000,
+    })
+    expect(calls[0].target).toBe("rpc:pledge_balance")
+    expect(op(calls[0], "args")).toEqual([{ p_contribution_id: PLEDGE, p_user_id: USER }])
+  })
+
+  it("returns null for someone else's pledge, and throws database errors", async () => {
+    expect(await pledgeBalance(fakeDb(() => ({ data: null })) as never, PLEDGE, USER)).toBeNull()
+    await expect(
+      pledgeBalance(fakeDb(() => ({ error: { code: "42501", message: "denied" } })) as never, PLEDGE, USER)
     ).rejects.toMatchObject({ code: "42501" })
   })
 })

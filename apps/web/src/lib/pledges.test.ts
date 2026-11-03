@@ -9,6 +9,7 @@ import {
   isSoldOut,
   NO_REWARD,
   overpaid,
+  paymentView,
   paymentWindowClosed,
   pledgeErrorMessage,
   pledgeSchema,
@@ -129,6 +130,19 @@ describe("payment helpers", () => {
     expect(overpaid({ status: "paid", intended_amount: 200_000, received_amount: 250_000 })).toBe(50_000)
     expect(overpaid({ status: "paid", intended_amount: 200_000, received_amount: 200_000 })).toBe(0)
     expect(overpaid({ status: "refund_due", intended_amount: 200_000, received_amount: 250_000 })).toBe(0)
+  })
+
+  it("hides the payment page while payment requests are stopped (DOS/Give#89)", () => {
+    const isCode = (code: string) => code.startsWith("GV")
+    const account = { bank_bin: "970436", account_number: "1", account_name: "A" }
+    const payment = { amount_due: 100_000, reference_code: "GVAB12CD", account }
+    expect(paymentView(true, payment, isCode)).toBe("stopped")
+    expect(paymentView(true, null, isCode)).toBe("stopped")
+    expect(paymentView(false, payment, isCode)).toBe("qr")
+    expect(paymentView(false, null, isCode)).toBe("closed")
+    expect(paymentView(false, { ...payment, amount_due: 0 }, isCode)).toBe("nothing_due")
+    expect(paymentView(false, { ...payment, account: null }, isCode)).toBe("no_account")
+    expect(paymentView(false, { ...payment, reference_code: "XX" }, isCode)).toBe("no_account")
   })
 
   it("closes the payment window at payment_due_at, before the lapse job runs", () => {

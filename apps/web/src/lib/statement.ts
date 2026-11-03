@@ -52,12 +52,18 @@ export interface MoneyTotals {
   refund_owed_amount: number
   /** Back campaigns: pledges that hold their slot (pledged, payment_due, partially_paid, paid). */
   backers_count: number
+  /**
+   * Back campaigns: when a moderator stopped the payment requests after
+   * success, and the public note (DOS/Give#89); null otherwise.
+   */
+  payments_stopped_at: string | null
+  payments_stopped_note: string | null
 }
 
 const TOTALS_COLUMNS =
   "id, type, asset, goal_amount, pledged_amount, paid_amount, disbursable_amount, disbursed_amount, " +
   "refunded_amount, unexplained_out_amount, unexplained_out_count, supporters_count, other_in_amount, " +
-  "refund_owed_amount, backers_count"
+  "refund_owed_amount, backers_count, payments_stopped_at, payments_stopped_note"
 
 type TotalsRow = Omit<MoneyTotals, "campaign_id"> & { id: string }
 
@@ -84,6 +90,8 @@ function toTotals(row: TotalsRow): MoneyTotals {
     other_in_amount: num(row.other_in_amount),
     refund_owed_amount: num(row.refund_owed_amount),
     backers_count: num(row.backers_count),
+    payments_stopped_at: row.payments_stopped_at ?? null,
+    payments_stopped_note: row.payments_stopped_note ?? null,
   }
 }
 

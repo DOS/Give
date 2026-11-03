@@ -28,6 +28,8 @@ const totals: Totals = {
   other_in_amount: 0,
   refund_owed_amount: 0,
   backers_count: 0,
+  payments_stopped_at: null,
+  payments_stopped_note: null,
 }
 
 /** The text of each figure, by its data-figure key. */

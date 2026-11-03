@@ -68,6 +68,31 @@ export function awaitsPayment(status: string): boolean {
   return status === "payment_due" || status === "partially_paid"
 }
 
+/**
+ * What the payment page of a pledge waiting for payment shows:
+ *   stopped      a moderator stopped the campaign's payment requests
+ *                (DOS/Give#89): no transfer details, "do not transfer";
+ *   closed       give.pledge_payment gave no row: the deadline has passed;
+ *   nothing_due  nothing left to pay (net of refunds), so no QR for 0 đồng;
+ *   no_account   the campaign has no usable account right now;
+ *   qr           the VietQR code and the transfer details.
+ * The stop wins over everything, so a page never shows an account while
+ * payment requests are stopped, even if give.pledge_payment answered.
+ */
+export type PaymentView = "stopped" | "closed" | "nothing_due" | "no_account" | "qr"
+
+export function paymentView(
+  stopped: boolean,
+  payment: { amount_due: number; reference_code: string; account: unknown } | null,
+  isCode: (code: string) => boolean
+): PaymentView {
+  if (stopped) return "stopped"
+  if (!payment) return "closed"
+  if (!(payment.amount_due > 0)) return "nothing_due"
+  if (!payment.account || !isCode(payment.reference_code)) return "no_account"
+  return "qr"
+}
+
 // Delivery labels are shared with the creator's fulfillment page (DOS/Give#83).
 export { FULFILLMENT_LABELS, fulfillmentLabel, type FulfillmentStatus } from "./fulfillment"
 

@@ -221,3 +221,36 @@ export async function pledgePayment(
       : null,
   }
 }
+
+export interface PledgeBalance {
+  received_amount: number
+  refunded_amount: number
+  /** intended - (received - refunded) while the pledge waits for payment, 0 otherwise. */
+  amount_due: number
+  /** What the creator still owes back: a refund_due pledge's net, a paid pledge's excess (DOS/Give#89). */
+  refund_owed_amount: number
+}
+
+/**
+ * The money of the backer's own pledge net of refunds, from
+ * give.pledge_balance (any status). Null for a pledge that is not theirs.
+ */
+export async function pledgeBalance(
+  service: Db,
+  contributionId: string,
+  userId: string
+): Promise<PledgeBalance | null> {
+  const { data, error } = await service
+    .rpc("pledge_balance", { p_contribution_id: contributionId, p_user_id: userId })
+    .select("received_amount, refunded_amount, amount_due, refund_owed_amount")
+    .maybeSingle()
+  if (error) throw error
+  const row = data as Record<string, unknown> | null
+  if (!row) return null
+  return {
+    received_amount: num(row.received_amount),
+    refunded_amount: num(row.refunded_amount),
+    amount_due: num(row.amount_due),
+    refund_owed_amount: num(row.refund_owed_amount),
+  }
+}
