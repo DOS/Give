@@ -166,6 +166,8 @@ export function describeNotice(notice: Notice): NoticeView {
         ? " Đừng chuyển tiền cho cam kết của bạn, kể cả theo thông tin chuyển khoản đã nhận trước đó, cho tới khi Give thông báo tiếp."
         : " Người ủng hộ không còn được nhắc thanh toán và trang thanh toán đã ẩn. Trang dự án công khai thông báo này."
       if (note) body += ` Ghi chú của Give: ${note}`
+      const dueAt = text(p, "payment_due_at")
+      if (backer && dueAt) body += ` Hạn thanh toán vẫn là ${formatDateTime(dueAt)}.`
       const slug = text(p, "campaign_slug")
       return {
         title: "Tạm dừng yêu cầu thanh toán",
@@ -179,6 +181,17 @@ export function describeNotice(notice: Notice): NoticeView {
     }
     case "payment_requests_resumed": {
       const dueAt = text(p, "payment_due_at")
+      const slug = text(p, "campaign_slug")
+      if (text(p, "reference_code") === null) {
+        // The creator's copy: no pledge in the payload.
+        return {
+          title: "Mở lại yêu cầu thanh toán",
+          body: `Give đã mở lại yêu cầu thanh toán của ${campaignName(p, "dự án")}: người ủng hộ đang chờ thanh toán thấy lại thông tin chuyển khoản và được nhắc như trước.`,
+          ...(slug && SLUG_PATTERN.test(slug)
+            ? { href: `/campaigns/${slug}`, linkLabel: "Xem dự án" }
+            : { href: null, linkLabel: null }),
+        }
+      }
       let body = `Give đã mở lại yêu cầu thanh toán của ${campaignName(p, "dự án")}. Hãy thanh toán cam kết của bạn`
       body += dueAt ? ` trước ${formatDateTime(dueAt)}.` : "."
       body += " Quá hạn mà chưa trả đủ, cam kết hết hiệu lực."

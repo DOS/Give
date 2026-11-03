@@ -9,7 +9,9 @@ import {
   isSoldOut,
   NO_REWARD,
   overpaid,
+  offersPayment,
   paymentView,
+  pledgeListSummary,
   paymentWindowClosed,
   pledgeErrorMessage,
   pledgeSchema,
@@ -136,13 +138,42 @@ describe("payment helpers", () => {
     const isCode = (code: string) => code.startsWith("GV")
     const account = { bank_bin: "970436", account_number: "1", account_name: "A" }
     const payment = { amount_due: 100_000, reference_code: "GVAB12CD", account }
-    expect(paymentView(true, payment, isCode)).toBe("stopped")
-    expect(paymentView(true, null, isCode)).toBe("stopped")
-    expect(paymentView(false, payment, isCode)).toBe("qr")
-    expect(paymentView(false, null, isCode)).toBe("closed")
-    expect(paymentView(false, { ...payment, amount_due: 0 }, isCode)).toBe("nothing_due")
-    expect(paymentView(false, { ...payment, account: null }, isCode)).toBe("no_account")
-    expect(paymentView(false, { ...payment, reference_code: "XX" }, isCode)).toBe("no_account")
+    expect(paymentView(true, false, payment, isCode)).toBe("stopped")
+    expect(paymentView(true, true, null, isCode)).toBe("stopped")
+    expect(paymentView(false, false, payment, isCode)).toBe("qr")
+    expect(paymentView(false, true, null, isCode)).toBe("closed")
+    // No details before the deadline (a stop committed between two reads): not "closed".
+    expect(paymentView(false, false, null, isCode)).toBe("unavailable")
+    expect(paymentView(false, false, { ...payment, amount_due: 0 }, isCode)).toBe("nothing_due")
+    expect(paymentView(false, false, { ...payment, account: null }, isCode)).toBe("no_account")
+    expect(paymentView(false, false, { ...payment, reference_code: "XX" }, isCode)).toBe("no_account")
+  })
+
+  it("sums up a pledge in the list net of refunds, and never offers payment while stopped (DOS/Give#89)", () => {
+    const now = new Date("2026-11-10T00:00:00Z")
+    const waiting = {
+      status: "partially_paid",
+      intended_amount: 200_000,
+      received_amount: 100_000,
+      payment_due_at: "2026-11-12T00:00:00Z",
+    }
+    const balance = { amount_due: 150_000, refund_owed_amount: 0, payments_stopped: false }
+    expect(pledgeListSummary(waiting, balance, now)).toContain(`Cần thanh toán ${formatVnd(150_000)}`)
+    expect(offersPayment(waiting, balance, now)).toBe(true)
+    // Without the balance the amount is left out rather than shown before refunds.
+    expect(pledgeListSummary(waiting, null, now)).not.toContain(formatVnd(100_000))
+    expect(pledgeListSummary(waiting, null, now)).toContain("Chờ thanh toán")
+
+    const stopped = { ...balance, payments_stopped: true }
+    expect(pledgeListSummary(waiting, stopped, now)).toContain("tạm dừng yêu cầu thanh toán")
+    expect(offersPayment(waiting, stopped, now)).toBe(false)
+
+    const refundDue = { ...waiting, status: "refund_due" }
+    expect(pledgeListSummary(refundDue, { ...balance, amount_due: 0, refund_owed_amount: 40_000 }, now)).toBe(
+      `Chờ người tạo dự án hoàn ${formatVnd(40_000)}`
+    )
+    expect(pledgeListSummary(refundDue, null, now)).toBe("Chờ người tạo dự án hoàn tiền")
+    expect(offersPayment(refundDue, balance, now)).toBe(false)
   })
 
   it("closes the payment window at payment_due_at, before the lapse job runs", () => {

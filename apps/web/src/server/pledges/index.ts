@@ -1,7 +1,7 @@
 import "server-only"
 
 import type { Db } from "@/lib/campaigns"
-import { PUBLIC_TIER_COLUMNS, type PublicRewardTier } from "@/lib/pledges"
+import { awaitsPayment, PUBLIC_TIER_COLUMNS, type PublicRewardTier } from "@/lib/pledges"
 
 /**
  * Server side of the pledge flow (section 4.2). Backers are always signed in:
@@ -223,34 +223,71 @@ export async function pledgePayment(
 }
 
 export interface PledgeBalance {
+  status: string
   received_amount: number
   refunded_amount: number
   /** intended - (received - refunded) while the pledge waits for payment, 0 otherwise. */
   amount_due: number
   /** What the creator still owes back: a refund_due pledge's net, a paid pledge's excess (DOS/Give#89). */
   refund_owed_amount: number
+  /** A moderator stopped the campaign's payment requests. */
+  payments_stopped: boolean
 }
 
 /**
- * The money of the backer's own pledge net of refunds, from
- * give.pledge_balance (any status). Null for a pledge that is not theirs.
+ * The money of the backer's own pledges net of refunds, from
+ * give.pledge_balances (any status), by pledge id: one pledge, or all of the
+ * user's pledges when no id is given. Only the user's own pledges.
  */
-export async function pledgeBalance(
+export async function pledgeBalances(
   service: Db,
-  contributionId: string,
-  userId: string
-): Promise<PledgeBalance | null> {
+  userId: string,
+  contributionId?: string
+): Promise<Map<string, PledgeBalance>> {
   const { data, error } = await service
-    .rpc("pledge_balance", { p_contribution_id: contributionId, p_user_id: userId })
-    .select("received_amount, refunded_amount, amount_due, refund_owed_amount")
-    .maybeSingle()
+    .rpc("pledge_balances", { p_user_id: userId, p_contribution_id: contributionId ?? null })
+    .select(
+      "contribution_id, status, received_amount, refunded_amount, amount_due, refund_owed_amount, payments_stopped"
+    )
   if (error) throw error
-  const row = data as Record<string, unknown> | null
-  if (!row) return null
-  return {
-    received_amount: num(row.received_amount),
-    refunded_amount: num(row.refunded_amount),
-    amount_due: num(row.amount_due),
-    refund_owed_amount: num(row.refund_owed_amount),
-  }
+  const rows = (data ?? []) as unknown as Record<string, unknown>[]
+  return new Map(
+    rows.map((row) => [
+      String(row.contribution_id),
+      {
+        status: String(row.status),
+        received_amount: num(row.received_amount),
+        refunded_amount: num(row.refunded_amount),
+        amount_due: num(row.amount_due),
+        refund_owed_amount: num(row.refund_owed_amount),
+        payments_stopped: row.payments_stopped === true,
+      },
+    ])
+  )
+}
+
+/**
+ * What the pledge page needs about the money: the payment details
+ * (give.pledge_payment) and the balance net of refunds. While the campaign's
+ * payment requests are stopped (DOS/Give#89) the payment details are never
+ * asked for, whatever the database would answer. A failed balance read gives
+ * null, so the page leaves the amounts out rather than show gross ones.
+ */
+export async function loadPledgeMoney(
+  service: Db,
+  pledge: Pick<OwnPledge, "id" | "status">,
+  campaign: { payments_stopped_at: string | null },
+  userId: string
+): Promise<{ payment: PledgePayment | null; balance: PledgeBalance | null }> {
+  const waiting = awaitsPayment(pledge.status)
+  const [payment, balance] = await Promise.all([
+    waiting && !campaign.payments_stopped_at ? pledgePayment(service, pledge.id, userId) : null,
+    pledgeBalances(service, userId, pledge.id)
+      .then((balances) => balances.get(pledge.id) ?? null)
+      .catch((error: unknown) => {
+        console.error("pledge page: pledge balance lookup failed", error)
+        return null
+      }),
+  ])
+  return { payment, balance }
 }

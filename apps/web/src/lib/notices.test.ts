@@ -189,6 +189,14 @@ describe("describeNotice", () => {
     expect(backer.body).toContain("Đừng chuyển tiền")
     expect(backer.body).toContain("Ghi chú của Give: Give đang xác minh.")
     expect(backer.href).toBe("/me/pledges/GVAB12CD")
+    const withDue = describeNotice(
+      notice({
+        kind: "payment_requests_stopped",
+        payload: { ...base, reference_code: "GVAB12CD", payment_due_at: "2026-11-12T05:00:00Z" },
+      })
+    )
+    expect(withDue.body).toContain("Hạn thanh toán vẫn là")
+    expect(withDue.body).toContain("12/11/2026")
 
     const creator = describeNotice(notice({ kind: "payment_requests_stopped", payload: base }))
     expect(creator.body).toContain("trang thanh toán đã ẩn")
@@ -206,6 +214,10 @@ describe("describeNotice", () => {
     expect(resumed.title).toBe("Mở lại yêu cầu thanh toán")
     expect(resumed.body).toContain("12/11/2026")
     expect(resumed.href).toBe("/me/pledges/GVAB12CD")
+    const creatorResumed = describeNotice(notice({ kind: "payment_requests_resumed", payload: base }))
+    expect(creatorResumed.body).toContain("thấy lại thông tin chuyển khoản")
+    expect(creatorResumed.href).toBe("/campaigns/den-ngu")
+    expect(creatorResumed.linkLabel).toBe("Xem dự án")
   })
 
   it("covers account review results", () => {

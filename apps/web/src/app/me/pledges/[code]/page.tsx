@@ -10,9 +10,9 @@ import { requireSession } from "@/lib/auth/session"
 import { formatDateTime, formatVnd } from "@/lib/format"
 import {
   acceptsPledges,
-  awaitsPayment,
   overpaid,
   deliveryMonth,
+  paymentWindowClosed,
   fulfillmentLabel,
   paymentView,
   pledgeStatusColor,
@@ -23,7 +23,7 @@ import { paymentRequestsStopped } from "@/lib/payment-requests"
 import { dbAs, dbService } from "@/lib/supabase"
 import { cancelPledge } from "@/app/campaigns/[slug]/pledge/actions"
 import { isSessionRejected, paymentCampaign } from "@/server/contributions"
-import { getTierTitle, ownPledgeByCode, pledgeBalance, pledgePayment, type OwnPledge } from "@/server/pledges"
+import { getTierTitle, loadPledgeMoney, ownPledgeByCode, type OwnPledge } from "@/server/pledges"
 import { buildDonationPayload, isDonationCode, renderVietQrSvg } from "@/server/vietqr"
 
 export const metadata: Metadata = { title: "Cam kết ủng hộ", robots: { index: false, follow: false } }
@@ -85,16 +85,11 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
   ])
   if (!campaign) notFound()
   const stopped = paymentRequestsStopped(campaign)
-  const [payment, balance] = await Promise.all([
-    awaitsPayment(pledge.status) && !stopped ? pledgePayment(service, pledge.id, userId) : null,
-    // A failed read falls back to the pledge's own numbers (before refunds).
-    pledgeBalance(service, pledge.id, userId).catch((error: unknown) => {
-      console.error("pledge page: pledge balance lookup failed", error)
-      return null
-    }),
-  ])
-  const excess = balance ? (pledge.status === "paid" ? balance.refund_owed_amount : 0) : overpaid(pledge)
-  const owedBack = balance ? balance.refund_owed_amount : pledge.received_amount
+  // Never asks for the payment details while payment requests are stopped.
+  const { payment, balance } = await loadPledgeMoney(service, pledge, campaign, userId)
+  // Without the balance, amounts that refunds could change are left out.
+  const excess = balance ? (pledge.status === "paid" ? balance.refund_owed_amount : 0) : null
+  const refunded = balance?.refunded_amount ?? 0
   const shipping = readShippingAddress(pledge.shipping_address)
   const fulfillment = pledge.status === "paid" ? fulfillmentLabel(pledge.fulfillment_status) : null
   const month = deliveryMonth(tier?.estimated_delivery)
@@ -131,7 +126,7 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
       break
     case "payment_due":
     case "partially_paid": {
-      const view = paymentView(stopped, payment, isDonationCode)
+      const view = paymentView(stopped, paymentWindowClosed(pledge), payment, isDonationCode)
       if (view === "stopped") {
         body = (
           <Note tone="red">
@@ -141,9 +136,17 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
             </p>
             {campaign.payments_stopped_note && <p className="whitespace-pre-line">{campaign.payments_stopped_note}</p>}
             <p>
-              Give sẽ báo khi yêu cầu thanh toán được mở lại. Hạn thanh toán vẫn tính như cũ; quá hạn mà chưa trả đủ,
-              cam kết hết hiệu lực và phần đã chuyển được hoàn lại.
+              Give sẽ báo khi yêu cầu thanh toán được mở lại. Hạn thanh toán vẫn là{" "}
+              {formatDateTime(pledge.payment_due_at)}; quá hạn mà chưa trả đủ, cam kết hết hiệu lực và phần đã chuyển
+              được hoàn lại.
             </p>
+          </Note>
+        )
+      } else if (view === "unavailable") {
+        body = (
+          <Note tone="amber">
+            Give chưa hiển thị được thông tin chuyển khoản của cam kết này. Đừng chuyển tiền theo thông tin từ nơi khác;
+            hãy tải lại trang sau ít phút. Hạn thanh toán là {formatDateTime(pledge.payment_due_at)}.
           </Note>
         )
       } else if (!payment) {
@@ -184,7 +187,10 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
               <p>
                 Dự án đã đạt mục tiêu. Hãy chuyển {formatVnd(payment.amount_due)} trước{" "}
                 <span className="font-semibold">{formatDateTime(payment.payment_due_at)}</span>.
-                {payment.received_amount > 0 && ` Give đã ghi nhận ${formatVnd(payment.received_amount)}.`}
+                {payment.received_amount > 0 &&
+                  ` Give đã ghi nhận ${formatVnd(payment.received_amount)}${
+                    refunded > 0 ? ` và đã hoàn lại ${formatVnd(refunded)}` : ""
+                  }.`}
               </p>
               <p>
                 Nếu bạn đã chuyển khoản, đừng chuyển lại: Give cập nhật trạng thái khi đối soát sao kê, có thể sau vài
@@ -232,10 +238,12 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
       body = (
         <Note tone="green">
           <p>Bạn đã thanh toán đủ {formatVnd(pledge.intended_amount)}. Cảm ơn bạn đã đồng hành cùng dự án.</p>
-          {excess > 0 && (
+          {(excess === null ? overpaid(pledge) > 0 : excess > 0) && (
             <p>
-              Give ghi nhận bạn đã chuyển {formatVnd(pledge.received_amount)}, nhiều hơn số cam kết. Người tạo dự án còn
-              phải hoàn lại phần thừa {formatVnd(excess)}; trang dự án công khai khoản còn nợ cho tới khi hoàn xong.
+              Give ghi nhận bạn đã chuyển {formatVnd(pledge.received_amount)}, nhiều hơn số cam kết
+              {refunded > 0 ? ` (đã hoàn lại ${formatVnd(refunded)})` : ""}. Người tạo dự án
+              {excess === null ? " phải hoàn lại phần thừa" : ` còn phải hoàn lại phần thừa ${formatVnd(excess)}`};
+              trang dự án công khai khoản còn nợ cho tới khi hoàn xong.
             </p>
           )}
           {pledge.reward_tier_id && (
@@ -252,12 +260,11 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
       body = (
         <Note tone="red">
           Cam kết này không còn hiệu lực (chưa được thanh toán đủ trước hạn, hoặc tiền đến sau khi cam kết đã hết hiệu
-          lực), nên người tạo dự án phải hoàn lại cho bạn {formatVnd(owedBack)}
+          lực), nên người tạo dự án phải hoàn lại cho bạn{" "}
+          {balance ? formatVnd(balance.refund_owed_amount) : "số tiền bạn đã chuyển"}
           {pledge.refund_due_at ? ` trước ${formatDateTime(pledge.refund_due_at)}` : ""}.
-          {balance && balance.refunded_amount > 0
-            ? ` Đã hoàn ${formatVnd(balance.refunded_amount)}; số trên là phần còn lại.`
-            : ""}{" "}
-          Trang dự án công khai số tiền hoàn còn nợ cho tới khi hoàn xong.
+          {refunded > 0 ? ` Đã hoàn ${formatVnd(refunded)}; số trên là phần còn lại.` : ""} Trang dự án công khai số
+          tiền hoàn còn nợ cho tới khi hoàn xong.
         </Note>
       )
       break
