@@ -1,9 +1,12 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { AccountStatusBadge, VerificationBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { Badge } from "@/components/ui/Badge"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { Field } from "@/components/ui/Field"
+import { Notice } from "@/components/ui/Notice"
 import { requireSession } from "@/lib/auth/session"
 import { bankByBin } from "@/lib/banks"
 import { isStaff } from "@/lib/campaigns"
@@ -24,6 +27,7 @@ import {
 } from "@/lib/receiving-accounts"
 import { dbAs } from "@/lib/supabase"
 
+import { AdminPage, AdminSection, Fact, Facts, ItemActions, ItemCard, ItemList } from "../_components/ui"
 import { reviewAccount } from "./actions"
 
 export const metadata: Metadata = { title: "Xác minh tài khoản nhận", robots: { index: false } }
@@ -41,63 +45,44 @@ export default async function AdminAccountsPage() {
   )
 
   return (
-    <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
-      <div>
-        <Link href="/admin" className="text-sm text-gray-600 hover:text-gray-900">
-          ← Kiểm duyệt
-        </Link>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-3xl font-bold">Xác minh tài khoản nhận</h1>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/admin/account-swaps" className="btn-secondary">
-              Đổi tài khoản nhận
-            </Link>
-            <Link href="/admin/statements" className="btn-secondary">
-              Đối soát sao kê
-            </Link>
-            <Link href="/admin/unmatched" className="btn-secondary">
-              Giao dịch chưa khớp
-            </Link>
-            <Link href="/admin/inbound" className="btn-secondary">
-              Sự kiện bị dừng
-            </Link>
-          </div>
-        </div>
-        <p className="mt-2 text-sm text-gray-600">
+    <AdminPage
+      title="Xác minh tài khoản nhận"
+      intro={
+        <p>
           Xác minh khi đã thấy, từ một nguồn do ngân hàng phát hành (sao kê trên trang của chính ngân hàng, hoặc biên
           lai và sao kê đã đối chiếu với ngân hàng), một giao dịch chuyển đi {formatVnd(VERIFICATION_TRANSFER_AMOUNT)}{" "}
           từ đúng số tài khoản này, nội dung đúng bằng mã xác minh, và tên người chuyển trên giao dịch trùng tên pháp lý
           của người tổ chức đã được xác minh. Tên chủ tài khoản và đường dẫn sao kê là do người tổ chức tự khai, chưa
           được kiểm chứng. Mọi thao tác được ghi vào nhật ký kiểm toán.
         </p>
-      </div>
-
-      <section>
-        <h2 className="mb-4 text-xl font-bold">Chờ xác minh ({pending.length})</h2>
+      }
+    >
+      <AdminSection id="pending" title="Chờ xác minh" count={pending.length}>
         {pending.length === 0 ? (
-          <p className="card p-6 text-gray-600">Không có tài khoản nào chờ xác minh.</p>
+          <EmptyState title="Không có tài khoản nào chờ xác minh.">
+            Tài khoản người tổ chức khai báo sẽ hiện ở đây cho tới khi được xác minh hoặc từ chối.
+          </EmptyState>
         ) : (
-          <ul className="space-y-4">
+          <ItemList>
             {pending.map((account) => (
               <AccountCard key={account.id} account={account} refs={refs} selfId={session.user.id} />
             ))}
-          </ul>
+          </ItemList>
         )}
-      </section>
+      </AdminSection>
 
-      <section>
-        <h2 className="mb-4 text-xl font-bold">Đã xử lý gần đây ({reviewed.length})</h2>
+      <AdminSection id="reviewed" title="Đã xử lý gần đây" count={reviewed.length}>
         {reviewed.length === 0 ? (
-          <p className="card p-6 text-gray-600">Chưa có tài khoản nào được xử lý.</p>
+          <EmptyState title="Chưa có tài khoản nào được xử lý." />
         ) : (
-          <ul className="space-y-4">
+          <ItemList>
             {reviewed.map((account) => (
               <AccountCard key={account.id} account={account} refs={refs} selfId={session.user.id} />
             ))}
-          </ul>
+          </ItemList>
         )}
-      </section>
-    </div>
+      </AdminSection>
+    </AdminPage>
   )
 }
 
@@ -120,128 +105,111 @@ function AccountCard({
   const status = account.verification_status
 
   return (
-    <li className="space-y-4 card p-6">
+    <ItemCard>
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <dl className="grid min-w-0 flex-1 gap-2 text-sm sm:grid-cols-2">
-          <div>
-            <dt className="text-gray-500">Ngân hàng</dt>
-            <dd>
-              {bank ? `${bank.shortName} – ${bank.name}` : account.bank_bin} (BIN {account.bank_bin})
-            </dd>
-          </div>
-          <div>
-            <dt className="text-gray-500">Số tài khoản</dt>
-            <dd className="font-mono">{account.account_number}</dd>
-          </div>
-          <div>
-            <dt className="text-gray-500">Tên chủ tài khoản (người tổ chức khai)</dt>
-            <dd>
-              {account.account_name}{" "}
-              <span className={nameMatches ? "text-gray-600" : "font-semibold text-red-700"}>
-                {nameMatches ? "(tên khai trùng tên pháp lý)" : "✗ tên khai không trùng tên pháp lý"}
-              </span>
-            </dd>
-          </div>
-          <div>
-            <dt className="text-gray-500">Người tổ chức</dt>
-            <dd className="flex flex-wrap items-center gap-2">
-              {organizer ? (
-                <>
-                  {organizer.display_name} (tên pháp lý: {organizer.legal_name})
-                  {organizer.phone ? ` · ${organizer.phone}` : ""}
-                  <VerificationBadge status={organizer.verification_status} />
-                </>
-              ) : (
-                "—"
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-gray-500">Loại</dt>
-            <dd>{account.account_kind ? ACCOUNT_KIND_LABELS[account.account_kind] : "—"}</dd>
-          </div>
-          <div>
-            <dt className="text-gray-500">Khai báo</dt>
-            <dd>{formatDate(account.created_at)}</dd>
-          </div>
-          {account.public_statement_url && (
-            <div className="sm:col-span-2">
-              <dt className="text-gray-500">
-                Sao kê công khai (người tổ chức cung cấp, chưa kiểm chứng; tên miền:{" "}
-                <span className="font-semibold text-gray-900">{hostnameOf(account.public_statement_url)}</span>)
-              </dt>
-              <dd className="break-all">
-                <a
-                  href={account.public_statement_url}
-                  className="text-brand-700"
-                  target="_blank"
-                  rel="noopener noreferrer nofollow"
-                >
-                  {account.public_statement_url}
-                </a>
-              </dd>
-            </div>
-          )}
-          {status === "pending" && (
-            <div className="sm:col-span-2">
-              <dt className="text-gray-500">Giao dịch cần thấy</dt>
-              <dd>
-                Chuyển đi {formatVnd(VERIFICATION_TRANSFER_AMOUNT)}, nội dung{" "}
-                <span className="font-mono font-bold">{account.verification_code}</span>
-              </dd>
-            </div>
-          )}
-          {account.review_note && (
-            <div className="sm:col-span-2">
-              <dt className="text-gray-500">Lý do</dt>
-              <dd>{account.review_note}</dd>
-            </div>
-          )}
-          {status === "verified" && (
-            <div>
-              <dt className="text-gray-500">Xác minh ngày</dt>
-              <dd>{formatDate(account.verified_at)}</dd>
-            </div>
-          )}
-          <div className="sm:col-span-2">
-            <dt className="text-gray-500">Chiến dịch đang gắn</dt>
-            <dd>{holder ? (boundCampaign?.title ?? holder.campaign_id) : "Chưa gắn"}</dd>
-          </div>
-        </dl>
+        <div className="min-w-0">
+          <h3 className="text-lg font-semibold">
+            {bank ? `${bank.shortName} – ${bank.name}` : account.bank_bin}{" "}
+            <span className="font-mono font-medium text-body">{account.account_number}</span>
+          </h3>
+          <p className="text-sm text-muted">BIN {account.bank_bin}</p>
+        </div>
         <AccountStatusBadge status={status} />
       </div>
+      <Facts columns={2}>
+        <Fact label="Tên chủ tài khoản (người tổ chức khai)">
+          <span className="flex flex-wrap items-center gap-2">
+            {account.account_name}
+            {nameMatches ? (
+              <span className="text-sm text-muted">(tên khai trùng tên pháp lý)</span>
+            ) : (
+              <Badge tone="danger">✗ tên khai không trùng tên pháp lý</Badge>
+            )}
+          </span>
+        </Fact>
+        <Fact label="Người tổ chức">
+          {organizer ? (
+            <span className="flex flex-wrap items-center gap-2">
+              {organizer.display_name} (tên pháp lý: {organizer.legal_name})
+              {organizer.phone ? ` · ${organizer.phone}` : ""}
+              <VerificationBadge status={organizer.verification_status} />
+            </span>
+          ) : (
+            "—"
+          )}
+        </Fact>
+        <Fact label="Loại">{account.account_kind ? ACCOUNT_KIND_LABELS[account.account_kind] : "—"}</Fact>
+        <Fact label="Khai báo">{formatDate(account.created_at)}</Fact>
+        {account.public_statement_url && (
+          <Fact
+            wide
+            label={
+              <>
+                Sao kê công khai (người tổ chức cung cấp, chưa kiểm chứng; tên miền:{" "}
+                <span className="font-semibold text-ink">{hostnameOf(account.public_statement_url)}</span>)
+              </>
+            }
+          >
+            <a
+              href={account.public_statement_url}
+              className="link break-all"
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+            >
+              {account.public_statement_url}
+              <span className="sr-only"> (mở thẻ mới)</span>
+            </a>
+          </Fact>
+        )}
+        {status === "pending" && (
+          <Fact label="Giao dịch cần thấy" wide>
+            Chuyển đi {formatVnd(VERIFICATION_TRANSFER_AMOUNT)}, nội dung{" "}
+            <span className="rounded-sm bg-gray-100 px-1.5 font-mono font-bold">{account.verification_code}</span>
+          </Fact>
+        )}
+        {account.review_note && (
+          <Fact label="Lý do" wide>
+            {account.review_note}
+          </Fact>
+        )}
+        {status === "verified" && <Fact label="Xác minh ngày">{formatDate(account.verified_at)}</Fact>}
+        <Fact label="Chiến dịch đang gắn" wide>
+          {holder ? (boundCampaign?.title ?? holder.campaign_id) : "Chưa gắn"}
+        </Fact>
+      </Facts>
 
       {own ? (
-        <p className="text-sm text-amber-800">Đây là tài khoản của bạn; một nhân viên khác cần xử lý.</p>
+        <Notice tone="warning">Đây là tài khoản của bạn; một nhân viên khác cần xử lý.</Notice>
       ) : (
-        <div className="grid gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2">
+        <ItemActions>
           {status === "pending" && options.verifyBlocked && (
-            <p className="text-sm text-amber-800">Chưa xác minh được: {options.verifyBlocked}</p>
+            <Notice tone="warning">Chưa xác minh được: {options.verifyBlocked}</Notice>
           )}
           {status === "pending" && !options.verifyBlocked && (
             <ActionForm
               action={reviewAccount.bind(null, account.id)}
               confirm="Xác minh tài khoản này? Sau đó người tổ chức có thể gắn nó với chiến dịch để nhận tiền."
-              className="space-y-2"
+              className="space-y-3"
             >
               <input type="hidden" name="decision" value="verified" />
               <input type="hidden" name="expected_code" value={account.verification_code} />
-              <label htmlFor={`sender-${account.id}`} className="label">
-                Tên người chuyển trên giao dịch (đọc từ nguồn của ngân hàng)
-              </label>
-              <input id={`sender-${account.id}`} name="sender_name" className="field" required maxLength={120} />
-              <label htmlFor={`evidence-${account.id}`} className="label">
-                Bằng chứng giao dịch xác minh
-              </label>
-              <textarea
-                id={`evidence-${account.id}`}
-                name="evidence"
-                className="field"
-                rows={2}
-                required
-                maxLength={350}
-                placeholder="Mã giao dịch ngân hàng, ngày giờ, nguồn (trang sao kê của ngân hàng, biên lai đã đối chiếu)"
-              />
+              <Field
+                htmlFor={`sender-${account.id}`}
+                label="Tên người chuyển trên giao dịch (đọc từ nguồn của ngân hàng)"
+              >
+                <input id={`sender-${account.id}`} name="sender_name" className="field" required maxLength={120} />
+              </Field>
+              <Field htmlFor={`evidence-${account.id}`} label="Bằng chứng giao dịch xác minh">
+                <textarea
+                  id={`evidence-${account.id}`}
+                  name="evidence"
+                  className="field"
+                  rows={2}
+                  required
+                  maxLength={350}
+                  placeholder="Mã giao dịch ngân hàng, ngày giờ, nguồn (trang sao kê của ngân hàng, biên lai đã đối chiếu)"
+                />
+              </Field>
               <SubmitButton>Xác minh</SubmitButton>
             </ActionForm>
           )}
@@ -253,22 +221,24 @@ function AccountCard({
                   ? "Từ chối tài khoản này? Số tài khoản sẽ được giải phóng để khai báo lại."
                   : "Khóa tài khoản này? Chiến dịch đang gắn với nó sẽ không nhận được tiền ủng hộ mới."
               }
-              className="space-y-2"
+              className="space-y-3"
             >
               {/* Rejecting frees the number; an account that was ever bound can only be disabled. */}
               <input type="hidden" name="decision" value={options.close} />
-              <label htmlFor={`reason-${account.id}`} className="label">
-                {options.close === "rejected" ? "Từ chối" : "Khóa tài khoản"}
-              </label>
-              <textarea
-                id={`reason-${account.id}`}
-                name="reason"
-                className="field"
-                rows={2}
-                required
-                maxLength={1000}
-                placeholder="Lý do (người tổ chức sẽ thấy)"
-              />
+              <Field
+                htmlFor={`reason-${account.id}`}
+                label={options.close === "rejected" ? "Từ chối" : "Khóa tài khoản"}
+              >
+                <textarea
+                  id={`reason-${account.id}`}
+                  name="reason"
+                  className="field"
+                  rows={2}
+                  required
+                  maxLength={1000}
+                  placeholder="Lý do (người tổ chức sẽ thấy)"
+                />
+              </Field>
               <SubmitButton className="btn-danger">{options.close === "rejected" ? "Từ chối" : "Khóa"}</SubmitButton>
             </ActionForm>
           )}
@@ -276,13 +246,16 @@ function AccountCard({
             <ActionForm
               action={reviewAccount.bind(null, account.id)}
               confirm="Mở lại tài khoản để xác minh? Người tổ chức sẽ nhận mã xác minh mới."
+              className="space-y-2"
             >
               <input type="hidden" name="decision" value="pending" />
+              <p className="label">Mở lại</p>
+              <p className="text-sm text-muted">Người tổ chức sẽ nhận mã xác minh mới.</p>
               <SubmitButton className="btn-secondary">Mở lại để xác minh</SubmitButton>
             </ActionForm>
           )}
-        </div>
+        </ItemActions>
       )}
-    </li>
+    </ItemCard>
   )
 }
