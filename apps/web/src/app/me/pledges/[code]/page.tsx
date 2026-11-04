@@ -3,9 +3,12 @@ import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import type { ReactNode } from "react"
 
-import { CopyButton } from "@/components/CopyButton"
 import { ActionForm, SubmitButton } from "@/components/forms"
-import { SaveQrButton } from "@/components/SaveQrButton"
+import { TransferDetails } from "@/components/TransferDetails"
+import { buttonClass, ButtonLink } from "@/components/ui/Button"
+import { Callout, type CalloutTone } from "@/components/ui/Callout"
+import { Money } from "@/components/ui/Money"
+import { PledgeStatusBadge } from "@/components/ui/PledgeStatusBadge"
 import { requireSession } from "@/lib/auth/session"
 import { formatDateTime, formatVnd } from "@/lib/format"
 import {
@@ -15,8 +18,6 @@ import {
   paymentWindowClosed,
   fulfillmentLabel,
   paymentView,
-  pledgeStatusColor,
-  pledgeStatusLabel,
   readShippingAddress,
 } from "@/lib/pledges"
 import { stopHoldsPledge } from "@/lib/payment-requests"
@@ -41,26 +42,24 @@ async function loadPledge(code: string): Promise<{ pledge: OwnPledge; userId: st
   }
 }
 
-function Row({ label, value, copy }: { label: string; value: string; copy?: string }) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-2 py-2">
-      <dt className="text-sm text-gray-500">{label}</dt>
-      <dd className="flex items-center gap-2 font-semibold break-all">
-        {value}
-        {copy !== undefined && <CopyButton value={copy} />}
-      </dd>
-    </div>
-  )
+const NOTE_TONES: Record<"gray" | "amber" | "green" | "red", CalloutTone> = {
+  gray: "neutral",
+  amber: "warning",
+  green: "success",
+  red: "danger",
 }
 
 function Note({ tone = "gray", children }: { tone?: "gray" | "amber" | "green" | "red"; children: ReactNode }) {
-  const tones = {
-    gray: "text-gray-700",
-    amber: "border-amber-200 bg-amber-50 text-amber-900",
-    green: "border-green-200 bg-green-50 text-green-900",
-    red: "border-red-200 bg-red-50 text-red-900",
-  }
-  return <div className={`space-y-2 card p-6 text-sm ${tones[tone]}`}>{children}</div>
+  return <Callout tone={NOTE_TONES[tone]}>{children}</Callout>
+}
+
+function Detail({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
+      <dt className="text-muted">{label}</dt>
+      <dd className="break-words text-ink">{children}</dd>
+    </div>
+  )
 }
 
 /**
@@ -102,15 +101,15 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
             Bạn chưa phải chuyển tiền. Khi dự án kết thúc ({formatDateTime(campaign.ends_at)}), nếu tổng cam kết đạt mục
             tiêu, Give báo bạn chuyển khoản; nếu không đạt, cam kết tự hủy.
           </p>
-          <div className="flex flex-wrap items-center gap-3 pt-2">
-            <Link href={`/campaigns/${campaign.slug}/pledge`} className="btn-secondary">
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <ButtonLink href={`/campaigns/${campaign.slug}/pledge`} variant="secondary">
               Đổi cam kết
-            </Link>
+            </ButtonLink>
             <ActionForm
               action={cancelPledge.bind(null, pledge.id)}
               confirm="Hủy cam kết này? Suất quà của bạn sẽ được nhả cho người khác."
             >
-              <SubmitButton className="btn-secondary text-red-700">Hủy cam kết</SubmitButton>
+              <SubmitButton className={buttonClass({ variant: "danger" })}>Hủy cam kết</SubmitButton>
             </ActionForm>
           </div>
         </Note>
@@ -198,37 +197,17 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
                 lại.
               </p>
             </Note>
-            <div className="grid gap-6 card p-6 sm:grid-cols-2">
-              <div className="text-center">
-                <div
-                  className="mx-auto w-full max-w-64 [&>svg]:h-auto [&>svg]:w-full"
-                  role="img"
-                  aria-label="Mã VietQR để chuyển khoản"
-                  // The SVG is generated here from the payload, not taken from input.
-                  dangerouslySetInnerHTML={{ __html: svg }}
-                />
-                <p className="mt-2 text-xs text-gray-500">Quét bằng app ngân hàng.</p>
-                <SaveQrButton svg={svg} filename={`give-${payment.reference_code}.png`} />
-              </div>
-              <div>
-                <dl className="divide-y divide-gray-100">
-                  <Row label="Mã ngân hàng (BIN)" value={payment.account.bank_bin} />
-                  <Row
-                    label="Số tài khoản"
-                    value={payment.account.account_number}
-                    copy={payment.account.account_number}
-                  />
-                  <Row label="Chủ tài khoản" value={payment.account.account_name} />
-                  <Row label="Số tiền" value={formatVnd(payment.amount_due)} copy={String(payment.amount_due)} />
-                  <Row label="Nội dung chuyển khoản" value={payment.reference_code} copy={payment.reference_code} />
-                </dl>
-                <p className="mt-3 text-xs text-gray-500">
-                  Giữ nguyên nội dung {payment.reference_code} để Give khớp khoản thanh toán. Tiền đi thẳng vào tài
-                  khoản của người tạo dự án; Give không giữ tiền. Give cập nhật trạng thái khi đối soát sao kê, có thể
-                  sau vài ngày.
-                </p>
-              </div>
-            </div>
+            <TransferDetails
+              svg={svg}
+              filename={`give-${payment.reference_code}.png`}
+              qrCaption="Quét bằng app ngân hàng."
+              bankBin={payment.account.bank_bin}
+              accountNumber={payment.account.account_number}
+              accountName={payment.account.account_name}
+              amount={payment.amount_due}
+              reference={payment.reference_code}
+              footnote={`Giữ nguyên nội dung ${payment.reference_code} để Give khớp khoản thanh toán. Tiền đi thẳng vào tài khoản của người tạo dự án; Give không giữ tiền. Give cập nhật trạng thái khi đối soát sao kê, có thể sau vài ngày.`}
+            />
           </>
         )
       }
@@ -281,7 +260,7 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
         <Note>
           Cam kết này đã được hủy (bạn hủy hoặc đổi sang cam kết khác, hoặc dự án không đạt mục tiêu). Bạn không phải
           trả tiền.{" "}
-          <Link href="/me/contributions" className="font-medium text-brand-700">
+          <Link href="/me/contributions" className="link">
             Xem các ủng hộ của tôi
           </Link>
         </Note>
@@ -290,54 +269,58 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6 px-4 py-10">
-      <div>
-        <p className="text-sm text-gray-500">Cam kết ủng hộ dự án</p>
-        <h1 className="text-2xl font-bold">
-          <Link href={`/campaigns/${campaign.slug}`} className="hover:text-brand-700">
+    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 sm:py-12">
+      <header>
+        <p className="text-muted">Cam kết ủng hộ dự án</p>
+        <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
+          <Link href={`/campaigns/${campaign.slug}`} className="underline-offset-4 hover:underline">
             {campaign.title}
           </Link>
         </h1>
-        <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-gray-600">
-          <span
-            className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${pledgeStatusColor(pledge.status)}`}
-          >
-            {pledgeStatusLabel(pledge.status)}
-          </span>
-          Mã <span className="font-mono font-semibold">{pledge.reference_code}</span> ·{" "}
-          {formatVnd(pledge.intended_amount)}
-        </p>
-      </div>
+        <dl className="mt-5 flex flex-wrap gap-x-10 gap-y-3 border-y border-line py-4">
+          <div>
+            <dt className="text-sm text-muted">Số tiền cam kết</dt>
+            <dd>
+              <Money amount={pledge.intended_amount} size="lg" />
+            </dd>
+          </div>
+          <div>
+            <dt className="text-sm text-muted">Mã cam kết</dt>
+            <dd className="font-mono text-2xl font-semibold text-ink">{pledge.reference_code}</dd>
+          </div>
+          <div>
+            <dt className="text-sm text-muted">Trạng thái</dt>
+            <dd className="mt-1">
+              <PledgeStatusBadge status={pledge.status} />
+            </dd>
+          </div>
+        </dl>
+      </header>
 
       {body}
 
-      <dl className="divide-y divide-gray-100 card p-6 text-sm">
-        <div className="flex flex-wrap justify-between gap-2 py-2">
-          <dt className="text-gray-500">Phần quà</dt>
-          <dd className="font-semibold">
-            {pledge.reward_tier_id ? (tier?.title ?? "Phần quà của dự án") : "Ủng hộ không nhận quà"}
-            {month && <span className="font-normal text-gray-500"> · dự kiến giao {month}</span>}
-          </dd>
-        </div>
-        {shipping && (
-          <div className="flex flex-wrap justify-between gap-2 py-2">
-            <dt className="text-gray-500">Giao tới</dt>
-            <dd className="text-right">
+      <section aria-labelledby="pledge-details" className="card px-5 py-2 sm:px-6">
+        <h2 id="pledge-details" className="pt-3 text-lg font-bold">
+          Chi tiết cam kết
+        </h2>
+        <dl className="divide-y divide-line">
+          <Detail label="Phần quà">
+            <span className="font-semibold">
+              {pledge.reward_tier_id ? (tier?.title ?? "Phần quà của dự án") : "Ủng hộ không nhận quà"}
+            </span>
+            {month && <span className="text-muted"> · dự kiến giao {month}</span>}
+          </Detail>
+          {shipping && (
+            <Detail label="Giao tới">
               {shipping.recipient} · {shipping.phone}
               <br />
               {shipping.address}
-            </dd>
-          </div>
-        )}
-        <div className="flex flex-wrap justify-between gap-2 py-2">
-          <dt className="text-gray-500">Hiển thị</dt>
-          <dd>{pledge.is_anonymous ? "Ẩn danh" : (pledge.public_name ?? "—")}</dd>
-        </div>
-        <div className="flex flex-wrap justify-between gap-2 py-2">
-          <dt className="text-gray-500">Cam kết lúc</dt>
-          <dd>{formatDateTime(pledge.created_at)}</dd>
-        </div>
-      </dl>
+            </Detail>
+          )}
+          <Detail label="Hiển thị">{pledge.is_anonymous ? "Ẩn danh" : (pledge.public_name ?? "—")}</Detail>
+          <Detail label="Cam kết lúc">{formatDateTime(pledge.created_at)}</Detail>
+        </dl>
+      </section>
     </div>
   )
 }

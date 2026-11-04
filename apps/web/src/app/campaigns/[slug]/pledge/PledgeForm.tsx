@@ -1,8 +1,12 @@
 "use client"
 
+import clsx from "clsx"
 import { useState } from "react"
 
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { Badge } from "@/components/ui/Badge"
+import { buttonClass } from "@/components/ui/Button"
+import { Field } from "@/components/ui/Field"
 import type { ActionResult } from "@/lib/errors"
 import { formatVnd, parseVnd } from "@/lib/format"
 import { deliveryMonth, isSoldOut, NO_REWARD, type PublicRewardTier, type ShippingAddress } from "@/lib/pledges"
@@ -16,6 +20,18 @@ export interface PledgeDefaults {
   anonymous: boolean
   message: string
   shipping: ShippingAddress | null
+}
+
+/** A choice card's border and tint: chosen, open, or sold out. */
+function choiceClass(chosen: boolean, soldOut = false): string {
+  return clsx(
+    "flex gap-3 rounded-md border p-4 sm:p-5",
+    soldOut
+      ? "cursor-not-allowed border-line bg-surface"
+      : chosen
+        ? "cursor-pointer border-brand-600 bg-brand-50 ring-1 ring-brand-600"
+        : "cursor-pointer border-line bg-white hover:border-gray-400"
+  )
 }
 
 /**
@@ -55,19 +71,14 @@ export function PledgeForm({
   }
 
   return (
-    <ActionForm action={action} className="space-y-6">
+    <ActionForm action={action} className="space-y-8">
       <fieldset className="space-y-3">
-        <legend className="mb-2 font-semibold">Chọn phần quà</legend>
+        <legend className="mb-3 text-xl font-bold text-ink">Chọn phần quà</legend>
         {tiers.map((t) => {
           const soldOut = isSoldOut(t) && t.id !== defaults.tier
           const month = deliveryMonth(t.estimated_delivery)
           return (
-            <label
-              key={t.id}
-              className={`flex cursor-pointer gap-3 card p-4 ${tierId === t.id ? "border-brand-500 ring-1 ring-brand-500" : ""} ${
-                soldOut ? "cursor-not-allowed opacity-60" : ""
-              }`}
-            >
+            <label key={t.id} className={choiceClass(tierId === t.id, soldOut)}>
               <input
                 type="radio"
                 name="tier"
@@ -76,21 +87,21 @@ export function PledgeForm({
                 disabled={soldOut}
                 required
                 onChange={() => choose(t.id)}
-                className="mt-1"
+                className="mt-1 size-5 shrink-0 accent-brand-700"
               />
               <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-baseline justify-between gap-2">
-                  <span className="font-semibold">{t.title}</span>
-                  <span className="text-sm font-medium text-gray-700">Từ {formatVnd(t.min_amount)}</span>
+                <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                  <span className="font-semibold break-words text-ink">{t.title}</span>
+                  <span className="font-bold text-ink tabular-nums">Từ {formatVnd(t.min_amount)}</span>
                 </span>
                 {t.description && (
-                  <span className="mt-1 block text-sm whitespace-pre-line text-gray-600">{t.description}</span>
+                  <span className="mt-1 block break-words whitespace-pre-line text-body">{t.description}</span>
                 )}
-                <span className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
+                <span className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
                   {month && <span>Dự kiến giao: {month}</span>}
                   {t.requires_shipping && <span>Cần địa chỉ nhận quà</span>}
                   {soldOut ? (
-                    <span className="font-medium text-red-700">Đã hết suất</span>
+                    <Badge tone="danger">Đã hết suất</Badge>
                   ) : (
                     t.quantity_remaining !== null && <span>Còn {t.quantity_remaining} suất</span>
                   )}
@@ -99,9 +110,7 @@ export function PledgeForm({
             </label>
           )
         })}
-        <label
-          className={`flex cursor-pointer gap-3 card p-4 ${tierId === NO_REWARD ? "border-brand-500 ring-1 ring-brand-500" : ""}`}
-        >
+        <label className={choiceClass(tierId === NO_REWARD)}>
           <input
             type="radio"
             name="tier"
@@ -109,11 +118,11 @@ export function PledgeForm({
             checked={tierId === NO_REWARD}
             required
             onChange={() => choose(NO_REWARD)}
-            className="mt-1"
+            className="mt-1 size-5 shrink-0 accent-brand-700"
           />
           <span>
-            <span className="font-semibold">Ủng hộ không nhận quà</span>
-            <span className="mt-1 block text-sm text-gray-600">
+            <span className="font-semibold text-ink">Ủng hộ không nhận quà</span>
+            <span className="mt-1 block text-body">
               Đồng hành cùng dự án với số tiền bạn chọn, từ {formatVnd(minContribution)}.
             </span>
           </span>
@@ -130,21 +139,21 @@ export function PledgeForm({
           required
           inputMode="numeric"
           autoComplete="off"
+          aria-describedby="pledge-amount-hint"
           value={amount}
           onChange={(event) => setAmount(event.target.value)}
-          className="field"
+          className="field font-semibold tabular-nums"
         />
-        <p className="hint">Tối thiểu {formatVnd(minimum)} cho lựa chọn này.</p>
+        <p id="pledge-amount-hint" className="hint">
+          Tối thiểu {formatVnd(minimum)} cho lựa chọn này.
+        </p>
       </div>
 
       {tier?.requires_shipping && (
-        <fieldset className="space-y-4 rounded-lg border border-gray-200 p-4">
-          <legend className="px-1 font-semibold">Địa chỉ nhận quà</legend>
-          {tier.shipping_note && <p className="text-sm text-gray-600">{tier.shipping_note}</p>}
-          <div>
-            <label htmlFor="ship-recipient" className="label">
-              Người nhận
-            </label>
+        <fieldset className="space-y-4 rounded-md border border-line p-4 sm:p-5">
+          <legend className="px-1 text-lg font-bold text-ink">Địa chỉ nhận quà</legend>
+          {tier.shipping_note && <p className="whitespace-pre-line text-body">{tier.shipping_note}</p>}
+          <Field htmlFor="ship-recipient" label="Người nhận">
             <input
               id="ship-recipient"
               name="ship_recipient"
@@ -154,11 +163,8 @@ export function PledgeForm({
               defaultValue={defaults.shipping?.recipient ?? ""}
               className="field"
             />
-          </div>
-          <div>
-            <label htmlFor="ship-phone" className="label">
-              Số điện thoại
-            </label>
+          </Field>
+          <Field htmlFor="ship-phone" label="Số điện thoại">
             <input
               id="ship-phone"
               name="ship_phone"
@@ -169,7 +175,7 @@ export function PledgeForm({
               defaultValue={defaults.shipping?.phone ?? ""}
               className="field"
             />
-          </div>
+          </Field>
           <div>
             <label htmlFor="ship-address" className="label">
               Địa chỉ
@@ -181,10 +187,11 @@ export function PledgeForm({
               rows={2}
               maxLength={300}
               autoComplete="shipping street-address"
+              aria-describedby="ship-address-hint"
               defaultValue={defaults.shipping?.address ?? ""}
               className="field"
             />
-            <p className="hint">
+            <p id="ship-address-hint" className="hint">
               Chỉ người tạo dự án thấy địa chỉ này, để gửi quà. Give không tính phí vận chuyển; nếu có, người tạo dự án
               ghi rõ ở phần quà.
             </p>
@@ -192,47 +199,54 @@ export function PledgeForm({
         </fieldset>
       )}
 
-      <div>
-        <label htmlFor="pledge-name" className="label">
-          Tên hiển thị
-        </label>
-        <input
-          id="pledge-name"
-          name="public_name"
-          maxLength={80}
-          defaultValue={defaults.public_name}
-          autoComplete="name"
-          className="field"
-        />
-      </div>
-      <div>
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" name="anonymous" defaultChecked={defaults.anonymous} className="mt-0.5" />
-          <span>Ủng hộ ẩn danh</span>
-        </label>
-        <p className="hint">
-          Give sẽ không hiện tên bạn trên Give. Trang sao kê công khai của ngân hàng vẫn có thể hiện tên người chuyển.
+      <fieldset className="space-y-4">
+        <legend className="mb-3 text-lg font-bold text-ink">Thông tin hiển thị</legend>
+        <Field htmlFor="pledge-name" label="Tên hiển thị">
+          <input
+            id="pledge-name"
+            name="public_name"
+            maxLength={80}
+            defaultValue={defaults.public_name}
+            autoComplete="name"
+            className="field"
+          />
+        </Field>
+        <div>
+          <label className="flex min-h-11 cursor-pointer items-start gap-3 py-2">
+            <input
+              type="checkbox"
+              name="anonymous"
+              defaultChecked={defaults.anonymous}
+              aria-describedby="pledge-anonymous-hint"
+              className="mt-1 size-5 shrink-0 accent-brand-700"
+            />
+            <span className="font-medium text-ink">Ủng hộ ẩn danh</span>
+          </label>
+          <p id="pledge-anonymous-hint" className="hint">
+            Give sẽ không hiện tên bạn trên Give. Trang sao kê công khai của ngân hàng vẫn có thể hiện tên người chuyển.
+          </p>
+        </div>
+        <Field htmlFor="pledge-message" label="Lời nhắn (không bắt buộc)">
+          <textarea
+            id="pledge-message"
+            name="message"
+            rows={3}
+            maxLength={500}
+            defaultValue={defaults.message}
+            className="field"
+          />
+        </Field>
+      </fieldset>
+
+      <div className="space-y-3 border-t border-line pt-6">
+        <SubmitButton className={buttonClass({ size: "lg", full: true })}>
+          {changing ? "Lưu thay đổi" : "Cam kết ủng hộ"}
+        </SubmitButton>
+        <p className="text-center text-sm text-muted">
+          Bạn chưa phải chuyển tiền bây giờ. Nếu dự án đạt mục tiêu, Give báo bạn chuyển khoản thẳng vào tài khoản của
+          người tạo dự án; nếu không đạt, cam kết tự hủy.
         </p>
       </div>
-      <div>
-        <label htmlFor="pledge-message" className="label">
-          Lời nhắn (không bắt buộc)
-        </label>
-        <textarea
-          id="pledge-message"
-          name="message"
-          rows={3}
-          maxLength={500}
-          defaultValue={defaults.message}
-          className="field"
-        />
-      </div>
-
-      <SubmitButton className="btn-primary w-full">{changing ? "Lưu thay đổi" : "Cam kết ủng hộ"}</SubmitButton>
-      <p className="text-center text-xs text-gray-500">
-        Bạn chưa phải chuyển tiền bây giờ. Nếu dự án đạt mục tiêu, Give báo bạn chuyển khoản thẳng vào tài khoản của
-        người tạo dự án; nếu không đạt, cam kết tự hủy.
-      </p>
     </ActionForm>
   )
 }

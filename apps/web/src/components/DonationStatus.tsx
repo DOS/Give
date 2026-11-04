@@ -1,9 +1,27 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
+import { useCallback, useEffect, useRef, useState, type ReactNode, type SVGProps } from "react"
 
+import { ClockIcon } from "@/components/ui/icons"
 import { donationStatusLabel, POLL_INTERVAL_MS, POLL_WINDOW_MS, type ContributionStatus } from "@/lib/contributions"
 import { formatVnd } from "@/lib/format"
+
+function CheckIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+      focusable="false"
+      {...props}
+    >
+      <path d="m5 12.5 4.5 4.5L19 7.5" />
+    </svg>
+  )
+}
 
 type Watch = "watching" | "paused" | "lost" | "signed_out"
 
@@ -87,14 +105,17 @@ export function DonationStatus({
 
   if (received) {
     return (
-      <div role="status" className="card border-green-200 bg-green-50 p-6 text-center">
-        <p className="text-2xl" aria-hidden>
-          🎉
-        </p>
-        <p className="mt-2 text-lg font-semibold text-green-900">
+      <div role="status" className="rounded-md border border-brand-200 bg-brand-50 px-6 py-8 text-center">
+        <span
+          className="mx-auto flex size-12 items-center justify-center rounded-md bg-brand-700 text-white"
+          aria-hidden
+        >
+          <CheckIcon width={28} height={28} strokeWidth={2} />
+        </span>
+        <p className="mt-4 text-xl font-bold text-brand-900">
           Đã nhận {formatVnd(status.received_amount)}. Cảm ơn bạn!
         </p>
-        <p className="mt-1 text-sm text-green-800">Khoản ủng hộ đã vào tài khoản nhận của chiến dịch.</p>
+        <p className="mt-1 text-brand-900">Khoản ủng hộ đã vào tài khoản nhận của chiến dịch.</p>
       </div>
     )
   }
@@ -102,22 +123,33 @@ export function DonationStatus({
   const showInstructions = !qrExpired && status.status !== "expired"
   return (
     <div className="space-y-6">
-      <div role="status" className="flex flex-wrap items-center gap-3 card p-4 text-sm">
-        <span className="font-semibold">
+      <div
+        role="status"
+        className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-md border border-line bg-surface px-4 py-3"
+      >
+        <span className="inline-flex items-center gap-2 font-semibold text-ink">
+          {watch === "watching" && showInstructions ? (
+            <span className="relative flex size-2.5" aria-hidden>
+              <span className="absolute inline-flex size-full animate-ping rounded-sm bg-brand-500 opacity-75" />
+              <span className="relative inline-flex size-2.5 rounded-sm bg-brand-600" />
+            </span>
+          ) : (
+            <ClockIcon width={18} height={18} className="text-muted" />
+          )}
           {showInstructions ? donationStatusLabel(status.status) : donationStatusLabel("expired")}
         </span>
         {watch === "watching" && (
-          <span className="text-gray-600">
+          <span className="text-body">
             Trang tự cập nhật khi tiền về. Thường mất vài phút; nếu chiến dịch đối soát bằng sao kê thì có thể tới một
             ngày làm việc.
           </span>
         )}
         {watch === "paused" && (
           <>
-            <span className="text-gray-600">Trang đã ngừng tự kiểm tra.</span>
+            <span className="text-body">Trang đã ngừng tự kiểm tra.</span>
             <button
               type="button"
-              className="btn-secondary px-2.5 py-1 text-xs"
+              className="btn-secondary px-3 text-sm"
               onClick={() => {
                 resumeNow.current = true
                 setWatch("watching")
@@ -128,18 +160,15 @@ export function DonationStatus({
           </>
         )}
         {watch === "signed_out" && (
-          <span className="text-gray-600">
+          <span className="text-body">
             Phiên đăng nhập đã hết.{" "}
-            <a
-              href={`/auth/login?return_path=${encodeURIComponent(`/donations/${code}`)}`}
-              className="font-medium text-brand-700"
-            >
+            <a href={`/auth/login?return_path=${encodeURIComponent(`/donations/${code}`)}`} className="link">
               Đăng nhập lại
             </a>{" "}
             để xem trạng thái.
           </span>
         )}
-        {watch === "lost" && <span className="text-gray-600">Không còn xem được trạng thái khoản này ở đây.</span>}
+        {watch === "lost" && <span className="text-body">Không còn xem được trạng thái khoản này ở đây.</span>}
       </div>
       {showInstructions ? children : expiredNote}
     </div>
