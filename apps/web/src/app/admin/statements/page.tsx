@@ -4,8 +4,8 @@ import { notFound } from "next/navigation"
 
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { ButtonLink } from "@/components/ui/Button"
+import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
-import { Notice } from "@/components/ui/Notice"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
@@ -189,7 +189,7 @@ function QueueCard({
         <p className="text-ink">
           <RowFacts row={row} />
         </p>
-        <Notice tone="warning">{ambiguousReasonLabel(row.ambiguous_reason)}</Notice>
+        <Callout tone="warning">{ambiguousReasonLabel(row.ambiguous_reason)}</Callout>
         {candidate && (
           <p className="rounded-md bg-surface p-3 text-sm">
             Khớp với dòng {candidate.row_no} của một lần tải trước ({rowStatusLabel(candidate.status).toLowerCase()}):{" "}
@@ -238,10 +238,10 @@ function QueueCard({
                 ))}
               </fieldset>
               {targets.total > targets.shown.length && (
-                <Notice tone="warning">
+                <Callout tone="warning">
                   Còn {targets.total - targets.shown.length} giao dịch khác cùng số tiền xa ngày hơn không hiện ở đây.
                   Nếu không thấy đúng giao dịch, đừng chọn đại một giao dịch.
-                </Notice>
+                </Callout>
               )}
               <NoteField id={`dup-note-${row.id}`} />
               <SubmitButton className="btn-secondary">Là giao dịch đã ghi</SubmitButton>

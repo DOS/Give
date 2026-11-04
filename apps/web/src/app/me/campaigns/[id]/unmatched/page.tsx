@@ -1,14 +1,18 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { ManualMatchList, PaidBreakdownCard } from "@/components/Reconciliation"
 import { UnmatchedTransactionCard } from "@/components/UnmatchedTransaction"
+import { Badge } from "@/components/ui/Badge"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { PageHeader } from "@/components/ui/PageHeader"
 import { requireSession } from "@/lib/auth/session"
 import { getCampaignById } from "@/lib/campaigns"
 import { isUuid } from "@/lib/ids"
 import { listManualMatches, listMatchCandidates, listUnmatched, paidBreakdown } from "@/lib/reconciliation"
 import { dbAs } from "@/lib/supabase"
+
+import { MeDetail } from "../../../_components/MePage"
 
 import { matchTransaction } from "./actions"
 
@@ -30,28 +34,25 @@ export default async function UnmatchedPage({ params }: { params: Promise<{ id: 
   ])
 
   return (
-    <div className="mx-auto max-w-4xl space-y-10 px-4 py-10">
-      <div>
-        <Link href={`/me/campaigns/${campaign.id}`} className="text-sm text-gray-600 hover:text-gray-900">
-          ← {campaign.title}
-        </Link>
-        <h1 className="mt-2 text-3xl font-bold">Giao dịch chưa khớp</h1>
-        <p className="mt-2 text-gray-600">
-          Tiền đã vào tài khoản nhận nhưng nội dung chuyển khoản không có mã ủng hộ hợp lệ. Nếu bạn biết khoản này của
-          lượt ủng hộ nào (người ủng hộ báo lại, hoặc đúng tên và số tiền), hãy khớp tay. Khớp tay chỉ chuyển khoản tiền
-          từ &quot;chưa khớp&quot; sang &quot;đã khớp&quot;: tổng đã thanh toán không đổi. Mọi lần khớp tay được ghi vào
-          nhật ký kiểm toán.
-        </p>
-      </div>
+    <MeDetail>
+      <PageHeader back={{ href: `/me/campaigns/${campaign.id}`, label: campaign.title }} title="Giao dịch chưa khớp">
+        Tiền đã vào tài khoản nhận nhưng nội dung chuyển khoản không có mã ủng hộ hợp lệ. Nếu bạn biết khoản này của
+        lượt ủng hộ nào (người ủng hộ báo lại, hoặc đúng tên và số tiền), hãy khớp tay. Khớp tay chỉ chuyển khoản tiền
+        từ &quot;chưa khớp&quot; sang &quot;đã khớp&quot;: tổng đã thanh toán không đổi. Mọi lần khớp tay được ghi vào
+        nhật ký kiểm toán.
+      </PageHeader>
 
       {breakdown && <PaidBreakdownCard breakdown={breakdown} />}
 
-      <section>
-        <h2 className="mb-4 text-xl font-bold">
-          Chờ khớp ({total > unmatched.length ? `${unmatched.length} mới nhất / ${total}` : total})
+      <section aria-labelledby="unmatched-heading">
+        <h2 id="unmatched-heading" className="mb-4 flex items-center gap-2 text-xl font-semibold tracking-tight">
+          Chờ khớp
+          <Badge tone={total > 0 ? "warning" : "neutral"}>
+            {total > unmatched.length ? `${unmatched.length} mới nhất / ${total}` : total}
+          </Badge>
         </h2>
         {unmatched.length === 0 ? (
-          <p className="card p-6 text-gray-600">Không có giao dịch nào chờ khớp.</p>
+          <EmptyState title="Không có giao dịch nào chờ khớp." />
         ) : (
           <ul className="space-y-4">
             {unmatched.map((tx) => (
@@ -67,6 +68,6 @@ export default async function UnmatchedPage({ params }: { params: Promise<{ id: 
       </section>
 
       <ManualMatchList matches={matches} />
-    </div>
+    </MeDetail>
   )
 }

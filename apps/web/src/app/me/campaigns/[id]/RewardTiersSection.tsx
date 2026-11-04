@@ -1,6 +1,7 @@
-import Link from "next/link"
-
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { buttonClass, ButtonLink } from "@/components/ui/Button"
+import { Callout } from "@/components/ui/Callout"
+import { ChevronDownIcon, GiftIcon } from "@/components/ui/icons"
 import type { CampaignStatus } from "@/lib/campaigns"
 import { formatVnd } from "@/lib/format"
 import { deliveryMonth } from "@/lib/pledges"
@@ -16,6 +17,7 @@ import {
   type RewardTier,
 } from "@/lib/reward-tiers"
 
+import { checkInputClass, checkLabelClass, Panel } from "../../_components/Panel"
 import { deleteRewardTier, moveRewardTier, retireRewardTier, saveRewardTier } from "../reward-actions"
 
 /**
@@ -39,10 +41,11 @@ export function RewardTiersSection({
   const ordered = tiers ? sortTiers(tiers) : []
 
   return (
-    <section id="reward-tiers" className="space-y-4 card p-6">
-      <div>
-        <h2 className="text-lg font-semibold">Phần thưởng</h2>
-        <p className="text-sm text-gray-600">
+    <Panel
+      id="reward-tiers"
+      title="Phần thưởng"
+      description={
+        <p>
           Mỗi mức có số tiền tối thiểu (không thấp hơn mức góp tối thiểu {formatVnd(minContribution)}), có thể giới hạn
           số suất. Người ủng hộ chọn một mức khi cam kết.{" "}
           {editable
@@ -51,46 +54,53 @@ export function RewardTiersSection({
               ? "Dự án đã gửi duyệt nên các mức không sửa được nữa. Bạn vẫn có thể ngừng nhận một mức chưa có ai cam kết."
               : "Các mức không sửa được ở trạng thái này."}
         </p>
-      </div>
-
+      }
+    >
       {!tiers ? (
-        <p className="text-sm text-red-700">Không tải được các mức phần thưởng. Hãy tải lại trang.</p>
+        <Callout tone="danger">Không tải được các mức phần thưởng. Hãy tải lại trang.</Callout>
       ) : ordered.length === 0 ? (
-        <p className="text-sm text-gray-500">
+        <p className="text-muted">
           {editable
             ? "Chưa có mức nào. Không có mức nào thì người ủng hộ chỉ cam kết mà không nhận quà."
             : "Dự án không có mức phần thưởng nào."}
         </p>
       ) : (
-        <ol className="space-y-3">
+        <ol className="space-y-4">
           {ordered.map((tier, index) => (
-            <li key={tier.id} className="space-y-3 rounded-md border border-gray-200 p-4 text-sm">
+            <li key={tier.id} className="space-y-4 rounded-md border border-line p-4">
               <TierSummary tier={tier} />
               {editable ? (
-                <div className="space-y-3">
+                <div className="space-y-2 border-t border-line pt-4">
                   <div className="flex flex-wrap gap-2">
                     {index > 0 && (
                       <ActionForm action={moveRewardTier.bind(null, campaignId, tier.id, "up")}>
-                        <SubmitButton className="btn-secondary px-3 py-1">↑ Lên</SubmitButton>
+                        <SubmitButton className={buttonClass({ variant: "secondary", className: "px-3" })}>
+                          ↑ Lên
+                        </SubmitButton>
                       </ActionForm>
                     )}
                     {index < ordered.length - 1 && (
                       <ActionForm action={moveRewardTier.bind(null, campaignId, tier.id, "down")}>
-                        <SubmitButton className="btn-secondary px-3 py-1">↓ Xuống</SubmitButton>
+                        <SubmitButton className={buttonClass({ variant: "secondary", className: "px-3" })}>
+                          ↓ Xuống
+                        </SubmitButton>
                       </ActionForm>
                     )}
                     <ActionForm
                       action={deleteRewardTier.bind(null, campaignId, tier.id)}
                       confirm={`Xóa mức “${tier.title}”?`}
                     >
-                      <SubmitButton className="btn-danger px-3 py-1">Xóa</SubmitButton>
+                      <SubmitButton className={buttonClass({ variant: "danger", className: "px-3" })}>Xóa</SubmitButton>
                     </ActionForm>
                   </div>
-                  <details>
-                    <summary className="cursor-pointer font-medium text-brand-700">Sửa mức này</summary>
-                    <ActionForm action={saveRewardTier.bind(null, campaignId, tier.id)} className="mt-3 space-y-3">
+                  <details className="group">
+                    <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 link [&::-webkit-details-marker]:hidden">
+                      Sửa mức này
+                      <ChevronDownIcon width={18} height={18} className="transition-transform group-open:rotate-180" />
+                    </summary>
+                    <ActionForm action={saveRewardTier.bind(null, campaignId, tier.id)} className="mt-3 space-y-5">
                       <TierFields prefix={`tier_${tier.id}`} tier={tier} />
-                      <SubmitButton>Lưu phần thưởng</SubmitButton>
+                      <SubmitButton className={buttonClass({ variant: "secondary" })}>Lưu phần thưởng</SubmitButton>
                     </ActionForm>
                   </details>
                 </div>
@@ -99,12 +109,12 @@ export function RewardTiersSection({
                   action={retireRewardTier.bind(null, campaignId, tier.id)}
                   confirm={`Ngừng nhận cam kết mới cho mức “${tier.title}”? Mức này sẽ ẩn khỏi trang dự án và không mở lại được.`}
                 >
-                  <SubmitButton className="btn-secondary px-3 py-1">Ngừng nhận mức này</SubmitButton>
+                  <SubmitButton className={buttonClass({ variant: "secondary" })}>Ngừng nhận mức này</SubmitButton>
                 </ActionForm>
               ) : (
                 RETIRABLE_STATUSES.includes(status) &&
                 tier.quantity_claimed > 0 && (
-                  <p className="text-gray-600">Đã có người cam kết nên mức này không ngừng nhận được.</p>
+                  <p className="text-sm text-muted">Đã có người cam kết nên mức này không ngừng nhận được.</p>
                 )
               )}
             </li>
@@ -113,15 +123,25 @@ export function RewardTiersSection({
       )}
 
       {editable && tiers && ordered.length < MAX_TIERS && (
-        <details className="rounded-md border border-dashed border-gray-300 p-4" open={ordered.length === 0}>
-          <summary className="cursor-pointer font-medium">Thêm mức phần thưởng</summary>
-          <ActionForm action={saveRewardTier.bind(null, campaignId, null)} resetOnSuccess className="mt-3 space-y-3">
+        <details
+          className="group mt-4 rounded-md border border-dashed border-gray-300 px-4 py-1"
+          open={ordered.length === 0}
+        >
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 font-semibold text-ink [&::-webkit-details-marker]:hidden">
+            Thêm mức phần thưởng
+            <ChevronDownIcon width={20} height={20} className="transition-transform group-open:rotate-180" />
+          </summary>
+          <ActionForm
+            action={saveRewardTier.bind(null, campaignId, null)}
+            resetOnSuccess
+            className="mt-2 mb-4 space-y-5"
+          >
             <TierFields prefix="new_tier" tier={null} />
-            <SubmitButton className="btn-secondary">Thêm mức</SubmitButton>
+            <SubmitButton className={buttonClass({ variant: "secondary" })}>Thêm mức</SubmitButton>
           </ActionForm>
         </details>
       )}
-    </section>
+    </Panel>
   )
 }
 
@@ -130,11 +150,11 @@ function TierSummary({ tier }: { tier: RewardTier }) {
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="font-semibold break-words">{tier.title}</p>
-        <span className="font-medium text-gray-700">{minAmountLabel(tier.min_amount)}</span>
+        <p className="text-lg font-semibold break-words text-ink">{tier.title}</p>
+        <span className="font-semibold text-ink tabular-nums">{minAmountLabel(tier.min_amount)}</span>
       </div>
-      {tier.description && <p className="break-words whitespace-pre-line text-gray-600">{tier.description}</p>}
-      <p className="text-xs text-gray-500">
+      {tier.description && <p className="break-words whitespace-pre-line text-body">{tier.description}</p>}
+      <p className="text-sm text-muted">
         {tier.quantity_limit === null
           ? "Không giới hạn số suất"
           : `${tier.quantity_limit} suất · ${quantityLabel(tier)}`}
@@ -143,10 +163,10 @@ function TierSummary({ tier }: { tier: RewardTier }) {
         {tier.requires_shipping ? " · Cần giao hàng" : ""}
       </p>
       {tier.requires_shipping && tier.shipping_note && (
-        <p className="text-xs break-words whitespace-pre-line text-gray-500">Giao hàng: {tier.shipping_note}</p>
+        <p className="text-sm break-words whitespace-pre-line text-muted">Giao hàng: {tier.shipping_note}</p>
       )}
       {tier.status === "retired" && (
-        <p className="text-xs font-medium text-amber-800">Đã ngừng nhận cam kết mới (ẩn khỏi trang dự án).</p>
+        <p className="text-sm font-medium text-amber-800">Đã ngừng nhận cam kết mới (ẩn khỏi trang dự án).</p>
       )}
     </div>
   )
@@ -156,7 +176,7 @@ function TierSummary({ tier }: { tier: RewardTier }) {
 function TierFields({ prefix, tier }: { prefix: string; tier: RewardTier | null }) {
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-5 sm:grid-cols-2">
         <div>
           <label htmlFor={`${prefix}_title`} className="label">
             Tên phần thưởng
@@ -178,7 +198,7 @@ function TierFields({ prefix, tier }: { prefix: string; tier: RewardTier | null 
           <input
             id={`${prefix}_min_amount`}
             name="min_amount"
-            className="field"
+            className="field tabular-nums"
             inputMode="numeric"
             required
             defaultValue={tier ? String(tier.min_amount) : ""}
@@ -191,7 +211,7 @@ function TierFields({ prefix, tier }: { prefix: string; tier: RewardTier | null 
           <input
             id={`${prefix}_quantity_limit`}
             name="quantity_limit"
-            className="field"
+            className="field tabular-nums"
             inputMode="numeric"
             defaultValue={tier?.quantity_limit ? String(tier.quantity_limit) : ""}
           />
@@ -223,8 +243,13 @@ function TierFields({ prefix, tier }: { prefix: string; tier: RewardTier | null 
           defaultValue={tier?.description ?? ""}
         />
       </div>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" name="requires_shipping" defaultChecked={tier?.requires_shipping ?? false} />
+      <label className={checkLabelClass}>
+        <input
+          type="checkbox"
+          name="requires_shipping"
+          className={checkInputClass}
+          defaultChecked={tier?.requires_shipping ?? false}
+        />
         Cần giao hàng (người ủng hộ nhập địa chỉ nhận khi cam kết)
       </label>
       <div>
@@ -247,17 +272,29 @@ function TierFields({ prefix, tier }: { prefix: string; tier: RewardTier | null 
 /** Link from the editor to the fulfillment page of a succeeded back campaign. */
 export function FulfillmentLink({ campaignId }: { campaignId: string }) {
   return (
-    <section className="flex flex-wrap items-center justify-between gap-3 card p-6">
-      <div>
-        <h2 className="text-lg font-semibold">Giao quà cho người ủng hộ</h2>
-        <p className="text-sm text-gray-600">
+    <section
+      id="fulfillment"
+      aria-labelledby="fulfillment-title"
+      className="flex scroll-mt-24 flex-col gap-4 rounded-md border border-accent-200 bg-accent-50 p-5 sm:flex-row sm:items-center sm:p-6"
+    >
+      <span
+        aria-hidden
+        className="hidden size-12 shrink-0 items-center justify-center rounded bg-white text-accent-700 sm:flex"
+      >
+        <GiftIcon width={24} height={24} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <h2 id="fulfillment-title" className="text-xl font-semibold tracking-tight">
+          Giao quà cho người ủng hộ
+        </h2>
+        <p className="mt-1 text-body">
           Dự án đã gây quỹ thành công. Cập nhật tình trạng giao quà cho từng người đã thanh toán, hoặc nhiều người cùng
           lúc; người ủng hộ thấy cập nhật trong mục Ủng hộ của tôi.
         </p>
       </div>
-      <Link href={`/me/campaigns/${campaignId}/fulfillment`} className="btn-primary">
+      <ButtonLink href={`/me/campaigns/${campaignId}/fulfillment`} className="sm:shrink-0">
         Cập nhật giao quà
-      </Link>
+      </ButtonLink>
     </section>
   )
 }

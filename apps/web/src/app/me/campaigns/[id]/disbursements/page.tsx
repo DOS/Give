@@ -3,6 +3,11 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { Badge } from "@/components/ui/Badge"
+import { buttonClass } from "@/components/ui/Button"
+import { Callout } from "@/components/ui/Callout"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { PageHeader } from "@/components/ui/PageHeader"
 import { requireSession } from "@/lib/auth/session"
 import { getCampaignById, isPublicStatus } from "@/lib/campaigns"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
@@ -29,6 +34,9 @@ import {
 } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 import { listHiddenEvidence, type EvidenceState } from "@/lib/evidence-moderation"
+
+import { MeDetail } from "../../../_components/MePage"
+import { fileInputClass } from "../../../_components/Panel"
 
 import { addEvidence, explainDisbursement } from "./actions"
 
@@ -62,35 +70,36 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
   ])
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8 px-4 py-10">
-      <div>
-        <Link href={`/me/campaigns/${campaign.id}`} className="text-sm text-gray-600 hover:text-gray-900">
-          ← {campaign.title}
-        </Link>
-        <h1 className="mt-3 text-3xl font-bold">Giải trình khoản chi</h1>
-        <p className="mt-2 text-gray-600">
+    <MeDetail>
+      <PageHeader back={{ href: `/me/campaigns/${campaign.id}`, label: campaign.title }} title="Giải trình khoản chi">
+        <p>
           Mỗi khoản tiền ra khỏi tài khoản nhận cần được giải trình trong {EXPLAIN_WITHIN_DAYS} ngày. Mục đích, loại
           khoản chi, người nhận và ảnh chứng từ sẽ hiện công khai trên sao kê; số khoản chưa giải trình cũng được công
           khai. Giải trình đã gửi thì không sửa được, nhưng có thể thêm chứng từ.
         </p>
         {isPublicStatus(campaign.status) && (
-          <Link href={statementHref(campaign.slug, "all")} className="mt-2 inline-block text-sm text-brand-700">
+          <Link href={statementHref(campaign.slug, "all")} className="mt-1 inline-flex min-h-11 items-center link">
             Xem sao kê công khai →
           </Link>
         )}
-      </div>
+      </PageHeader>
 
-      <section>
-        <h2 className="mb-4 text-xl font-semibold">Chưa giải trình ({pending.length})</h2>
+      <section aria-labelledby="pending-heading">
+        <h2 id="pending-heading" className="mb-4 flex items-center gap-2 text-xl font-semibold tracking-tight">
+          Chưa giải trình
+          <Badge tone={pending.length > 0 ? "warning" : "neutral"}>{pending.length}</Badge>
+        </h2>
         {pending.length === 0 ? (
-          <p className="text-gray-500">Không có khoản chi nào đang chờ giải trình.</p>
+          <EmptyState title="Không có khoản chi nào đang chờ giải trình." />
         ) : (
           <ol className="space-y-6">
             {pending.map((tx) => (
-              <li key={tx.id} className="card p-6">
+              <li key={tx.id} className="card p-5 sm:p-6">
                 <TransactionHeader tx={tx} />
                 {explanationOverdue(tx.booked_at) && (
-                  <p className="mt-2 text-sm text-amber-700">Đã quá {EXPLAIN_WITHIN_DAYS} ngày, hãy giải trình ngay.</p>
+                  <Callout tone="warning" className="mt-4">
+                    Đã quá {EXPLAIN_WITHIN_DAYS} ngày, hãy giải trình ngay.
+                  </Callout>
                 )}
                 <ExplainForm campaignId={campaign.id} tx={tx} refundable={refundable} />
               </li>
@@ -99,21 +108,22 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
         )}
       </section>
 
-      <section>
-        <h2 className="mb-4 text-xl font-semibold">
-          Đã giải trình{done.length < EXPLAINED_PAGE_LIMIT ? ` (${done.length})` : ""}
+      <section aria-labelledby="done-heading">
+        <h2 id="done-heading" className="mb-4 flex items-center gap-2 text-xl font-semibold tracking-tight">
+          Đã giải trình
+          {done.length < EXPLAINED_PAGE_LIMIT && <Badge>{done.length}</Badge>}
         </h2>
         {done.length >= EXPLAINED_PAGE_LIMIT && (
-          <p className="mb-4 text-sm text-gray-500">
+          <p className="mb-4 text-muted">
             Hiện {EXPLAINED_PAGE_LIMIT} khoản gần nhất. Xem toàn bộ trên sao kê công khai.
           </p>
         )}
         {done.length === 0 ? (
-          <p className="text-gray-500">Chưa có khoản chi nào được giải trình.</p>
+          <EmptyState title="Chưa có khoản chi nào được giải trình." />
         ) : (
           <ol className="space-y-6">
             {done.map((tx) => (
-              <li key={tx.id} className="card p-6">
+              <li key={tx.id} className="card p-5 sm:p-6">
                 <TransactionHeader tx={tx} />
                 <Explanation
                   disbursement={tx.disbursement}
@@ -125,7 +135,7 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
                   MAX_EVIDENCE_PER_TRANSACTION && (
                   <ActionForm
                     action={addEvidence.bind(null, campaign.id, tx.id)}
-                    className="mt-4 border-t border-gray-100 pt-4"
+                    className="mt-5 border-t border-line pt-5"
                     resetOnSuccess
                   >
                     <EvidenceFields
@@ -133,7 +143,9 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
                       label="Thêm chứng từ"
                       refund={tx.disbursement.is_refund}
                     />
-                    <SubmitButton className="mt-3 btn-secondary">Tải chứng từ lên</SubmitButton>
+                    <SubmitButton className={buttonClass({ variant: "secondary", className: "mt-4" })}>
+                      Tải chứng từ lên
+                    </SubmitButton>
                   </ActionForm>
                 )}
               </li>
@@ -141,24 +153,26 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
           </ol>
         )}
       </section>
-    </div>
+    </MeDetail>
   )
 }
 
 function TransactionHeader({ tx }: { tx: OutgoingTransaction }) {
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0 text-sm">
-        <p className="text-gray-500">{tx.booked_date_only ? formatDate(tx.booked_at) : formatDateTime(tx.booked_at)}</p>
-        <p className="font-medium break-words">
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      <div className="min-w-0 flex-1 basis-60">
+        <p className="text-sm text-muted">
+          {tx.booked_date_only ? formatDate(tx.booked_at) : formatDateTime(tx.booked_at)}
+        </p>
+        <p className="mt-0.5 font-semibold break-words text-ink">
           {tx.counterparty_name ?? "Không rõ người nhận"}
           {tx.counterparty_account_masked && (
-            <span className="ml-2 font-normal text-gray-500">TK {tx.counterparty_account_masked}</span>
+            <span className="ml-2 font-normal text-muted">TK {tx.counterparty_account_masked}</span>
           )}
         </p>
-        {tx.description && <p className="mt-1 break-words text-gray-600">Nội dung: {tx.description}</p>}
+        {tx.description && <p className="mt-1 break-words text-body">Nội dung: {tx.description}</p>}
       </div>
-      <p className="shrink-0 text-lg font-semibold tabular-nums">−{formatVnd(tx.amount)}</p>
+      <p className="shrink-0 text-xl font-bold text-ink tabular-nums">−{formatVnd(tx.amount)}</p>
     </div>
   )
 }
@@ -176,17 +190,27 @@ function ExplainForm({
   return (
     <ActionForm
       action={explainDisbursement.bind(null, campaignId, tx.id)}
-      className="mt-4 space-y-4 border-t border-gray-100 pt-4"
+      className="mt-5 space-y-5 border-t border-line pt-5"
       confirm="Giải trình sẽ được công khai và không sửa được. Gửi giải trình?"
     >
       <div>
         <label htmlFor={`${p}-purpose`} className="label">
           Mục đích
         </label>
-        <textarea id={`${p}-purpose`} name="purpose" className="field" rows={2} required maxLength={1000} />
-        <p className="hint">Ví dụ: Mua 200 bộ sách giáo khoa lớp 3 cho trường tiểu học A.</p>
+        <textarea
+          id={`${p}-purpose`}
+          name="purpose"
+          className="field"
+          rows={2}
+          required
+          maxLength={1000}
+          aria-describedby={`${p}-purpose-hint`}
+        />
+        <p id={`${p}-purpose-hint`} className="hint">
+          Ví dụ: Mua 200 bộ sách giáo khoa lớp 3 cho trường tiểu học A.
+        </p>
       </div>
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-5 sm:grid-cols-2">
         <div>
           <label htmlFor={`${p}-category`} className="label">
             Loại khoản chi
@@ -206,8 +230,14 @@ function ExplainForm({
           <label htmlFor={`${p}-recipient`} className="label">
             Người nhận (công khai)
           </label>
-          <input id={`${p}-recipient`} name="recipient" className="field" maxLength={200} />
-          <p className="hint">
+          <input
+            id={`${p}-recipient`}
+            name="recipient"
+            className="field"
+            maxLength={200}
+            aria-describedby={`${p}-recipient-hint`}
+          />
+          <p id={`${p}-recipient-hint`} className="hint">
             Tên này hiện công khai. Với cá nhân (người bệnh, trẻ em), cân nhắc chỉ ghi vai trò, ví dụ “gia đình em A”.
             Khoản hoàn tiền cho người ủng hộ ẩn danh không hiện tên này.
           </p>
@@ -217,7 +247,13 @@ function ExplainForm({
         <label htmlFor={`${p}-refund`} className="label">
           Hoàn tiền cho lượt ủng hộ
         </label>
-        <select id={`${p}-refund`} name="refund_contribution_id" className="field" defaultValue="">
+        <select
+          id={`${p}-refund`}
+          name="refund_contribution_id"
+          className="field"
+          defaultValue=""
+          aria-describedby={`${p}-refund-hint`}
+        >
           <option value="">Không phải hoàn tiền</option>
           {refundable.map((x) => (
             <option key={x.id} value={x.id}>
@@ -225,13 +261,13 @@ function ExplainForm({
             </option>
           ))}
         </select>
-        <p className="hint">
+        <p id={`${p}-refund-hint`} className="hint">
           Chỉ chọn khi loại khoản chi là “Hoàn tiền cho người ủng hộ”. Khoản đó được tính vào “đã hoàn lại” thay vì “đã
           chi”.
         </p>
       </div>
       <EvidenceFields idPrefix={p} label="Ảnh chứng từ (hóa đơn, biên nhận, ảnh trao tặng)" />
-      <SubmitButton>Gửi giải trình</SubmitButton>
+      <SubmitButton className={buttonClass()}>Gửi giải trình</SubmitButton>
     </ActionForm>
   )
 }
@@ -242,35 +278,38 @@ function ExplainForm({
  */
 function EvidenceFields({ idPrefix, label, refund }: { idPrefix: string; label: string; refund?: boolean }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-3">
-      <div className="sm:col-span-2">
-        <label htmlFor={`${idPrefix}-evidence`} className="label">
-          {label}
-        </label>
-        <input
-          id={`${idPrefix}-evidence`}
-          name="evidence"
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          multiple
-          className="field"
-        />
-        {refund ? (
-          <p className="mt-1 rounded bg-gray-50 p-2 text-sm text-gray-700" role="note">
-            Chứng từ của khoản hoàn tiền không được công khai: chỉ bạn và bộ phận tài chính của Give xem được.
+    <div className="grid gap-5 sm:grid-cols-3">
+      <div className="space-y-2 sm:col-span-2">
+        <div>
+          <label htmlFor={`${idPrefix}-evidence`} className="label">
+            {label}
+          </label>
+          <input
+            id={`${idPrefix}-evidence`}
+            name="evidence"
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            multiple
+            aria-describedby={`${idPrefix}-evidence-hint`}
+            className={fileInputClass}
+          />
+          <p id={`${idPrefix}-evidence-hint`} className="hint">
+            Tối đa {MAX_EVIDENCE_FILES} ảnh JPEG, PNG hoặc WebP, tổng 4 MB mỗi lần. Thông tin vị trí và thiết bị trong
+            ảnh được xóa trước khi lưu.
           </p>
+        </div>
+        {refund ? (
+          <Callout>
+            Chứng từ của khoản hoàn tiền không được công khai: chỉ bạn và bộ phận tài chính của Give xem được.
+          </Callout>
         ) : (
-          <p className="mt-1 rounded bg-amber-50 p-2 text-sm text-amber-900" role="note">
+          <Callout tone="warning">
             Ảnh chứng từ được công khai cho mọi người xem. Trước khi tải lên, hãy che kín thông tin cá nhân của người
             nhận: số CCCD, số điện thoại, địa chỉ, số tài khoản. Ai cũng có thể báo cáo ảnh lộ thông tin cá nhân, và
             Give sẽ ẩn ảnh đó.
             {refund === undefined && " Riêng chứng từ của khoản hoàn tiền cho người ủng hộ thì không được công khai."}
-          </p>
+          </Callout>
         )}
-        <p className="hint">
-          Tối đa {MAX_EVIDENCE_FILES} ảnh JPEG, PNG hoặc WebP, tổng 4 MB mỗi lần. Thông tin vị trí và thiết bị trong ảnh
-          được xóa trước khi lưu.
-        </p>
       </div>
       <div>
         <label htmlFor={`${idPrefix}-kind`} className="label">
@@ -301,32 +340,28 @@ function Explanation({
   const category = categoryLabel(disbursement.category)
   const evidence = disbursement.evidence
   return (
-    <div className="mt-4 space-y-2 border-t border-gray-100 pt-4 text-sm">
-      <p className="break-words">{disbursement.purpose}</p>
-      <p className="flex flex-wrap gap-3 text-xs text-gray-500">
-        {disbursement.is_refund && (
-          <span className="rounded bg-sky-100 px-1.5 py-0.5 text-sky-800">
-            Hoàn tiền{refundCode ? ` cho ${refundCode}` : ""}
-          </span>
-        )}
+    <div className="mt-5 space-y-3 border-t border-line pt-5">
+      <p className="break-words text-ink">{disbursement.purpose}</p>
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
+        {disbursement.is_refund && <Badge tone="info">Hoàn tiền{refundCode ? ` cho ${refundCode}` : ""}</Badge>}
         {category && <span>{category}</span>}
-        {disbursement.recipient && <span>Người nhận: {disbursement.recipient}</span>}
+        {disbursement.recipient && <span className="break-words">Người nhận: {disbursement.recipient}</span>}
         <span>Giải trình lúc {formatDateTime(disbursement.explained_at)}</span>
       </p>
       {evidence.length > 0 ? (
-        <ul className="flex flex-wrap gap-3">
+        <ul className="flex flex-col gap-1">
           {evidence.map((e) => (
-            <li key={e.id}>
+            <li key={e.id} className="flex flex-wrap items-center gap-x-2">
               <a
                 href={evidenceUrl(e.storage_path)}
                 target="_blank"
                 rel="noreferrer"
-                className="text-brand-700 hover:text-brand-800"
+                className="inline-flex min-h-11 items-center link"
               >
                 {EVIDENCE_KINDS[e.kind] ?? e.kind} ({formatDate(e.created_at)})
               </a>
               {hidden.has(e.id) && (
-                <span className="ml-1 rounded bg-red-50 px-1.5 py-0.5 text-xs text-red-800">
+                <span className="rounded bg-red-50 px-2 py-0.5 text-sm break-words text-red-800">
                   Give đã ẩn khỏi sao kê
                   {hidden.get(e.id)?.reason ? `: ${hidden.get(e.id)?.reason}` : ""}. Hãy tải lên bản đã che thông tin cá
                   nhân.
@@ -336,7 +371,7 @@ function Explanation({
           ))}
         </ul>
       ) : (
-        <p className="text-xs text-amber-700">Chưa có ảnh chứng từ.</p>
+        <p className="text-sm font-medium text-amber-800">Chưa có ảnh chứng từ.</p>
       )}
     </div>
   )

@@ -1,6 +1,10 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 
+import { Badge } from "@/components/ui/Badge"
+import { ButtonLink } from "@/components/ui/Button"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { PageHeader } from "@/components/ui/PageHeader"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
 import { formatDate, formatDateTime } from "@/lib/format"
@@ -15,6 +19,9 @@ import {
 } from "@/lib/statement-import"
 import { dbAs } from "@/lib/supabase"
 import { statementParsers } from "@/server/statement-parsers"
+
+import { MeDetail } from "../_components/MePage"
+import { Panel } from "../_components/Panel"
 
 import { uploadStatement } from "./actions"
 import { UploadForm, type UploadChoice } from "./UploadForm"
@@ -49,76 +56,84 @@ export default async function StatementsPage() {
   }))
 
   return (
-    <div className="mx-auto max-w-4xl space-y-10 px-4 py-10">
-      <div>
-        <Link href="/me/accounts" className="text-sm text-gray-600 hover:text-gray-900">
-          ← Tài khoản nhận tiền
-        </Link>
-        <h1 className="mt-2 text-3xl font-bold">Tải sao kê ngân hàng</h1>
-        <p className="mt-2 text-gray-600">
-          Tải file sao kê của tài khoản nhận để Give ghi các khoản tiền vào, tiền ra và khớp với lượt ủng hộ theo mã ủng
-          hộ. Dòng nào Give chưa chắc (có thể trùng với lần tải trước, số dư không liền mạch) sẽ chờ nhân viên tài chính
-          xem, không bao giờ bị bỏ qua. Tiền vào không có mã ủng hộ được ghi là &quot;chưa khớp&quot;; bạn khớp tay ở
-          trang quản lý chiến dịch.
-        </p>
-      </div>
+    <MeDetail>
+      <PageHeader back={{ href: "/me/accounts", label: "Tài khoản nhận tiền" }} title="Tải sao kê ngân hàng">
+        Tải file sao kê của tài khoản nhận để Give ghi các khoản tiền vào, tiền ra và khớp với lượt ủng hộ theo mã ủng
+        hộ. Dòng nào Give chưa chắc (có thể trùng với lần tải trước, số dư không liền mạch) sẽ chờ nhân viên tài chính
+        xem, không bao giờ bị bỏ qua. Tiền vào không có mã ủng hộ được ghi là &quot;chưa khớp&quot;; bạn khớp tay ở
+        trang quản lý chiến dịch.
+      </PageHeader>
 
-      <section>
-        <h2 className="mb-4 text-xl font-bold">Tải sao kê mới</h2>
+      <Panel id="upload" title="Tải sao kê mới">
         {choices.length === 0 ? (
-          <p className="card p-6 text-gray-600">
-            Bạn chưa có tài khoản nhận nào nhận tiền qua sao kê.{" "}
-            <Link href="/me/accounts" className="font-medium text-brand-700">
-              Khai báo tài khoản
-            </Link>
-          </p>
+          <EmptyState
+            title="Bạn chưa có tài khoản nhận nào nhận tiền qua sao kê."
+            action={<ButtonLink href="/me/accounts">Khai báo tài khoản</ButtonLink>}
+          />
         ) : (
           <UploadForm action={uploadStatement} accounts={choices} maxBytes={MAX_UPLOAD_BYTES} />
         )}
-      </section>
+      </Panel>
 
-      <section>
-        <h2 className="mb-4 text-xl font-bold">Các lần tải gần đây ({batches.length})</h2>
+      <section aria-labelledby="batches-heading">
+        <h2 id="batches-heading" className="mb-4 text-xl font-semibold tracking-tight">
+          Các lần tải gần đây ({batches.length})
+        </h2>
         {batches.length === 0 ? (
-          <p className="card p-6 text-gray-600">Chưa có sao kê nào được tải lên.</p>
+          <EmptyState title="Chưa có sao kê nào được tải lên." />
         ) : (
-          <div className="overflow-x-auto card">
-            <table className="w-full text-left text-sm">
-              <thead className="border-b border-gray-200 text-gray-500">
+          <div role="region" aria-label="Bảng các lần tải (cuộn ngang)" tabIndex={0} className="overflow-x-auto card">
+            <table className="w-full min-w-[44rem] text-left">
+              <thead className="border-b border-line bg-surface text-sm text-muted">
                 <tr>
-                  <th className="p-3 font-medium">Lần</th>
-                  <th className="p-3 font-medium">Tài khoản</th>
-                  <th className="p-3 font-medium">Khoảng thời gian</th>
-                  <th className="p-3 font-medium">Số dòng</th>
-                  <th className="p-3 font-medium">Tải lúc</th>
-                  <th className="p-3 font-medium">Trạng thái</th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Lần
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Tài khoản
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Khoảng thời gian
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right font-medium">
+                    Số dòng
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Tải lúc
+                  </th>
+                  <th scope="col" className="px-4 py-3 font-medium">
+                    Trạng thái
+                  </th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-line">
                 {batches.map((batch) => {
                   const left = waiting.get(batch.id) ?? 0
                   return (
-                    <tr key={batch.id} className="border-b border-gray-100 last:border-0">
-                      <td className="p-3">
-                        <Link href={`/me/statements/${batch.id}`} className="font-medium text-brand-700">
+                    <tr key={batch.id} className="align-top">
+                      <td className="px-4 py-3">
+                        <Link
+                          href={`/me/statements/${batch.id}`}
+                          className="inline-flex min-h-11 items-center link tabular-nums"
+                        >
                           #{batch.batch_no}
                         </Link>
                       </td>
-                      <td className="p-3">{labels.get(batch.receiving_account_id) ?? "Tài khoản khác"}</td>
-                      <td className="p-3">
+                      <td className="px-4 py-3">{labels.get(batch.receiving_account_id) ?? "Tài khoản khác"}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
                         {batch.period_from || batch.period_to
                           ? `${formatDate(batch.period_from)} – ${formatDate(batch.period_to)}`
                           : "—"}
                       </td>
-                      <td className="p-3">{batch.row_count}</td>
-                      <td className="p-3">{formatDateTime(batch.staged_at)}</td>
-                      <td className="p-3">
+                      <td className="px-4 py-3 text-right tabular-nums">{batch.row_count}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{formatDateTime(batch.staged_at)}</td>
+                      <td className="px-4 py-3">
                         {left > 0 ? (
-                          <span className="text-amber-700">{left} dòng chờ nhân viên tài chính</span>
+                          <Badge tone="warning">{left} dòng chờ nhân viên tài chính</Badge>
                         ) : batch.imported_at ? (
-                          <span className="text-green-700">Đã nhập</span>
+                          <Badge tone="brand">Đã nhập</Badge>
                         ) : (
-                          <span className="text-gray-600">Đang xử lý</span>
+                          <Badge>Đang xử lý</Badge>
                         )}
                       </td>
                     </tr>
@@ -129,6 +144,6 @@ export default async function StatementsPage() {
           </div>
         )}
       </section>
-    </div>
+    </MeDetail>
   )
 }
