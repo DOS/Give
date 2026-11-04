@@ -91,7 +91,7 @@ export default async function PledgePage({
           <h2 id="pledge-terms" className="text-lg font-bold">
             Đạt mục tiêu mới thanh toán
           </h2>
-          <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 lg:grid-cols-1">
+          <dl className="mt-4 grid gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-1">
             <div>
               <dt className="text-sm text-muted">Mục tiêu</dt>
               <dd>
@@ -102,7 +102,7 @@ export default async function PledgePage({
               <dt className="text-sm text-muted">Nhận cam kết tới</dt>
               <dd className="font-semibold text-ink">{formatDateTime(campaign.ends_at)}</dd>
             </div>
-            <div className="col-span-2 lg:col-span-1">
+            <div className="sm:col-span-2 lg:col-span-1">
               <dt className="text-sm text-muted">Nếu đạt mục tiêu</dt>
               <dd className="font-semibold text-ink">Bạn chuyển khoản trong {campaign.payment_window_days} ngày</dd>
             </div>

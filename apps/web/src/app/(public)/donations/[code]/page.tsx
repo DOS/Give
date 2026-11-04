@@ -80,8 +80,8 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
   const closedNote = (
     <Callout tone="warning" title="Chiến dịch hiện không nhận chuyển khoản">
       <p>
-        Give không hiển thị thông tin thanh toán. Đừng chuyển thêm tiền cho khoản này. Nếu bạn đã chuyển trước đó, tiền
-        nằm trong tài khoản nhận của chiến dịch và Give vẫn ghi nhận khi đối soát được khoản này.
+        Vì vậy Give không hiển thị thông tin thanh toán. Đừng chuyển thêm tiền cho khoản này. Nếu bạn đã chuyển trước
+        đó, tiền nằm trong tài khoản nhận của chiến dịch và Give vẫn ghi nhận khi đối soát được khoản này.
       </p>
     </Callout>
   )

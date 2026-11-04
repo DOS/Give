@@ -13,7 +13,7 @@ export function CopyButton({ value, label = "Sao chép", name }: { value: string
   return (
     <button
       type="button"
-      className="btn-secondary min-h-11 shrink-0 gap-1.5 px-3 py-1 text-sm"
+      className="btn-secondary shrink-0 gap-1.5 px-3 py-1 text-sm"
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value)

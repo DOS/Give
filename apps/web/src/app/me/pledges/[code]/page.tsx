@@ -200,7 +200,7 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
             <TransferDetails
               svg={svg}
               filename={`give-${payment.reference_code}.png`}
-              qrCaption="Quét bằng app ngân hàng."
+              qrCaption="Mã đã điền sẵn số tiền và nội dung chuyển khoản."
               bankBin={payment.account.bank_bin}
               accountNumber={payment.account.account_number}
               accountName={payment.account.account_name}

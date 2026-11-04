@@ -21,7 +21,7 @@ function Row({
   emphasis?: boolean
 }) {
   return (
-    <div className={clsx("py-3", emphasis && "-mx-3 mt-2 rounded-md bg-accent-50 px-3")}>
+    <div className={clsx("py-3", emphasis && "mt-2 rounded-md bg-accent-50 px-3")}>
       <dt className={clsx("text-sm", emphasis ? "font-medium text-accent-800" : "text-muted")}>{label}</dt>
       <dd className="mt-0.5 flex items-center justify-between gap-3">
         <span className={clsx("min-w-0 font-semibold break-all text-ink", emphasis && "font-mono text-lg")}>
@@ -94,7 +94,7 @@ export function TransferDetails({
               emphasis
             />
           </dl>
-          <p className="mt-4 text-sm text-muted">{footnote}</p>
+          <p className="mt-4 text-body">{footnote}</p>
         </div>
       </div>
     </section>

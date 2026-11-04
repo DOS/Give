@@ -13,7 +13,7 @@ export default function DonationNotFound() {
         Nếu bạn ủng hộ mà không đăng nhập, trang chuyển khoản chỉ mở được trên trình duyệt bạn đã dùng để ủng hộ, trong
         7 ngày. Nếu bạn ủng hộ khi đã đăng nhập, hãy đăng nhập đúng tài khoản đó.
       </p>
-      <div className="mt-8 flex flex-col-reverse justify-center gap-3 sm:flex-row">
+      <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
         <a
           href={`/auth/login?return_path=${encodeURIComponent("/me/contributions")}`}
           className={buttonClass({ variant: "secondary" })}

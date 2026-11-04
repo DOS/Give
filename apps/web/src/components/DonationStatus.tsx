@@ -130,8 +130,8 @@ export function DonationStatus({
         <span className="inline-flex items-center gap-2 font-semibold text-ink">
           {watch === "watching" && showInstructions ? (
             <span className="relative flex size-2.5" aria-hidden>
-              <span className="absolute inline-flex size-full animate-ping rounded-sm bg-brand-500 opacity-75" />
-              <span className="relative inline-flex size-2.5 rounded-sm bg-brand-600" />
+              <span className="absolute inline-flex size-full rounded bg-brand-500 opacity-75 motion-safe:animate-ping" />
+              <span className="relative inline-flex size-2.5 rounded bg-brand-600" />
             </span>
           ) : (
             <ClockIcon width={18} height={18} className="text-muted" />
