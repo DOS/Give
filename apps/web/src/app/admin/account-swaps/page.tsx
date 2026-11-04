@@ -4,9 +4,9 @@ import { notFound } from "next/navigation"
 import { AccountStatusBadge, StatusBadge, VerificationBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { Badge, type BadgeTone } from "@/components/ui/Badge"
+import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { Field } from "@/components/ui/Field"
-import { Notice } from "@/components/ui/Notice"
 import {
   approvalBlock,
   listDecidedSwaps,
@@ -187,11 +187,11 @@ function SwapCard({
 
       {swap.status === "pending" &&
         (own ? (
-          <Notice tone="warning">Đây là chiến dịch của bạn; một nhân viên khác cần xử lý.</Notice>
+          <Callout tone="warning">Đây là chiến dịch của bạn; một nhân viên khác cần xử lý.</Callout>
         ) : (
           <ItemActions>
             {block ? (
-              <Notice tone="warning">Chưa duyệt được: {block}</Notice>
+              <Callout tone="warning">Chưa duyệt được: {block}</Callout>
             ) : (
               <ActionForm
                 action={decideAccountSwap.bind(null, swap.id)}

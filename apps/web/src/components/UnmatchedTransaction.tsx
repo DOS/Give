@@ -1,4 +1,7 @@
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { buttonClass } from "@/components/ui/Button"
+import { Callout } from "@/components/ui/Callout"
+import { ChevronDownIcon } from "@/components/ui/icons"
 import type { ActionResult } from "@/lib/errors"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import {
@@ -34,44 +37,44 @@ export function UnmatchedTransactionCard({
   const others = candidates.filter((c) => !waitsFor(c, tx.amount))
 
   return (
-    <li className="space-y-4 card p-6">
-      <dl className="grid gap-2 text-sm sm:grid-cols-3">
+    <li className="space-y-5 card p-5 sm:p-6">
+      <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-3">
         <div>
-          <dt className="text-gray-500">Số tiền vào</dt>
-          <dd className="text-lg font-semibold text-green-700">+{formatVnd(tx.amount)}</dd>
+          <dt className="text-sm text-muted">Số tiền vào</dt>
+          <dd className="text-xl font-bold text-brand-700 tabular-nums">+{formatVnd(tx.amount)}</dd>
         </div>
         <div>
-          <dt className="text-gray-500">Ngày</dt>
-          <dd>{tx.booked_date_only ? formatDate(tx.booked_at) : formatDateTime(tx.booked_at)}</dd>
+          <dt className="text-sm text-muted">Ngày</dt>
+          <dd className="text-ink">{tx.booked_date_only ? formatDate(tx.booked_at) : formatDateTime(tx.booked_at)}</dd>
         </div>
         <div>
-          <dt className="text-gray-500">Người chuyển</dt>
-          <dd>
+          <dt className="text-sm text-muted">Người chuyển</dt>
+          <dd className="break-words text-ink">
             {tx.counterparty_name ?? "—"}
-            {tx.counterparty_account_masked && (
-              <span className="text-gray-500"> ({tx.counterparty_account_masked})</span>
-            )}
+            {tx.counterparty_account_masked && <span className="text-muted"> ({tx.counterparty_account_masked})</span>}
           </dd>
         </div>
         <div className="sm:col-span-3">
-          <dt className="text-gray-500">Nội dung chuyển khoản</dt>
-          <dd className="font-mono break-words">{tx.description ?? "—"}</dd>
+          <dt className="text-sm text-muted">Nội dung chuyển khoản</dt>
+          <dd className="font-mono break-words text-ink">{tx.description ?? "—"}</dd>
         </div>
         {campaignTitle && (
           <div className="sm:col-span-2">
-            <dt className="text-gray-500">Chiến dịch</dt>
-            <dd>{campaignTitle}</dd>
+            <dt className="text-sm text-muted">Chiến dịch</dt>
+            <dd className="break-words text-ink">{campaignTitle}</dd>
           </div>
         )}
         {tx.after_close && (
-          <div className="text-amber-800 sm:col-span-3">Tiền vào sau khi chiến dịch đã đóng hoặc kết thúc.</div>
+          <div className="font-medium text-amber-800 sm:col-span-3">
+            Tiền vào sau khi chiến dịch đã đóng hoặc kết thúc.
+          </div>
         )}
       </dl>
 
       <ActionForm
         action={action}
         confirm={`Khớp giao dịch ${formatVnd(tx.amount)} với lượt ủng hộ đã chọn? Mỗi giao dịch chỉ khớp được một lần, và chưa sửa được sau khi khớp.`}
-        className="grid gap-3 border-t border-gray-100 pt-4 sm:grid-cols-[2fr_1fr_auto] sm:items-end"
+        className="grid gap-4 border-t border-line pt-5 sm:grid-cols-[2fr_1fr_auto] sm:items-end"
       >
         <div>
           <label htmlFor={`contribution-${tx.id}`} className="label">
@@ -111,7 +114,7 @@ export function UnmatchedTransactionCard({
             maxLength={16}
           />
         </div>
-        <SubmitButton>Khớp</SubmitButton>
+        <SubmitButton className={buttonClass()}>Khớp</SubmitButton>
       </ActionForm>
 
       {explainAction && <ExplainInboundForm tx={tx} action={explainAction} />}
@@ -132,19 +135,20 @@ function ExplainInboundForm({
   action: (state: ActionResult, form: FormData) => Promise<ActionResult>
 }) {
   return (
-    <details className="border-t border-gray-100 pt-4">
-      <summary className="cursor-pointer text-sm font-medium text-gray-700">
+    <details className="group border-t border-line pt-3">
+      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 font-medium text-ink hover:text-brand-700 [&::-webkit-details-marker]:hidden">
         Không phải tiền ủng hộ? Giải trình khoản này
+        <ChevronDownIcon width={18} height={18} className="transition-transform group-open:rotate-180" />
       </summary>
       <ActionForm
         action={action}
         confirm={`Giải trình giao dịch ${formatVnd(tx.amount)} là không phải tiền ủng hộ? Loại khoản tiền sẽ hiện trên sao kê công khai; giải trình đã ghi thì không sửa được, và giao dịch không khớp được với lượt ủng hộ nào nữa.`}
-        className="mt-3 grid gap-3"
+        className="mt-3 grid gap-5"
       >
-        <p className="text-sm text-amber-800">
+        <Callout tone="warning">
           Không dùng cho tiền chuyển đi bị ngân hàng trả lại (khoản chi hoặc khoản hoàn tiền không thành công): khoản đó
           vẫn đang được tính là đã chi hoặc đã hoàn, nên để nguyên và báo quản trị viên.
-        </p>
+        </Callout>
         <div>
           <label htmlFor={`kind-${tx.id}`} className="label">
             Loại khoản tiền
@@ -188,7 +192,7 @@ function ExplainInboundForm({
           />
         </div>
         <div>
-          <SubmitButton>Giải trình</SubmitButton>
+          <SubmitButton className={buttonClass({ variant: "secondary" })}>Giải trình</SubmitButton>
         </div>
       </ActionForm>
     </details>

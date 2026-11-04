@@ -2,8 +2,8 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
-import { Notice } from "@/components/ui/Notice"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
 import { formatDateTime } from "@/lib/format"
@@ -109,13 +109,13 @@ function ParkedCard({
           {account ? ` · ${account}` : ""}
           {part ? ` · phần ${part.number}/${part.count} của file` : ""} · nhận lúc {formatDateTime(event.received_at)}
         </p>
-        <Notice tone="warning" title={parkedReasonLabel(event.last_error)}>
+        <Callout tone="warning" title={parkedReasonLabel(event.last_error)}>
           <p className="text-sm">
             Mã lỗi: <span className="font-mono">{event.last_error ?? "—"}</span> · đã thử {event.attempts} lần
             {event.last_attempt_at ? `, lần cuối ${formatDateTime(event.last_attempt_at)}` : ""} · dừng lúc{" "}
             {formatDateTime(event.parked_at)}
           </p>
-        </Notice>
+        </Callout>
         <p className="font-mono text-xs break-all text-muted">{event.id}</p>
       </div>
 

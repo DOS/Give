@@ -4,9 +4,9 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { Field } from "@/components/ui/Field"
-import { Notice } from "@/components/ui/Notice"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
 import { HIDDEN_LIMIT, listModerationQueue, MODERATION_ROLES, type ModerationItem } from "@/lib/evidence-moderation"
@@ -124,10 +124,10 @@ function EvidenceCard({
           )}
         </p>
         {isHidden && (
-          <Notice tone="danger">
+          <Callout tone="danger">
             Đang ẩn từ {formatDateTime(item.state!.moderated_at)}
             {item.state?.reason ? `: ${item.state.reason}` : ""}
-          </Notice>
+          </Callout>
         )}
         {item.reports.length > 0 && (
           <div>
