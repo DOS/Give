@@ -5,6 +5,11 @@ import { notFound } from "next/navigation"
 import { StatusBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { SelectAll } from "@/components/SelectAll"
+import { Badge } from "@/components/ui/Badge"
+import { buttonClass } from "@/components/ui/Button"
+import { Callout } from "@/components/ui/Callout"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { PageHeader } from "@/components/ui/PageHeader"
 import { requireSession } from "@/lib/auth/session"
 import { getCampaignById } from "@/lib/campaigns"
 import { formatDateTime, formatVnd } from "@/lib/format"
@@ -12,7 +17,6 @@ import {
   canUpdateFulfillment,
   countByStatus,
   FULFILLMENT_BATCH_MAX,
-  FULFILLMENT_COLORS,
   FULFILLMENT_LABELS,
   FULFILLMENT_NOTE_MAX,
   FULFILLMENT_STATUSES,
@@ -26,6 +30,10 @@ import {
 import { isUuid } from "@/lib/ids"
 import { listCampaignTiers, sortTiers } from "@/lib/reward-tiers"
 import { dbAs } from "@/lib/supabase"
+
+import { MeDetail } from "../../../_components/MePage"
+import { checkInputClass } from "../../../_components/Panel"
+import { FULFILLMENT_TONES } from "../../../_components/tones"
 
 import { setFulfillment } from "./actions"
 
@@ -62,27 +70,28 @@ export default async function FulfillmentPage({
   const filtered = filters.tier !== null || filters.status !== null
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 px-4 py-10">
-      <div>
-        <Link href={`/me/campaigns/${campaign.id}`} className="text-sm text-gray-600 hover:text-gray-900">
-          ← {campaign.title}
-        </Link>
-        <h1 className="mt-2 text-3xl font-bold">Giao quà cho người ủng hộ</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Danh sách người đã thanh toán đủ. Cập nhật tình trạng giao quà (kèm ghi chú như mã vận đơn) cho từng người,
-          hoặc đánh dấu nhiều người rồi cập nhật cùng lúc. Người ủng hộ thấy trạng thái và ghi chú trong mục Ủng hộ của
-          tôi; ghi chú không hiện công khai. Không ghi thông tin riêng của người khác vào ghi chú.
-        </p>
-      </div>
+    <MeDetail wide>
+      <PageHeader
+        back={{ href: `/me/campaigns/${campaign.id}`, label: campaign.title }}
+        title="Giao quà cho người ủng hộ"
+      >
+        Danh sách người đã thanh toán đủ. Cập nhật tình trạng giao quà (kèm ghi chú như mã vận đơn) cho từng người, hoặc
+        đánh dấu nhiều người rồi cập nhật cùng lúc. Người ủng hộ thấy trạng thái và ghi chú trong mục Ủng hộ của tôi;
+        ghi chú không hiện công khai. Không ghi thông tin riêng của người khác vào ghi chú.
+      </PageHeader>
 
       {!open ? (
-        <p className="rounded-md bg-gray-50 px-4 py-3 text-sm text-gray-700">
+        <Callout>
           Chỉ cập nhật giao quà được khi dự án đã gây quỹ thành công. Trạng thái hiện tại:{" "}
           <StatusBadge status={campaign.status} />
-        </p>
+        </Callout>
       ) : (
         <>
-          <form method="get" className="flex flex-wrap items-end gap-3 card p-4">
+          <form
+            method="get"
+            aria-label="Lọc người ủng hộ"
+            className="grid gap-4 card p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end sm:p-5"
+          >
             <div>
               <label htmlFor="filter_tier" className="label">
                 Phần thưởng
@@ -111,20 +120,25 @@ export default async function FulfillmentPage({
                 ))}
               </select>
             </div>
-            <button type="submit" className="btn-secondary">
-              Lọc
-            </button>
-            {filtered && (
-              <Link href={`/me/campaigns/${campaign.id}/fulfillment`} className="text-sm text-brand-700">
-                Bỏ lọc
-              </Link>
-            )}
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="submit" className={buttonClass({ variant: "secondary" })}>
+                Lọc
+              </button>
+              {filtered && (
+                <Link
+                  href={`/me/campaigns/${campaign.id}/fulfillment`}
+                  className="inline-flex min-h-11 items-center link"
+                >
+                  Bỏ lọc
+                </Link>
+              )}
+            </div>
           </form>
 
           {pledges.length === 0 ? (
-            <p className="card p-6 text-sm text-gray-600">
-              {filtered ? "Không có lượt ủng hộ nào khớp bộ lọc." : "Chưa có người ủng hộ nào thanh toán đủ."}
-            </p>
+            <EmptyState
+              title={filtered ? "Không có lượt ủng hộ nào khớp bộ lọc." : "Chưa có người ủng hộ nào thanh toán đủ."}
+            />
           ) : (
             <FulfillmentForm
               campaignId={campaign.id}
@@ -137,7 +151,7 @@ export default async function FulfillmentPage({
           )}
         </>
       )}
-    </div>
+    </MeDetail>
   )
 }
 
@@ -157,11 +171,11 @@ function FulfillmentForm({
   filters: FulfillmentFilters
 }) {
   return (
-    <ActionForm action={setFulfillment.bind(null, campaignId)} className="space-y-4">
+    <ActionForm action={setFulfillment.bind(null, campaignId)} className="space-y-6">
       {/* Enter in a field must not submit: the default button is disabled (each row and the bulk bar have their own). */}
       <button type="submit" disabled hidden aria-hidden tabIndex={-1} />
 
-      <p className="text-sm text-gray-600">
+      <p className="text-body">
         {total > pledges.length
           ? `Hiện ${pledges.length} trong ${total} lượt (tối đa ${FULFILLMENT_BATCH_MAX} mỗi lần). Cập nhật xong, lọc theo "Chưa cập nhật" để xem tiếp.`
           : `${pledges.length} lượt ủng hộ${filters.tier || filters.status ? " khớp bộ lọc" : ""}.`}{" "}
@@ -171,72 +185,69 @@ function FulfillmentForm({
           .join(", ")}
       </p>
 
-      <fieldset className="space-y-3 card p-4">
-        <legend className="px-1 text-sm font-semibold">Cập nhật nhiều người cùng lúc</legend>
-        <SelectAll name="contribution_id" label="Chọn tất cả trong danh sách" />
-        <div className="grid gap-3 sm:grid-cols-[12rem_1fr_auto] sm:items-end">
-          <div>
-            <label htmlFor="bulk_status" className="label">
-              Trạng thái
-            </label>
-            <select id="bulk_status" name="status" className="field" defaultValue="in_progress">
-              {FULFILLMENT_STATUSES.map((status) => (
-                <option key={status} value={status}>
-                  {FULFILLMENT_LABELS[status]}
-                </option>
-              ))}
-            </select>
+      <fieldset className="rounded-md border border-brand-200 bg-brand-50 p-4 sm:p-5">
+        <legend className="float-left w-full text-lg font-semibold text-ink">Cập nhật nhiều người cùng lúc</legend>
+        <div className="clear-left space-y-4 pt-2">
+          <SelectAll name="contribution_id" label="Chọn tất cả trong danh sách" />
+          <div className="grid gap-4 sm:grid-cols-[12rem_1fr] lg:grid-cols-[12rem_1fr_auto] lg:items-end">
+            <div>
+              <label htmlFor="bulk_status" className="label">
+                Trạng thái
+              </label>
+              <select id="bulk_status" name="status" className="field" defaultValue="in_progress">
+                {FULFILLMENT_STATUSES.map((status) => (
+                  <option key={status} value={status}>
+                    {FULFILLMENT_LABELS[status]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="bulk_note" className="label">
+                Ghi chú (thay ghi chú cũ của những người đã chọn; để trống là xóa ghi chú cũ)
+              </label>
+              <input
+                id="bulk_note"
+                name="note"
+                className="field"
+                maxLength={FULFILLMENT_NOTE_MAX}
+                placeholder="Ví dụ: đã gửi qua Giao Hàng Nhanh ngày 10/03"
+              />
+            </div>
+            <div className="sm:col-span-2 lg:col-span-1">
+              <SubmitButton className={buttonClass()}>Cập nhật những người đã chọn</SubmitButton>
+            </div>
           </div>
-          <div>
-            <label htmlFor="bulk_note" className="label">
-              Ghi chú (thay ghi chú cũ của những người đã chọn; để trống là xóa ghi chú cũ)
-            </label>
-            <input
-              id="bulk_note"
-              name="note"
-              className="field"
-              maxLength={FULFILLMENT_NOTE_MAX}
-              placeholder="Ví dụ: đã gửi qua Giao Hàng Nhanh ngày 10/03"
-            />
-          </div>
-          <SubmitButton>Cập nhật những người đã chọn</SubmitButton>
         </div>
       </fieldset>
 
-      <ul className="divide-y divide-gray-200 rounded-lg border border-gray-200">
+      <ul className="divide-y divide-line card">
         {pledges.map((pledge) => {
           const address = shippingLines(pledge.shipping_address)
           const status = isFulfillmentStatus(pledge.fulfillment_status) ? pledge.fulfillment_status : null
           return (
-            <li key={pledge.id} className="grid gap-3 p-4 text-sm lg:grid-cols-[1fr_22rem]">
+            <li key={pledge.id} className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
               <div className="flex min-w-0 gap-3">
                 <input
                   type="checkbox"
                   name="contribution_id"
                   value={pledge.id}
                   aria-label={`Chọn lượt ${pledge.reference_code}`}
-                  className="mt-1"
+                  className={`mt-1 ${checkInputClass}`}
                 />
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold">{pledge.public_name ?? "Người ủng hộ"}</span>
-                    {pledge.is_anonymous && (
-                      <span className="text-xs text-gray-500">(ẩn danh trên trang công khai)</span>
-                    )}
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        status ? FULFILLMENT_COLORS[status] : "bg-amber-50 text-amber-800"
-                      }`}
-                    >
-                      {fulfillmentLabel(status)}
-                    </span>
+                    <span className="font-semibold break-words text-ink">{pledge.public_name ?? "Người ủng hộ"}</span>
+                    {pledge.is_anonymous && <span className="text-sm text-muted">(ẩn danh trên trang công khai)</span>}
+                    <Badge tone={status ? FULFILLMENT_TONES[status] : "warning"}>{fulfillmentLabel(status)}</Badge>
                   </div>
-                  <p className="text-gray-600">
+                  <p className="text-body">
                     {pledge.reward_tier_id ? (tierTitle.get(pledge.reward_tier_id) ?? "Phần thưởng") : "Không nhận quà"}{" "}
-                    · {formatVnd(pledge.intended_amount)} · Mã {pledge.reference_code}
+                    · <span className="tabular-nums">{formatVnd(pledge.intended_amount)}</span> · Mã{" "}
+                    <span className="font-mono">{pledge.reference_code}</span>
                   </p>
                   {address.length > 0 && (
-                    <address className="text-gray-700 not-italic">
+                    <address className="text-body not-italic">
                       {address.map((line, i) => (
                         <span key={i} className="block break-words">
                           {line}
@@ -245,12 +256,10 @@ function FulfillmentForm({
                     </address>
                   )}
                   {pledge.fulfillment_note && (
-                    <p className="break-words text-gray-600">Ghi chú: {pledge.fulfillment_note}</p>
+                    <p className="break-words text-body">Ghi chú: {pledge.fulfillment_note}</p>
                   )}
                   {pledge.fulfillment_updated_at && (
-                    <p className="text-xs text-gray-500">
-                      Cập nhật lúc {formatDateTime(pledge.fulfillment_updated_at)}
-                    </p>
+                    <p className="text-sm text-muted">Cập nhật lúc {formatDateTime(pledge.fulfillment_updated_at)}</p>
                   )}
                 </div>
               </div>
@@ -258,7 +267,7 @@ function FulfillmentForm({
                   update the row would still show, and save back, the old status. */}
               <div
                 key={`${pledge.fulfillment_status ?? "none"}:${pledge.fulfillment_updated_at ?? ""}`}
-                className="grid gap-2 sm:grid-cols-[10rem_1fr]"
+                className="grid gap-2 sm:grid-cols-[10rem_1fr] lg:pl-0"
               >
                 <select
                   name={`status_${pledge.id}`}
@@ -281,7 +290,7 @@ function FulfillmentForm({
                   defaultValue={pledge.fulfillment_note ?? ""}
                 />
                 <div className="sm:col-span-2">
-                  <SubmitButton className="btn-secondary px-3 py-1" name="only" value={pledge.id}>
+                  <SubmitButton className={buttonClass({ variant: "secondary" })} name="only" value={pledge.id}>
                     Lưu cho người này
                   </SubmitButton>
                 </div>

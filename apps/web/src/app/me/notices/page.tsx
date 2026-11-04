@@ -1,19 +1,44 @@
 import type { Metadata } from "next"
-import Link from "next/link"
+import { Suspense } from "react"
 
 import { ActionForm, SubmitButton } from "@/components/forms"
-import { requireSession } from "@/lib/auth/session"
+import { Badge } from "@/components/ui/Badge"
+import { buttonClass, ButtonLink } from "@/components/ui/Button"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { PageHeader } from "@/components/ui/PageHeader"
+import { SkeletonList } from "@/components/ui/Skeleton"
+import { requireSession, type Session } from "@/lib/auth/session"
 import { formatDateTime } from "@/lib/format"
 import { countUnreadNotices, describeNotice, listNotices, NOTICE_PAGE_SIZE } from "@/lib/notices"
 import { dbAs } from "@/lib/supabase"
+
+import { MePage } from "../_components/MePage"
 
 import { markAllNoticesRead, markNoticeRead } from "./actions"
 
 export const metadata: Metadata = { title: "Thông báo", robots: { index: false } }
 
-/** The signed-in user's notices, read with their own token under RLS. */
 export default async function MyNoticesPage() {
   const session = await requireSession("/me/notices")
+
+  return (
+    <MePage section="notices">
+      <Suspense
+        fallback={
+          <>
+            <PageHeader title="Thông báo" />
+            <SkeletonList label="Đang tải thông báo…" />
+          </>
+        }
+      >
+        <NoticeList session={session} />
+      </Suspense>
+    </MePage>
+  )
+}
+
+/** The signed-in user's notices, read with their own token under RLS. */
+async function NoticeList({ session }: { session: Session }) {
   const db = dbAs(session.accessToken)
   // The unread count covers every notice, like the header badge, not only
   // the newest page: "mark all" must stay reachable while any is unread.
@@ -25,54 +50,56 @@ export default async function MyNoticesPage() {
   const unread = Math.max(unreadCount, notices.filter((n) => !n.read_at).length)
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-3xl font-bold">Thông báo</h1>
-        {unread > 0 && notices.length > 0 && (
-          <ActionForm action={markAllNoticesRead}>
-            {/* Only what this page showed: a notice that arrives later stays unread. */}
-            <input type="hidden" name="before" value={notices[0].created_at} />
-            <SubmitButton className="btn-secondary">Đánh dấu tất cả đã đọc</SubmitButton>
-          </ActionForm>
-        )}
-      </div>
-      <p className="mt-2 text-sm text-gray-600">
+    <>
+      <PageHeader
+        title="Thông báo"
+        actions={
+          unread > 0 &&
+          notices.length > 0 && (
+            <ActionForm action={markAllNoticesRead}>
+              {/* Only what this page showed: a notice that arrives later stays unread. */}
+              <input type="hidden" name="before" value={notices[0].created_at} />
+              <SubmitButton className={buttonClass({ variant: "secondary" })}>Đánh dấu tất cả đã đọc</SubmitButton>
+            </ActionForm>
+          )
+        }
+      >
         {unread > 0 ? `Bạn có ${unread} thông báo chưa đọc.` : "Bạn đã đọc hết thông báo."}
         {notices.length >= NOTICE_PAGE_SIZE && ` Trang này hiện ${NOTICE_PAGE_SIZE} thông báo mới nhất.`}
-      </p>
+      </PageHeader>
 
       {notices.length === 0 ? (
-        <div className="mt-8 card p-10 text-center text-gray-600">Chưa có thông báo nào.</div>
+        <EmptyState title="Chưa có thông báo nào.">
+          Give báo cho bạn ở đây khi tiền ủng hộ về, khi chiến dịch được duyệt và khi có việc cần bạn làm.
+        </EmptyState>
       ) : (
-        <ul className="mt-8 divide-y divide-gray-200 rounded-lg border border-gray-200">
+        <ul className="divide-y divide-line card">
           {notices.map((notice) => {
             const view = describeNotice(notice)
             return (
               <li
                 key={notice.id}
-                className={`flex flex-wrap items-start gap-4 p-4 ${notice.read_at ? "" : "bg-brand-50"}`}
+                className={`flex flex-col gap-3 border-l-4 p-4 sm:flex-row sm:items-start sm:gap-6 sm:p-5 ${
+                  notice.read_at ? "border-l-transparent" : "border-l-brand-600 bg-brand-50/60"
+                }`}
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    {!notice.read_at && (
-                      <span className="inline-flex rounded-full bg-brand-600 px-2 py-0.5 text-xs font-medium text-white">
-                        Mới
-                      </span>
-                    )}
-                    <h2 className="font-semibold">{view.title}</h2>
+                    {!notice.read_at && <Badge tone="brand">Mới</Badge>}
+                    <h2 className="text-lg leading-snug font-semibold break-words">{view.title}</h2>
                   </div>
-                  <p className="mt-1 text-sm text-gray-700">{view.body}</p>
-                  <p className="mt-1 text-xs text-gray-500">{formatDateTime(notice.created_at)}</p>
+                  <p className="mt-1 break-words text-body">{view.body}</p>
+                  <p className="mt-1 text-sm text-muted">{formatDateTime(notice.created_at)}</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                   {view.href && view.linkLabel && (
-                    <Link href={view.href} className="btn-secondary">
+                    <ButtonLink href={view.href} variant="secondary">
                       {view.linkLabel}
-                    </Link>
+                    </ButtonLink>
                   )}
                   {!notice.read_at && (
                     <ActionForm action={markNoticeRead.bind(null, notice.id)}>
-                      <SubmitButton className="text-sm text-gray-600 hover:text-gray-900">Đã đọc</SubmitButton>
+                      <SubmitButton className={buttonClass({ variant: "ghost" })}>Đã đọc</SubmitButton>
                     </ActionForm>
                   )}
                 </div>
@@ -81,6 +108,6 @@ export default async function MyNoticesPage() {
           })}
         </ul>
       )}
-    </div>
+    </>
   )
 }

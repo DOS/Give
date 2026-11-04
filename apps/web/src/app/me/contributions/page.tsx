@@ -1,19 +1,28 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import { Suspense } from "react"
 
-import { requireSession } from "@/lib/auth/session"
+import { Badge } from "@/components/ui/Badge"
+import { ButtonLink } from "@/components/ui/Button"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { HeartIcon, SparkIcon } from "@/components/ui/icons"
+import { PageHeader } from "@/components/ui/PageHeader"
+import { SkeletonList } from "@/components/ui/Skeleton"
+import { requireSession, type Session } from "@/lib/auth/session"
 import { donationStatusLabel } from "@/lib/contributions"
 import { formatDate, formatVnd } from "@/lib/format"
 import {
   fulfillmentLabel,
   offersPayment,
   pledgeListSummary,
-  pledgeStatusColor,
   pledgeStatusLabel,
   withoutReplacedPledges,
 } from "@/lib/pledges"
 import { dbAs, dbService } from "@/lib/supabase"
 import { pledgeBalances, type PledgeBalance } from "@/server/pledges"
+
+import { MePage } from "../_components/MePage"
+import { DONATION_TONES, PLEDGE_TONES, toneOf } from "../_components/tones"
 
 export const metadata: Metadata = { title: "Ủng hộ của tôi", robots: { index: false } }
 
@@ -33,18 +42,23 @@ interface MyContribution {
   campaign: { slug: string; title: string } | null
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  awaiting_transfer: "bg-amber-100 text-amber-800",
-  received: "bg-green-100 text-green-800",
-  expired: "bg-gray-100 text-gray-700",
-}
-
 function statusLabel(c: MyContribution): string {
   return c.kind === "pledge" ? pledgeStatusLabel(c.status) : donationStatusLabel(c.status)
 }
 
-function statusColor(c: MyContribution): string {
-  return c.kind === "pledge" ? pledgeStatusColor(c.status) : (STATUS_COLORS[c.status] ?? "bg-gray-100 text-gray-700")
+export default async function MyContributionsPage() {
+  const session = await requireSession("/me/contributions")
+
+  return (
+    <MePage section="contributions">
+      <PageHeader title="Ủng hộ của tôi">
+        Các lượt ủng hộ chiến dịch từ thiện và cam kết dự án sáng tạo của bạn, mới nhất ở trên.
+      </PageHeader>
+      <Suspense fallback={<SkeletonList label="Đang tải lượt ủng hộ…" />}>
+        <ContributionList session={session} />
+      </Suspense>
+    </MePage>
+  )
 }
 
 /**
@@ -55,8 +69,7 @@ function statusColor(c: MyContribution): string {
  * shown (give.pledge_balances, DOS/Give#89), read as the service role for the
  * user the RLS read above has just proved.
  */
-export default async function MyContributionsPage() {
-  const session = await requireSession("/me/contributions")
+async function ContributionList({ session }: { session: Session }) {
   const { data, error } = await dbAs(session.accessToken)
     .from("contributions")
     .select(
@@ -76,66 +89,80 @@ export default async function MyContributionsPage() {
       })
     : new Map()
 
-  return (
-    <div className="mx-auto max-w-4xl px-4 py-10">
-      <h1 className="text-3xl font-bold">Ủng hộ của tôi</h1>
+  if (contributions.length === 0) {
+    return (
+      <EmptyState
+        title="Bạn chưa ủng hộ chiến dịch hay dự án nào."
+        action={<ButtonLink href="/campaigns">Khám phá chiến dịch</ButtonLink>}
+      >
+        Mỗi lượt ủng hộ có một mã riêng; bạn theo dõi tiền đã đến đâu ngay tại đây.
+      </EmptyState>
+    )
+  }
 
-      {contributions.length === 0 ? (
-        <div className="mt-8 card p-10 text-center text-gray-600">
-          Bạn chưa ủng hộ chiến dịch hay dự án nào.{" "}
-          <Link href="/campaigns" className="font-medium text-brand-700">
-            Khám phá chiến dịch
-          </Link>
-        </div>
-      ) : (
-        <ul className="mt-8 divide-y divide-gray-200 rounded-lg border border-gray-200">
-          {contributions.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-center gap-4 p-4">
+  return (
+    <ul className="divide-y divide-line card">
+      {contributions.map((c) => {
+        const pledge = c.kind === "pledge"
+        const Icon = pledge ? SparkIcon : HeartIcon
+        return (
+          <li key={c.id} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
+            <div className="flex min-w-0 flex-1 gap-4">
+              <span
+                aria-hidden
+                className={`hidden size-11 shrink-0 items-center justify-center rounded sm:flex ${pledge ? "bg-accent-50 text-accent-700" : "bg-brand-50 text-brand-700"}`}
+              >
+                <Icon width={22} height={22} />
+              </span>
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${statusColor(c)}`}>
-                    {statusLabel(c)}
-                  </span>
-                  {c.kind === "pledge" && <span className="text-xs text-gray-500">Cam kết dự án</span>}
-                  {c.kind === "pledge" && c.status === "paid" && c.reward_tier_id && (
-                    <span className="text-xs text-gray-600">Giao quà: {fulfillmentLabel(c.fulfillment_status)}</span>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <Badge tone={toneOf(pledge ? PLEDGE_TONES : DONATION_TONES, c.status)}>{statusLabel(c)}</Badge>
+                  {pledge && <span className="text-sm text-muted">Cam kết dự án</span>}
+                  {pledge && c.status === "paid" && c.reward_tier_id && (
+                    <span className="text-sm text-body">Giao quà: {fulfillmentLabel(c.fulfillment_status)}</span>
                   )}
-                  {c.is_anonymous && <span className="text-xs text-gray-500">Ẩn danh</span>}
+                  {c.is_anonymous && <span className="text-sm text-muted">Ẩn danh</span>}
                 </div>
                 {c.campaign ? (
                   <Link
                     href={`/campaigns/${c.campaign.slug}`}
-                    className="mt-1 block truncate font-semibold hover:text-brand-700"
+                    className="mt-2 block text-lg leading-snug font-semibold break-words text-ink hover:text-brand-700 hover:underline"
                   >
                     {c.campaign.title}
                   </Link>
                 ) : (
-                  <p className="mt-1 font-semibold text-gray-500">Chiến dịch không còn công khai</p>
+                  <p className="mt-2 text-lg leading-snug font-semibold text-muted">Chiến dịch không còn công khai</p>
                 )}
-                <p className="text-sm text-gray-500">
-                  {c.kind === "pledge"
+                <p className="mt-1 text-body">
+                  {pledge
                     ? pledgeListSummary(c, balances.get(c.id) ?? null)
                     : c.status === "received"
                       ? `Đã nhận ${formatVnd(c.received_amount)}`
-                      : `Dự định ${formatVnd(c.intended_amount)}`}{" "}
-                  · Mã {c.reference_code} · {formatDate(c.created_at)}
+                      : `Dự định ${formatVnd(c.intended_amount)}`}
+                </p>
+                <p className="mt-0.5 text-sm text-muted">
+                  Mã <span className="font-mono">{c.reference_code}</span> · {formatDate(c.created_at)}
                 </p>
               </div>
-              {c.kind === "pledge" ? (
-                <Link href={`/me/pledges/${c.reference_code}`} className="btn-secondary">
-                  {offersPayment(c, balances.get(c.id) ?? null) ? "Thanh toán" : "Xem cam kết"}
-                </Link>
-              ) : (
-                c.status !== "received" && (
-                  <Link href={`/donations/${c.reference_code}`} className="btn-secondary">
-                    {c.status === "awaiting_transfer" ? "Xem cách chuyển khoản" : "Xem trạng thái"}
-                  </Link>
-                )
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+            </div>
+            {pledge ? (
+              <ButtonLink
+                href={`/me/pledges/${c.reference_code}`}
+                variant={offersPayment(c, balances.get(c.id) ?? null) ? "primary" : "secondary"}
+                className="sm:shrink-0"
+              >
+                {offersPayment(c, balances.get(c.id) ?? null) ? "Thanh toán" : "Xem cam kết"}
+              </ButtonLink>
+            ) : (
+              c.status !== "received" && (
+                <ButtonLink href={`/donations/${c.reference_code}`} variant="secondary" className="sm:shrink-0">
+                  {c.status === "awaiting_transfer" ? "Xem cách chuyển khoản" : "Xem trạng thái"}
+                </ButtonLink>
+              )
+            )}
+          </li>
+        )
+      })}
+    </ul>
   )
 }

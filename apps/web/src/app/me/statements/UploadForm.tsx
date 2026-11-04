@@ -3,6 +3,11 @@
 import Link from "next/link"
 import { startTransition, useActionState, useState } from "react"
 
+import { buttonClass } from "@/components/ui/Button"
+import { Callout } from "@/components/ui/Callout"
+
+import { fileInputClass } from "../_components/Panel"
+
 import type { UploadResult } from "./actions"
 
 export interface UploadChoice {
@@ -35,7 +40,7 @@ export function UploadForm({
   return (
     <form
       action={formAction}
-      className="space-y-4 card p-6"
+      className="space-y-5"
       onSubmit={(event) => {
         // Keeps the chosen file and pickers when the server refuses the upload (see ActionForm).
         event.preventDefault()
@@ -69,10 +74,10 @@ export function UploadForm({
       </div>
 
       {parsers.length === 0 ? (
-        <p role="status" className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+        <Callout tone="warning" role="status">
           Định dạng sao kê của ngân hàng này chưa được hỗ trợ. Give đang bổ sung từng ngân hàng; khi định dạng của ngân
           hàng bạn sẵn sàng, bạn có thể tải sao kê lên ở đây.
-        </p>
+        </Callout>
       ) : (
         <>
           <div>
@@ -91,30 +96,27 @@ export function UploadForm({
             <label htmlFor="file" className="label">
               File sao kê
             </label>
-            <input id="file" name="file" type="file" className="field" required />
-            <p className="hint">
+            <input id="file" name="file" type="file" className={fileInputClass} required aria-describedby="file_hint" />
+            <p id="file_hint" className="hint">
               File xuất nguyên bản từ ngân hàng, tối đa 4 MB và 5.000 dòng. Tải lại cùng một file không ghi trùng.
             </p>
           </div>
-          <button type="submit" className="btn-primary" disabled={pending}>
+          <button type="submit" className={buttonClass()} disabled={pending}>
             {pending ? "Đang xử lý…" : "Tải lên và nhập"}
           </button>
         </>
       )}
 
       {tooLarge ? (
-        <p role="alert" className="text-sm text-red-700">
+        <p role="alert" className="text-red-700">
           File quá lớn (tối đa {Math.floor(maxBytes / 1024 / 1024)} MB). Hãy xuất sao kê theo khoảng thời gian ngắn hơn.
         </p>
       ) : (
         state?.message && (
-          <div
-            role={state.ok ? "status" : "alert"}
-            className={`text-sm ${state.ok ? "text-green-700" : "text-red-700"}`}
-          >
+          <div role={state.ok ? "status" : "alert"} className={state.ok ? "text-brand-800" : "text-red-700"}>
             <p>{state.message}</p>
             {state.batchId && (
-              <Link href={`/me/statements/${state.batchId}`} className="mt-1 inline-block font-medium text-brand-700">
+              <Link href={`/me/statements/${state.batchId}`} className="mt-1 inline-flex min-h-11 items-center link">
                 Xem từng dòng của sao kê →
               </Link>
             )}
