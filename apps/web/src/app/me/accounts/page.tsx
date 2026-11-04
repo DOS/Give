@@ -279,7 +279,7 @@ function AccountItem({
             <span className="font-semibold">{formatVnd(VERIFICATION_TRANSFER_AMOUNT)}</span> tới một tài khoản khác của
             bạn, với nội dung chuyển khoản đúng là:
           </p>
-          <p className="my-3 inline-block rounded border border-amber-300 bg-white px-3 py-1.5 font-mono text-xl font-bold tracking-wider break-all text-ink">
+          <p className="inline-block rounded border border-amber-300 bg-white px-3 py-1.5 font-mono text-xl font-bold tracking-wider break-all text-ink">
             {account.verification_code}
           </p>
           <p>

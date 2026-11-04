@@ -1,7 +1,6 @@
 import type { BadgeTone } from "@/components/ui/Badge"
 import type { DonationStatus } from "@/lib/contributions"
 import type { FulfillmentStatus } from "@/lib/fulfillment"
-import type { PledgeStatus } from "@/lib/pledges"
 import type { RowStatus } from "@/lib/statement-import"
 
 /** Badge tones of the statuses /me lists show (labels stay in lib). */
@@ -9,17 +8,6 @@ export const DONATION_TONES: Record<DonationStatus, BadgeTone> = {
   awaiting_transfer: "warning",
   received: "brand",
   expired: "neutral",
-}
-
-export const PLEDGE_TONES: Record<PledgeStatus, BadgeTone> = {
-  pledged: "info",
-  payment_due: "warning",
-  partially_paid: "warning",
-  paid: "brand",
-  cancelled: "neutral",
-  lapsed: "neutral",
-  refund_due: "danger",
-  refunded: "neutral",
 }
 
 export const FULFILLMENT_TONES: Record<FulfillmentStatus, BadgeTone> = {

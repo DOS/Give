@@ -12,7 +12,7 @@ export function SaveQrButton({ svg, filename }: { svg: string; filename: string 
   return (
     <button
       type="button"
-      className="mt-2 text-xs font-medium text-brand-700"
+      className="mt-2 inline-flex min-h-11 items-center gap-2 link"
       onClick={() => {
         const image = new Image()
         image.onload = () => {
@@ -40,7 +40,23 @@ export function SaveQrButton({ svg, filename }: { svg: string; filename: string 
         image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
       }}
     >
-      {failed ? "Không lưu được ảnh. Hãy chụp màn hình mã QR." : "Lưu ảnh QR"}
+      {!failed && (
+        <svg
+          viewBox="0 0 24 24"
+          width={18}
+          height={18}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.75}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden
+          focusable="false"
+        >
+          <path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14" />
+        </svg>
+      )}
+      <span aria-live="polite">{failed ? "Không lưu được ảnh. Hãy chụp màn hình mã QR." : "Lưu ảnh QR"}</span>
     </button>
   )
 }

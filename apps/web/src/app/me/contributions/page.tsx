@@ -7,22 +7,17 @@ import { ButtonLink } from "@/components/ui/Button"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { HeartIcon, SparkIcon } from "@/components/ui/icons"
 import { PageHeader } from "@/components/ui/PageHeader"
+import { PledgeStatusBadge } from "@/components/ui/PledgeStatusBadge"
 import { SkeletonList } from "@/components/ui/Skeleton"
 import { requireSession, type Session } from "@/lib/auth/session"
 import { donationStatusLabel } from "@/lib/contributions"
 import { formatDate, formatVnd } from "@/lib/format"
-import {
-  fulfillmentLabel,
-  offersPayment,
-  pledgeListSummary,
-  pledgeStatusLabel,
-  withoutReplacedPledges,
-} from "@/lib/pledges"
+import { fulfillmentLabel, offersPayment, pledgeListSummary, withoutReplacedPledges } from "@/lib/pledges"
 import { dbAs, dbService } from "@/lib/supabase"
 import { pledgeBalances, type PledgeBalance } from "@/server/pledges"
 
 import { MePage } from "../_components/MePage"
-import { DONATION_TONES, PLEDGE_TONES, toneOf } from "../_components/tones"
+import { DONATION_TONES, toneOf } from "../_components/tones"
 
 export const metadata: Metadata = { title: "Ủng hộ của tôi", robots: { index: false } }
 
@@ -40,10 +35,6 @@ interface MyContribution {
   reward_tier_id: string | null
   created_at: string
   campaign: { slug: string; title: string } | null
-}
-
-function statusLabel(c: MyContribution): string {
-  return c.kind === "pledge" ? pledgeStatusLabel(c.status) : donationStatusLabel(c.status)
 }
 
 export default async function MyContributionsPage() {
@@ -116,7 +107,11 @@ async function ContributionList({ session }: { session: Session }) {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <Badge tone={toneOf(pledge ? PLEDGE_TONES : DONATION_TONES, c.status)}>{statusLabel(c)}</Badge>
+                  {pledge ? (
+                    <PledgeStatusBadge status={c.status} />
+                  ) : (
+                    <Badge tone={toneOf(DONATION_TONES, c.status)}>{donationStatusLabel(c.status)}</Badge>
+                  )}
                   {pledge && <span className="text-sm text-muted">Cam kết dự án</span>}
                   {pledge && c.status === "paid" && c.reward_tier_id && (
                     <span className="text-sm text-body">Giao quà: {fulfillmentLabel(c.fulfillment_status)}</span>

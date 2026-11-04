@@ -299,11 +299,11 @@ function EvidenceFields({ idPrefix, label, refund }: { idPrefix: string; label: 
           </p>
         </div>
         {refund ? (
-          <Callout role="note">
+          <Callout>
             Chứng từ của khoản hoàn tiền không được công khai: chỉ bạn và bộ phận tài chính của Give xem được.
           </Callout>
         ) : (
-          <Callout tone="warning" role="note">
+          <Callout tone="warning">
             Ảnh chứng từ được công khai cho mọi người xem. Trước khi tải lên, hãy che kín thông tin cá nhân của người
             nhận: số CCCD, số điện thoại, địa chỉ, số tài khoản. Ai cũng có thể báo cáo ảnh lộ thông tin cá nhân, và
             Give sẽ ẩn ảnh đó.
