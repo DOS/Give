@@ -10,7 +10,8 @@ import { Callout } from "@/components/ui/Callout"
 export function MeError({ retry }: { retry: () => void }) {
   return (
     <div className="mx-auto w-full max-w-2xl px-4 py-16 sm:px-6">
-      <Callout tone="danger" role="alert" title="Không tải được trang này">
+      <h1 className="mb-4 text-2xl font-bold tracking-tight">Không tải được trang này</h1>
+      <Callout tone="danger" role="alert">
         Có thể kết nối bị gián đoạn hoặc máy chủ đang bận. Dữ liệu của bạn không bị ảnh hưởng; hãy thử lại sau ít phút.
       </Callout>
       <div className="mt-6 flex flex-wrap gap-3">

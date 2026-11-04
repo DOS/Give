@@ -95,7 +95,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
     showFulfillment && { id: "fulfillment", label: "Giao quà" },
     showMoney && { id: "money", label: "Sao kê và giải trình chi" },
     { id: "content", label: "Nội dung" },
-    { id: "cover", label: "Ảnh bìa" },
+    { id: "cover-image", label: "Ảnh bìa" },
     { id: "milestones", label: "Các mốc mục tiêu" },
     !isGive && { id: "reward-tiers", label: "Phần thưởng" },
     showUpdates && { id: "updates", label: "Cập nhật" },
@@ -137,7 +137,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               <li key={item.id}>
                 <a
                   href={`#${item.id}`}
-                  className="-ml-px flex min-h-10 items-center border-l-2 border-transparent px-3 text-base text-body hover:border-gray-400 hover:text-ink"
+                  className="-ml-px flex min-h-11 items-center border-l-2 border-transparent px-3 text-base text-body hover:border-gray-400 hover:text-ink"
                 >
                   {item.label}
                 </a>
@@ -247,7 +247,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                     <textarea
                       id="story"
                       name="story"
-                      className="field font-mono text-[0.9375rem] leading-relaxed"
+                      className="field font-mono leading-relaxed"
                       rows={12}
                       maxLength={50000}
                       aria-describedby="story_hint"
@@ -432,7 +432,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             </ActionForm>
           </Panel>
 
-          <Panel id="cover" title="Ảnh bìa">
+          <Panel id="cover-image" title="Ảnh bìa">
             <div className="grid gap-6 sm:grid-cols-2">
               <figure>
                 <div className="relative aspect-[16/9] overflow-hidden rounded border border-line bg-surface">
@@ -478,7 +478,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                     </label>
                     <input id="alt" name="alt" className="field" maxLength={200} />
                   </div>
-                  <SubmitButton className={buttonClass()}>Tải ảnh lên</SubmitButton>
+                  <SubmitButton className={buttonClass({ variant: "secondary" })}>Tải ảnh lên</SubmitButton>
                 </ActionForm>
               )}
             </div>
@@ -886,7 +886,7 @@ function AccountSwapBlock({
       {pending ? (
         <Callout tone="info">
           <div className="space-y-2">
-            <p>
+            <p className="break-words">
               Đang chờ bộ phận tài chính duyệt yêu cầu gửi lúc {formatDateTime(pending.created_at)}: đổi sang{" "}
               {requested ? `${bankLabel(requested.bank_bin)} · ${requested.account_number}` : "tài khoản bạn đã chọn"}.
               Trong lúc chờ, chiến dịch vẫn dùng tài khoản đang gắn.

@@ -227,14 +227,17 @@ function FulfillmentForm({
           const status = isFulfillmentStatus(pledge.fulfillment_status) ? pledge.fulfillment_status : null
           return (
             <li key={pledge.id} className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
-              <div className="flex min-w-0 gap-3">
-                <input
-                  type="checkbox"
-                  name="contribution_id"
-                  value={pledge.id}
-                  aria-label={`Chọn lượt ${pledge.reference_code}`}
-                  className={`mt-1 ${checkInputClass}`}
-                />
+              <div className="flex min-w-0 gap-1">
+                {/* The box sits in a 44px hit area; its name stays the aria-label. */}
+                <label className="-mt-2.5 -ml-2.5 flex size-11 shrink-0 cursor-pointer items-center justify-center">
+                  <input
+                    type="checkbox"
+                    name="contribution_id"
+                    value={pledge.id}
+                    aria-label={`Chọn lượt ${pledge.reference_code}`}
+                    className={checkInputClass}
+                  />
+                </label>
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-semibold break-words text-ink">{pledge.public_name ?? "Người ủng hộ"}</span>
@@ -267,7 +270,7 @@ function FulfillmentForm({
                   update the row would still show, and save back, the old status. */}
               <div
                 key={`${pledge.fulfillment_status ?? "none"}:${pledge.fulfillment_updated_at ?? ""}`}
-                className="grid gap-2 sm:grid-cols-[10rem_1fr] lg:pl-0"
+                className="grid gap-2 sm:grid-cols-[10rem_1fr]"
               >
                 <select
                   name={`status_${pledge.id}`}

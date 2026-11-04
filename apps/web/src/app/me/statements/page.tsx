@@ -82,7 +82,7 @@ export default async function StatementsPage() {
         {batches.length === 0 ? (
           <EmptyState title="Chưa có sao kê nào được tải lên." />
         ) : (
-          <div role="region" aria-labelledby="batches-heading" tabIndex={0} className="overflow-x-auto card">
+          <div role="region" aria-label="Bảng các lần tải (cuộn ngang)" tabIndex={0} className="overflow-x-auto card">
             <table className="w-full min-w-[44rem] text-left">
               <thead className="border-b border-line bg-surface text-sm text-muted">
                 <tr>
@@ -114,7 +114,7 @@ export default async function StatementsPage() {
                       <td className="px-4 py-3">
                         <Link
                           href={`/me/statements/${batch.id}`}
-                          className="inline-flex min-h-6 items-center link tabular-nums"
+                          className="inline-flex min-h-11 items-center link tabular-nums"
                         >
                           #{batch.batch_no}
                         </Link>

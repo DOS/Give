@@ -103,7 +103,12 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
         {rows.length === 0 ? (
           <EmptyState title="File này không có dòng giao dịch nào." />
         ) : (
-          <div role="region" aria-labelledby="rows-heading" tabIndex={0} className="overflow-x-auto card">
+          <div
+            role="region"
+            aria-label="Bảng các dòng sao kê (cuộn ngang)"
+            tabIndex={0}
+            className="overflow-x-auto card"
+          >
             <table className="w-full min-w-[56rem] text-left">
               <thead className="border-b border-line bg-surface text-sm text-muted">
                 <tr>
@@ -143,7 +148,7 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
                       {row.description ?? "—"}
                       {row.counterparty_name && <div className="text-sm text-muted">{row.counterparty_name}</div>}
                       {row.provider_tx_id && (
-                        <div className="font-mono text-xs break-all text-muted">{row.provider_tx_id}</div>
+                        <div className="font-mono text-sm break-all text-muted">{row.provider_tx_id}</div>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">

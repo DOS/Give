@@ -107,7 +107,8 @@ export default async function MyAccountsPage() {
           </h2>
           {accounts.length === 0 ? (
             <EmptyState title="Bạn chưa khai báo tài khoản nào.">
-              Khai báo tài khoản ở mục bên cạnh, rồi chuyển khoản xác minh để Give xác nhận tài khoản là của bạn.
+              Khai báo tài khoản ở mục Khai báo tài khoản mới, rồi chuyển khoản xác minh để Give xác nhận tài khoản là
+              của bạn.
             </EmptyState>
           ) : (
             <ul className="space-y-4">

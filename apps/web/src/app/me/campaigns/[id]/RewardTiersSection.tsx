@@ -1,7 +1,7 @@
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
-import { GiftIcon } from "@/components/ui/icons"
+import { ChevronDownIcon, GiftIcon } from "@/components/ui/icons"
 import type { CampaignStatus } from "@/lib/campaigns"
 import { formatVnd } from "@/lib/format"
 import { deliveryMonth } from "@/lib/pledges"
@@ -93,11 +93,14 @@ export function RewardTiersSection({
                       <SubmitButton className={buttonClass({ variant: "danger", className: "px-3" })}>Xóa</SubmitButton>
                     </ActionForm>
                   </div>
-                  <details>
-                    <summary className="inline-flex min-h-11 cursor-pointer items-center link">Sửa mức này</summary>
+                  <details className="group">
+                    <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 link [&::-webkit-details-marker]:hidden">
+                      Sửa mức này
+                      <ChevronDownIcon width={18} height={18} className="transition-transform group-open:rotate-180" />
+                    </summary>
                     <ActionForm action={saveRewardTier.bind(null, campaignId, tier.id)} className="mt-3 space-y-5">
                       <TierFields prefix={`tier_${tier.id}`} tier={tier} />
-                      <SubmitButton className={buttonClass()}>Lưu phần thưởng</SubmitButton>
+                      <SubmitButton className={buttonClass({ variant: "secondary" })}>Lưu phần thưởng</SubmitButton>
                     </ActionForm>
                   </details>
                 </div>
@@ -120,9 +123,13 @@ export function RewardTiersSection({
       )}
 
       {editable && tiers && ordered.length < MAX_TIERS && (
-        <details className="mt-4 rounded-md border border-dashed border-gray-300 px-4 py-1" open={ordered.length === 0}>
-          <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-ink">
+        <details
+          className="group mt-4 rounded-md border border-dashed border-gray-300 px-4 py-1"
+          open={ordered.length === 0}
+        >
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 font-semibold text-ink [&::-webkit-details-marker]:hidden">
             Thêm mức phần thưởng
+            <ChevronDownIcon width={20} height={20} className="transition-transform group-open:rotate-180" />
           </summary>
           <ActionForm
             action={saveRewardTier.bind(null, campaignId, null)}
