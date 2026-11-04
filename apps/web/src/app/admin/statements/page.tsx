@@ -3,6 +3,9 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { ButtonLink } from "@/components/ui/Button"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { Notice } from "@/components/ui/Notice"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
@@ -29,6 +32,7 @@ import {
 import { inboundExplanationLabel } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
+import { AdminPage, AdminSection, DataTable, ItemActions, ItemCard, ItemList } from "../_components/ui"
 import { resolveStatementRow } from "./actions"
 
 export const metadata: Metadata = { title: "Đối soát sao kê", robots: { index: false } }
@@ -74,40 +78,32 @@ export default async function AdminStatementsPage() {
   const staffEmails = new Map(staff.map((s) => [s.user_id, s.email ?? s.display_name ?? s.user_id]))
 
   return (
-    <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
-      <div>
-        <Link href="/admin/accounts" className="text-sm text-gray-600 hover:text-gray-900">
-          ← Xác minh tài khoản nhận
-        </Link>
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-3xl font-bold">Đối soát sao kê</h1>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/admin/unmatched" className="btn-secondary">
-              Giao dịch chưa khớp
-            </Link>
-            <Link href="/admin/inbound" className="btn-secondary">
-              Sự kiện bị dừng
-            </Link>
-            <Link href="/me/statements" className="btn-secondary">
-              Tải sao kê
-            </Link>
-          </div>
-        </div>
-        <p className="mt-2 text-sm text-gray-600">
+    <AdminPage
+      title="Đối soát sao kê"
+      action={
+        <ButtonLink href="/me/statements" variant="secondary">
+          Tải sao kê
+        </ButtonLink>
+      }
+      intro={
+        <p>
           Các dòng sao kê dưới đây chưa được ghi thành giao dịch vì Give không chắc chúng là giao dịch mới hay lặp lại
           một giao dịch đã ghi. Đối chiếu với sao kê trên trang của chính ngân hàng rồi chọn một cách xử lý. Ghi chú là
           bắt buộc; mỗi lần xử lý được ghi vào nhật ký kiểm toán và không đổi được.
         </p>
-      </div>
-
-      <section>
-        <h2 className="mb-4 text-xl font-bold">
-          Chờ xử lý ({total > queue.length ? `${queue.length} đầu tiên / ${total}` : total})
-        </h2>
+      }
+    >
+      <AdminSection
+        id="queue"
+        title="Chờ xử lý"
+        count={total > queue.length ? `${queue.length} đầu tiên / ${total}` : total}
+      >
         {queue.length === 0 ? (
-          <p className="card p-6 text-gray-600">Không có dòng sao kê nào chờ xử lý.</p>
+          <EmptyState title="Không có dòng sao kê nào chờ xử lý.">
+            Dòng sao kê Give không chắc là mới hay lặp lại sẽ hiện ở đây.
+          </EmptyState>
         ) : (
-          <ul className="space-y-4">
+          <ItemList>
             {queue.map((row, i) => (
               <QueueCard
                 key={row.id}
@@ -117,52 +113,53 @@ export default async function AdminStatementsPage() {
                 targets={targets[i]}
               />
             ))}
-          </ul>
+          </ItemList>
         )}
-      </section>
+      </AdminSection>
 
-      <section>
-        <h2 className="mb-4 text-xl font-bold">Đã xử lý gần đây ({resolved.length})</h2>
+      <AdminSection id="resolved" title="Đã xử lý gần đây" count={resolved.length}>
         {resolved.length === 0 ? (
-          <p className="card p-6 text-gray-600">Chưa có dòng nào được xử lý.</p>
+          <EmptyState title="Chưa có dòng nào được xử lý." />
         ) : (
-          <ul className="divide-y divide-gray-100 card text-sm">
+          <DataTable label="Dòng sao kê đã xử lý gần đây" head={["Dòng sao kê", "Cách xử lý", "Ghi chú", "Xử lý lúc"]}>
             {resolved.map((row) => (
-              <li key={row.id} className="space-y-1 p-4">
-                <div className="flex flex-wrap justify-between gap-2">
-                  <span>
-                    <span className="font-medium">{signedAmount(row.direction, row.amount)}</span> · {bookedLabel(row)}{" "}
-                    · {labels.get(row.batch.receiving_account_id) ?? "—"} · lần #{row.batch.batch_no} dòng {row.row_no}
-                  </span>
-                  <span className="text-gray-500">{formatDateTime(row.resolved_at)}</span>
-                </div>
-                <div>
-                  <span className="font-semibold">{row.resolution ? RESOLUTION_LABELS[row.resolution] : "—"}</span> (
-                  {rowStatusLabel(row.status).toLowerCase()}). Lý do vào hàng chờ:{" "}
-                  {ambiguousReasonLabel(row.ambiguous_reason)}
-                </div>
-                <div className="text-gray-700">Ghi chú: {row.resolution_note}</div>
-              </li>
+              <tr key={row.id}>
+                <td className="px-4 py-3">
+                  <p className="font-semibold text-ink tabular-nums">{signedAmount(row.direction, row.amount)}</p>
+                  <p className="text-muted">
+                    {bookedLabel(row)} · {labels.get(row.batch.receiving_account_id) ?? "—"} · lần #{row.batch.batch_no}{" "}
+                    dòng {row.row_no}
+                  </p>
+                </td>
+                <td className="px-4 py-3">
+                  <p className="font-semibold text-ink">{row.resolution ? RESOLUTION_LABELS[row.resolution] : "—"}</p>
+                  <p className="text-muted">
+                    {rowStatusLabel(row.status)}. Lý do vào hàng chờ: {ambiguousReasonLabel(row.ambiguous_reason)}
+                  </p>
+                </td>
+                <td className="max-w-xs px-4 py-3 break-words">{row.resolution_note}</td>
+                <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDateTime(row.resolved_at)}</td>
+              </tr>
             ))}
-          </ul>
+          </DataTable>
         )}
-      </section>
+      </AdminSection>
 
       {isAdmin && <AuditTrail entries={audit} names={staffEmails} />}
-    </div>
+    </AdminPage>
   )
 }
 
 function RowFacts({ row }: { row: StatementRowView }) {
   return (
     <>
-      <span className={`font-semibold ${row.direction === "in" ? "text-green-700" : "text-red-700"}`}>
+      <span className={`font-semibold tabular-nums ${row.direction === "in" ? "text-brand-700" : "text-red-700"}`}>
         {signedAmount(row.direction, row.amount)}
       </span>{" "}
       · {bookedLabel(row)} · {row.description ?? "không có nội dung"}
       {row.counterparty_name ? ` · ${row.counterparty_name}` : ""}
       {row.balance_after !== null ? ` · số dư sau ${formatVnd(row.balance_after)}` : ""}
-      {row.provider_tx_id ? <span className="font-mono text-gray-500"> · {row.provider_tx_id}</span> : null}
+      {row.provider_tx_id ? <span className="font-mono text-muted"> · {row.provider_tx_id}</span> : null}
     </>
   )
 }
@@ -180,69 +177,71 @@ function QueueCard({
 }) {
   const candidateTx = candidate?.bank_transaction_id ?? null
   return (
-    <li className="space-y-4 card p-6">
-      <div className="space-y-2 text-sm">
-        <p className="text-gray-500">
+    <ItemCard>
+      <div className="space-y-3">
+        <p className="text-sm text-muted">
           {account ?? "Tài khoản"} ·{" "}
-          <Link href={`/me/statements/${row.batch.id}`} className="text-brand-700">
+          <Link href={`/me/statements/${row.batch.id}`} className="link">
             lần tải #{row.batch.batch_no}
           </Link>{" "}
           ({row.batch.parser}) · dòng {row.row_no}
         </p>
-        <p className="text-base">
+        <p className="text-ink">
           <RowFacts row={row} />
         </p>
-        <p className="text-amber-800">{ambiguousReasonLabel(row.ambiguous_reason)}</p>
+        <Notice tone="warning">{ambiguousReasonLabel(row.ambiguous_reason)}</Notice>
         {candidate && (
-          <p className="rounded-md bg-gray-50 p-3">
+          <p className="rounded-md bg-surface p-3 text-sm">
             Khớp với dòng {candidate.row_no} của một lần tải trước ({rowStatusLabel(candidate.status).toLowerCase()}):{" "}
             <RowFacts row={candidate} />
           </p>
         )}
       </div>
 
-      <div className="grid gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2">
+      <ItemActions>
         <ActionForm
           action={resolveStatementRow.bind(null, row.id)}
           confirm="Đánh dấu dòng này là giao dịch đã ghi? Dòng sẽ không được ghi thêm lần nữa."
-          className="space-y-2"
+          className="space-y-3"
         >
           <input type="hidden" name="resolution" value="duplicate" />
           <p className="label">{RESOLUTION_LABELS.duplicate}</p>
           {targets.shown.length === 0 ? (
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted">
               Không có giao dịch đã ghi nào cùng chiều, cùng số tiền trong vòng {DUPLICATE_WINDOW_DAYS} ngày.
             </p>
           ) : (
             <>
-              <fieldset className="space-y-1 text-sm">
+              <fieldset className="space-y-2 text-sm">
                 <legend className="sr-only">Giao dịch mà dòng này lặp lại</legend>
                 {targets.shown.map((tx) => (
-                  <label key={tx.id} className="flex items-start gap-2">
+                  <label
+                    key={tx.id}
+                    className="flex cursor-pointer items-start gap-3 rounded-md border border-line p-3 hover:border-gray-400 has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50"
+                  >
                     <input
                       type="radio"
                       name="bank_transaction_id"
                       value={tx.id}
                       required
                       defaultChecked={tx.id === candidateTx}
-                      className="mt-1"
+                      className="mt-1 size-4 accent-brand-700"
                     />
                     <span>
-                      {bookedLabel(tx)} · {formatVnd(tx.amount)} · {tx.description ?? "—"}
+                      {bookedLabel(tx)} · <span className="tabular-nums">{formatVnd(tx.amount)}</span> ·{" "}
+                      {tx.description ?? "—"}
                       {tx.counterparty_name ? ` · ${tx.counterparty_name}` : ""}{" "}
-                      <span className="font-mono text-gray-500">{tx.provider_tx_id}</span>
-                      {tx.id === candidateTx && (
-                        <span className="text-gray-600"> (dòng trước ứng với giao dịch này)</span>
-                      )}
+                      <span className="font-mono text-muted">{tx.provider_tx_id}</span>
+                      {tx.id === candidateTx && <span className="text-muted"> (dòng trước ứng với giao dịch này)</span>}
                     </span>
                   </label>
                 ))}
               </fieldset>
               {targets.total > targets.shown.length && (
-                <p className="text-sm text-amber-800">
+                <Notice tone="warning">
                   Còn {targets.total - targets.shown.length} giao dịch khác cùng số tiền xa ngày hơn không hiện ở đây.
                   Nếu không thấy đúng giao dịch, đừng chọn đại một giao dịch.
-                </p>
+                </Notice>
               )}
               <NoteField id={`dup-note-${row.id}`} />
               <SubmitButton className="btn-secondary">Là giao dịch đã ghi</SubmitButton>
@@ -253,16 +252,16 @@ function QueueCard({
         <ActionForm
           action={resolveStatementRow.bind(null, row.id)}
           confirm="Nhập dòng này thành một giao dịch mới? Số tiền sẽ được tính vào sao kê của chiến dịch và không xóa được."
-          className="space-y-2"
+          className="space-y-3"
         >
           <input type="hidden" name="resolution" value="import" />
           <p className="label">{RESOLUTION_LABELS.import}</p>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted">
             Chỉ chọn khi bạn đã thấy giao dịch này trên sao kê của ngân hàng và nó chưa được ghi.
           </p>
           {row.candidate_row_id && (
-            <label className="flex items-start gap-2 text-sm">
-              <input type="checkbox" name="override_candidate" required className="mt-1" />
+            <label className="flex cursor-pointer items-start gap-3 text-sm">
+              <input type="checkbox" name="override_candidate" required className="mt-1 size-4 accent-brand-700" />
               <span>
                 Tôi đã đối chiếu: đây là giao dịch khác với dòng {candidate ? `${candidate.row_no} ` : ""}của lần tải
                 trước.
@@ -272,8 +271,8 @@ function QueueCard({
           <NoteField id={`import-note-${row.id}`} />
           <SubmitButton>Nhập thành giao dịch mới</SubmitButton>
         </ActionForm>
-      </div>
-    </li>
+      </ItemActions>
+    </ItemCard>
   )
 }
 
@@ -317,29 +316,28 @@ function auditSummary(entry: AuditEntry): string {
 
 function AuditTrail({ entries, names }: { entries: AuditEntry[]; names: Map<string, string> }) {
   return (
-    <section>
-      <h2 className="mb-2 text-xl font-bold">Nhật ký kiểm toán ({entries.length})</h2>
-      <p className="mb-4 text-sm text-gray-600">
-        Xử lý dòng sao kê, khớp tay và giải trình tiền vào gần đây. Chỉ quản trị viên xem được.
-      </p>
+    <AdminSection
+      id="audit"
+      title="Nhật ký kiểm toán"
+      count={entries.length}
+      lead="Xử lý dòng sao kê, khớp tay và giải trình tiền vào gần đây. Chỉ quản trị viên xem được."
+    >
       {entries.length === 0 ? (
-        <p className="card p-6 text-gray-600">Chưa có mục nào.</p>
+        <EmptyState title="Chưa có mục nào." />
       ) : (
-        <ul className="divide-y divide-gray-100 card text-sm">
+        <DataTable label="Nhật ký kiểm toán đối soát" head={["Thao tác", "Chi tiết", "Người thực hiện", "Lúc"]}>
           {entries.map((entry) => (
-            <li key={entry.id} className="space-y-1 p-4">
-              <div className="flex flex-wrap justify-between gap-2">
-                <span className="font-medium">{AUDIT_ACTION_LABELS[entry.action] ?? entry.action}</span>
-                <span className="text-gray-500">{formatDateTime(entry.created_at)}</span>
-              </div>
-              <div className="text-gray-700">{auditSummary(entry)}</div>
-              <div className="text-gray-500">
-                Người thực hiện: {entry.actor_id ? (names.get(entry.actor_id) ?? entry.actor_id) : "—"}
-              </div>
-            </li>
+            <tr key={entry.id}>
+              <td className="px-4 py-3 font-medium text-ink">{AUDIT_ACTION_LABELS[entry.action] ?? entry.action}</td>
+              <td className="max-w-md px-4 py-3 break-words">{auditSummary(entry)}</td>
+              <td className="px-4 py-3 break-all">
+                {entry.actor_id ? (names.get(entry.actor_id) ?? entry.actor_id) : "—"}
+              </td>
+              <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDateTime(entry.created_at)}</td>
+            </tr>
           ))}
-        </ul>
+        </DataTable>
       )}
-    </section>
+    </AdminSection>
   )
 }

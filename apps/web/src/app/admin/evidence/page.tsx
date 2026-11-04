@@ -4,6 +4,9 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { Field } from "@/components/ui/Field"
+import { Notice } from "@/components/ui/Notice"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
 import { HIDDEN_LIMIT, listModerationQueue, MODERATION_ROLES, type ModerationItem } from "@/lib/evidence-moderation"
@@ -12,6 +15,7 @@ import { campaignRefs } from "@/lib/receiving-accounts"
 import { EVIDENCE_KINDS, evidenceUrl } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
+import { AdminPage, AdminSection, ItemList } from "../_components/ui"
 import { moderateEvidence } from "./actions"
 
 export const metadata: Metadata = { title: "Ảnh chứng từ bị báo cáo", robots: { index: false } }
@@ -35,48 +39,47 @@ export default async function AdminEvidencePage() {
   )
 
   return (
-    <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
-      <div>
-        <Link href="/admin" className="text-sm text-gray-600 hover:text-gray-900">
-          ← Kiểm duyệt
-        </Link>
-        <h1 className="mt-2 text-3xl font-bold">Ảnh chứng từ bị báo cáo</h1>
-        <p className="mt-2 text-sm text-gray-600">
+    <AdminPage
+      title="Ảnh chứng từ bị báo cáo"
+      intro={
+        <p>
           Ảnh chứng từ khoản chi được công khai trên sao kê. Người tổ chức phải che thông tin cá nhân của người nhận (số
           CCCD, số điện thoại, địa chỉ…). Ẩn ảnh nào lộ thông tin cá nhân: ảnh biến khỏi sao kê công khai ngay, người tổ
           chức vẫn thấy ảnh đã bị ẩn để tải lại bản đã che. Giữ ảnh nếu báo cáo không đúng. Mỗi lần ẩn hoặc hiện lại
           được ghi vào nhật ký kiểm toán.
         </p>
-      </div>
-
-      <section>
-        <h2 className="mb-4 text-xl font-bold">Chờ xem xét ({reported.length})</h2>
+      }
+    >
+      <AdminSection id="reported" title="Chờ xem xét" count={reported.length}>
         {reported.length === 0 ? (
-          <p className="card p-6 text-gray-600">Không có ảnh nào bị báo cáo.</p>
+          <EmptyState title="Không có ảnh nào bị báo cáo.">
+            Ảnh chứng từ bị người xem báo cáo lộ thông tin cá nhân sẽ hiện ở đây.
+          </EmptyState>
         ) : (
-          <ul className="space-y-4">
+          <ItemList>
             {reported.map((item) => (
               <EvidenceCard key={item.evidence_id} item={item} campaign={refs.get(item.campaign_id ?? "")} />
             ))}
-          </ul>
+          </ItemList>
         )}
-      </section>
+      </AdminSection>
 
-      <section>
-        <h2 className="mb-4 text-xl font-bold">
-          Đang ẩn{hidden.length < HIDDEN_LIMIT ? ` (${hidden.length})` : ` (${HIDDEN_LIMIT} gần nhất)`}
-        </h2>
+      <AdminSection
+        id="hidden"
+        title="Đang ẩn"
+        count={hidden.length < HIDDEN_LIMIT ? hidden.length : `${HIDDEN_LIMIT} gần nhất`}
+      >
         {hidden.length === 0 ? (
-          <p className="card p-6 text-gray-600">Không có ảnh nào đang bị ẩn.</p>
+          <EmptyState title="Không có ảnh nào đang bị ẩn." />
         ) : (
-          <ul className="space-y-4">
+          <ItemList>
             {hidden.map((item) => (
               <EvidenceCard key={item.evidence_id} item={item} campaign={refs.get(item.campaign_id ?? "")} />
             ))}
-          </ul>
+          </ItemList>
         )}
-      </section>
-    </div>
+      </AdminSection>
+    </AdminPage>
   )
 }
 
@@ -90,53 +93,59 @@ function EvidenceCard({
   const isHidden = item.state?.hidden ?? false
   const kind = EVIDENCE_KINDS[item.kind] ?? item.kind
   return (
-    <li className="flex flex-wrap gap-6 card p-6">
-      <a href={evidenceUrl(item.storage_path)} target="_blank" rel="noreferrer" className="shrink-0">
+    <li className="flex flex-col gap-6 card p-5 sm:flex-row sm:p-6">
+      <a
+        href={evidenceUrl(item.storage_path)}
+        target="_blank"
+        rel="noreferrer"
+        className="shrink-0 self-start rounded"
+        aria-label={`${kind}: mở ảnh cỡ đầy đủ trong thẻ mới`}
+      >
         <Image
           src={evidenceUrl(item.storage_path)}
           alt={kind}
           width={192}
           height={192}
           unoptimized
-          className="h-48 w-48 rounded border border-gray-200 bg-gray-50 object-contain"
+          className="h-48 w-48 rounded border border-line bg-surface object-contain"
         />
       </a>
-      <div className="min-w-0 flex-1 space-y-3 text-sm">
-        <p className="text-gray-600">
+      <div className="min-w-0 flex-1 space-y-4">
+        <p className="text-sm text-muted">
           {kind} · tải lên {formatDateTime(item.uploaded_at)}
           {campaign && (
             <>
               {" · "}
-              <Link href={`/campaigns/${campaign.slug}/statement`} className="text-brand-700" target="_blank">
+              <Link href={`/campaigns/${campaign.slug}/statement`} className="link" target="_blank">
                 {campaign.title}
+                <span className="sr-only"> (mở thẻ mới)</span>
               </Link>
             </>
           )}
         </p>
         {isHidden && (
-          <p className="rounded bg-red-50 p-2 text-red-800">
+          <Notice tone="danger">
             Đang ẩn từ {formatDateTime(item.state!.moderated_at)}
             {item.state?.reason ? `: ${item.state.reason}` : ""}
-          </p>
+          </Notice>
         )}
         {item.reports.length > 0 && (
           <div>
-            <p className="font-medium">{item.reports.length} báo cáo đang mở</p>
-            <ul className="mt-1 list-disc space-y-1 pl-5 text-gray-700">
+            <p className="font-semibold text-ink">{item.reports.length} báo cáo đang mở</p>
+            <ul className="mt-1 list-disc space-y-1 pl-5 text-body">
               {item.reports.map((r) => (
                 <li key={r.id} className="break-words">
-                  {r.reason ?? <span className="text-gray-500">(không ghi lý do)</span>}{" "}
-                  <span className="text-xs text-gray-500">{formatDateTime(r.created_at)}</span>
+                  {r.reason ?? <span className="text-muted">(không ghi lý do)</span>}{" "}
+                  <span className="text-sm text-muted">{formatDateTime(r.created_at)}</span>
                 </li>
               ))}
             </ul>
           </div>
         )}
-        <ActionForm action={moderateEvidence.bind(null, item.evidence_id)} className="space-y-2">
-          <label htmlFor={`reason-${item.evidence_id}`} className="label">
-            Lý do (bắt buộc khi ẩn)
-          </label>
-          <input id={`reason-${item.evidence_id}`} name="reason" maxLength={500} className="field" />
+        <ActionForm action={moderateEvidence.bind(null, item.evidence_id)} className="max-w-xl space-y-3">
+          <Field htmlFor={`reason-${item.evidence_id}`} label="Lý do (bắt buộc khi ẩn)">
+            <input id={`reason-${item.evidence_id}`} name="reason" maxLength={500} className="field" />
+          </Field>
           <div className="flex flex-wrap gap-2">
             {!isHidden && (
               <SubmitButton name="decision" value="hide" className="btn-primary">

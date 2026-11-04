@@ -1,9 +1,12 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { AccountStatusBadge, StatusBadge, VerificationBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { Badge, type BadgeTone } from "@/components/ui/Badge"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { Field } from "@/components/ui/Field"
+import { Notice } from "@/components/ui/Notice"
 import {
   approvalBlock,
   listDecidedSwaps,
@@ -21,9 +24,17 @@ import { formatDate, formatDateTime } from "@/lib/format"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import { dbAs } from "@/lib/supabase"
 
+import { AdminPage, AdminSection, Fact, Facts, ItemActions, ItemCard, ItemList } from "../_components/ui"
 import { decideAccountSwap } from "./actions"
 
 export const metadata: Metadata = { title: "Đổi tài khoản nhận", robots: { index: false } }
+
+const SWAP_TONES: Record<SwapForReview["status"], BadgeTone> = {
+  pending: "warning",
+  approved: "brand",
+  rejected: "danger",
+  cancelled: "neutral",
+}
 
 /**
  * Finance queue of account swaps (DOS/Give#55): organizers of give campaigns
@@ -44,13 +55,10 @@ export default async function AdminAccountSwapsPage() {
   )
 
   return (
-    <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
-      <div>
-        <Link href="/admin/accounts" className="text-sm text-gray-600 hover:text-gray-900">
-          ← Xác minh tài khoản nhận
-        </Link>
-        <h1 className="mt-2 text-3xl font-bold">Đổi tài khoản nhận</h1>
-        <p className="mt-2 text-sm text-gray-600">
+    <AdminPage
+      title="Đổi tài khoản nhận"
+      intro={
+        <p>
           Người tổ chức của chiến dịch từ thiện đang gây quỹ, đang tạm dừng, hoặc cần chỉnh sửa mà tài khoản đã nhận
           giao dịch, đề nghị thay tài khoản nhận không còn dùng được bằng một tài khoản khác đã xác minh, đứng tên họ.
           Chỉ duyệt khi có căn cứ rằng tài khoản cũ không dùng được nữa (thư hoặc thông báo của ngân hàng, kết quả kiểm
@@ -58,14 +66,15 @@ export default async function AdminAccountSwapsPage() {
           tiền đã vào tài khoản cũ trước lúc đó vẫn thuộc chiến dịch. Trang chiến dịch và sao kê công khai ngày đổi. Mọi
           thao tác được ghi vào nhật ký kiểm toán.
         </p>
-      </div>
-
-      <section>
-        <h2 className="mb-4 text-xl font-bold">Chờ duyệt ({pending.length})</h2>
+      }
+    >
+      <AdminSection id="pending" title="Chờ duyệt" count={pending.length}>
         {pending.length === 0 ? (
-          <p className="card p-6 text-gray-600">Không có yêu cầu nào chờ duyệt.</p>
+          <EmptyState title="Không có yêu cầu nào chờ duyệt.">
+            Yêu cầu đổi tài khoản của người tổ chức sẽ hiện ở đây.
+          </EmptyState>
         ) : (
-          <ul className="space-y-4">
+          <ItemList>
             {pending.map((swap) => (
               <SwapCard
                 key={swap.id}
@@ -74,30 +83,29 @@ export default async function AdminAccountSwapsPage() {
                 selfId={session.user.id}
               />
             ))}
-          </ul>
+          </ItemList>
         )}
-      </section>
+      </AdminSection>
 
-      <section>
-        <h2 className="mb-4 text-xl font-bold">Đã xử lý gần đây ({decided.length})</h2>
+      <AdminSection id="decided" title="Đã xử lý gần đây" count={decided.length}>
         {decided.length === 0 ? (
-          <p className="card p-6 text-gray-600">Chưa có yêu cầu nào được xử lý.</p>
+          <EmptyState title="Chưa có yêu cầu nào được xử lý." />
         ) : (
-          <ul className="space-y-4">
+          <ItemList>
             {decided.map((swap) => (
               <SwapCard key={swap.id} swap={swap} oldTransactions={null} selfId={session.user.id} />
             ))}
-          </ul>
+          </ItemList>
         )}
-      </section>
-    </div>
+      </AdminSection>
+    </AdminPage>
   )
 }
 
 function AccountLine({ account }: { account: NonNullable<SwapForReview["old_binding"]>["account"] }) {
-  if (!account) return <dd>—</dd>
+  if (!account) return <dd className="mt-0.5 text-ink">—</dd>
   return (
-    <dd className="flex flex-wrap items-center gap-2">
+    <dd className="mt-0.5 flex flex-wrap items-center gap-2 text-ink">
       <span>
         {bankLabel(account.bank_bin)} · <span className="font-mono">{account.account_number}</span> ·{" "}
         {account.account_name}
@@ -123,134 +131,120 @@ function SwapCard({
   const block = oldTransactions === null ? null : approvalBlock(swap, oldTransactions)
 
   return (
-    <li className="space-y-4 card p-6">
+    <ItemCard>
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <dl className="grid min-w-0 flex-1 gap-2 text-sm sm:grid-cols-2">
-          <div className="sm:col-span-2">
-            <dt className="text-gray-500">Chiến dịch</dt>
-            <dd className="flex flex-wrap items-center gap-2">
-              {campaign ? (
-                <>
-                  <span className="font-semibold">{campaign.title}</span>
-                  <StatusBadge status={campaign.status} />
-                </>
-              ) : (
-                swap.campaign_id
-              )}
-            </dd>
-          </div>
-          <div className="sm:col-span-2">
-            <dt className="text-gray-500">Người tổ chức</dt>
-            <dd className="flex flex-wrap items-center gap-2">
-              {organizer ? (
-                <>
-                  {organizer.display_name} (tên pháp lý: {organizer.legal_name})
-                  <VerificationBadge status={organizer.verification_status} />
-                </>
-              ) : (
-                "—"
-              )}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-gray-500">Tài khoản cũ</dt>
-            <AccountLine account={swap.old_binding?.account ?? null} />
-            {swap.old_binding && (
-              <p className="mt-1 text-gray-600">
-                Gắn từ {formatDate(swap.old_binding.bound_at)}
-                {swap.old_binding.released_at ? `, ngừng lúc ${formatDateTime(swap.old_binding.released_at)}` : ""}
-                {oldTransactions !== null && ` · ${oldTransactions} giao dịch đã ghi nhận`}
-              </p>
-            )}
-            {swap.old_binding?.account?.review_note && (
-              <p className="mt-1 text-gray-600">Ghi chú tài chính: {swap.old_binding.account.review_note}</p>
-            )}
-          </div>
-          <div>
-            <dt className="text-gray-500">Tài khoản mới</dt>
-            <AccountLine account={swap.new_account} />
-          </div>
-          <div className="sm:col-span-2">
-            <dt className="text-gray-500">Lý do người tổ chức đưa ra (gửi {formatDateTime(swap.created_at)})</dt>
-            <dd className="break-words whitespace-pre-line">{swap.reason}</dd>
-          </div>
-          {swap.status !== "pending" && (
-            <div className="sm:col-span-2">
-              <dt className="text-gray-500">
-                {SWAP_STATUS_LABELS[swap.status]} lúc {formatDateTime(swap.decided_at)}
-              </dt>
-              <dd className="break-words">
-                {swap.decision_note ?? "—"}
-                {swap.public_note && <span className="block text-gray-600">Công khai: {swap.public_note}</span>}
-              </dd>
-            </div>
+        <h3 className="flex min-w-0 flex-wrap items-center gap-2 text-lg font-semibold">
+          {campaign ? (
+            <>
+              {campaign.title}
+              <StatusBadge status={campaign.status} />
+            </>
+          ) : (
+            swap.campaign_id
           )}
-        </dl>
-        <span className="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700">
-          {SWAP_STATUS_LABELS[swap.status]}
-        </span>
+        </h3>
+        <Badge tone={SWAP_TONES[swap.status]}>{SWAP_STATUS_LABELS[swap.status]}</Badge>
       </div>
+      <Facts columns={2}>
+        <Fact label="Người tổ chức" wide>
+          {organizer ? (
+            <span className="flex flex-wrap items-center gap-2">
+              {organizer.display_name} (tên pháp lý: {organizer.legal_name})
+              <VerificationBadge status={organizer.verification_status} />
+            </span>
+          ) : (
+            "—"
+          )}
+        </Fact>
+        <div className="min-w-0">
+          <dt className="text-sm text-muted">Tài khoản cũ</dt>
+          <AccountLine account={swap.old_binding?.account ?? null} />
+          {swap.old_binding && (
+            <dd className="mt-1 text-sm text-muted">
+              Gắn từ {formatDate(swap.old_binding.bound_at)}
+              {swap.old_binding.released_at ? `, ngừng lúc ${formatDateTime(swap.old_binding.released_at)}` : ""}
+              {oldTransactions !== null && ` · ${oldTransactions} giao dịch đã ghi nhận`}
+            </dd>
+          )}
+          {swap.old_binding?.account?.review_note && (
+            <dd className="mt-1 text-sm text-muted">Ghi chú tài chính: {swap.old_binding.account.review_note}</dd>
+          )}
+        </div>
+        <div className="min-w-0">
+          <dt className="text-sm text-muted">Tài khoản mới</dt>
+          <AccountLine account={swap.new_account} />
+        </div>
+        <Fact label={`Lý do người tổ chức đưa ra (gửi ${formatDateTime(swap.created_at)})`} wide>
+          <span className="whitespace-pre-line">{swap.reason}</span>
+        </Fact>
+        {swap.status !== "pending" && (
+          <Fact label={`${SWAP_STATUS_LABELS[swap.status]} lúc ${formatDateTime(swap.decided_at)}`} wide>
+            {swap.decision_note ?? "—"}
+            {swap.public_note && <span className="block text-muted">Công khai: {swap.public_note}</span>}
+          </Fact>
+        )}
+      </Facts>
 
       {swap.status === "pending" &&
         (own ? (
-          <p className="text-sm text-amber-800">Đây là chiến dịch của bạn; một nhân viên khác cần xử lý.</p>
+          <Notice tone="warning">Đây là chiến dịch của bạn; một nhân viên khác cần xử lý.</Notice>
         ) : (
-          <div className="grid gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2">
+          <ItemActions>
             {block ? (
-              <p className="text-sm text-amber-800">Chưa duyệt được: {block}</p>
+              <Notice tone="warning">Chưa duyệt được: {block}</Notice>
             ) : (
               <ActionForm
                 action={decideAccountSwap.bind(null, swap.id)}
                 confirm="Duyệt đổi tài khoản? Tài khoản cũ ngừng nhận cho chiến dịch và bị khóa ngay; tài khoản mới bắt đầu nhận. Không hoàn tác được."
-                className="space-y-2"
+                className="space-y-3"
               >
                 <input type="hidden" name="decision" value="approved" />
-                <label htmlFor={`approve-note-${swap.id}`} className="label">
-                  Căn cứ duyệt (người tổ chức thấy; là lý do khóa tài khoản cũ)
-                </label>
-                <textarea
-                  id={`approve-note-${swap.id}`}
-                  name="note"
-                  className="field"
-                  rows={2}
-                  required
-                  maxLength={SWAP_REASON_MAX}
-                />
-                <label htmlFor={`public-note-${swap.id}`} className="label">
-                  Ghi chú công khai (không bắt buộc)
-                </label>
-                <input
-                  id={`public-note-${swap.id}`}
-                  name="public_note"
-                  className="field"
-                  maxLength={SWAP_PUBLIC_NOTE_MAX}
-                  placeholder="Ví dụ: Ngân hàng đã đóng tài khoản cũ."
-                />
+                <Field
+                  htmlFor={`approve-note-${swap.id}`}
+                  label="Căn cứ duyệt (người tổ chức thấy; là lý do khóa tài khoản cũ)"
+                >
+                  <textarea
+                    id={`approve-note-${swap.id}`}
+                    name="note"
+                    className="field"
+                    rows={2}
+                    required
+                    maxLength={SWAP_REASON_MAX}
+                  />
+                </Field>
+                <Field htmlFor={`public-note-${swap.id}`} label="Ghi chú công khai (không bắt buộc)">
+                  <input
+                    id={`public-note-${swap.id}`}
+                    name="public_note"
+                    className="field"
+                    maxLength={SWAP_PUBLIC_NOTE_MAX}
+                    placeholder="Ví dụ: Ngân hàng đã đóng tài khoản cũ."
+                  />
+                </Field>
                 <SubmitButton>Duyệt đổi tài khoản</SubmitButton>
               </ActionForm>
             )}
             <ActionForm
               action={decideAccountSwap.bind(null, swap.id)}
               confirm="Từ chối yêu cầu đổi tài khoản này?"
-              className="space-y-2"
+              className="space-y-3"
             >
               <input type="hidden" name="decision" value="rejected" />
-              <label htmlFor={`reject-note-${swap.id}`} className="label">
-                Từ chối
-              </label>
-              <textarea
-                id={`reject-note-${swap.id}`}
-                name="note"
-                className="field"
-                rows={2}
-                required
-                maxLength={SWAP_REASON_MAX}
-                placeholder="Lý do (người tổ chức sẽ thấy)"
-              />
+              <Field htmlFor={`reject-note-${swap.id}`} label="Từ chối">
+                <textarea
+                  id={`reject-note-${swap.id}`}
+                  name="note"
+                  className="field"
+                  rows={2}
+                  required
+                  maxLength={SWAP_REASON_MAX}
+                  placeholder="Lý do (người tổ chức sẽ thấy)"
+                />
+              </Field>
               <SubmitButton className="btn-danger">Từ chối</SubmitButton>
             </ActionForm>
-          </div>
+          </ItemActions>
         ))}
-    </li>
+    </ItemCard>
   )
 }
