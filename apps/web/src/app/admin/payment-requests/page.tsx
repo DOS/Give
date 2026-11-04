@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/Badge"
 import { ButtonLink } from "@/components/ui/Button"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { Field } from "@/components/ui/Field"
-import { Notice } from "@/components/ui/Notice"
+import { Callout } from "@/components/ui/Callout"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
@@ -100,14 +100,14 @@ function CampaignCard({ campaign }: { campaign: SucceededBackCampaign }) {
 
       {stopped ? (
         <>
-          <Notice
+          <Callout
             tone="danger"
             title={`Đã tạm dừng yêu cầu thanh toán từ ${formatDateTime(campaign.payments_stopped_at)}.`}
           >
             {campaign.payments_stopped_note && (
               <p className="whitespace-pre-line">Ghi chú công khai: {campaign.payments_stopped_note}</p>
             )}
-          </Notice>
+          </Callout>
           <ItemActions>
             <ActionForm
               action={setPaymentRequestsStopped.bind(null, campaign.id)}

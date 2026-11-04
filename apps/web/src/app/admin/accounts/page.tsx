@@ -6,7 +6,7 @@ import { ActionForm, SubmitButton } from "@/components/forms"
 import { Badge } from "@/components/ui/Badge"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { Field } from "@/components/ui/Field"
-import { Notice } from "@/components/ui/Notice"
+import { Callout } from "@/components/ui/Callout"
 import { requireSession } from "@/lib/auth/session"
 import { bankByBin } from "@/lib/banks"
 import { isStaff } from "@/lib/campaigns"
@@ -179,11 +179,11 @@ function AccountCard({
       </Facts>
 
       {own ? (
-        <Notice tone="warning">Đây là tài khoản của bạn; một nhân viên khác cần xử lý.</Notice>
+        <Callout tone="warning">Đây là tài khoản của bạn; một nhân viên khác cần xử lý.</Callout>
       ) : (
         <ItemActions>
           {status === "pending" && options.verifyBlocked && (
-            <Notice tone="warning">Chưa xác minh được: {options.verifyBlocked}</Notice>
+            <Callout tone="warning">Chưa xác minh được: {options.verifyBlocked}</Callout>
           )}
           {status === "pending" && !options.verifyBlocked && (
             <ActionForm

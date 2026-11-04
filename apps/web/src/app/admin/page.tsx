@@ -6,7 +6,7 @@ import { TypeBadge, VerificationBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { ButtonLink } from "@/components/ui/Button"
 import { EmptyState } from "@/components/ui/EmptyState"
-import { Notice } from "@/components/ui/Notice"
+import { Callout } from "@/components/ui/Callout"
 import { requireSession } from "@/lib/auth/session"
 import {
   accountProblemLabel,
@@ -100,7 +100,7 @@ export default async function AdminReviewPage() {
                     )}
                   </Facts>
                   {own ? (
-                    <Notice tone="warning">Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần duyệt.</Notice>
+                    <Callout tone="warning">Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần duyệt.</Callout>
                   ) : (
                     <ItemActions>
                       <ActionForm
@@ -146,9 +146,9 @@ export default async function AdminReviewPage() {
         lead="Chiến dịch (từ thiện hoặc dự án có quà tặng) đã duyệt nhưng tài khoản nhận tiền không còn dùng được, nên hệ thống không tự mở. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, hãy yêu cầu chỉnh sửa để người tổ chức nhả tài khoản cũ, gắn tài khoản khác rồi gửi duyệt lại."
       >
         {waiting === null ? (
-          <Notice tone="danger" title="Chưa tải được danh sách này.">
+          <Callout tone="danger" title="Chưa tải được danh sách này.">
             Các phần khác của trang vẫn dùng được. Hãy tải lại trang sau.
-          </Notice>
+          </Callout>
         ) : waiting.length === 0 ? (
           <EmptyState title="Không có chiến dịch đã duyệt nào đang chờ tài khoản nhận." />
         ) : (
@@ -180,9 +180,9 @@ export default async function AdminReviewPage() {
                       </Fact>
                     )}
                   </Facts>
-                  {advice.note && <Notice tone="warning">{advice.note}</Notice>}
+                  {advice.note && <Callout tone="warning">{advice.note}</Callout>}
                   {advice.sendBackReason === null ? null : own ? (
-                    <Notice tone="warning">Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý.</Notice>
+                    <Callout tone="warning">Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý.</Callout>
                   ) : (
                     <ActionForm
                       action={requestChanges.bind(null, campaign.id)}
