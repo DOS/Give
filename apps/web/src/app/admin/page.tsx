@@ -1,9 +1,12 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
+import type { ReactNode } from "react"
 
 import { TypeBadge, VerificationBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { ButtonLink } from "@/components/ui/Button"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { Notice } from "@/components/ui/Notice"
 import { requireSession } from "@/lib/auth/session"
 import {
   accountProblemLabel,
@@ -12,17 +15,19 @@ import {
   listReviewQueue,
   listWaitingForAccount,
   waitingAdvice,
+  type CampaignType,
   type WaitingForAccount,
 } from "@/lib/campaigns"
 import { formatDate, formatVnd } from "@/lib/format"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import { dbAs } from "@/lib/supabase"
 
+import { AdminPage, AdminSection, Fact, Facts, ItemActions, ItemCard, ItemList } from "./_components/ui"
 import { approveCampaign, requestChanges, setVerification } from "./actions"
 
 export const metadata: Metadata = { title: "Kiểm duyệt", robots: { index: false } }
 
-export default async function AdminPage() {
+export default async function AdminReviewPage() {
   const session = await requireSession("/admin")
   const db = dbAs(session.accessToken)
   const [moderates, reviewsAccounts] = await Promise.all([isStaff(db), isStaff(db, FINANCE_ROLES)])
@@ -33,7 +38,8 @@ export default async function AdminPage() {
     notFound()
   }
 
-  const [queue, waiting, organizers, canManageRoles] = await Promise.all([
+  // Links to the other admin pages are the admin layout's tabs.
+  const [queue, waiting, organizers] = await Promise.all([
     listReviewQueue(db),
     // A read error hides only this section, not the review queue.
     listWaitingForAccount(db).catch((e: { code?: string; message?: string } | null): WaitingForAccount[] | null => {
@@ -41,117 +47,71 @@ export default async function AdminPage() {
       return null
     }),
     listOrganizersToVerify(db),
-    isStaff(db, ["admin"]),
   ])
 
   return (
-    <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-3xl font-bold">Kiểm duyệt</h1>
-        <div className="flex flex-wrap gap-2">
-          <Link href="/admin/evidence" className="btn-secondary">
-            Ảnh chứng từ bị báo cáo
-          </Link>
-          <Link href="/admin/payment-requests" className="btn-secondary">
-            Yêu cầu thanh toán
-          </Link>
-          {reviewsAccounts && (
-            <>
-              <Link href="/admin/accounts" className="btn-secondary">
-                Xác minh tài khoản nhận
-              </Link>
-              <Link href="/admin/account-swaps" className="btn-secondary">
-                Đổi tài khoản nhận
-              </Link>
-              <Link href="/admin/statements" className="btn-secondary">
-                Đối soát sao kê
-              </Link>
-              <Link href="/admin/inbound" className="btn-secondary">
-                Sự kiện bị dừng
-              </Link>
-            </>
-          )}
-          {canManageRoles && (
-            <Link href="/admin/roles" className="btn-secondary">
-              Phân quyền nhân sự
-            </Link>
-          )}
-        </div>
-      </div>
-
-      <section>
-        <h2 className="mb-4 text-xl font-bold">Chiến dịch chờ duyệt ({queue.length})</h2>
+    <AdminPage title="Kiểm duyệt">
+      <AdminSection id="queue" title="Chiến dịch chờ duyệt" count={queue.length}>
         {queue.length === 0 ? (
-          <p className="card p-6 text-gray-600">Không có chiến dịch nào chờ duyệt.</p>
+          <EmptyState title="Không có chiến dịch nào chờ duyệt.">
+            Chiến dịch người tổ chức gửi duyệt sẽ hiện ở đây, gửi sớm nhất ở trên cùng.
+          </EmptyState>
         ) : (
-          <ul className="space-y-4">
+          <ItemList>
             {queue.map((campaign) => {
               const own = campaign.organizer_id === session.user.id
               return (
-                <li key={campaign.id} className="space-y-4 card p-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <TypeBadge type={campaign.type} />
-                        {campaign.category && (
-                          <span className="text-sm text-gray-600">
-                            {campaign.category.icon} {campaign.category.name}
-                          </span>
-                        )}
-                      </div>
-                      <h3 className="mt-1 text-lg font-semibold">{campaign.title}</h3>
-                      <p className="text-sm text-gray-600">{campaign.summary}</p>
-                    </div>
-                    <Link href={`/campaigns/${campaign.slug}`} className="btn-secondary" target="_blank">
-                      Xem trước
-                    </Link>
-                  </div>
-                  <dl className="grid gap-2 text-sm sm:grid-cols-3">
-                    <div>
-                      <dt className="text-gray-500">Mục tiêu</dt>
-                      <dd>{formatVnd(campaign.goal_amount)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-gray-500">Thời gian</dt>
-                      <dd>
-                        {campaign.starts_at ? formatDate(campaign.starts_at) : "Khi duyệt"} →{" "}
-                        {formatDate(campaign.ends_at)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-gray-500">Gửi duyệt</dt>
-                      <dd>{formatDate(campaign.submitted_at)}</dd>
-                    </div>
+                <ItemCard key={campaign.id}>
+                  <CampaignHead
+                    campaign={campaign}
+                    meta={
+                      campaign.category && (
+                        <span className="text-sm text-muted">
+                          {campaign.category.icon} {campaign.category.name}
+                        </span>
+                      )
+                    }
+                  >
+                    <p className="mt-1 text-body">{campaign.summary}</p>
+                  </CampaignHead>
+                  <Facts>
+                    <Fact label="Mục tiêu">
+                      <span className="font-semibold tabular-nums">{formatVnd(campaign.goal_amount)}</span>
+                    </Fact>
+                    <Fact label="Thời gian">
+                      {campaign.starts_at ? formatDate(campaign.starts_at) : "Khi duyệt"} →{" "}
+                      {formatDate(campaign.ends_at)}
+                    </Fact>
+                    <Fact label="Gửi duyệt">{formatDate(campaign.submitted_at)}</Fact>
                     {campaign.organizer && (
-                      <div className="sm:col-span-3">
-                        <dt className="text-gray-500">Người tổ chức</dt>
-                        <dd className="flex flex-wrap items-center gap-2">
+                      <Fact label="Người tổ chức" wide>
+                        <span className="flex flex-wrap items-center gap-2">
                           {campaign.organizer.display_name} (tên pháp lý: {campaign.organizer.legal_name},{" "}
                           {campaign.organizer.kind === "organization" ? "tổ chức" : "cá nhân"})
                           <VerificationBadge status={campaign.organizer.verification_status} />
-                        </dd>
-                      </div>
+                        </span>
+                      </Fact>
                     )}
                     {campaign.type === "give" && (
-                      <div className="sm:col-span-3">
-                        <dt className="text-gray-500">Người thụ hưởng</dt>
-                        <dd>
-                          {campaign.beneficiary_name}
-                          {campaign.beneficiary_relation ? ` (${campaign.beneficiary_relation})` : ""}
-                        </dd>
-                      </div>
+                      <Fact label="Người thụ hưởng" wide>
+                        {campaign.beneficiary_name}
+                        {campaign.beneficiary_relation ? ` (${campaign.beneficiary_relation})` : ""}
+                      </Fact>
                     )}
-                  </dl>
+                  </Facts>
                   {own ? (
-                    <p className="text-sm text-amber-800">
-                      Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần duyệt.
-                    </p>
+                    <Notice tone="warning">Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần duyệt.</Notice>
                   ) : (
-                    <div className="grid gap-4 border-t border-gray-100 pt-4 sm:grid-cols-2">
+                    <ItemActions>
                       <ActionForm
                         action={approveCampaign.bind(null, campaign.id)}
                         confirm="Duyệt chiến dịch này? Nếu đã tới ngày bắt đầu, chiến dịch sẽ công khai ngay."
+                        className="space-y-2"
                       >
+                        <p className="label">Duyệt</p>
+                        <p className="text-sm text-muted">
+                          Nếu đã tới ngày bắt đầu, chiến dịch công khai ngay khi duyệt.
+                        </p>
                         <SubmitButton>Duyệt</SubmitButton>
                       </ActionForm>
                       <ActionForm action={requestChanges.bind(null, campaign.id)} resetOnSuccess className="space-y-2">
@@ -170,30 +130,29 @@ export default async function AdminPage() {
                         />
                         <SubmitButton className="btn-secondary">Gửi yêu cầu</SubmitButton>
                       </ActionForm>
-                    </div>
+                    </ItemActions>
                   )}
-                </li>
+                </ItemCard>
               )
             })}
-          </ul>
+          </ItemList>
         )}
-      </section>
+      </AdminSection>
 
-      <section>
-        <h2 className="mb-2 text-xl font-bold">
-          Chiến dịch đã duyệt chờ tài khoản nhận{waiting ? ` (${waiting.length})` : ""}
-        </h2>
-        <p className="mb-4 text-sm text-gray-600">
-          Chiến dịch (từ thiện hoặc dự án có quà tặng) đã duyệt nhưng tài khoản nhận tiền không còn dùng được, nên hệ
-          thống không tự mở. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, hãy yêu cầu chỉnh sửa để người
-          tổ chức nhả tài khoản cũ, gắn tài khoản khác rồi gửi duyệt lại.
-        </p>
+      <AdminSection
+        id="waiting"
+        title="Đã duyệt, chờ tài khoản nhận"
+        count={waiting?.length}
+        lead="Chiến dịch (từ thiện hoặc dự án có quà tặng) đã duyệt nhưng tài khoản nhận tiền không còn dùng được, nên hệ thống không tự mở. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, hãy yêu cầu chỉnh sửa để người tổ chức nhả tài khoản cũ, gắn tài khoản khác rồi gửi duyệt lại."
+      >
         {waiting === null ? (
-          <p className="card p-6 text-gray-600">Chưa tải được danh sách này. Hãy tải lại trang sau.</p>
+          <Notice tone="danger" title="Chưa tải được danh sách này.">
+            Các phần khác của trang vẫn dùng được. Hãy tải lại trang sau.
+          </Notice>
         ) : waiting.length === 0 ? (
-          <p className="card p-6 text-gray-600">Không có chiến dịch đã duyệt nào đang chờ tài khoản nhận.</p>
+          <EmptyState title="Không có chiến dịch đã duyệt nào đang chờ tài khoản nhận." />
         ) : (
-          <ul className="space-y-4">
+          <ItemList>
             {waiting.map((campaign) => {
               const own = campaign.organizer_id === session.user.id
               const now = new Date()
@@ -201,53 +160,34 @@ export default async function AdminPage() {
               const due = !campaign.starts_at || new Date(campaign.starts_at) <= now
               const advice = waitingAdvice(campaign, now)
               return (
-                <li key={campaign.id} className="space-y-4 card p-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <TypeBadge type={campaign.type} />
-                      <h3 className="mt-1 text-lg font-semibold">{campaign.title}</h3>
-                      <p className="text-sm text-red-700">{accountProblemLabel(campaign.account_problem)}</p>
-                    </div>
-                    <Link href={`/campaigns/${campaign.slug}`} className="btn-secondary" target="_blank">
-                      Xem trước
-                    </Link>
-                  </div>
-                  <dl className="grid gap-2 text-sm sm:grid-cols-3">
-                    <div>
-                      <dt className="text-gray-500">Ngày bắt đầu</dt>
-                      <dd>
-                        {campaign.starts_at ? formatDate(campaign.starts_at) : "Khi duyệt"}
-                        {ended ? " (đã quá ngày kết thúc)" : due ? " (đã tới, đang chờ mở)" : ""}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-gray-500">Ngày kết thúc</dt>
-                      <dd>{formatDate(campaign.ends_at)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-gray-500">Duyệt lúc</dt>
-                      <dd>{formatDate(campaign.approved_at)}</dd>
-                    </div>
+                <ItemCard key={campaign.id}>
+                  <CampaignHead campaign={campaign}>
+                    <p className="mt-1 font-medium text-red-700">{accountProblemLabel(campaign.account_problem)}</p>
+                  </CampaignHead>
+                  <Facts>
+                    <Fact label="Ngày bắt đầu">
+                      {campaign.starts_at ? formatDate(campaign.starts_at) : "Khi duyệt"}
+                      {ended ? " (đã quá ngày kết thúc)" : due ? " (đã tới, đang chờ mở)" : ""}
+                    </Fact>
+                    <Fact label="Ngày kết thúc">{formatDate(campaign.ends_at)}</Fact>
+                    <Fact label="Duyệt lúc">{formatDate(campaign.approved_at)}</Fact>
                     {campaign.organizer && (
-                      <div className="sm:col-span-3">
-                        <dt className="text-gray-500">Người tổ chức</dt>
-                        <dd className="flex flex-wrap items-center gap-2">
+                      <Fact label="Người tổ chức" wide>
+                        <span className="flex flex-wrap items-center gap-2">
                           {campaign.organizer.display_name} (tên pháp lý: {campaign.organizer.legal_name})
                           <VerificationBadge status={campaign.organizer.verification_status} />
-                        </dd>
-                      </div>
+                        </span>
+                      </Fact>
                     )}
-                  </dl>
-                  {advice.note && <p className="text-sm text-amber-800">{advice.note}</p>}
+                  </Facts>
+                  {advice.note && <Notice tone="warning">{advice.note}</Notice>}
                   {advice.sendBackReason === null ? null : own ? (
-                    <p className="text-sm text-amber-800">
-                      Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý.
-                    </p>
+                    <Notice tone="warning">Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý.</Notice>
                   ) : (
                     <ActionForm
                       action={requestChanges.bind(null, campaign.id)}
                       confirm="Trả chiến dịch đã duyệt về cho người tổ chức chỉnh sửa? Chiến dịch sẽ phải gửi duyệt lại."
-                      className="space-y-2 border-t border-gray-100 pt-4"
+                      className="space-y-2 border-t border-line pt-5"
                     >
                       <input type="hidden" name="from_status" value="approved" />
                       <label htmlFor={`waiting-reason-${campaign.id}`} className="label">
@@ -256,8 +196,8 @@ export default async function AdminPage() {
                       <textarea
                         id={`waiting-reason-${campaign.id}`}
                         name="reason"
-                        className="field"
-                        rows={2}
+                        className="field max-w-2xl"
+                        rows={4}
                         required
                         maxLength={2000}
                         defaultValue={advice.sendBackReason}
@@ -265,28 +205,28 @@ export default async function AdminPage() {
                       <SubmitButton className="btn-secondary">Gửi yêu cầu</SubmitButton>
                     </ActionForm>
                   )}
-                </li>
+                </ItemCard>
               )
             })}
-          </ul>
+          </ItemList>
         )}
-      </section>
+      </AdminSection>
 
-      <section>
-        <h2 className="mb-2 text-xl font-bold">Xác minh người tổ chức ({organizers.length})</h2>
-        <p className="mb-4 text-sm text-gray-600">
-          Xác minh khi đã đối chiếu tên pháp lý với giấy tờ hoặc tài khoản ngân hàng. Nếu người tổ chức đổi tên sau khi
-          trang này tải, thao tác sẽ bị từ chối để bạn xem lại.
-        </p>
+      <AdminSection
+        id="organizers"
+        title="Xác minh người tổ chức"
+        count={organizers.length}
+        lead="Xác minh khi đã đối chiếu tên pháp lý với giấy tờ hoặc tài khoản ngân hàng. Nếu người tổ chức đổi tên sau khi trang này tải, thao tác sẽ bị từ chối để bạn xem lại."
+      >
         {organizers.length === 0 ? (
-          <p className="card p-6 text-gray-600">Không có hồ sơ nào chờ xác minh.</p>
+          <EmptyState title="Không có hồ sơ nào chờ xác minh." />
         ) : (
-          <ul className="divide-y divide-gray-200 rounded-lg border border-gray-200">
+          <ul className="divide-y divide-line card">
             {organizers.map((organizer) => (
-              <li key={organizer.user_id} className="flex flex-wrap items-center gap-4 p-4">
-                <div className="min-w-0 flex-1 text-sm">
-                  <p className="font-semibold">{organizer.display_name}</p>
-                  <p className="text-gray-600">
+              <li key={organizer.user_id} className="flex flex-wrap items-center gap-4 p-4 sm:p-5">
+                <div className="min-w-0 flex-1 basis-60 text-sm">
+                  <p className="text-base font-semibold text-ink">{organizer.display_name}</p>
+                  <p className="text-body">
                     Tên pháp lý: {organizer.legal_name} · {organizer.kind === "organization" ? "Tổ chức" : "Cá nhân"}
                     {organizer.phone ? ` · ${organizer.phone}` : ""}
                   </p>
@@ -313,7 +253,34 @@ export default async function AdminPage() {
             ))}
           </ul>
         )}
-      </section>
+      </AdminSection>
+    </AdminPage>
+  )
+}
+
+/** A campaign's type, title and a line under it, with a preview link on the right. */
+function CampaignHead({
+  campaign,
+  meta,
+  children,
+}: {
+  campaign: { type: CampaignType; title: string; slug: string }
+  meta?: ReactNode
+  children?: ReactNode
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <TypeBadge type={campaign.type} />
+          {meta}
+        </div>
+        <h3 className="mt-2 text-lg font-semibold">{campaign.title}</h3>
+        {children}
+      </div>
+      <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary" target="_blank">
+        Xem trước<span className="sr-only"> (mở thẻ mới)</span>
+      </ButtonLink>
     </div>
   )
 }

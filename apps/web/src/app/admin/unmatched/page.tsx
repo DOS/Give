@@ -1,9 +1,9 @@
 import type { Metadata } from "next"
-import Link from "next/link"
 import { notFound } from "next/navigation"
 
 import { InboundExplanationList, ManualMatchList } from "@/components/Reconciliation"
 import { UnmatchedTransactionCard } from "@/components/UnmatchedTransaction"
+import { EmptyState } from "@/components/ui/EmptyState"
 import { explainTransaction } from "@/app/admin/unmatched/actions"
 import { matchTransaction } from "@/app/me/campaigns/[id]/unmatched/actions"
 import { requireSession } from "@/lib/auth/session"
@@ -11,6 +11,8 @@ import { isStaff } from "@/lib/campaigns"
 import { campaignRefs, FINANCE_ROLES } from "@/lib/receiving-accounts"
 import { listInboundExplanations, listManualMatches, listMatchCandidates, listUnmatched } from "@/lib/reconciliation"
 import { dbAs } from "@/lib/supabase"
+
+import { AdminPage, AdminSection, ItemList } from "../_components/ui"
 
 export const metadata: Metadata = { title: "Giao dịch chưa khớp", robots: { index: false } }
 
@@ -38,33 +40,35 @@ export default async function AdminUnmatchedPage() {
   const titles = new Map([...refs].map(([id, ref]) => [id, ref.title]))
 
   return (
-    <div className="mx-auto max-w-5xl space-y-12 px-4 py-10">
-      <div>
-        <Link href="/admin/statements" className="text-sm text-gray-600 hover:text-gray-900">
-          ← Đối soát sao kê
-        </Link>
-        <h1 className="mt-2 text-3xl font-bold">Giao dịch chưa khớp</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          Tiền đã vào tài khoản nhận của chiến dịch nhưng không có mã ủng hộ hợp lệ, nên đang được tính là &quot;chưa
-          khớp&quot;. Khớp tay khi đã rõ khoản này của lượt ủng hộ nào; người tổ chức cũng khớp được ở trang chiến dịch
-          của họ. Khớp tay chỉ chuyển tiền từ &quot;chưa khớp&quot; sang &quot;đã khớp&quot;, tổng đã thanh toán của
-          chiến dịch không đổi. Mỗi giao dịch chỉ khớp được một lần, và mỗi lần được ghi vào nhật ký kiểm toán.
-        </p>
-        <p className="mt-2 text-sm text-gray-600">
-          Khoản không phải tiền ủng hộ (người tổ chức nạp thêm, ngân hàng hoàn phí, lãi) thì giải trình thay vì khớp, kể
-          cả khi chiến dịch đã hủy hoặc đã đóng: ghi lý do và bằng chứng đã kiểm tra. Sao kê công khai chỉ hiện loại
-          khoản tiền; tổng đã thanh toán không đổi, và giao dịch không còn chặn việc nhả tài khoản nhận.
-        </p>
-      </div>
-
-      <section>
-        <h2 className="mb-4 text-xl font-bold">
-          Chờ khớp ({total > unmatched.length ? `${unmatched.length} mới nhất / ${total}` : total})
-        </h2>
+    <AdminPage
+      title="Giao dịch chưa khớp"
+      intro={
+        <>
+          <p>
+            Tiền đã vào tài khoản nhận của chiến dịch nhưng không có mã ủng hộ hợp lệ, nên đang được tính là &quot;chưa
+            khớp&quot;. Khớp tay khi đã rõ khoản này của lượt ủng hộ nào; người tổ chức cũng khớp được ở trang chiến
+            dịch của họ. Khớp tay chỉ chuyển tiền từ &quot;chưa khớp&quot; sang &quot;đã khớp&quot;, tổng đã thanh toán
+            của chiến dịch không đổi. Mỗi giao dịch chỉ khớp được một lần, và mỗi lần được ghi vào nhật ký kiểm toán.
+          </p>
+          <p>
+            Khoản không phải tiền ủng hộ (người tổ chức nạp thêm, ngân hàng hoàn phí, lãi) thì giải trình thay vì khớp,
+            kể cả khi chiến dịch đã hủy hoặc đã đóng: ghi lý do và bằng chứng đã kiểm tra. Sao kê công khai chỉ hiện
+            loại khoản tiền; tổng đã thanh toán không đổi, và giao dịch không còn chặn việc nhả tài khoản nhận.
+          </p>
+        </>
+      }
+    >
+      <AdminSection
+        id="unmatched"
+        title="Chờ khớp"
+        count={total > unmatched.length ? `${unmatched.length} mới nhất / ${total}` : total}
+      >
         {unmatched.length === 0 ? (
-          <p className="card p-6 text-gray-600">Không có giao dịch nào chờ khớp.</p>
+          <EmptyState title="Không có giao dịch nào chờ khớp.">
+            Tiền vào không có mã ủng hộ hợp lệ sẽ hiện ở đây để khớp tay hoặc giải trình.
+          </EmptyState>
         ) : (
-          <ul className="space-y-4">
+          <ItemList>
             {unmatched.map((tx) => (
               <UnmatchedTransactionCard
                 key={tx.id}
@@ -75,13 +79,13 @@ export default async function AdminUnmatchedPage() {
                 campaignTitle={titles.get(tx.campaign_id) ?? tx.campaign_id}
               />
             ))}
-          </ul>
+          </ItemList>
         )}
-      </section>
+      </AdminSection>
 
       <ManualMatchList matches={matches} titles={titles} />
 
       <InboundExplanationList explanations={explanations} titles={titles} />
-    </div>
+    </AdminPage>
   )
 }
