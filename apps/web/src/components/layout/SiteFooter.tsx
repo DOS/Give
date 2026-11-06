@@ -1,6 +1,5 @@
 import Link from "next/link"
 
-import { Logo } from "@/components/layout/Logo"
 import { discoveryHref } from "@/lib/campaigns"
 
 const SECTIONS: { title: string; links: { href: string; label: string }[] }[] = [
@@ -16,8 +15,8 @@ const SECTIONS: { title: string; links: { href: string; label: string }[] }[] = 
   {
     title: "Minh bạch",
     links: [
-      { href: "/#minh-bach", label: "Tiền đi thẳng vào tài khoản nhận" },
-      { href: "/#hai-hinh-thuc", label: "Từ thiện và dự án khác nhau thế nào" },
+      { href: "/#minh-bach", label: "Tiền đi thẳng vào tài khoản" },
+      { href: "/#hai-hinh-thuc", label: "Hai cách gây quỹ" },
     ],
   },
   {
@@ -31,29 +30,29 @@ const SECTIONS: { title: string; links: { href: string; label: string }[] }[] = 
 ]
 
 /**
- * Site footer (DOS/Give#95): the sitemap of pages that exist today. About,
+ * Site footer (DESIGN.md 7): the sitemap of pages that exist today, 4
+ * columns from 1024px and 2 below, then the bottom line in Small. About,
  * help and legal pages join it when they are written.
  */
 export function SiteFooter() {
   return (
-    <footer className="border-t border-line bg-surface">
-      <div className="container-page grid gap-10 py-12 md:grid-cols-4">
-        <div className="space-y-3">
-          <Logo />
-          <p className="max-w-xs text-body">
-            Give không giữ tiền: tiền ủng hộ đi thẳng vào tài khoản nhận của từng chiến dịch, và sao kê của tài khoản đó
-            được công khai.
+    <footer className="border-t border-border bg-bg text-sm">
+      <div className="container-page grid grid-cols-2 gap-x-4 gap-y-6 pt-12 pb-8 sm:pt-16 lg:grid-cols-4 lg:gap-x-6">
+        <div className="col-span-2 min-w-0 lg:col-span-1">
+          <p className="text-lg font-bold text-fg">Give</p>
+          <p className="mt-2 max-w-[32ch] text-muted">
+            Give không giữ tiền. Mọi khoản đóng góp đi thẳng vào tài khoản của chiến dịch.
           </p>
         </div>
         {SECTIONS.map((section) => (
-          <nav key={section.title} aria-label={section.title}>
-            <h2 className="text-base font-semibold text-ink">{section.title}</h2>
-            <ul className="mt-2">
+          <nav key={section.title} aria-label={section.title} className="min-w-0">
+            <h2 className="text-sm font-semibold text-fg">{section.title}</h2>
+            <ul className="mt-1">
               {section.links.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="inline-flex min-h-11 items-center py-1 text-body hover:text-ink hover:underline"
+                    className="inline-flex min-h-9 items-center text-muted transition-colors duration-150 hover:text-fg hover:underline"
                   >
                     {link.label}
                   </Link>
@@ -63,8 +62,10 @@ export function SiteFooter() {
           </nav>
         ))}
       </div>
-      <div className="border-t border-line">
-        <p className="container-page py-6 text-muted">© {new Date().getFullYear()} Give. Một sản phẩm của DOS.</p>
+      <div className="container-page">
+        <p className="border-t border-border pt-6 pb-12 text-muted">
+          © {new Date().getFullYear()} Give · Một sản phẩm của DOS
+        </p>
       </div>
     </footer>
   )

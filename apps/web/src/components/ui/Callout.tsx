@@ -3,12 +3,13 @@ import type { ReactNode, SVGProps } from "react"
 
 export type CalloutTone = "neutral" | "info" | "success" | "warning" | "danger"
 
+/** Soft semantic fills, body text in the text color, the icon in the tone (DESIGN.md 4). */
 const TONES: Record<CalloutTone, { box: string; icon: string }> = {
-  neutral: { box: "border-line bg-surface text-body", icon: "text-muted" },
-  info: { box: "border-sky-200 bg-sky-50 text-sky-950", icon: "text-sky-700" },
-  success: { box: "border-brand-200 bg-brand-50 text-brand-900", icon: "text-brand-700" },
-  warning: { box: "border-amber-200 bg-amber-50 text-amber-950", icon: "text-amber-700" },
-  danger: { box: "border-red-200 bg-red-50 text-red-950", icon: "text-red-700" },
+  neutral: { box: "bg-surface", icon: "text-muted" },
+  info: { box: "bg-surface", icon: "text-primary" },
+  success: { box: "bg-primary-soft", icon: "text-primary" },
+  warning: { box: "bg-warning-soft", icon: "text-warning" },
+  danger: { box: "bg-danger-soft", icon: "text-danger" },
 }
 
 function Glyph({ children, ...props }: SVGProps<SVGSVGElement>) {
@@ -19,7 +20,7 @@ function Glyph({ children, ...props }: SVGProps<SVGSVGElement>) {
       height={20}
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.75}
+      strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
@@ -66,7 +67,7 @@ const ICONS: Record<CalloutTone, ReactNode> = {
 
 /**
  * A message box inside a page: what happened or what to watch out for, with
- * the tone's icon. Text colours reach 4.5:1 on their tint. Pass `role`
+ * the tone's icon. The text stays in the text color, so it reaches 4.5:1 on every tint. Pass `role`
  * ("status" or "alert") only when the box changes while the page is open.
  */
 export function Callout({
@@ -86,7 +87,7 @@ export function Callout({
   children?: ReactNode
 }) {
   return (
-    <div role={role} className={clsx("flex gap-3 rounded-md border p-4 sm:p-5", TONES[tone].box, className)}>
+    <div role={role} className={clsx("flex gap-3 rounded-md p-4 text-fg", TONES[tone].box, className)}>
       {icon && <span className={clsx("mt-0.5 shrink-0", TONES[tone].icon)}>{ICONS[tone]}</span>}
       <div className="min-w-0 flex-1 space-y-2">
         {title && <p className="font-semibold">{title}</p>}

@@ -8,7 +8,7 @@ import ReactMarkdown from "react-markdown"
  */
 export function Markdown({ children }: { children: string }) {
   return (
-    <div className="space-y-4 leading-relaxed text-gray-800 [&_a]:text-brand-700 [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-gray-200 [&_blockquote]:pl-4 [&_h1]:text-2xl [&_h1]:font-bold [&_h2]:text-xl [&_h2]:font-bold [&_h3]:font-semibold [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6">
+    <div className="space-y-4 text-fg [&_a]:text-primary [&_a]:underline [&_blockquote]:border-l-4 [&_blockquote]:border-border [&_blockquote]:pl-4 [&_h1]:text-h2 [&_h2]:text-h2 [&_h3]:text-h3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6">
       <ReactMarkdown
         disallowedElements={["img"]}
         unwrapDisallowed

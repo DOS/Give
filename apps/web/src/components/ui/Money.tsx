@@ -22,7 +22,7 @@ export function Money({
         size === "sm" && "text-base",
         size === "md" && "text-lg",
         size === "lg" && "text-2xl",
-        size === "xl" && "text-3xl tracking-tight sm:text-4xl",
+        size === "xl" && "text-figure",
         className
       )}
       data-figure={figure}
@@ -57,8 +57,8 @@ export function MoneyRow({
       <dt
         className={clsx(
           // Grows but never shrinks: a long label pushes the amount to its own line instead of wrapping.
-          "flex max-w-full flex-[1_0_auto] items-baseline gap-2 after:min-w-4 after:flex-1 after:translate-y-[-0.25em] after:border-b after:border-dotted after:border-gray-300 after:content-['']",
-          strong ? "font-semibold text-ink" : "text-body"
+          "flex max-w-full flex-[1_0_auto] items-baseline gap-2 after:min-w-4 after:flex-1 after:translate-y-[-0.25em] after:border-b after:border-dotted after:border-border after:content-['']",
+          strong ? "font-semibold text-fg" : "text-fg"
         )}
       >
         {label}
@@ -68,14 +68,14 @@ export function MoneyRow({
           // One colour class only: Tailwind's order, not this list's, decides which of two wins.
           "ml-auto shrink-0 tabular-nums",
           strong ? "text-lg font-bold" : "font-semibold",
-          tone === "warn" ? "text-amber-800" : tone === "muted" ? "text-muted" : "text-ink"
+          tone === "warn" ? "text-warning" : tone === "muted" ? "text-muted" : "text-fg"
         )}
         data-figure={figure}
       >
         {formatVnd(amount)}
       </dd>
       {note && (
-        <dd className={clsx("basis-full text-right text-sm", tone === "warn" ? "text-amber-800" : "text-muted")}>
+        <dd className={clsx("basis-full text-right text-sm", tone === "warn" ? "text-warning" : "text-muted")}>
           {note}
         </dd>
       )}

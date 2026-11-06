@@ -1,7 +1,7 @@
 import type { SVGProps } from "react"
 
 /**
- * The few line icons the kit uses (24px grid, 1.75 stroke), inline so no
+ * The few line icons the kit uses (lucide-style outline, 24px grid, 1.5 stroke; DESIGN.md 9), inline so no
  * icon package is needed. Decorative by default: pass aria-label and
  * aria-hidden={false} to give one a name.
  */
@@ -13,7 +13,7 @@ function Icon({ children, ...props }: SVGProps<SVGSVGElement>) {
       height={20}
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.75}
+      strokeWidth={1.5}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
@@ -127,5 +127,26 @@ export const GiftIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <path d="M4 11h16v9H4ZM3 7h18v4H3ZM12 7v13" />
     <path d="M12 7c-1.5-3-5-3.5-5-1s3.5 1 5 1c1.5 0 5 1.5 5-1s-3.5-2-5 1Z" />
+  </Icon>
+)
+
+export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M20 6 9 17l-5-5" />
+  </Icon>
+)
+
+export const EyeIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
+)
+
+export const ImageIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <rect x="3" y="5" width="18" height="14" rx="1" />
+    <circle cx="9" cy="10" r="1.5" />
+    <path d="m21 16-5-5-9 8" />
   </Icon>
 )
