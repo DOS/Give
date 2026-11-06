@@ -13,14 +13,19 @@ const TONES: Record<BadgeTone, string> = {
   danger: "bg-danger-soft text-danger",
 }
 
-/** A status label (DESIGN.md 6): 24px high, 8px padding, 12px semibold, 4px radius, never a pill. */
+/**
+ * A status label (DESIGN.md 6): 24px high, 8px padding, 12px semibold, 4px
+ * radius, never a pill. `md` is the 28px tag size (10px padding, 14px text).
+ */
 export function Badge({
   tone = "neutral",
+  size = "sm",
   icon,
   className,
   children,
 }: {
   tone?: BadgeTone
+  size?: "sm" | "md"
   icon?: ReactNode
   className?: string
   children: ReactNode
@@ -28,7 +33,8 @@ export function Badge({
   return (
     <span
       className={clsx(
-        "inline-flex h-6 items-center gap-1 rounded px-2 text-xs font-semibold whitespace-nowrap",
+        "inline-flex items-center gap-1 rounded font-semibold whitespace-nowrap",
+        size === "md" ? "h-7 px-2.5 text-sm" : "h-6 px-2 text-xs",
         TONES[tone],
         className
       )}

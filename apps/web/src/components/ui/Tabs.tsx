@@ -29,7 +29,7 @@ export function TabNav({ label, items, className }: { label: string; items: read
               href={item.href}
               aria-current={item.current ? "page" : undefined}
               className={clsx(
-                "inline-flex h-11 items-center gap-2 border-b-2 text-base font-semibold whitespace-nowrap transition-colors duration-150 focus-visible:-outline-offset-2",
+                "inline-flex h-11 items-center gap-1 border-b-2 text-base font-semibold whitespace-nowrap transition-colors duration-150 focus-visible:-outline-offset-2",
                 item.current
                   ? "border-primary text-fg"
                   : "border-transparent text-muted hover:border-border hover:text-fg"
@@ -94,7 +94,7 @@ export function SegmentedNav({
               href={item.href}
               aria-current={item.current ? "page" : undefined}
               className={clsx(
-                "inline-flex h-9 items-center rounded px-3 text-sm font-semibold whitespace-nowrap transition-colors duration-150",
+                "inline-flex h-9 items-center rounded px-2.5 text-sm font-semibold whitespace-nowrap transition-colors duration-150",
                 item.current ? "bg-raised text-fg shadow-xs" : "text-muted hover:text-fg"
               )}
             >

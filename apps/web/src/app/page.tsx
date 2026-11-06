@@ -57,7 +57,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <div className="container-page grid-page items-center gap-y-8 py-12 sm:py-16 lg:py-24">
           <div className="col-span-full min-w-0 lg:col-span-7">
             <h1 className="max-w-[14ch] text-display-phone tracking-tight sm:text-display">
-              Gây quỹ minh bạch, từng đồng đều có sao kê
+              Gây quỹ minh&nbsp;bạch, từng đồng đều có sao kê
             </h1>
             <p className="mt-4 max-w-[52ch] text-lg text-muted sm:mt-6">
               Tiền đi thẳng vào tài khoản của chiến dịch. Give ghi lại từng giao dịch và công khai cho mọi người cùng
@@ -92,24 +92,26 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       ) : (
         interesting.length > 0 && (
           <section aria-labelledby="quan-tam-heading" className="container-page pt-16 lg:pt-24">
-            <div className="flex items-baseline justify-between gap-6">
+            <div className="flex items-baseline justify-between gap-4">
               <h2 id="quan-tam-heading" className="text-h2">
                 Đang được quan tâm
               </h2>
-              <Link href="/campaigns" className="inline-flex min-h-11 shrink-0 items-center link">
+              <Link href="/campaigns" className="inline-flex min-h-11 shrink-0 items-center link whitespace-nowrap">
                 Xem tất cả
               </Link>
             </div>
             <div className="mt-6 grid gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
-              {interesting.map((campaign) => {
+              {interesting.map((campaign, index) => {
                 const t = totals.get(campaign.id)
                 return (
-                  <CampaignCard
-                    key={campaign.id}
-                    campaign={campaign}
-                    raised={raisedAmount(t, campaign.type)}
-                    people={t ? (campaign.type === "give" ? t.supporters_count : t.backers_count) : undefined}
-                  />
+                  // Two columns from 640px show two cards, so no card sits alone on a row.
+                  <div key={campaign.id} className={index === 2 ? "min-w-0 sm:max-lg:hidden" : "min-w-0"}>
+                    <CampaignCard
+                      campaign={campaign}
+                      raised={raisedAmount(t, campaign.type)}
+                      people={t ? (campaign.type === "give" ? t.supporters_count : t.backers_count) : undefined}
+                    />
+                  </div>
                 )
               })}
             </div>

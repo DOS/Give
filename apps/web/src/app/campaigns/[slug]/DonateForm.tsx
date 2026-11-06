@@ -14,7 +14,7 @@ export function DonateForm({
   signedIn: boolean
 }) {
   return (
-    <ActionForm action={donate.bind(null, campaignId)} className="space-y-4">
+    <ActionForm action={donate.bind(null, campaignId)} className="space-y-6">
       <Field htmlFor="donate-amount" label="Số tiền ủng hộ (đồng)">
         <input
           id="donate-amount"
@@ -23,7 +23,7 @@ export function DonateForm({
           inputMode="numeric"
           autoComplete="off"
           placeholder="Ví dụ: 200.000"
-          className="field font-semibold tabular-nums"
+          className="field font-semibold tabular-nums placeholder:font-normal"
         />
       </Field>
       <Field htmlFor="donate-name" label="Tên hiển thị">
@@ -42,9 +42,9 @@ export function DonateForm({
             type="checkbox"
             name="anonymous"
             aria-describedby="donate-anonymous-hint"
-            className="mt-1 size-5 shrink-0 accent-brand-700"
+            className="mt-1 size-5 shrink-0 accent-primary"
           />
-          <span className="font-medium text-ink">Ủng hộ ẩn danh</span>
+          <span className="font-medium text-fg">Ủng hộ ẩn danh</span>
         </label>
         <p id="donate-anonymous-hint" className="hint">
           Give sẽ không hiện tên bạn trên Give. Nhưng nếu tài khoản nhận là tài khoản minh bạch, trang sao kê công khai

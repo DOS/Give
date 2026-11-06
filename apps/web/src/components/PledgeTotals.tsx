@@ -38,7 +38,6 @@ export function PledgeTotals({ totals }: { totals: MoneyTotals }) {
             label: "Còn thiếu",
             amount: Math.max(0, totals.goal_amount - totals.pledged_amount),
             figure: "missing",
-            tone: "accent",
           },
         ]}
       />

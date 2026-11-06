@@ -235,7 +235,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
         <div className="flex flex-col gap-6 sm:mt-4 lg:grid lg:grid-cols-12 lg:grid-rows-[auto_auto_auto_1fr] lg:gap-x-6">
           <header className="min-w-0 max-lg:order-2 lg:col-span-8 lg:row-start-1">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <TypeBadge type={campaign.type} />
+              <TypeBadge type={campaign.type} size="md" />
               {campaign.category && (
                 <Link
                   href={discoveryHref({ type: campaign.type, category: campaign.category.slug })}
@@ -320,7 +320,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               </p>
               {options.progress_bar !== false && <ProgressBar percent={percent} className="mt-4" />}
               {stats.length > 0 && (
-                <dl className="mt-4 grid grid-cols-3 gap-2">
+                <dl className="mt-4 grid grid-cols-[auto_auto_auto] justify-between gap-4">
                   {stats.map((stat) => (
                     <div key={stat.label} className="flex min-w-0 flex-col-reverse justify-end">
                       <dt className="text-sm text-muted">{stat.label}</dt>
@@ -393,7 +393,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               </div>
             </section>
 
-            <div className="min-w-0 max-lg:order-5">
+            <div className={`min-w-0 max-lg:order-5 ${isGive ? "max-lg:hidden" : ""}`}>
               {isGive ? (
                 statementRows && (
                   <RecentSupporters slug={campaign.slug} rows={statementRows} count={totals?.supporters_count ?? 0} />

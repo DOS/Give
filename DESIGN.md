@@ -33,7 +33,7 @@ There is exactly one page container, used by the header, every page body and the
 | Gutter, 640 to 1023px | 24px   |
 | Gutter, 1024px and up | 32px   |
 
-In code this is `container-page`. No page sets its own `max-w-*` on the outer wrapper. Inner text blocks may be narrower (see 2.3), but they start at the container's left edge, never centered on their own.
+1200px is the content width; the gutter sits outside it, so at 1440px the content starts at x = 120. In code this is `container-page`. No page sets its own `max-w-*` on the outer wrapper. Inner text blocks may be narrower (see 2.3), but they start at the container's left edge, never centered on their own.
 
 ### 2.2 Grid
 
@@ -72,37 +72,39 @@ The font is **Be Vietnam Pro**, which renders stacked Vietnamese diacritics (ễ
 | H2      | 24 / 32                 | 600                  | Section heading                  |
 | H3      | 18 / 28                 | 600                  | Card title, sub-section          |
 | Body    | 16 / 26                 | 400                  | All running text                 |
+| Lead    | 18 / 28                 | 400                  | The home hero paragraph only     |
 | Small   | 14 / 22                 | 400                  | Captions, meta, helper text      |
 | Figure  | 30 / 36                 | 700, tabular numbers | Money amounts in the funding box |
 
 Rules:
 
-- Text below 14px is not allowed.
-- At most 3 sizes on one card.
+- Text below 14px is not allowed, except the 12px Badge (section 6).
+- At most 3 sizes on one card, not counting the Badge.
 - Muted text is for metadata only, never for content a donor needs to act on.
 
 ## 4. Color
 
 Colors are **semantic tokens**, and every component uses the tokens, never raw palette classes like `gray-500`. Both themes are designed. The site declares `color-scheme: light dark` and follows the visitor's system setting, so browsers never apply their own forced dark mode.
 
-| Token            | Light   | Dark    | Use                                        |
-| ---------------- | ------- | ------- | ------------------------------------------ |
-| `bg`             | #FFFFFF | #0F1115 | Page background                            |
-| `surface`        | #F7F8FA | #171A20 | Bands, sidebars, inputs                    |
-| `surface-raised` | #FFFFFF | #1E222A | Cards, menus, dialogs                      |
-| `border`         | #E6E8EC | #2A2F38 | Dividers, card edges, inputs               |
-| `text`           | #111318 | #F2F4F7 | Headings and body                          |
-| `text-muted`     | #5B6270 | #A3AAB8 | Meta, captions                             |
-| `primary`        | #047857 | #34D399 | Primary buttons, links, progress           |
-| `primary-fg`     | #FFFFFF | #052E22 | Text on primary                            |
-| `primary-soft`   | #ECFDF5 | #0B2A21 | Selected chip, info background             |
-| `accent`         | #C2410C | #FB923C | "Dự án sáng tạo" label and icon only       |
-| `accent-soft`    | #FFF7ED | #2A1A0E | Background of the "Dự án" label            |
-| `danger`         | #B42318 | #F97066 | Errors, destructive actions                |
-| `warning`        | #B54708 | #FDB022 | Deadlines, attention                       |
-| `primary-hover`  | #065F46 | #6EE7B7 | Hover state of primary buttons             |
-| `danger-soft`    | #FEF3F2 | #2D1412 | Background of error notices and badges     |
-| `warning-soft`   | #FFFAEB | #2A1F0A | Background of attention notices and badges |
+| Token            | Light          | Dark           | Use                                        |
+| ---------------- | -------------- | -------------- | ------------------------------------------ |
+| `bg`             | #FFFFFF        | #0F1115        | Page background                            |
+| `surface`        | #F7F8FA        | #171A20        | Bands, sidebars, inputs                    |
+| `surface-raised` | #FFFFFF        | #1E222A        | Cards, menus, dialogs                      |
+| `border`         | #E6E8EC        | #2A2F38        | Dividers, card edges, inputs               |
+| `text`           | #111318        | #F2F4F7        | Headings and body                          |
+| `text-muted`     | #5B6270        | #A3AAB8        | Meta, captions                             |
+| `primary`        | #047857        | #34D399        | Primary buttons, links, progress           |
+| `primary-fg`     | #FFFFFF        | #052E22        | Text on primary                            |
+| `primary-soft`   | #ECFDF5        | #0B2A21        | Selected chip, info background             |
+| `accent`         | #C2410C        | #FB923C        | "Dự án sáng tạo" label and icon only       |
+| `accent-soft`    | #FFF7ED        | #2A1A0E        | Background of the "Dự án" label            |
+| `danger`         | #B42318        | #F97066        | Errors, destructive actions                |
+| `warning`        | #B54708        | #FDB022        | Deadlines, attention                       |
+| `primary-hover`  | #065F46        | #6EE7B7        | Hover state of primary buttons             |
+| `danger-soft`    | #FEF3F2        | #2D1412        | Background of error notices and badges     |
+| `warning-soft`   | #FFFAEB        | #2A1F0A        | Background of attention notices and badges |
+| `scrim`          | #111318 at 50% | #000000 at 60% | Dims the page behind a phone sheet         |
 
 Contrast: body text >= 4.5:1, large text and icons >= 3:1, in both themes.
 
@@ -200,13 +202,13 @@ A tag is **not** a button-sized box.
 
 ## 8. Page templates
 
-| Page               | Template                                                                                                                                                                                                                                                                                                                             |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Home               | Hero (headline, one paragraph, one primary + one text link, statement receipt card on the right) · "Đang được quan tâm" (3 cards) · "Hai cách gây quỹ" (two columns without cards: icon, H3, 3 short lines, one link each; categories are NOT listed here) · trust strip (3 columns, icon + H3 + one line) · organizer band · footer |
-| Discovery          | H1 + one line · filter bar (6.Filter bar) · result count · card grid (2.2) · pagination                                                                                                                                                                                                                                              |
-| Campaign / project | Breadcrumb · H1 + organizer line · 8/4 grid: media + tabs (Câu chuyện / Sao kê / Người ủng hộ) in main, funding box + reward tiers (project) in sidebar                                                                                                                                                                              |
-| Donate / pledge    | Form template (2.2), with a campaign summary strip on top                                                                                                                                                                                                                                                                            |
-| /me, /admin        | Same container. Page header (H1 + one action), then content tables or forms. Side navigation from 1024px, top tabs below.                                                                                                                                                                                                            |
+| Page               | Template                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Home               | Hero (headline, one paragraph, one primary + one text link, statement receipt card on the right) · "Đang được quan tâm" (3 cards) · "Hai cách gây quỹ" (two columns on a `surface` fill with no border: icon, H3, 3 short lines, one link each; categories are NOT listed here) · trust strip (3 columns, icon + H3 + one line) · organizer band · footer |
+| Discovery          | H1 + one line · filter bar (6.Filter bar) · result count · card grid (2.2) · pagination                                                                                                                                                                                                                                                                   |
+| Campaign / project | Breadcrumb · H1 + organizer line · 8/4 grid: media + tabs (Câu chuyện / Sao kê / Người ủng hộ) in main, funding box + reward tiers (project) in sidebar                                                                                                                                                                                                   |
+| Donate / pledge    | Form template (2.2), with a campaign summary strip on top                                                                                                                                                                                                                                                                                                 |
+| /me, /admin        | Same container. Page header (H1 + one action), then content tables or forms. Side navigation from 1024px, top tabs below.                                                                                                                                                                                                                                 |
 
 ## 9. Imagery and icons
 

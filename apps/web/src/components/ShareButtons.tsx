@@ -61,7 +61,7 @@ export function ShareButtons({
           type="button"
           onClick={share}
           aria-label="Chia sẻ"
-          className={buttonClass({ variant: "secondary", size: "lg", className: "w-13 px-0" })}
+          className={buttonClass({ variant: "secondary", size: "icon" })}
         >
           <ShareIcon />
         </button>

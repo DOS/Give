@@ -13,9 +13,10 @@ import { ACCOUNT_STATUS_LABELS, type AccountStatus } from "@/lib/receiving-accou
 /** "Từ thiện" for give, "Dự án sáng tạo" for back, as the home page and discovery name them (DESIGN.md 4: accent marks back). */
 const TYPE_BADGE_LABELS: Record<CampaignType, string> = { give: TYPE_LABELS.give, back: "Dự án sáng tạo" }
 
-export function TypeBadge({ type, className }: { type: CampaignType; className?: string }) {
+/** `md` is the 28px tag size the campaign page uses above its title (DESIGN.md 6, Tag). */
+export function TypeBadge({ type, size, className }: { type: CampaignType; size?: "md"; className?: string }) {
   return (
-    <Badge tone={type === "give" ? "brand" : "accent"} className={className}>
+    <Badge tone={type === "give" ? "brand" : "accent"} size={size} className={className}>
       {TYPE_BADGE_LABELS[type]}
     </Badge>
   )

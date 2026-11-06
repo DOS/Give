@@ -88,6 +88,7 @@ export default async function CampaignsPage({
             }))}
           />
           <Dropdown
+            title="Danh mục"
             summary={
               <>
                 {category ? `Danh mục: ${category.name}` : "Danh mục"}
@@ -123,10 +124,11 @@ export default async function CampaignsPage({
               </ul>
             </nav>
           </Dropdown>
-          <p className="ml-auto shrink-0 pl-3 text-sm text-muted" aria-live="polite">
+          <p className="ml-auto hidden shrink-0 pl-3 text-sm text-muted md:block">
             {campaigns.length} chiến dịch đang gây quỹ
           </p>
         </ScrollRow>
+        <p className="mt-3 text-sm text-muted md:hidden">{campaigns.length} chiến dịch đang gây quỹ</p>
       </div>
 
       {filtered && (
@@ -187,6 +189,9 @@ export default async function CampaignsPage({
           >
             Thử từ khoá ngắn hơn hoặc chọn danh mục khác.
           </EmptyState>
+        )}
+        {campaigns.length > 0 && (
+          <p className="mt-12 text-center text-sm text-muted">Đang xem {campaigns.length} chiến dịch</p>
         )}
       </section>
     </div>

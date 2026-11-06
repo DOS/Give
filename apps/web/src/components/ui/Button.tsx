@@ -3,7 +3,7 @@ import Link from "next/link"
 import type { ComponentProps, ReactNode } from "react"
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger"
-export type ButtonSize = "sm" | "md" | "lg"
+export type ButtonSize = "sm" | "md" | "lg" | "icon"
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: "btn-primary",
@@ -12,11 +12,12 @@ const VARIANTS: Record<ButtonVariant, string> = {
   danger: "btn-danger",
 }
 
-/** DESIGN.md 6: sm 36px / 12px / 14px, md 44px / 16px / 16px, lg 52px / 24px / 16px. */
+/** DESIGN.md 6: sm 36px / 12px / 14px, md 44px / 16px / 16px, lg 52px / 24px / 16px; icon is a 52px square. */
 const SIZES: Record<ButtonSize, string> = {
   sm: "min-h-9 px-3 text-sm",
   md: "",
   lg: "min-h-13 px-6",
+  icon: "size-13 shrink-0 px-0",
 }
 
 /** The class list of a button (DESIGN.md 6): one primary per screen region. */
