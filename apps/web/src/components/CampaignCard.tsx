@@ -1,4 +1,3 @@
-import clsx from "clsx"
 import Image from "next/image"
 import Link from "next/link"
 
@@ -10,19 +9,24 @@ import { publicCoverUrl } from "@/lib/cover-urls"
 import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
 
 /**
- * Campaign card for discovery and the home page (public campaigns only: the
- * cover goes through the public media route). `raised` comes from
- * give.public_campaigns (lib/statement.ts raisedAmount). The whole card is
- * one link named by the title.
+ * Campaign card for discovery and the home page (DESIGN.md 6, public
+ * campaigns only: the cover goes through the public media route). A 16:9
+ * cover, then the type label, a two-line title, the progress bar, one line
+ * of figures and one meta line; no description. `raised` and `people` come
+ * from give.public_campaigns (lib/statement.ts). The whole card is one link
+ * named by the title, with a hover border and no lift.
  */
 export function CampaignCard({
   campaign,
   raised = 0,
+  people,
   priority,
   headingLevel = 3,
 }: {
   campaign: PublicCampaign
   raised?: number
+  /** Supporters (give) or backers (back); left out of the meta line when unknown. */
+  people?: number
   /** Loads the cover eagerly (above the fold). */
   priority?: boolean
   headingLevel?: 2 | 3
@@ -32,54 +36,50 @@ export function CampaignCard({
   const options = campaign.display_options
   const isGive = campaign.type === "give"
   const Heading = headingLevel === 2 ? "h2" : "h3"
+  const meta = [
+    options.backers_count !== false && people !== undefined
+      ? `${people} ${isGive ? "người ủng hộ" : "người đồng hành"}`
+      : null,
+    options.time_remaining !== false && days !== null ? (days > 0 ? `Còn ${days} ngày` : "Đã hết hạn") : null,
+  ].filter(Boolean)
 
   return (
-    <article className="group relative flex h-full flex-col overflow-hidden card transition-colors hover:border-gray-300">
-      <div className="relative aspect-[3/2] overflow-hidden bg-surface">
+    <article className="group relative flex h-full min-w-0 flex-col overflow-hidden card transition-colors duration-150 hover:border-muted">
+      <div className="relative aspect-video overflow-hidden rounded-t-md bg-surface">
         {campaign.cover?.storage_path ? (
           <Image
             src={publicCoverUrl(campaign.cover.storage_path)}
             alt=""
             fill
             priority={priority}
-            sizes="(min-width: 1024px) 360px, (min-width: 640px) 50vw, 100vw"
+            sizes="(min-width: 1024px) 384px, (min-width: 640px) 50vw, 100vw"
             className="object-cover"
           />
         ) : (
           <CoverPlaceholder type={campaign.type} />
         )}
       </div>
-      <div className="flex flex-1 flex-col gap-3 p-4 sm:p-5">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-          <TypeBadge type={campaign.type} />
-          {campaign.category && <span className="text-sm text-muted">{campaign.category.name}</span>}
-        </div>
-        <Heading className="line-clamp-2 text-lg leading-snug font-semibold">
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <TypeBadge type={campaign.type} className="self-start" />
+        <Heading className="line-clamp-2 text-h3 break-words">
           <Link
             href={`/campaigns/${campaign.slug}`}
-            className="group-hover:underline group-hover:underline-offset-4 after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-brand-600"
+            className="group-hover:underline group-hover:underline-offset-4 after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-primary"
           >
             {campaign.title}
           </Link>
         </Heading>
-        {campaign.summary && <p className="line-clamp-2 text-body">{campaign.summary}</p>}
-        <div className="mt-auto space-y-2 pt-2">
+        {campaign.category && <p className="text-sm text-muted">{campaign.category.name}</p>}
+        <div className="mt-auto pt-2">
           {options.progress_bar !== false && <ProgressBar percent={percent} size="sm" />}
-          <p className="flex flex-wrap items-baseline justify-between gap-x-3">
-            <span>
-              <span className="figure">{formatVnd(raised)}</span>{" "}
-              <span className="text-muted">{isGive ? "đã nhận" : "đã cam kết"}</span>
-            </span>
-            <span className={clsx("tabular-nums", percent >= 100 ? "font-semibold text-brand-700" : "text-muted")}>
-              {percent}%
+          <p className="mt-3">
+            <span className="figure">{formatVnd(raised)}</span>{" "}
+            <span className="text-muted">
+              {isGive ? "đã nhận" : "đã cam kết"}
+              {options.progress_bar !== false && ` · ${percent}%`}
             </span>
           </p>
-          <p className="flex flex-wrap justify-between gap-x-3 text-sm text-muted">
-            <span>Mục tiêu {formatVnd(campaign.goal_amount)}</span>
-            {options.time_remaining !== false && days !== null && (
-              <span>{days > 0 ? `Còn ${days} ngày` : "Đã hết hạn"}</span>
-            )}
-          </p>
+          {meta.length > 0 && <p className="text-sm text-muted">{meta.join(" · ")}</p>}
         </div>
       </div>
     </article>

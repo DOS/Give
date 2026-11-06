@@ -13,7 +13,18 @@ const noSubscribe = () => () => {}
  * Vietnamese campaigns spread. `path` is the campaign's own path; the full
  * URL uses the site origin, or the page's own on previews.
  */
-export function ShareButtons({ path, title, origin: siteOrigin }: { path: string; title: string; origin?: string }) {
+export function ShareButtons({
+  path,
+  title,
+  origin: siteOrigin,
+  compact,
+}: {
+  path: string
+  title: string
+  origin?: string
+  /** One 52px icon button (the phone action bar); the copy status shows above it. */
+  compact?: boolean
+}) {
   const [status, setStatus] = useState<string | null>(null)
   // The canonical origin when the server knows it (so the Facebook link works
   // before hydration), else this page's own origin (previews).
@@ -41,6 +52,32 @@ export function ShareButtons({ path, title, origin: siteOrigin }: { path: string
       setStatus("Không chép được, hãy chép đường dẫn trên thanh địa chỉ")
     }
     setTimeout(() => setStatus(null), 3000)
+  }
+
+  if (compact) {
+    return (
+      <div className="relative shrink-0">
+        <button
+          type="button"
+          onClick={share}
+          aria-label="Chia sẻ"
+          className={buttonClass({ variant: "secondary", size: "lg", className: "w-13 px-0" })}
+        >
+          <ShareIcon />
+        </button>
+        <p className="sr-only" aria-live="polite">
+          {status}
+        </p>
+        {status && (
+          <p
+            aria-hidden
+            className="absolute bottom-full left-0 mb-2 rounded bg-fg px-2 text-sm whitespace-nowrap text-bg"
+          >
+            {status}
+          </p>
+        )}
+      </div>
+    )
   }
 
   return (

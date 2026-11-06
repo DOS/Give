@@ -3,6 +3,7 @@ import Link from "next/link"
 import type { ComponentProps, ReactNode } from "react"
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "danger"
+export type ButtonSize = "sm" | "md" | "lg"
 
 const VARIANTS: Record<ButtonVariant, string> = {
   primary: "btn-primary",
@@ -11,17 +12,21 @@ const VARIANTS: Record<ButtonVariant, string> = {
   danger: "btn-danger",
 }
 
-/**
- * The class list of a button (DOS/Give#95): every size keeps the 44px touch
- * target; `lg` is the one primary action of a page.
- */
+/** DESIGN.md 6: sm 36px / 12px / 14px, md 44px / 16px / 16px, lg 52px / 24px / 16px. */
+const SIZES: Record<ButtonSize, string> = {
+  sm: "min-h-9 px-3 text-sm",
+  md: "",
+  lg: "min-h-13 px-6",
+}
+
+/** The class list of a button (DESIGN.md 6): one primary per screen region. */
 export function buttonClass({
   variant = "primary",
   size = "md",
   full,
   className,
-}: { variant?: ButtonVariant; size?: "md" | "lg"; full?: boolean; className?: string } = {}): string {
-  return clsx(VARIANTS[variant], size === "lg" && "min-h-12 px-6 text-lg", full && "w-full", className)
+}: { variant?: ButtonVariant; size?: ButtonSize; full?: boolean; className?: string } = {}): string {
+  return clsx(VARIANTS[variant], SIZES[size], full && "w-full", className)
 }
 
 type Style = Parameters<typeof buttonClass>[0]

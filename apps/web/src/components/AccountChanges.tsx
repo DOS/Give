@@ -8,18 +8,15 @@ import { describeAccountChange, type PublicAccountChange } from "@/lib/account-s
 export function AccountChanges({ changes }: { changes: readonly PublicAccountChange[] }) {
   if (changes.length === 0) return null
   return (
-    <section
-      aria-labelledby="account-changes-heading"
-      className="space-y-2 rounded-md border border-sky-200 bg-sky-50 p-5 text-sky-950"
-    >
-      <h2 id="account-changes-heading" className="font-semibold text-sky-950">
+    <section aria-labelledby="account-changes-heading" className="space-y-2 rounded-md bg-surface p-4 text-fg">
+      <h2 id="account-changes-heading" className="font-semibold">
         Chiến dịch đã đổi tài khoản nhận
       </h2>
       <ul className="space-y-2">
         {changes.map((change) => (
           <li key={change.id}>
             <p>{describeAccountChange(change)}</p>
-            {change.public_note && <p className="mt-1 text-sky-900">Ghi chú của Give: {change.public_note}</p>}
+            {change.public_note && <p className="mt-1 text-muted">Ghi chú của Give: {change.public_note}</p>}
           </li>
         ))}
       </ul>
