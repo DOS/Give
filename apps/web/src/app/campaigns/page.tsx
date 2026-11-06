@@ -78,7 +78,7 @@ export default async function CampaignsPage({
       </form>
 
       <div className="mt-6 border-b border-border pb-4 sm:mt-8 sm:pb-6">
-        <ScrollRow className="gap-3 sm:overflow-visible">
+        <ScrollRow className="gap-3 md:overflow-visible">
           <SegmentedNav
             label="Loại chiến dịch"
             items={TYPE_TABS.map((tab) => ({

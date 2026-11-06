@@ -322,7 +322,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               {stats.length > 0 && (
                 <dl className="mt-4 grid grid-cols-3 gap-2">
                   {stats.map((stat) => (
-                    <div key={stat.label} className="flex min-w-0 flex-col-reverse">
+                    <div key={stat.label} className="flex min-w-0 flex-col-reverse justify-end">
                       <dt className="text-sm text-muted">{stat.label}</dt>
                       <dd className="text-lg font-bold tabular-nums">{stat.value}</dd>
                     </div>

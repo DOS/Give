@@ -5,13 +5,7 @@ import { PledgeTotals } from "@/components/PledgeTotals"
 import { Badge } from "@/components/ui/Badge"
 import { Callout } from "@/components/ui/Callout"
 import { formatDate, formatVnd } from "@/lib/format"
-import {
-  counterpartyLabel,
-  remainingAmount,
-  statementHref,
-  type MoneyTotals,
-  type StatementRow,
-} from "@/lib/statement"
+import { counterpartyLabel, remainingAmount, statementHref, type MoneyTotals, type StatementRow } from "@/lib/statement"
 
 /** How many of the newest statement rows the campaign page shows. */
 export const PREVIEW_ROWS = 5
