@@ -1,0 +1,91 @@
+import type { Metadata } from "next"
+import { notFound } from "next/navigation"
+
+import { InboundExplanationList, ManualMatchList } from "@/components/Reconciliation"
+import { UnmatchedTransactionCard } from "@/components/UnmatchedTransaction"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { explainTransaction } from "@/app/admin/unmatched/actions"
+import { matchTransaction } from "@/app/me/campaigns/[id]/unmatched/actions"
+import { requireSession } from "@/lib/auth/session"
+import { isStaff } from "@/lib/campaigns"
+import { campaignRefs, FINANCE_ROLES } from "@/lib/receiving-accounts"
+import { listInboundExplanations, listManualMatches, listMatchCandidates, listUnmatched } from "@/lib/reconciliation"
+import { dbAs } from "@/lib/supabase"
+
+import { AdminPage, AdminSection, ItemList } from "../_components/ui"
+
+export const metadata: Metadata = { title: "Giao dịch chưa khớp", robots: { index: false } }
+
+export default async function AdminUnmatchedPage() {
+  const session = await requireSession("/admin/unmatched")
+  const db = dbAs(session.accessToken)
+  // Finance and admin staff only; others get a 404.
+  if (!(await isStaff(db, FINANCE_ROLES))) notFound()
+
+  const [{ transactions: unmatched, total }, matches, explanations] = await Promise.all([
+    listUnmatched(db),
+    listManualMatches(db),
+    listInboundExplanations(db),
+  ])
+  const campaignIds = [...new Set(unmatched.map((tx) => tx.campaign_id))]
+  const [refs, candidateLists] = await Promise.all([
+    campaignRefs(db, [
+      ...campaignIds,
+      ...matches.map((m) => m.tx.campaign_id),
+      ...explanations.map((e) => e.tx.campaign_id),
+    ]),
+    Promise.all(campaignIds.map((id) => listMatchCandidates(db, id))),
+  ])
+  const candidates = new Map(campaignIds.map((id, i) => [id, candidateLists[i]]))
+  const titles = new Map([...refs].map(([id, ref]) => [id, ref.title]))
+
+  return (
+    <AdminPage
+      title="Giao dịch chưa khớp"
+      intro={
+        <>
+          <p>
+            Tiền đã vào tài khoản nhận của chiến dịch nhưng không có mã ủng hộ hợp lệ, nên đang được tính là &quot;chưa
+            khớp&quot;. Khớp tay khi đã rõ khoản này của lượt ủng hộ nào; người tổ chức cũng khớp được ở trang chiến
+            dịch của họ. Khớp tay chỉ chuyển tiền từ &quot;chưa khớp&quot; sang &quot;đã khớp&quot;, tổng đã thanh toán
+            của chiến dịch không đổi. Mỗi giao dịch chỉ khớp được một lần, và mỗi lần được ghi vào nhật ký kiểm toán.
+          </p>
+          <p>
+            Khoản không phải tiền ủng hộ (người tổ chức nạp thêm, ngân hàng hoàn phí, lãi) thì giải trình thay vì khớp,
+            kể cả khi chiến dịch đã hủy hoặc đã đóng: ghi lý do và bằng chứng đã kiểm tra. Sao kê công khai chỉ hiện
+            loại khoản tiền; tổng đã thanh toán không đổi, và giao dịch không còn chặn việc nhả tài khoản nhận.
+          </p>
+        </>
+      }
+    >
+      <AdminSection
+        id="unmatched"
+        title="Chờ khớp"
+        count={total > unmatched.length ? `${unmatched.length} mới nhất / ${total}` : total}
+      >
+        {unmatched.length === 0 ? (
+          <EmptyState title="Không có giao dịch nào chờ khớp.">
+            Tiền vào không có mã ủng hộ hợp lệ sẽ hiện ở đây để khớp tay hoặc giải trình.
+          </EmptyState>
+        ) : (
+          <ItemList>
+            {unmatched.map((tx) => (
+              <UnmatchedTransactionCard
+                key={tx.id}
+                tx={tx}
+                candidates={candidates.get(tx.campaign_id) ?? []}
+                action={matchTransaction.bind(null, tx.id)}
+                explainAction={explainTransaction.bind(null, tx.id)}
+                campaignTitle={titles.get(tx.campaign_id) ?? tx.campaign_id}
+              />
+            ))}
+          </ItemList>
+        )}
+      </AdminSection>
+
+      <ManualMatchList matches={matches} titles={titles} />
+
+      <InboundExplanationList explanations={explanations} titles={titles} />
+    </AdminPage>
+  )
+}

@@ -1,32 +1,27 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": ["**/.env", "**/.env.*local"],
-  "globalEnv": [
-    "NEXT_OUTPUT",
-    "APP_PUBLIC_URL",
-    "STRAPI_URL",
-    "STRAPI_REST_READONLY_API_KEY",
-    "SENTRY_SUPPRESS_GLOBAL_ERROR_HANDLER_FILE_WARNING",
-    "WEBPACK_CACHE_TYPE"
-  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": [".next/**", "!.next/cache/**", "dist/**", "public/**"]
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": [".next/**", "!.next/cache/**"],
+      "env": [
+        "NEXT_PUBLIC_SUPABASE_URL",
+        "NEXT_PUBLIC_SUPABASE_ANON_KEY",
+        "NEXT_PUBLIC_SITE_URL",
+        "SUPABASE_SERVICE_ROLE_KEY",
+        "OIDC_ISSUER",
+        "OIDC_CLIENT_ID",
+        "OIDC_CLIENT_SECRET",
+        "CRON_SECRET"
+      ]
     },
-    "lint": {
-      "dependsOn": ["^lint"]
-    },
+    "lint": {},
+    "typecheck": {},
+    "test": {},
     "dev": {
-      "dependsOn": ["@repo/shared-data#build", "@repo/design-system#build"],
-      "cache": false,
-      "persistent": true
-    },
-    "start": {
-      "dependsOn": ["^build"],
       "cache": false,
       "persistent": true
     }
-  },
-  "ui": "tui"
+  }
 }
