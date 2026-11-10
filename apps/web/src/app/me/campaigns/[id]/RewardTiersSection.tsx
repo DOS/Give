@@ -94,7 +94,7 @@ export function RewardTiersSection({
                   <details className="group">
                     <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 link [&::-webkit-details-marker]:hidden">
                       Sửa mức này
-                      <ChevronDownIcon width={20} height={20} className="transition-transform group-open:rotate-180" />
+                      <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
                     </summary>
                     <ActionForm
                       action={saveRewardTier.bind(null, campaignId, tier.id)}
@@ -127,7 +127,7 @@ export function RewardTiersSection({
         <details className="group mt-4 rounded-md border border-border px-4 py-1" open={ordered.length === 0}>
           <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 font-semibold text-fg [&::-webkit-details-marker]:hidden">
             Thêm mức phần thưởng
-            <ChevronDownIcon width={20} height={20} className="transition-transform group-open:rotate-180" />
+            <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
           </summary>
           <ActionForm
             action={saveRewardTier.bind(null, campaignId, null)}
@@ -275,12 +275,7 @@ export function FulfillmentLink({ campaignId }: { campaignId: string }) {
       aria-labelledby="fulfillment-title"
       className="flex scroll-mt-24 flex-col gap-4 rounded-md bg-surface p-4 sm:flex-row sm:items-center sm:p-6"
     >
-      <span
-        aria-hidden
-        className="hidden size-12 shrink-0 items-center justify-center rounded bg-bg text-accent sm:flex"
-      >
-        <GiftIcon width={24} height={24} />
-      </span>
+      <GiftIcon width={40} height={40} className="hidden shrink-0 text-primary sm:block" />
       <div className="min-w-0 flex-1">
         <h2 id="fulfillment-title" className="text-h2">
           Giao quà cho người ủng hộ

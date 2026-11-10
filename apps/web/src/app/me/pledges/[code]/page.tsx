@@ -284,7 +284,7 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
           aria-label="Cam kết"
           className="min-w-0 lg:sticky lg:top-24 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:self-start"
         >
-          <dl className="grid grid-cols-2 gap-4 card p-4 sm:p-6 lg:grid-cols-1">
+          <dl className="grid gap-4 card p-4 sm:grid-cols-2 sm:p-6 lg:grid-cols-1">
             <div className="min-w-0">
               <dt className="text-sm text-muted">Số tiền cam kết</dt>
               <dd className="mt-1">
@@ -295,7 +295,7 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
               <dt className="text-sm text-muted">Mã cam kết</dt>
               <dd className="mt-1 font-mono text-h2 break-all text-fg">{pledge.reference_code}</dd>
             </div>
-            <div className="col-span-2 min-w-0 lg:col-span-1">
+            <div className="min-w-0 sm:col-span-2 lg:col-span-1">
               <dt className="text-sm text-muted">Trạng thái</dt>
               <dd className="mt-1">
                 <PledgeStatusBadge status={pledge.status} />
@@ -311,7 +311,7 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
             <h2 id="pledge-details" className="text-h2">
               Chi tiết cam kết
             </h2>
-            <dl className="mt-4 divide-y divide-border border-y border-border">
+            <dl className="mt-6 divide-y divide-border border-y border-border">
               <Detail label="Phần quà">
                 <span className="font-semibold">
                   {pledge.reward_tier_id ? (tier?.title ?? "Phần quà của dự án") : "Ủng hộ không nhận quà"}

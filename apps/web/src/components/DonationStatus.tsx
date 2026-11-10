@@ -111,7 +111,7 @@ export function DonationStatus({
         className="flex flex-col items-center rounded-md bg-primary-soft px-4 py-12 text-center sm:px-6"
       >
         <span className="flex size-12 items-center justify-center rounded-md bg-primary text-primary-fg" aria-hidden>
-          <CheckIcon width={28} height={28} strokeWidth={2} />
+          <CheckIcon width={24} height={24} strokeWidth={2} />
         </span>
         <p className="mt-4 text-h2 text-fg">Đã nhận {formatVnd(status.received_amount)}. Cảm ơn bạn!</p>
         <p className="mt-2 max-w-[68ch] text-fg">Khoản ủng hộ đã vào tài khoản nhận của chiến dịch.</p>
@@ -126,7 +126,7 @@ export function DonationStatus({
         <span className="inline-flex items-center gap-2 font-semibold text-fg">
           {watch === "watching" && showInstructions ? (
             <span className="relative flex size-2.5" aria-hidden>
-              <span className="absolute inline-flex size-full rounded bg-primary opacity-75 motion-safe:animate-ping" />
+              <span className="absolute inline-flex size-full rounded bg-primary opacity-75 motion-safe:animate-pulse" />
               <span className="relative inline-flex size-2.5 rounded bg-primary" />
             </span>
           ) : (
@@ -145,7 +145,7 @@ export function DonationStatus({
             <span className="text-fg">Trang đã ngừng tự kiểm tra.</span>
             <button
               type="button"
-              className={buttonClass({ variant: "secondary", size: "sm" })}
+              className={buttonClass({ variant: "secondary" })}
               onClick={() => {
                 resumeNow.current = true
                 setWatch("watching")

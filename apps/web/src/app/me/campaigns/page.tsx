@@ -39,7 +39,7 @@ async function CampaignList({ session }: { session: Session }) {
 
   if (campaigns.length === 0) {
     return (
-      <EmptyState title="Bạn chưa có chiến dịch nào." action={<ButtonLink href="/start">Bắt đầu ngay</ButtonLink>}>
+      <EmptyState title="Bạn chưa có chiến dịch nào.">
         Gây quỹ từ thiện hoặc cho một dự án sáng tạo. Bản nháp chỉ bạn thấy cho tới khi bạn gửi duyệt.
       </EmptyState>
     )
@@ -80,7 +80,7 @@ async function CampaignList({ session }: { session: Session }) {
                 Tạo ngày {formatDate(campaign.created_at)}
               </p>
               {campaign.status === "changes_requested" && campaign.review_note && (
-                <p className="mt-2 text-sm font-medium break-words text-fg">Cần sửa: {campaign.review_note}</p>
+                <p className="mt-2 text-sm font-medium break-words text-warning">Cần sửa: {campaign.review_note}</p>
               )}
             </div>
           </div>

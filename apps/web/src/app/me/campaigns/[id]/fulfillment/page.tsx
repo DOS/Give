@@ -270,7 +270,7 @@ function FulfillmentForm({
                   update the row would still show, and save back, the old status. */}
               <div
                 key={`${pledge.fulfillment_status ?? "none"}:${pledge.fulfillment_updated_at ?? ""}`}
-                className="grid min-w-0 gap-2 sm:grid-cols-[10rem_1fr] [&>*]:min-w-0"
+                className="grid min-w-0 content-start items-start gap-2 self-start sm:grid-cols-[10rem_1fr] [&>*]:min-w-0"
               >
                 <select
                   name={`status_${pledge.id}`}

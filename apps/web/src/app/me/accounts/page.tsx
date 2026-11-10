@@ -277,7 +277,7 @@ function AccountItem({
             <span className="font-semibold">{formatVnd(VERIFICATION_TRANSFER_AMOUNT)}</span> tới một tài khoản khác của
             bạn, với nội dung chuyển khoản đúng là:
           </p>
-          <p className="font-mono text-h2 font-bold tracking-wider break-all text-fg">{account.verification_code}</p>
+          <p className="font-mono text-h3 font-bold tracking-wider break-all text-fg">{account.verification_code}</p>
           <p>
             Give đối chiếu giao dịch này trên sao kê của tài khoản (trang sao kê công khai nếu có) rồi xác minh. Nếu
             cần, đội ngũ Give sẽ liên hệ để xem biên lai.
@@ -300,7 +300,7 @@ function AccountItem({
             </Link>{" "}
             từ ngày {formatDate(holder.bound_at)}.
           </p>
-          <p className="mt-1 text-sm text-muted">
+          <p className="mt-1 text-sm text-fg">
             Khi chiến dịch còn là bản nháp, hoặc được yêu cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào, bạn có thể
             nhả tài khoản để đổi tài khoản khác; ngoài ra, sau khi gửi duyệt, tài khoản chỉ được nhả khi chiến dịch đó
             đã xong hẳn phần tiền.

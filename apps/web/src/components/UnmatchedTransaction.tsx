@@ -138,7 +138,7 @@ function ExplainInboundForm({
     <details className="group border-t border-border pt-3">
       <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 font-medium text-fg hover:text-primary [&::-webkit-details-marker]:hidden">
         Không phải tiền ủng hộ? Giải trình khoản này
-        <ChevronDownIcon width={20} height={20} className="transition-transform group-open:rotate-180" />
+        <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
       </summary>
       <ActionForm
         action={action}

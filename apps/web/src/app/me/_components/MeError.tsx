@@ -9,7 +9,7 @@ import { Callout } from "@/components/ui/Callout"
  */
 export function MeError({ retry }: { retry: () => void }) {
   return (
-    <div className="container-page pt-8 pb-16 sm:pt-12 lg:pb-24">
+    <div className="container-page pt-6 pb-16 sm:pt-8 lg:pb-24">
       <div className="max-w-160 space-y-6">
         <h1 className="text-h1-phone tracking-tight sm:text-h1">Không tải được trang này</h1>
         <Callout tone="danger" role="alert">

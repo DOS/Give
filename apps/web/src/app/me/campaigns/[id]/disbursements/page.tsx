@@ -195,7 +195,7 @@ function ExplainForm({
   return (
     <ActionForm
       action={explainDisbursement.bind(null, campaignId, tx.id)}
-      className="mt-6 max-w-160 space-y-6 border-t border-border pt-6"
+      className="mt-6 space-y-6 border-t border-border pt-6 [&>*]:max-w-160"
       confirm="Giải trình sẽ được công khai và không sửa được. Gửi giải trình?"
     >
       <div>

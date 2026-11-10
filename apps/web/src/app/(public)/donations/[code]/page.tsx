@@ -145,7 +145,7 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
           aria-label="Khoản ủng hộ"
           className="min-w-0 lg:sticky lg:top-24 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:self-start"
         >
-          <dl className="grid grid-cols-2 gap-4 card p-4 sm:p-6 lg:grid-cols-1">
+          <dl className="grid gap-4 card p-4 sm:grid-cols-2 sm:p-6 lg:grid-cols-1">
             <div className="min-w-0">
               <dt className="text-sm text-muted">Số tiền ủng hộ</dt>
               <dd className="mt-1">

@@ -1,6 +1,8 @@
 import clsx from "clsx"
 import type { ReactNode } from "react"
 
+import { Badge } from "@/components/ui/Badge"
+
 /**
  * Building blocks the admin pages share, on the DESIGN.md kit: a page frame
  * (the layout supplies the container and the side navigation), a section
@@ -55,9 +57,9 @@ export function AdminSection({
         <h2 id={id} className="flex flex-wrap items-center gap-3 text-h2">
           {title}
           {count !== undefined && (
-            <span className="inline-flex h-7 items-center rounded bg-surface px-2.5 text-sm font-semibold text-muted tabular-nums">
+            <Badge size="md" className="tabular-nums">
               {count}
-            </span>
+            </Badge>
           )}
         </h2>
         {lead && <p className="max-w-[68ch] text-fg">{lead}</p>}

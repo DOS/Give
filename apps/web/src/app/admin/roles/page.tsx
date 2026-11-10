@@ -139,7 +139,7 @@ export default async function StaffRolesPage() {
                   <span className="font-semibold text-fg">{describeChange(change)}</span>{" "}
                   {change.action === "admin.revoke" ? "của" : "cho"} {change.user_email ?? change.user_id}
                 </td>
-                <td className="px-4 py-3 break-all">{change.actor_email ?? change.actor_id ?? "hệ thống"}</td>
+                <td className="px-4 py-3 break-words">{change.actor_email ?? change.actor_id ?? "hệ thống"}</td>
                 <td className="max-w-xs px-4 py-3 break-words">{change.reason || "—"}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(change.created_at)}</td>
               </tr>

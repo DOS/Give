@@ -42,7 +42,9 @@ export function PublicEvidenceList({
             </a>
             <p className="mt-1">{kind}</p>
             <details className="mt-1">
-              <summary className="cursor-pointer text-muted hover:text-fg">Báo cáo ảnh</summary>
+              <summary className="inline-flex min-h-11 cursor-pointer items-center text-muted hover:text-fg">
+                Báo cáo ảnh
+              </summary>
               {report ? (
                 // Wider than the thumbnail, but never past the screen edge on a phone.
                 <ActionForm

@@ -54,7 +54,7 @@ export default async function StartPage() {
                           <HeartIcon className="text-primary" />
                           Từ thiện
                         </span>
-                        <span className="mt-1 block text-sm text-muted">
+                        <span className="mt-1 block text-sm text-fg">
                           Nhận ủng hộ linh hoạt, không cần đạt đủ mục tiêu.
                         </span>
                       </span>
@@ -66,7 +66,7 @@ export default async function StartPage() {
                           <SparkIcon className="text-accent" />
                           Dự án có quà tặng
                         </span>
-                        <span className="mt-1 block text-sm text-muted">
+                        <span className="mt-1 block text-sm text-fg">
                           Người ủng hộ cam kết trước, chỉ trả tiền khi dự án đạt mục tiêu.
                         </span>
                       </span>

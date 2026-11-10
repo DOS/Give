@@ -2,6 +2,7 @@ import clsx from "clsx"
 import Link from "next/link"
 import type { ReactNode } from "react"
 
+import { CurrentTabInView } from "@/components/ui/CurrentTabInView"
 import { ScrollRow } from "@/components/ui/ScrollRow"
 import { TagLink } from "@/components/ui/Tag"
 
@@ -50,7 +51,8 @@ export function TabNav({ label, items, className }: { label: string; items: read
  * Section navigation for /me and /admin (DESIGN.md 8): a vertical list of
  * links from 1024px, the TabNav row below. Both render, and CSS shows one,
  * so it works without JavaScript; the hidden one is out of the
- * accessibility tree. Each item is 44px; the current one is the selected
+ * accessibility tree. On phones the tab row scrolls the current tab into
+ * view. Each item is 44px; the current one is the selected
  * fill (primary-soft with primary text), as on a tag.
  */
 export function SectionNav({
@@ -66,7 +68,9 @@ export function SectionNav({
   return (
     <div className="lg:sticky lg:top-24">
       {heading && <p className="flex items-center gap-2 text-sm font-medium text-muted lg:mb-2 lg:px-3">{heading}</p>}
-      <TabNav label={label} items={items} className="lg:hidden" />
+      <CurrentTabInView>
+        <TabNav label={label} items={items} className="lg:hidden" />
+      </CurrentTabInView>
       <nav aria-label={label} className="hidden lg:block">
         <ul className="space-y-1">
           {items.map((item) => (

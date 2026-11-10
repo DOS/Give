@@ -15,7 +15,7 @@ export function CopyButton({ value, label = "Sao chép", name }: { value: string
   return (
     <button
       type="button"
-      className={buttonClass({ variant: "secondary", size: "sm", className: "shrink-0" })}
+      className={buttonClass({ variant: "secondary", className: "shrink-0" })}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value)
