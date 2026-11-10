@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
@@ -10,6 +10,7 @@ import {
   fundingModelFor,
   isEditableStatus,
   isPublicStatus,
+  listPublicCampaigns,
   listWaitingForAccount,
   waitingAdvice,
   normalizeSearch,
@@ -128,6 +129,93 @@ describe("discoveryHref", () => {
     expect(discoveryHref({ type: "give", category: "healthcare", q: "lũ lụt" })).toBe(
       "/campaigns?type=give&category=healthcare&q=l%C5%A9+l%E1%BB%A5t"
     )
+  })
+})
+
+describe("listPublicCampaigns", () => {
+  const A = "1060c000-0000-4000-8000-000000000001"
+  const B = "1060c000-0000-4000-8000-000000000002"
+  const NO_FILTERS = { type: null, category: null, q: null }
+  const live = (call: Call) =>
+    call.target === "campaigns"
+      ? {
+          data: [
+            { id: A, title: "A" },
+            { id: B, title: "B" },
+          ],
+        }
+      : undefined
+
+  it("selects only the public campaign columns: no organizer id, no review note, no select=*", async () => {
+    const log: Call[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await listPublicCampaigns(fakeDb(live, log) as any, NO_FILTERS, [])
+    const columns = String(op(log[0], "select")?.[0])
+    expect(log[0].target).toBe("campaigns")
+    expect(columns).not.toMatch(/\*|organizer_id|review_note|organizers/)
+    expect(op(log[0], "eq")).toEqual(["status", "live"])
+  })
+
+  it("adds each campaign's organizer from one public_campaign_organizers call, with the public card fields only", async () => {
+    const log: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "rpc:public_campaign_organizers")
+        return {
+          data: [
+            {
+              campaign_id: A,
+              display_name: "Quỹ Ánh Sáng",
+              kind: "organization",
+              verification_status: "verified",
+              // Anything else the RPC might return must not reach the page.
+              legal_name: "Pháp nhân",
+              phone: "0900000001",
+              user_id: "u-1",
+            },
+          ],
+        }
+      return live(call)
+    }, log)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const list = await listPublicCampaigns(db as any, NO_FILTERS, [])
+    expect(log.map((c) => c.target)).toEqual(["campaigns", "rpc:public_campaign_organizers"])
+    expect(op(log[1], "args")).toEqual([{ p_campaign_ids: [A, B] }])
+    expect(list).toEqual([
+      {
+        id: A,
+        title: "A",
+        organizer: { display_name: "Quỹ Ánh Sáng", kind: "organization", verification_status: "verified" },
+      },
+      { id: B, title: "B", organizer: null },
+    ])
+  })
+
+  it("skips the organizer call when nothing is live", async () => {
+    const log: Call[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(await listPublicCampaigns(fakeDb(() => ({ data: [] }), log) as any, NO_FILTERS, [])).toEqual([])
+    expect(log).toHaveLength(1)
+  })
+
+  it("keeps the cards without organizers when the organizer lookup fails, and throws when the list read fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const db = fakeDb((call) =>
+      call.target === "rpc:public_campaign_organizers"
+        ? { error: { code: "PGRST202", message: "function not found" } }
+        : live(call)
+    )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const list = await listPublicCampaigns(db as any, NO_FILTERS, [])
+    expect(list.map((c) => [c.id, c.organizer])).toEqual([
+      [A, null],
+      [B, null],
+    ])
+    expect(error).toHaveBeenCalledOnce()
+    error.mockRestore()
+
+    const refused = fakeDb(() => ({ error: { code: "42501", message: "permission denied" } }))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(listPublicCampaigns(refused as any, NO_FILTERS, [])).rejects.toMatchObject({ code: "42501" })
   })
 })
 

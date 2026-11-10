@@ -4,17 +4,21 @@ import Link from "next/link"
 import { TypeBadge } from "@/components/badges"
 import { ProgressBar } from "@/components/ProgressBar"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
-import type { PublicCampaign } from "@/lib/campaigns"
+import { CheckIcon } from "@/components/ui/icons"
+import type { ListedCampaign } from "@/lib/campaigns"
 import { publicCoverUrl } from "@/lib/cover-urls"
 import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
 
 /**
  * Campaign card for discovery and the home page (DESIGN.md 6, public
  * campaigns only: the cover goes through the public media route). A 16:9
- * cover, then the type label, a two-line title, the progress bar, one line
- * of figures and one meta line; no description. `raised` and `people` come
- * from give.public_campaigns (lib/statement.ts). The whole card is one link
- * named by the title, with a hover border and no lift.
+ * cover, then the type label, a two-line title, the organizer's display name
+ * with a verified check, the progress bar, one line of figures and one meta
+ * line; no description and no category. The organizer comes from
+ * give.public_campaign_organizers (listPublicCampaigns); a card without one
+ * leaves the line out. `raised` and `people` come from give.public_campaigns
+ * (lib/statement.ts). The whole card is one link named by the title, with a
+ * hover border and no lift.
  */
 export function CampaignCard({
   campaign,
@@ -23,7 +27,7 @@ export function CampaignCard({
   priority,
   headingLevel = 3,
 }: {
-  campaign: PublicCampaign
+  campaign: ListedCampaign
   raised?: number
   /** Supporters (give) or backers (back); left out of the meta line when unknown. */
   people?: number
@@ -34,6 +38,7 @@ export function CampaignCard({
   const percent = progressPercent(raised, campaign.goal_amount)
   const days = daysLeft(campaign.ends_at)
   const options = campaign.display_options
+  const organizer = campaign.organizer
   const isGive = campaign.type === "give"
   const Heading = headingLevel === 2 ? "h2" : "h3"
   const meta = [
@@ -69,7 +74,21 @@ export function CampaignCard({
             {campaign.title}
           </Link>
         </Heading>
-        {campaign.category && <p className="text-sm text-muted">{campaign.category.name}</p>}
+        {organizer && (
+          <p className="flex min-w-0 items-center gap-1 text-sm text-muted">
+            <span className="truncate">{organizer.display_name}</span>
+            {organizer.verification_status === "verified" && (
+              <CheckIcon
+                width={16}
+                height={16}
+                className="shrink-0 text-primary"
+                role="img"
+                aria-hidden={false}
+                aria-label="Đã xác minh"
+              />
+            )}
+          </p>
+        )}
         <div className="mt-auto pt-2">
           {options.progress_bar !== false && <ProgressBar percent={percent} size="sm" />}
           <p className="mt-3">

@@ -92,6 +92,15 @@ export interface CampaignWithRefs extends Campaign {
 /** What public pages load: no organizer user id, no review note. */
 export type PublicCampaign = Omit<CampaignWithRefs, "organizer_id" | "review_note">
 
+/**
+ * A campaign as discovery and the home page list it: the public columns plus
+ * the organizer's public card (display name, kind, verification), or null
+ * when the lookup has no row for it or failed.
+ */
+export interface ListedCampaign extends PublicCampaign {
+  organizer: PublicOrganizer | null
+}
+
 export interface Milestone {
   id: string
   campaign_id: string
@@ -287,13 +296,16 @@ export async function listCategories(db: Db): Promise<Category[]> {
   return (data ?? []) as Category[]
 }
 
-/** Live campaigns for discovery, newest first. */
+/**
+ * Live campaigns for discovery and the home page, newest first, each with its
+ * organizer's public card for the campaign cards (DESIGN.md 6, Card).
+ */
 export async function listPublicCampaigns(
   db: Db,
   filters: DiscoveryFilters,
   categories: readonly Category[],
   limit = 24
-): Promise<PublicCampaign[]> {
+): Promise<ListedCampaign[]> {
   let query = db.from("campaigns").select(PUBLIC_CAMPAIGN_WITH_REFS).eq("status", "live")
   if (filters.type) query = query.eq("type", filters.type)
   if (filters.category) {
@@ -304,7 +316,47 @@ export async function listPublicCampaigns(
   if (filters.q) query = query.or(searchFilter(filters.q))
   const { data, error } = await query.order("approved_at", { ascending: false, nullsFirst: false }).limit(limit)
   if (error) throw error
-  return (data ?? []) as unknown as PublicCampaign[]
+  const campaigns = (data ?? []) as unknown as PublicCampaign[]
+  const organizers = await listCampaignOrganizers(
+    db,
+    campaigns.map((c) => c.id)
+  )
+  return campaigns.map((c) => ({ ...c, organizer: organizers.get(c.id) ?? null }))
+}
+
+/** give.public_campaign_organizers reads at most this many ids per call. */
+const ORGANIZERS_PER_CALL = 100
+
+/**
+ * Public organizer cards of public campaigns, by campaign id, through
+ * give.public_campaign_organizers (DOS-Me
+ * `20261111120000_give_public_campaign_organizers.sql`): only the display
+ * name, kind and verification, as give.public_organizer. A card without an
+ * organizer line is still a working card, so a failed lookup is logged and
+ * leaves every card without one instead of failing the page.
+ */
+async function listCampaignOrganizers(db: Db, campaignIds: readonly string[]): Promise<Map<string, PublicOrganizer>> {
+  const organizers = new Map<string, PublicOrganizer>()
+  if (campaignIds.length === 0) return organizers
+  try {
+    for (let i = 0; i < campaignIds.length; i += ORGANIZERS_PER_CALL) {
+      const { data, error } = await db.rpc("public_campaign_organizers", {
+        p_campaign_ids: campaignIds.slice(i, i + ORGANIZERS_PER_CALL),
+      })
+      if (error) throw error
+      for (const row of (data ?? []) as (PublicOrganizer & { campaign_id: string })[]) {
+        organizers.set(row.campaign_id, {
+          display_name: row.display_name,
+          kind: row.kind,
+          verification_status: row.verification_status,
+        })
+      }
+    }
+  } catch (error) {
+    console.error("public_campaign_organizers failed; campaign cards show no organizer", error)
+    return new Map()
+  }
+  return organizers
 }
 
 /**
