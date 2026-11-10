@@ -33,8 +33,10 @@ describe("CampaignCard", () => {
   it("shows the organizer with the verified check after the title, and no category", () => {
     const html = render({ display_name: "Quỹ Nhịp Tim Việt", kind: "organization", verification_status: "verified" })
     expect(html).toContain("Quỹ Nhịp Tim Việt")
-    expect(html).toMatch(/<svg[^>]*role="img"[^>]*aria-label="Đã xác minh"/)
-    expect(html).not.toMatch(/<svg[^>]*aria-label="Đã xác minh"[^>]*aria-hidden="true"/)
+    // The check is a named image that screen readers do not skip, whatever the attribute order.
+    const check = html.match(/<svg(?=[^>]*aria-label="Đã xác minh")[^>]*>/)?.[0]
+    expect(check).toMatch(/role="img"/)
+    expect(check).not.toMatch(/aria-hidden="true"/)
     expect(html.indexOf("Chung tay cùng bé An")).toBeLessThan(html.indexOf("Quỹ Nhịp Tim Việt"))
     expect(html).not.toContain("Y tế")
   })
@@ -48,6 +50,7 @@ describe("CampaignCard", () => {
   it("leaves the organizer line out when there is no organizer", () => {
     const html = render(null)
     expect(html).not.toContain("Đã xác minh")
-    expect(html).not.toContain("truncate")
+    // The title is followed directly by the progress block.
+    expect(html).toMatch(/<\/h3><div class="mt-auto pt-2">/)
   })
 })

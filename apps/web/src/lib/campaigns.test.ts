@@ -190,6 +190,31 @@ describe("listPublicCampaigns", () => {
     ])
   })
 
+  it("asks for organizers 100 ids at a time, the RPC's cap", async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `1060d000-0000-4000-8000-${String(i).padStart(12, "0")}`)
+    const log: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "campaigns") return { data: ids.map((id) => ({ id })) }
+      const asked = (op(call, "args")?.[0] as { p_campaign_ids: string[] }).p_campaign_ids
+      return {
+        data: asked.map((id) => ({
+          campaign_id: id,
+          display_name: "X",
+          kind: "individual",
+          verification_status: "verified",
+        })),
+      }
+    }, log)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const list = await listPublicCampaigns(db as any, NO_FILTERS, [], 101)
+    const calls = log.filter((c) => c.target === "rpc:public_campaign_organizers")
+    expect(calls.map((c) => (op(c, "args")?.[0] as { p_campaign_ids: string[] }).p_campaign_ids)).toEqual([
+      ids.slice(0, 100),
+      ids.slice(100),
+    ])
+    expect(list.every((c) => c.organizer?.display_name === "X")).toBe(true)
+  })
+
   it("skips the organizer call when nothing is live", async () => {
     const log: Call[] = []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
