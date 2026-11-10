@@ -72,7 +72,7 @@ export default async function AdminReviewPage() {
                       )
                     }
                   >
-                    <p className="mt-1 text-body">{campaign.summary}</p>
+                    <p className="mt-1 max-w-[68ch] break-words text-fg">{campaign.summary}</p>
                   </CampaignHead>
                   <Facts>
                     <Fact label="Mục tiêu">
@@ -162,7 +162,7 @@ export default async function AdminReviewPage() {
               return (
                 <ItemCard key={campaign.id}>
                   <CampaignHead campaign={campaign}>
-                    <p className="mt-1 font-medium text-red-700">{accountProblemLabel(campaign.account_problem)}</p>
+                    <p className="mt-1 font-medium text-danger">{accountProblemLabel(campaign.account_problem)}</p>
                   </CampaignHead>
                   <Facts>
                     <Fact label="Ngày bắt đầu">
@@ -187,7 +187,7 @@ export default async function AdminReviewPage() {
                     <ActionForm
                       action={requestChanges.bind(null, campaign.id)}
                       confirm="Trả chiến dịch đã duyệt về cho người tổ chức chỉnh sửa? Chiến dịch sẽ phải gửi duyệt lại."
-                      className="space-y-2 border-t border-line pt-5"
+                      className="max-w-160 space-y-2 border-t border-border pt-6"
                     >
                       <input type="hidden" name="from_status" value="approved" />
                       <label htmlFor={`waiting-reason-${campaign.id}`} className="label">
@@ -196,7 +196,7 @@ export default async function AdminReviewPage() {
                       <textarea
                         id={`waiting-reason-${campaign.id}`}
                         name="reason"
-                        className="field max-w-2xl"
+                        className="field"
                         rows={4}
                         required
                         maxLength={2000}
@@ -221,12 +221,12 @@ export default async function AdminReviewPage() {
         {organizers.length === 0 ? (
           <EmptyState title="Không có hồ sơ nào chờ xác minh." />
         ) : (
-          <ul className="divide-y divide-line card">
+          <ul className="divide-y divide-border card">
             {organizers.map((organizer) => (
-              <li key={organizer.user_id} className="flex flex-wrap items-center gap-4 p-4 sm:p-5">
+              <li key={organizer.user_id} className="flex flex-wrap items-center gap-4 p-4 sm:p-6">
                 <div className="min-w-0 flex-1 basis-60 text-sm">
-                  <p className="text-base font-semibold text-ink">{organizer.display_name}</p>
-                  <p className="text-body">
+                  <p className="text-base font-semibold break-words text-fg">{organizer.display_name}</p>
+                  <p className="break-words text-fg">
                     Tên pháp lý: {organizer.legal_name} · {organizer.kind === "organization" ? "Tổ chức" : "Cá nhân"}
                     {organizer.phone ? ` · ${organizer.phone}` : ""}
                   </p>
@@ -275,7 +275,7 @@ function CampaignHead({
           <TypeBadge type={campaign.type} />
           {meta}
         </div>
-        <h3 className="mt-2 text-lg font-semibold">{campaign.title}</h3>
+        <h3 className="mt-2 text-h3 break-words">{campaign.title}</h3>
         {children}
       </div>
       <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary" target="_blank">

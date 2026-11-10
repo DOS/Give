@@ -75,44 +75,47 @@ export default async function PledgePage({
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
-      <header className="max-w-3xl">
-        <p className="text-muted">Ủng hộ dự án</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
+    <div className="container-page pt-6 pb-16 sm:pt-8 lg:pb-24">
+      <header className="min-w-0">
+        <p className="text-sm text-muted">Ủng hộ dự án</p>
+        <h1 className="mt-2 text-h1-phone tracking-tight break-words sm:text-h1">
           <Link href={`/campaigns/${campaign.slug}`} className="underline-offset-4 hover:underline">
             {campaign.title}
           </Link>
         </h1>
       </header>
 
-      <div className="mt-6 grid gap-8 lg:mt-8 lg:grid-cols-[minmax(0,1fr)_20rem] lg:items-start lg:gap-12">
-        {/* First in DOM so phones read how payment works before the form; lg moves it to the right. */}
-        <aside aria-labelledby="pledge-terms" className="card p-5 sm:p-6 lg:sticky lg:top-24 lg:order-last">
-          <h2 id="pledge-terms" className="text-lg font-bold">
+      <div className="mt-8 flex flex-col gap-8 lg:grid lg:grid-cols-12 lg:gap-x-6">
+        {/* First in DOM so phones read how payment works before the form; lg moves it to the right (8/4). */}
+        <aside
+          aria-labelledby="pledge-terms"
+          className="min-w-0 card p-4 sm:p-6 lg:sticky lg:top-24 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:self-start"
+        >
+          <h2 id="pledge-terms" className="text-h3">
             Đạt mục tiêu mới thanh toán
           </h2>
-          <dl className="mt-4 grid gap-x-4 gap-y-4 sm:grid-cols-2 lg:grid-cols-1">
-            <div>
+          <dl className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+            <div className="min-w-0">
               <dt className="text-sm text-muted">Mục tiêu</dt>
               <dd>
                 <Money amount={campaign.goal_amount} />
               </dd>
             </div>
-            <div>
+            <div className="min-w-0">
               <dt className="text-sm text-muted">Nhận cam kết tới</dt>
-              <dd className="font-semibold text-ink">{formatDateTime(campaign.ends_at)}</dd>
+              <dd className="font-semibold text-fg">{formatDateTime(campaign.ends_at)}</dd>
             </div>
-            <div className="sm:col-span-2 lg:col-span-1">
+            <div className="min-w-0 sm:col-span-2 lg:col-span-1">
               <dt className="text-sm text-muted">Nếu đạt mục tiêu</dt>
-              <dd className="font-semibold text-ink">Bạn chuyển khoản trong {campaign.payment_window_days} ngày</dd>
+              <dd className="font-semibold text-fg">Bạn chuyển khoản trong {campaign.payment_window_days} ngày</dd>
             </div>
           </dl>
-          <p className="mt-4 rounded-md bg-accent-50 px-4 py-3 text-accent-800">
+          <p className="mt-4 border-t border-border pt-4 text-fg">
             Bạn cam kết trước, chỉ trả tiền khi dự án đạt mục tiêu. Nếu không đạt, cam kết tự hủy.
           </p>
         </aside>
 
-        <div className="min-w-0 space-y-6">
+        <div className="max-w-160 min-w-0 space-y-6 lg:col-span-8 lg:row-start-1">
           {later && (
             <Callout title="Bạn đã có cam kết cho dự án này">
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -134,7 +137,7 @@ export default async function PledgePage({
                   ? " Bạn có thể đổi phần quà, số tiền hoặc hủy cam kết cho tới khi dự án kết thúc. Đổi cam kết sẽ tạo mã mới."
                   : ""}
               </p>
-              <div className="flex flex-wrap items-center gap-3 pt-1">
+              <div className="flex flex-wrap items-center gap-3 pt-2">
                 <ButtonLink href={`/me/pledges/${open.reference_code}`} variant="secondary">
                   Xem cam kết
                 </ButtonLink>

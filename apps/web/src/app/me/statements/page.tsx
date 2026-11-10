@@ -75,16 +75,16 @@ export default async function StatementsPage() {
         )}
       </Panel>
 
-      <section aria-labelledby="batches-heading">
-        <h2 id="batches-heading" className="mb-4 text-xl font-semibold tracking-tight">
+      <section aria-labelledby="batches-heading" className="min-w-0 border-t border-border pt-8">
+        <h2 id="batches-heading" className="mb-6 text-h2">
           Các lần tải gần đây ({batches.length})
         </h2>
         {batches.length === 0 ? (
           <EmptyState title="Chưa có sao kê nào được tải lên." />
         ) : (
           <div role="region" aria-label="Bảng các lần tải (cuộn ngang)" tabIndex={0} className="overflow-x-auto card">
-            <table className="w-full min-w-[44rem] text-left">
-              <thead className="border-b border-line bg-surface text-sm text-muted">
+            <table className="w-full min-w-[44rem] text-left text-sm">
+              <thead className="border-b border-border bg-surface text-muted">
                 <tr>
                   <th scope="col" className="px-4 py-3 font-medium">
                     Lần
@@ -106,7 +106,7 @@ export default async function StatementsPage() {
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line">
+              <tbody className="divide-y divide-border text-fg">
                 {batches.map((batch) => {
                   const left = waiting.get(batch.id) ?? 0
                   return (

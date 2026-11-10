@@ -3,7 +3,8 @@
 import { usePathname } from "next/navigation"
 import { useEffect, useRef } from "react"
 
-import { TabNav } from "@/components/ui/Tabs"
+import { ShieldIcon } from "@/components/ui/icons"
+import { SectionNav } from "@/components/ui/Tabs"
 
 export interface AdminNavLink {
   href: string
@@ -11,8 +12,9 @@ export interface AdminNavLink {
 }
 
 /**
- * The admin section's tabs; the current one follows the URL. On a phone the
- * row scrolls sideways, so the current tab is scrolled into view.
+ * The admin section's navigation (DESIGN.md 8): a side list from 1024px,
+ * tabs below; the current page follows the URL. On a phone the tab row
+ * scrolls sideways, so the current tab is scrolled into view.
  */
 export function AdminNav({ links }: { links: readonly AdminNavLink[] }) {
   const pathname = usePathname()
@@ -29,7 +31,16 @@ export function AdminNav({ links }: { links: readonly AdminNavLink[] }) {
 
   return (
     <div ref={ref}>
-      <TabNav label="Trang quản trị" items={links.map((link) => ({ ...link, current: pathname === link.href }))} />
+      <SectionNav
+        label="Trang quản trị"
+        heading={
+          <>
+            <ShieldIcon width={20} height={20} />
+            Quản trị Give
+          </>
+        }
+        items={links.map((link) => ({ ...link, current: pathname === link.href }))}
+      />
     </div>
   )
 }

@@ -46,9 +46,9 @@ async function CampaignList({ session }: { session: Session }) {
   }
 
   return (
-    <ul className="divide-y divide-line card">
+    <ul className="divide-y divide-border card">
       {campaigns.map((campaign) => (
-        <li key={campaign.id} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
+        <li key={campaign.id} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-6">
           <div className="flex min-w-0 flex-1 gap-4">
             <div className="relative hidden aspect-[16/9] w-32 shrink-0 overflow-hidden rounded bg-surface sm:block">
               {campaign.cover?.storage_path ? (
@@ -71,20 +71,20 @@ async function CampaignList({ session }: { session: Session }) {
               </div>
               <Link
                 href={`/me/campaigns/${campaign.id}`}
-                className="mt-2 block text-lg leading-snug font-semibold break-words text-ink hover:text-brand-700 hover:underline"
+                className="mt-2 block text-h3 break-words text-fg hover:text-primary hover:underline"
               >
                 {campaign.title}
               </Link>
               <p className="mt-1 text-sm text-muted">
-                Mục tiêu <span className="font-semibold text-ink tabular-nums">{formatVnd(campaign.goal_amount)}</span>{" "}
-                · Tạo ngày {formatDate(campaign.created_at)}
+                Mục tiêu <span className="font-semibold text-fg tabular-nums">{formatVnd(campaign.goal_amount)}</span> ·
+                Tạo ngày {formatDate(campaign.created_at)}
               </p>
               {campaign.status === "changes_requested" && campaign.review_note && (
-                <p className="mt-2 text-sm break-words text-accent-800">Cần sửa: {campaign.review_note}</p>
+                <p className="mt-2 text-sm font-medium break-words text-fg">Cần sửa: {campaign.review_note}</p>
               )}
             </div>
           </div>
-          <div className="flex flex-wrap gap-2 sm:shrink-0">
+          <div className="flex flex-wrap gap-3 sm:shrink-0">
             {isPublicStatus(campaign.status) && (
               <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary">
                 Xem trang

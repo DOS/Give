@@ -103,10 +103,10 @@ export default async function AdminAccountSwapsPage() {
 }
 
 function AccountLine({ account }: { account: NonNullable<SwapForReview["old_binding"]>["account"] }) {
-  if (!account) return <dd className="mt-0.5 text-ink">—</dd>
+  if (!account) return <dd className="mt-1 text-fg">—</dd>
   return (
-    <dd className="mt-0.5 flex flex-wrap items-center gap-2 text-ink">
-      <span>
+    <dd className="mt-1 flex flex-wrap items-center gap-2 text-fg">
+      <span className="min-w-0 break-words">
         {bankLabel(account.bank_bin)} · <span className="font-mono">{account.account_number}</span> ·{" "}
         {account.account_name}
       </span>
@@ -133,7 +133,7 @@ function SwapCard({
   return (
     <ItemCard>
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <h3 className="flex min-w-0 flex-wrap items-center gap-2 text-lg font-semibold">
+        <h3 className="flex min-w-0 flex-wrap items-center gap-2 text-h3 break-words">
           {campaign ? (
             <>
               {campaign.title}
@@ -196,7 +196,7 @@ function SwapCard({
               <ActionForm
                 action={decideAccountSwap.bind(null, swap.id)}
                 confirm="Duyệt đổi tài khoản? Tài khoản cũ ngừng nhận cho chiến dịch và bị khóa ngay; tài khoản mới bắt đầu nhận. Không hoàn tác được."
-                className="space-y-3"
+                className="space-y-6"
               >
                 <input type="hidden" name="decision" value="approved" />
                 <Field
@@ -227,7 +227,7 @@ function SwapCard({
             <ActionForm
               action={decideAccountSwap.bind(null, swap.id)}
               confirm="Từ chối yêu cầu đổi tài khoản này?"
-              className="space-y-3"
+              className="space-y-4"
             >
               <input type="hidden" name="decision" value="rejected" />
               <Field htmlFor={`reject-note-${swap.id}`} label="Từ chối">

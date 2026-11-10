@@ -2,9 +2,10 @@ import clsx from "clsx"
 import type { ReactNode } from "react"
 
 /**
- * Building blocks the admin pages share (DOS/Give#96 part C), on the #95
- * kit: a page frame, a section with its count, a card per queue item, a
- * label/value grid and a table that scrolls sideways on phones.
+ * Building blocks the admin pages share, on the DESIGN.md kit: a page frame
+ * (the layout supplies the container and the side navigation), a section
+ * with its count, a card per queue item, a label/value grid and a table that
+ * scrolls sideways on phones.
  */
 
 /** A page: its title, an optional action on the right, the rules staff follow, then the sections. */
@@ -20,13 +21,13 @@ export function AdminPage({
   children: ReactNode
 }) {
   return (
-    <div className="container-page space-y-10 py-8 sm:py-10">
+    <div className="space-y-12">
       <header className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
-          {action && <div className="flex flex-wrap gap-2">{action}</div>}
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <h1 className="min-w-0 text-h1-phone tracking-tight break-words sm:text-h1">{title}</h1>
+          {action && <div className="flex flex-wrap gap-3">{action}</div>}
         </div>
-        {intro && <div className="max-w-3xl space-y-2 text-body">{intro}</div>}
+        {intro && <div className="max-w-[68ch] space-y-2 text-fg">{intro}</div>}
       </header>
       {children}
     </div>
@@ -49,15 +50,17 @@ export function AdminSection({
   children: ReactNode
 }) {
   return (
-    <section aria-labelledby={id} className="space-y-4">
-      <div className="space-y-1">
-        <h2 id={id} className="flex flex-wrap items-center gap-2 text-xl font-bold">
+    <section aria-labelledby={id} className="min-w-0 space-y-6">
+      <div className="space-y-2">
+        <h2 id={id} className="flex flex-wrap items-center gap-3 text-h2">
           {title}
           {count !== undefined && (
-            <span className="rounded-sm bg-gray-100 px-1.5 text-base font-medium text-body tabular-nums">{count}</span>
+            <span className="inline-flex h-7 items-center rounded bg-surface px-2.5 text-sm font-semibold text-muted tabular-nums">
+              {count}
+            </span>
           )}
         </h2>
-        {lead && <p className="max-w-3xl text-body">{lead}</p>}
+        {lead && <p className="max-w-[68ch] text-fg">{lead}</p>}
       </div>
       {children}
     </section>
@@ -71,12 +74,12 @@ export function ItemList({ children }: { children: ReactNode }) {
 
 /** One queue item: facts on top, then the actions under a hairline. */
 export function ItemCard({ className, children }: { className?: string; children: ReactNode }) {
-  return <li className={clsx("space-y-5 card p-5 sm:p-6", className)}>{children}</li>
+  return <li className={clsx("min-w-0 space-y-6 card p-4 sm:p-6", className)}>{children}</li>
 }
 
 /** The actions of an item card, side by side from sm up. */
 export function ItemActions({ children }: { children: ReactNode }) {
-  return <div className="grid gap-6 border-t border-line pt-5 sm:grid-cols-2">{children}</div>
+  return <div className="grid gap-6 border-t border-border pt-6 sm:grid-cols-2 [&>*]:min-w-0">{children}</div>
 }
 
 /** A label/value grid; wrap each pair in <Fact>. */
@@ -92,7 +95,7 @@ export function Facts({
   return (
     <dl
       className={clsx(
-        "grid gap-x-6 gap-y-3",
+        "grid gap-x-6 gap-y-4",
         columns === 2 && "sm:grid-cols-2",
         columns === 3 && "sm:grid-cols-2 lg:grid-cols-3",
         columns === 4 && "grid-cols-2 lg:grid-cols-4",
@@ -108,7 +111,7 @@ export function Fact({ label, wide, children }: { label: ReactNode; wide?: boole
   return (
     <div className={clsx("min-w-0", wide && "col-span-full")}>
       <dt className="text-sm text-muted">{label}</dt>
-      <dd className="mt-0.5 break-words text-ink">{children}</dd>
+      <dd className="mt-1 break-words text-fg">{children}</dd>
     </div>
   )
 }
@@ -121,7 +124,7 @@ export function DataTable({ label, head, children }: { label: string; head: read
   return (
     <div role="region" aria-label={label} tabIndex={0} className="overflow-x-auto card">
       <table className="w-full min-w-[40rem] text-left text-sm">
-        <thead className="border-b border-line bg-surface text-muted">
+        <thead className="border-b border-border bg-surface text-muted">
           <tr>
             {head.map((h) => (
               <th key={h} scope="col" className="px-4 py-3 font-medium">
@@ -130,7 +133,7 @@ export function DataTable({ label, head, children }: { label: string; head: read
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-line align-top text-body">{children}</tbody>
+        <tbody className="divide-y divide-border align-top text-fg">{children}</tbody>
       </table>
     </div>
   )

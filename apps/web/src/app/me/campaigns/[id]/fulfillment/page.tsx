@@ -70,7 +70,7 @@ export default async function FulfillmentPage({
   const filtered = filters.tier !== null || filters.status !== null
 
   return (
-    <MeDetail wide>
+    <MeDetail>
       <PageHeader
         back={{ href: `/me/campaigns/${campaign.id}`, label: campaign.title }}
         title="Giao quà cho người ủng hộ"
@@ -90,7 +90,7 @@ export default async function FulfillmentPage({
           <form
             method="get"
             aria-label="Lọc người ủng hộ"
-            className="grid gap-4 card p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end sm:p-5"
+            className="grid gap-4 card p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end sm:p-6 [&>*]:min-w-0"
           >
             <div>
               <label htmlFor="filter_tier" className="label">
@@ -175,7 +175,7 @@ function FulfillmentForm({
       {/* Enter in a field must not submit: the default button is disabled (each row and the bulk bar have their own). */}
       <button type="submit" disabled hidden aria-hidden tabIndex={-1} />
 
-      <p className="text-body">
+      <p className="max-w-[68ch] text-fg">
         {total > pledges.length
           ? `Hiện ${pledges.length} trong ${total} lượt (tối đa ${FULFILLMENT_BATCH_MAX} mỗi lần). Cập nhật xong, lọc theo "Chưa cập nhật" để xem tiếp.`
           : `${pledges.length} lượt ủng hộ${filters.tier || filters.status ? " khớp bộ lọc" : ""}.`}{" "}
@@ -185,11 +185,11 @@ function FulfillmentForm({
           .join(", ")}
       </p>
 
-      <fieldset className="rounded-md border border-brand-200 bg-brand-50 p-4 sm:p-5">
-        <legend className="float-left w-full text-lg font-semibold text-ink">Cập nhật nhiều người cùng lúc</legend>
+      <fieldset className="min-w-0 rounded-md bg-surface p-4 sm:p-6">
+        <legend className="float-left w-full text-h3 text-fg">Cập nhật nhiều người cùng lúc</legend>
         <div className="clear-left space-y-4 pt-2">
           <SelectAll name="contribution_id" label="Chọn tất cả trong danh sách" />
-          <div className="grid gap-4 sm:grid-cols-[12rem_1fr] lg:grid-cols-[12rem_1fr_auto] lg:items-end">
+          <div className="grid gap-4 sm:grid-cols-[12rem_1fr] lg:grid-cols-[12rem_1fr_auto] lg:items-end [&>*]:min-w-0">
             <div>
               <label htmlFor="bulk_status" className="label">
                 Trạng thái
@@ -221,15 +221,15 @@ function FulfillmentForm({
         </div>
       </fieldset>
 
-      <ul className="divide-y divide-line card">
+      <ul className="divide-y divide-border card">
         {pledges.map((pledge) => {
           const address = shippingLines(pledge.shipping_address)
           const status = isFulfillmentStatus(pledge.fulfillment_status) ? pledge.fulfillment_status : null
           return (
-            <li key={pledge.id} className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_24rem]">
+            <li key={pledge.id} className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
               <div className="flex min-w-0 gap-1">
                 {/* The box sits in a 44px hit area; its name stays the aria-label. */}
-                <label className="-mt-2.5 -ml-2.5 flex size-11 shrink-0 cursor-pointer items-center justify-center">
+                <label className="-mt-3 -ml-3 flex size-11 shrink-0 cursor-pointer items-center justify-center">
                   <input
                     type="checkbox"
                     name="contribution_id"
@@ -240,17 +240,19 @@ function FulfillmentForm({
                 </label>
                 <div className="min-w-0 space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold break-words text-ink">{pledge.public_name ?? "Người ủng hộ"}</span>
+                    <span className="min-w-0 font-semibold break-words text-fg">
+                      {pledge.public_name ?? "Người ủng hộ"}
+                    </span>
                     {pledge.is_anonymous && <span className="text-sm text-muted">(ẩn danh trên trang công khai)</span>}
                     <Badge tone={status ? FULFILLMENT_TONES[status] : "warning"}>{fulfillmentLabel(status)}</Badge>
                   </div>
-                  <p className="text-body">
+                  <p className="break-words text-fg">
                     {pledge.reward_tier_id ? (tierTitle.get(pledge.reward_tier_id) ?? "Phần thưởng") : "Không nhận quà"}{" "}
                     · <span className="tabular-nums">{formatVnd(pledge.intended_amount)}</span> · Mã{" "}
                     <span className="font-mono">{pledge.reference_code}</span>
                   </p>
                   {address.length > 0 && (
-                    <address className="text-body not-italic">
+                    <address className="text-fg not-italic">
                       {address.map((line, i) => (
                         <span key={i} className="block break-words">
                           {line}
@@ -258,9 +260,7 @@ function FulfillmentForm({
                       ))}
                     </address>
                   )}
-                  {pledge.fulfillment_note && (
-                    <p className="break-words text-body">Ghi chú: {pledge.fulfillment_note}</p>
-                  )}
+                  {pledge.fulfillment_note && <p className="break-words text-fg">Ghi chú: {pledge.fulfillment_note}</p>}
                   {pledge.fulfillment_updated_at && (
                     <p className="text-sm text-muted">Cập nhật lúc {formatDateTime(pledge.fulfillment_updated_at)}</p>
                   )}
@@ -270,7 +270,7 @@ function FulfillmentForm({
                   update the row would still show, and save back, the old status. */}
               <div
                 key={`${pledge.fulfillment_status ?? "none"}:${pledge.fulfillment_updated_at ?? ""}`}
-                className="grid gap-2 sm:grid-cols-[10rem_1fr]"
+                className="grid min-w-0 gap-2 sm:grid-cols-[10rem_1fr] [&>*]:min-w-0"
               >
                 <select
                   name={`status_${pledge.id}`}

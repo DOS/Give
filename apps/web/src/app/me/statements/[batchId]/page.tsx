@@ -46,21 +46,21 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
   const ambiguous = counts.get("ambiguous") ?? 0
 
   return (
-    <MeDetail wide>
+    <MeDetail>
       <PageHeader back={{ href: "/me/statements", label: "Tải sao kê" }} title={`Sao kê lần #${batch.batch_no}`} />
 
-      <dl className="grid gap-x-6 gap-y-4 card p-5 sm:grid-cols-2 sm:p-6 lg:grid-cols-4">
+      <dl className="grid gap-x-6 gap-y-4 card p-4 sm:grid-cols-2 sm:p-6 lg:grid-cols-4 [&>*]:min-w-0">
         <div className="min-w-0">
           <dt className="text-sm text-muted">Tài khoản</dt>
-          <dd className="mt-1 font-medium break-words text-ink">{account ? accountLabel(account) : "—"}</dd>
+          <dd className="mt-1 font-medium break-words text-fg">{account ? accountLabel(account) : "—"}</dd>
         </div>
         <div className="min-w-0">
           <dt className="text-sm text-muted">Định dạng</dt>
-          <dd className="mt-1 font-mono break-words text-ink">{batch.parser}</dd>
+          <dd className="mt-1 font-mono break-words text-fg">{batch.parser}</dd>
         </div>
         <div>
           <dt className="text-sm text-muted">Khoảng thời gian</dt>
-          <dd className="mt-1 text-ink">
+          <dd className="mt-1 text-fg">
             {batch.period_from || batch.period_to
               ? `${formatDate(batch.period_from)} – ${formatDate(batch.period_to)}`
               : "File không ghi"}
@@ -68,11 +68,11 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
         </div>
         <div>
           <dt className="text-sm text-muted">Tải lúc</dt>
-          <dd className="mt-1 text-ink">{formatDateTime(batch.staged_at)}</dd>
+          <dd className="mt-1 text-fg">{formatDateTime(batch.staged_at)}</dd>
         </div>
         <div className="sm:col-span-2 lg:col-span-4">
           <dt className="text-sm text-muted">Kết quả</dt>
-          <dd className="mt-1 font-medium text-ink">
+          <dd className="mt-1 font-medium break-words text-fg">
             {(["imported", "duplicate", "ambiguous", "ready"] as const)
               .filter((status) => counts.has(status))
               .map((status) => `${counts.get(status)} ${rowStatusLabel(status).toLowerCase()}`)
@@ -96,8 +96,8 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
         </Callout>
       )}
 
-      <section aria-labelledby="rows-heading">
-        <h2 id="rows-heading" className="mb-4 text-xl font-semibold tracking-tight">
+      <section aria-labelledby="rows-heading" className="min-w-0">
+        <h2 id="rows-heading" className="mb-6 text-h2">
           Các dòng của sao kê ({rows.length})
         </h2>
         {rows.length === 0 ? (
@@ -109,8 +109,8 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
             tabIndex={0}
             className="overflow-x-auto card"
           >
-            <table className="w-full min-w-[56rem] text-left">
-              <thead className="border-b border-line bg-surface text-sm text-muted">
+            <table className="w-full min-w-[56rem] text-left text-sm">
+              <thead className="border-b border-border bg-surface text-muted">
                 <tr>
                   <th scope="col" className="px-4 py-3 font-medium">
                     Dòng
@@ -132,7 +132,7 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-line">
+              <tbody className="divide-y divide-border text-fg">
                 {rows.map((row) => (
                   <tr key={row.id} className="align-top">
                     <td className="px-4 py-3 text-muted tabular-nums">{row.row_no}</td>
@@ -140,7 +140,7 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
                       {row.booked_date_only ? formatDate(row.booked_at) : formatDateTime(row.booked_at)}
                     </td>
                     <td
-                      className={`px-4 py-3 text-right font-semibold whitespace-nowrap tabular-nums ${row.direction === "in" ? "text-brand-700" : "text-red-700"}`}
+                      className={`px-4 py-3 text-right font-semibold whitespace-nowrap tabular-nums ${row.direction === "in" ? "text-primary" : "text-fg"}`}
                     >
                       {signedAmount(row.direction, row.amount)}
                     </td>
@@ -157,10 +157,10 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
                     <td className="px-4 py-3">
                       <Badge tone={ROW_TONES[row.status]}>{rowStatusLabel(row.status)}</Badge>
                       {row.ambiguous_reason && (
-                        <div className="mt-1 text-sm text-body">{ambiguousReasonLabel(row.ambiguous_reason)}</div>
+                        <div className="mt-1 text-sm text-fg">{ambiguousReasonLabel(row.ambiguous_reason)}</div>
                       )}
                       {row.resolution && (
-                        <div className="mt-1 text-sm text-body">
+                        <div className="mt-1 text-sm text-fg">
                           {RESOLUTION_LABELS[row.resolution]}, {formatDateTime(row.resolved_at)}: {row.resolution_note}
                         </div>
                       )}

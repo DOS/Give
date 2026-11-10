@@ -1,6 +1,7 @@
 import Image from "next/image"
 
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { buttonClass } from "@/components/ui/Button"
 import type { ActionResult } from "@/lib/errors"
 import { formatDate } from "@/lib/format"
 import { EVIDENCE_KINDS, publicEvidenceUrl, type PublicEvidence } from "@/lib/statement"
@@ -28,7 +29,7 @@ export function PublicEvidenceList({
       {evidence.map((e) => {
         const kind = EVIDENCE_KINDS[e.kind] ?? e.kind
         return (
-          <li key={e.id} className="w-28 text-xs text-gray-500">
+          <li key={e.id} className="w-28 text-sm text-muted">
             <a href={publicEvidenceUrl(e.storage_path)} target="_blank" rel="noreferrer" className="block">
               <Image
                 src={publicEvidenceUrl(e.storage_path)}
@@ -36,22 +37,27 @@ export function PublicEvidenceList({
                 width={112}
                 height={112}
                 unoptimized
-                className="h-28 w-28 rounded border border-gray-200 bg-gray-50 object-cover"
+                className="h-28 w-28 rounded border border-border bg-surface object-cover"
               />
             </a>
             <p className="mt-1">{kind}</p>
             <details className="mt-1">
-              <summary className="cursor-pointer text-gray-500 hover:text-gray-800">Báo cáo ảnh</summary>
+              <summary className="cursor-pointer text-muted hover:text-fg">Báo cáo ảnh</summary>
               {report ? (
-                <ActionForm action={report.bind(null, e.id)} className="mt-2 w-64 space-y-2" resetOnSuccess>
-                  <label htmlFor={`report-${e.id}`} className="block text-gray-700">
+                // Wider than the thumbnail, but never past the screen edge on a phone.
+                <ActionForm
+                  action={report.bind(null, e.id)}
+                  className="mt-2 w-64 max-w-[calc(100vw-4rem)] space-y-2"
+                  resetOnSuccess
+                >
+                  <label htmlFor={`report-${e.id}`} className="block text-fg">
                     Ảnh lộ thông tin cá nhân (số CCCD, số điện thoại, địa chỉ…)? Ghi ngắn lý do (không bắt buộc).
                   </label>
-                  <textarea id={`report-${e.id}`} name="reason" maxLength={500} rows={2} className="field text-xs" />
-                  <SubmitButton className="btn-secondary text-xs">Gửi báo cáo</SubmitButton>
+                  <textarea id={`report-${e.id}`} name="reason" maxLength={500} rows={2} className="field" />
+                  <SubmitButton className={buttonClass({ variant: "secondary", size: "sm" })}>Gửi báo cáo</SubmitButton>
                 </ActionForm>
               ) : (
-                <a href={loginHref} className="mt-1 block text-brand-700 hover:text-brand-800">
+                <a href={loginHref} className="mt-1 block link">
                   Đăng nhập để báo cáo
                 </a>
               )}

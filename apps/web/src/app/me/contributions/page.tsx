@@ -92,18 +92,18 @@ async function ContributionList({ session }: { session: Session }) {
   }
 
   return (
-    <ul className="divide-y divide-line card">
+    <ul className="divide-y divide-border card">
       {contributions.map((c) => {
         const pledge = c.kind === "pledge"
         const Icon = pledge ? SparkIcon : HeartIcon
         return (
-          <li key={c.id} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-5">
+          <li key={c.id} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-6">
             <div className="flex min-w-0 flex-1 gap-4">
               <span
                 aria-hidden
-                className={`hidden size-11 shrink-0 items-center justify-center rounded sm:flex ${pledge ? "bg-accent-50 text-accent-700" : "bg-brand-50 text-brand-700"}`}
+                className={`hidden size-11 shrink-0 items-center justify-center rounded sm:flex ${pledge ? "bg-accent-soft text-accent" : "bg-primary-soft text-primary"}`}
               >
-                <Icon width={22} height={22} />
+                <Icon width={20} height={20} />
               </span>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
@@ -114,28 +114,28 @@ async function ContributionList({ session }: { session: Session }) {
                   )}
                   {pledge && <span className="text-sm text-muted">Cam kết dự án</span>}
                   {pledge && c.status === "paid" && c.reward_tier_id && (
-                    <span className="text-sm text-body">Giao quà: {fulfillmentLabel(c.fulfillment_status)}</span>
+                    <span className="text-sm text-fg">Giao quà: {fulfillmentLabel(c.fulfillment_status)}</span>
                   )}
                   {c.is_anonymous && <span className="text-sm text-muted">Ẩn danh</span>}
                 </div>
                 {c.campaign ? (
                   <Link
                     href={`/campaigns/${c.campaign.slug}`}
-                    className="mt-2 block text-lg leading-snug font-semibold break-words text-ink hover:text-brand-700 hover:underline"
+                    className="mt-2 block text-h3 break-words text-fg hover:text-primary hover:underline"
                   >
                     {c.campaign.title}
                   </Link>
                 ) : (
-                  <p className="mt-2 text-lg leading-snug font-semibold text-muted">Chiến dịch không còn công khai</p>
+                  <p className="mt-2 text-h3 text-muted">Chiến dịch không còn công khai</p>
                 )}
-                <p className="mt-1 text-body">
+                <p className="mt-1 break-words text-fg">
                   {pledge
                     ? pledgeListSummary(c, balances.get(c.id) ?? null)
                     : c.status === "received"
                       ? `Đã nhận ${formatVnd(c.received_amount)}`
                       : `Dự định ${formatVnd(c.intended_amount)}`}
                 </p>
-                <p className="mt-0.5 text-sm text-muted">
+                <p className="mt-1 text-sm text-muted">
                   Mã <span className="font-mono">{c.reference_code}</span> · {formatDate(c.created_at)}
                 </p>
               </div>
@@ -144,13 +144,13 @@ async function ContributionList({ session }: { session: Session }) {
               <ButtonLink
                 href={`/me/pledges/${c.reference_code}`}
                 variant={offersPayment(c, balances.get(c.id) ?? null) ? "primary" : "secondary"}
-                className="sm:shrink-0"
+                className="shrink-0"
               >
                 {offersPayment(c, balances.get(c.id) ?? null) ? "Thanh toán" : "Xem cam kết"}
               </ButtonLink>
             ) : (
               c.status !== "received" && (
-                <ButtonLink href={`/donations/${c.reference_code}`} variant="secondary" className="sm:shrink-0">
+                <ButtonLink href={`/donations/${c.reference_code}`} variant="secondary" className="shrink-0">
                   {c.status === "awaiting_transfer" ? "Xem cách chuyển khoản" : "Xem trạng thái"}
                 </ButtonLink>
               )

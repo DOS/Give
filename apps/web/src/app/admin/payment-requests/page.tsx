@@ -73,11 +73,11 @@ function CampaignCard({ campaign }: { campaign: SucceededBackCampaign }) {
     <ItemCard>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <h3 className="flex flex-wrap items-center gap-2 text-lg font-semibold">
+          <h3 className="flex flex-wrap items-center gap-2 text-h3 break-words">
             {campaign.title}
             {stopped && <Badge tone="danger">Đã tạm dừng</Badge>}
           </h3>
-          <p className="text-sm text-muted">Đạt mục tiêu {formatDate(campaign.outcome_at)}</p>
+          <p className="mt-1 text-sm text-muted">Đạt mục tiêu {formatDate(campaign.outcome_at)}</p>
         </div>
         <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary" target="_blank">
           Xem dự án<span className="sr-only"> (mở thẻ mới)</span>
@@ -112,7 +112,7 @@ function CampaignCard({ campaign }: { campaign: SucceededBackCampaign }) {
             <ActionForm
               action={setPaymentRequestsStopped.bind(null, campaign.id)}
               confirm="Mở lại yêu cầu thanh toán? Trang thanh toán hiện lại và người ủng hộ đang chờ thanh toán được báo."
-              className="space-y-3"
+              className="space-y-4"
             >
               <input type="hidden" name="action" value="resume" />
               <Field htmlFor={`resume-reason-${campaign.id}`} label="Lý do mở lại (nội bộ)">
@@ -131,8 +131,8 @@ function CampaignCard({ campaign }: { campaign: SucceededBackCampaign }) {
           </ItemActions>
         </>
       ) : (
-        <div className="border-t border-line pt-5">
-          <div className="max-w-2xl">
+        <div className="border-t border-border pt-6">
+          <div className="max-w-160">
             <StopForm campaign={campaign} />
           </div>
         </div>
@@ -152,7 +152,7 @@ function StopForm({ campaign }: { campaign: SucceededBackCampaign }) {
           ? "Đổi ghi chú công khai của lần tạm dừng này?"
           : "Tạm dừng yêu cầu thanh toán của dự án này? Người ủng hộ đang chờ thanh toán và người tạo dự án sẽ được báo, trang dự án hiện ghi chú công khai."
       }
-      className="space-y-3"
+      className="space-y-6"
     >
       <input type="hidden" name="action" value="stop" />
       <Field

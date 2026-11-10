@@ -73,25 +73,25 @@ async function NoticeList({ session }: { session: Session }) {
           Give báo cho bạn ở đây khi tiền ủng hộ về, khi chiến dịch được duyệt và khi có việc cần bạn làm.
         </EmptyState>
       ) : (
-        <ul className="divide-y divide-line card">
+        <ul className="divide-y divide-border overflow-hidden card">
           {notices.map((notice) => {
             const view = describeNotice(notice)
             return (
               <li
                 key={notice.id}
-                className={`flex flex-col gap-3 border-l-4 p-4 sm:flex-row sm:items-start sm:gap-6 sm:p-5 ${
-                  notice.read_at ? "border-l-transparent" : "border-l-brand-600 bg-brand-50/60"
+                className={`flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:gap-6 sm:p-6 ${
+                  notice.read_at ? "" : "bg-primary-soft"
                 }`}
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     {!notice.read_at && <Badge tone="brand">Mới</Badge>}
-                    <h2 className="text-lg leading-snug font-semibold break-words">{view.title}</h2>
+                    <h2 className="min-w-0 text-h3 break-words">{view.title}</h2>
                   </div>
-                  <p className="mt-1 break-words text-body">{view.body}</p>
+                  <p className="mt-1 max-w-[68ch] break-words text-fg">{view.body}</p>
                   <p className="mt-1 text-sm text-muted">{formatDateTime(notice.created_at)}</p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                <div className="flex flex-wrap items-center gap-3 sm:shrink-0">
                   {view.href && view.linkLabel && (
                     <ButtonLink href={view.href} variant="secondary">
                       {view.linkLabel}
