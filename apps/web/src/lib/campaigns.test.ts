@@ -263,13 +263,13 @@ describe("listPublicCampaigns", () => {
     expect(log).toHaveLength(0)
   })
 
-  it("reads only the public campaign columns of the returned ids and keeps the database's order and count", async () => {
+  it("reads only the card columns of the returned ids and keeps the database's order and count", async () => {
     const log: Call[] = []
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const page = await listPublicCampaigns(fakeDb(found, log) as any, DEFAULT_DISCOVERY, [])
     const read = log.find((c) => c.target === "campaigns")
     const columns = String(op(read, "select")?.[0])
-    expect(columns).not.toMatch(/\*|organizer_id|review_note|organizers/)
+    expect(columns).not.toMatch(/\*|organizer_id|review_note|organizers|story|summary/)
     expect(op(read, "in")).toEqual(["id", [B, A]])
     expect(page.total).toBe(7)
     expect(page.campaigns.map((c) => c.id)).toEqual([B, A])

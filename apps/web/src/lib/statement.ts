@@ -108,11 +108,13 @@ const TOTALS_PER_REQUEST = 100
 /** Totals of several public campaigns, by campaign id (for discovery cards). */
 export async function listMoneyTotals(db: Db, campaignIds: readonly string[]): Promise<Map<string, MoneyTotals>> {
   const totals = new Map<string, MoneyTotals>()
-  for (let i = 0; i < campaignIds.length; i += TOTALS_PER_REQUEST) {
-    const { data, error } = await db
-      .from("public_campaigns")
-      .select(TOTALS_COLUMNS)
-      .in("id", campaignIds.slice(i, i + TOTALS_PER_REQUEST))
+  const chunks: string[][] = []
+  for (let i = 0; i < campaignIds.length; i += TOTALS_PER_REQUEST)
+    chunks.push(campaignIds.slice(i, i + TOTALS_PER_REQUEST))
+  const reads = await Promise.all(
+    chunks.map((chunk) => db.from("public_campaigns").select(TOTALS_COLUMNS).in("id", chunk))
+  )
+  for (const { data, error } of reads) {
     if (error) throw error
     for (const row of (data ?? []) as unknown as TotalsRow[]) totals.set(row.id, toTotals(row))
   }

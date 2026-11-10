@@ -92,12 +92,18 @@ export interface CampaignWithRefs extends Campaign {
 /** What public pages load: no organizer user id, no review note. */
 export type PublicCampaign = Omit<CampaignWithRefs, "organizer_id" | "review_note">
 
+/** What a campaign card and the home hero show of a campaign. */
+export type CardCampaign = Pick<
+  PublicCampaign,
+  "id" | "slug" | "type" | "title" | "goal_amount" | "ends_at" | "status" | "display_options" | "cover"
+>
+
 /**
- * A campaign as discovery and the home page list it: the public columns plus
+ * A campaign as discovery and the home page list it: the card columns plus
  * the organizer's public card (display name, kind, verification), or null
  * when the lookup has no row for it or failed.
  */
-export interface ListedCampaign extends PublicCampaign {
+export interface ListedCampaign extends CardCampaign {
   organizer: PublicOrganizer | null
 }
 
@@ -347,6 +353,13 @@ const PUBLIC_CAMPAIGN_WITH_REFS = `id, slug, type, funding_model, category_id, t
   starts_at, ends_at, payment_window_days, status, submitted_at, approved_at, outcome_at, created_at, updated_at,
   ${REFS}`.replace(/\s+/g, " ")
 
+/**
+ * Only what the cards show: a discovery page reads up to 480 rows, so the
+ * story and other long columns stay out.
+ */
+const CARD_COLUMNS =
+  "id, slug, type, title, goal_amount, ends_at, status, display_options, cover:campaign_media!campaigns_cover_media_fk(storage_path, alt)"
+
 export async function listCategories(db: Db): Promise<Category[]> {
   const { data, error } = await db
     .from("categories")
@@ -376,7 +389,7 @@ function chunks<T>(items: readonly T[], size: number): T[][] {
  * Public campaigns for discovery and the home page. The database filters,
  * orders and counts them (give.discover_campaigns, DOS-Me
  * `20261111160000_give_discover_campaigns.sql`) and returns the first `limit`
- * ids; their public columns are then read by id, and each gets its
+ * ids; their card columns are then read by id, and each gets its
  * organizer's public card for the campaign cards (DESIGN.md 6, Card).
  */
 export async function listPublicCampaigns(
@@ -406,11 +419,13 @@ export async function listPublicCampaigns(
   const ids = found.map((r) => r.campaign_id)
   if (ids.length === 0) return { campaigns: [], total }
 
-  const byId = new Map<string, PublicCampaign>()
-  for (const chunk of chunks(ids, IDS_PER_REQUEST)) {
-    const rows = await db.from("campaigns").select(PUBLIC_CAMPAIGN_WITH_REFS).in("id", chunk)
+  const byId = new Map<string, CardCampaign>()
+  const reads = await Promise.all(
+    chunks(ids, IDS_PER_REQUEST).map((chunk) => db.from("campaigns").select(CARD_COLUMNS).in("id", chunk))
+  )
+  for (const rows of reads) {
     if (rows.error) throw rows.error
-    for (const row of (rows.data ?? []) as unknown as PublicCampaign[]) byId.set(row.id, row)
+    for (const row of (rows.data ?? []) as unknown as CardCampaign[]) byId.set(row.id, row)
   }
   // Keep the database's order; a campaign that left public view in between is dropped.
   const campaigns = ids.flatMap((id) => byId.get(id) ?? [])

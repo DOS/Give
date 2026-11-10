@@ -35,7 +35,7 @@ const TYPE_TABS: { value: CampaignType | null; label: string }[] = [
 
 const COUNT = new Intl.NumberFormat("vi-VN")
 
-/** Lets a menu button shrink in the filter row from 768px (see MenuSummary). */
+/** Lets the category button shrink in the filter row from 768px (see MenuSummary). */
 const SHRINK = "md:min-w-0 md:shrink"
 
 /** The id of the n-th card (1-based), so "Xem thêm" can land on the first new one. */
@@ -68,20 +68,35 @@ function MenuLinks({ label, items }: { label: string; items: { href: string; lab
   )
 }
 
+/** Where a menu button's name starts to show (literal classes for Tailwind). */
+const NAME_FROM = {
+  lg: "sr-only lg:not-sr-only lg:whitespace-nowrap",
+  xl: "sr-only xl:not-sr-only xl:whitespace-nowrap",
+} as const
+
 /**
- * A menu button's text: "Name: value". Below 1280px only the value shows (the
- * name is still read out), so the row fits; with no value, just the name.
- * From 768px the row does not scroll, so the category and sort buttons may
- * shrink and cut their text with an ellipsis when the longest values meet
- * (SHRINK); the status labels are short and always show in full.
+ * A menu button's text: "Name: value". Below `nameFrom` (1024px, or 1280px
+ * for the category) only the value shows (the name is still read out), so
+ * the row fits; with no value, just the name.
+ * From 768px the row does not scroll, so the category button may shrink and
+ * cut its text with an ellipsis when the longest values meet (SHRINK; the
+ * category also shows in "Đang lọc"); status and sort always show in full.
  */
-function MenuSummary({ name, value }: { name: string; value: string | null }) {
+function MenuSummary({
+  name,
+  value,
+  nameFrom = "lg",
+}: {
+  name: string
+  value: string | null
+  nameFrom?: keyof typeof NAME_FROM
+}) {
   return (
     <>
       <span className="relative min-w-0 truncate">
         {value ? (
           <>
-            <span className="sr-only xl:not-sr-only">{name}: </span>
+            <span className={NAME_FROM[nameFrom]}>{name}: </span>
             {value}
           </>
         ) : (
@@ -173,8 +188,8 @@ export default async function CampaignsPage({
           <Dropdown
             title="Danh mục"
             className={SHRINK}
-            summaryClassName="max-w-60 md:max-w-full xl:max-w-60"
-            summary={<MenuSummary name="Danh mục" value={category?.name ?? null} />}
+            summaryClassName="max-w-60 md:max-w-full"
+            summary={<MenuSummary name="Danh mục" value={category?.name ?? null} nameFrom="xl" />}
           >
             <MenuLinks
               label="Danh mục"
@@ -198,12 +213,10 @@ export default async function CampaignsPage({
               }))}
             />
           </Dropdown>
-          <div className={clsx("ml-auto flex shrink-0 items-center gap-4 pl-2", SHRINK)}>
+          <div className="ml-auto flex shrink-0 items-center gap-4 pl-2">
             <p className="hidden shrink-0 text-sm text-muted lg:block">{countText}</p>
             <Dropdown
               title="Sắp xếp"
-              className={SHRINK}
-              summaryClassName="md:max-w-full"
               panelClassName="md:right-0 md:left-auto"
               summary={<MenuSummary name="Sắp xếp" value={sort.label} />}
             >
@@ -238,7 +251,7 @@ export default async function CampaignsPage({
           )}
           <Link
             href={discoveryHref({ ...keep, category: null, q: null })}
-            className="ml-1 inline-flex min-h-11 items-center link"
+            className="inline-flex min-h-11 items-center link"
           >
             Xoá tất cả
           </Link>
@@ -250,7 +263,7 @@ export default async function CampaignsPage({
           Kết quả
         </h2>
         {shown > 0 ? (
-          <div className="grid gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:gap-6">
             {campaigns.map((campaign, index) => {
               const t = totals.get(campaign.id)
               return (
