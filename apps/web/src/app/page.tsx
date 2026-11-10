@@ -6,7 +6,7 @@ import { FeaturedReceipt } from "@/components/home/FeaturedReceipt"
 import { ButtonLink } from "@/components/ui/Button"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { EyeIcon, HeartIcon, LedgerIcon, ShieldIcon, SparkIcon } from "@/components/ui/icons"
-import { discoveryHref, listCategories, listPublicCampaigns } from "@/lib/campaigns"
+import { DEFAULT_DISCOVERY, discoveryHref, listCategories, listPublicCampaigns } from "@/lib/campaigns"
 import { homeSections } from "@/lib/home"
 import { listMoneyTotals, raisedAmount } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
@@ -34,7 +34,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const { login_error: loginError } = await searchParams
   const db = dbAs()
   const categories = await listCategories(db)
-  const campaigns = await listPublicCampaigns(db, { type: null, category: null, q: null }, categories, HOME_CAMPAIGNS)
+  const { campaigns } = await listPublicCampaigns(
+    db,
+    { ...DEFAULT_DISCOVERY, sort: "newest" },
+    categories,
+    HOME_CAMPAIGNS
+  )
   const totals = await listMoneyTotals(
     db,
     campaigns.map((c) => c.id)

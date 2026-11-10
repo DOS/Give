@@ -15,6 +15,7 @@ import { CloseIcon } from "@/components/ui/icons"
 export function Dropdown({
   title,
   summary,
+  className,
   summaryClassName,
   panelClassName,
   children,
@@ -22,6 +23,8 @@ export function Dropdown({
   /** Heads the phone sheet. */
   title: string
   summary: ReactNode
+  /** On the <details>, e.g. to let the menu button shrink inside a full row. */
+  className?: string
   summaryClassName?: string
   panelClassName?: string
   children: ReactNode
@@ -52,7 +55,7 @@ export function Dropdown({
   }, [])
 
   return (
-    <details ref={root} className="group/dropdown shrink-0 md:relative">
+    <details ref={root} className={clsx("group/dropdown shrink-0 md:relative", className)}>
       <summary
         className={clsx(
           "inline-flex h-11 cursor-pointer list-none items-center gap-2 rounded border border-border bg-bg px-3 text-sm font-medium text-fg transition-colors duration-150 group-open/dropdown:border-primary hover:bg-surface [&::-webkit-details-marker]:hidden",

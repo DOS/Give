@@ -212,10 +212,61 @@ export function categoriesFor(categories: readonly Category[], type: CampaignTyp
 // Discovery filters
 // ---------------------------------------------------------------------------
 
+/** Which public campaigns discovery lists: live ones, ended ones or both. */
+export type DiscoveryStatus = "live" | "ended" | "all"
+
+/**
+ * Discovery orders, as give.discover_campaigns defines them (DOS-Me
+ * `20261111160000_give_discover_campaigns.sql`; ties end newest first):
+ * - featured ("Nổi bật"): live first, then most supporters (backers for back
+ *   campaigns), then the highest share of the goal raised;
+ * - newest ("Mới nhất"): most recently approved first;
+ * - ending ("Sắp kết thúc"): live by end date, soonest first, then ended
+ *   ones, most recently ended first;
+ * - near_goal ("Gần đạt mục tiêu"): live first, campaigns under their goal
+ *   before those that reached it, then the highest share raised.
+ */
+export type DiscoverySort = "featured" | "newest" | "ending" | "near_goal"
+
+export const DISCOVERY_STATUSES: readonly { value: DiscoveryStatus; label: string }[] = [
+  { value: "live", label: "Đang gây quỹ" },
+  { value: "ended", label: "Đã kết thúc" },
+  { value: "all", label: "Tất cả" },
+]
+
+export const DISCOVERY_SORTS: readonly { value: DiscoverySort; label: string }[] = [
+  { value: "featured", label: "Nổi bật" },
+  { value: "newest", label: "Mới nhất" },
+  { value: "ending", label: "Sắp kết thúc" },
+  { value: "near_goal", label: "Gần đạt mục tiêu" },
+]
+
+/** Cards per "Xem thêm" step. */
+export const DISCOVERY_PAGE_SIZE = 24
+
+/**
+ * The deepest page discovery renders: page N shows the first N pages'
+ * cards in one response, so this caps one request at 480 cards.
+ */
+export const DISCOVERY_MAX_PAGE = 20
+
 export interface DiscoveryFilters {
   type: CampaignType | null
   category: string | null
   q: string | null
+  status: DiscoveryStatus
+  sort: DiscoverySort
+  /** 1-based; page N shows the first N * DISCOVERY_PAGE_SIZE matches. */
+  page: number
+}
+
+export const DEFAULT_DISCOVERY: DiscoveryFilters = {
+  type: null,
+  category: null,
+  q: null,
+  status: "live",
+  sort: "featured",
+  page: 1,
 }
 
 function firstParam(value: string | string[] | undefined): string {
@@ -223,10 +274,9 @@ function firstParam(value: string | string[] | undefined): string {
 }
 
 /**
- * Reduces a free-text search to letters, digits and single spaces, so it can
- * go into a PostgREST `or=(...ilike...)` filter without any of that syntax's
- * special characters (`,()."\`) or LIKE wildcards (`%_`). Returns null when
- * nothing searchable is left.
+ * Reduces a free-text search to letters, digits and single spaces, so no
+ * query syntax or LIKE wildcard (`%_`) reaches the database (which escapes
+ * wildcards as well). Returns null when nothing searchable is left.
  */
 export function normalizeSearch(input: string): string | null {
   const cleaned = input
@@ -239,6 +289,20 @@ export function normalizeSearch(input: string): string | null {
   return cleaned.length >= 2 ? cleaned : null
 }
 
+function oneOf<T extends string>(value: string, options: readonly { value: T }[]): T | null {
+  return options.find((o) => o.value === value)?.value ?? null
+}
+
+/** A positive whole page number, at most DISCOVERY_MAX_PAGE; anything else is page 1. */
+function parsePage(value: string): number {
+  if (!/^[1-9][0-9]*$/.test(value)) return 1
+  return Math.min(Number(value), DISCOVERY_MAX_PAGE)
+}
+
+/**
+ * Reads discovery's query parameters. Every invalid or unknown value falls
+ * back to its default, so a hand-edited URL still shows a page.
+ */
 export function parseDiscoveryFilters(params: Record<string, string | string[] | undefined>): DiscoveryFilters {
   const type = firstParam(params.type)
   const category = firstParam(params.category)
@@ -246,26 +310,23 @@ export function parseDiscoveryFilters(params: Record<string, string | string[] |
     type: type === "give" || type === "back" ? type : null,
     category: /^[a-z0-9]+(-[a-z0-9]+)*$/.test(category) && category.length <= 60 ? category : null,
     q: normalizeSearch(firstParam(params.q)),
+    status: oneOf(firstParam(params.status), DISCOVERY_STATUSES) ?? DEFAULT_DISCOVERY.status,
+    sort: oneOf(firstParam(params.sort), DISCOVERY_SORTS) ?? DEFAULT_DISCOVERY.sort,
+    page: parsePage(firstParam(params.page)),
   }
 }
 
-/**
- * PostgREST `or` filter matching a normalized search in title or summary.
- * Values are double-quoted so spaces survive the logic-tree parser; a
- * normalized term has no quote or backslash to escape.
- */
-export function searchFilter(term: string): string {
-  return `title.ilike."%${term}%",summary.ilike."%${term}%"`
-}
-
-/** Builds a /campaigns URL for the given filters, dropping empty ones. */
-export function discoveryHref(filters: Partial<DiscoveryFilters>): string {
+/** Builds a /campaigns URL for the given filters, dropping empty and default ones. */
+export function discoveryHref(filters: Partial<DiscoveryFilters>, hash?: string): string {
   const params = new URLSearchParams()
   if (filters.type) params.set("type", filters.type)
   if (filters.category) params.set("category", filters.category)
   if (filters.q) params.set("q", filters.q)
+  if (filters.status && filters.status !== DEFAULT_DISCOVERY.status) params.set("status", filters.status)
+  if (filters.sort && filters.sort !== DEFAULT_DISCOVERY.sort) params.set("sort", filters.sort)
+  if (filters.page && filters.page > 1) params.set("page", String(filters.page))
   const query = params.toString()
-  return query ? `/campaigns?${query}` : "/campaigns"
+  return (query ? `/campaigns?${query}` : "/campaigns") + (hash ? `#${hash}` : "")
 }
 
 // ---------------------------------------------------------------------------
@@ -296,36 +357,72 @@ export async function listCategories(db: Db): Promise<Category[]> {
   return (data ?? []) as Category[]
 }
 
+export interface CampaignPage {
+  campaigns: ListedCampaign[]
+  /** Every public campaign that matches the filters, not just those loaded. */
+  total: number
+}
+
+/** PostgREST filters travel in the URL, so id lists go in chunks of this size. */
+const IDS_PER_REQUEST = 100
+
+function chunks<T>(items: readonly T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size))
+  return out
+}
+
 /**
- * Live campaigns for discovery and the home page, newest first, each with its
+ * Public campaigns for discovery and the home page. The database filters,
+ * orders and counts them (give.discover_campaigns, DOS-Me
+ * `20261111160000_give_discover_campaigns.sql`) and returns the first `limit`
+ * ids; their public columns are then read by id, and each gets its
  * organizer's public card for the campaign cards (DESIGN.md 6, Card).
  */
 export async function listPublicCampaigns(
   db: Db,
-  filters: DiscoveryFilters,
+  filters: Pick<DiscoveryFilters, "type" | "category" | "q" | "status" | "sort">,
   categories: readonly Category[],
-  limit = 24
-): Promise<ListedCampaign[]> {
-  let query = db.from("campaigns").select(PUBLIC_CAMPAIGN_WITH_REFS).eq("status", "live")
-  if (filters.type) query = query.eq("type", filters.type)
+  limit = DISCOVERY_PAGE_SIZE
+): Promise<CampaignPage> {
+  let categoryId: string | null = null
   if (filters.category) {
     const category = categories.find((c) => c.slug === filters.category)
-    if (!category) return []
-    query = query.eq("category_id", category.id)
+    if (!category) return { campaigns: [], total: 0 }
+    categoryId = category.id
   }
-  if (filters.q) query = query.or(searchFilter(filters.q))
-  const { data, error } = await query.order("approved_at", { ascending: false, nullsFirst: false }).limit(limit)
+  const { data, error } = await db.rpc("discover_campaigns", {
+    p_status: filters.status,
+    p_type: filters.type,
+    p_category_id: categoryId,
+    p_search: filters.q,
+    p_sort: filters.sort,
+    p_limit: limit,
+  })
   if (error) throw error
-  const campaigns = (data ?? []) as unknown as PublicCampaign[]
+  const found = (data ?? []) as { campaign_id: string; total_count: number | string }[]
+  // bigint may arrive as a string, depending on the PostgREST setup.
+  const total = found.length > 0 ? Number(found[0].total_count) || 0 : 0
+  const ids = found.map((r) => r.campaign_id)
+  if (ids.length === 0) return { campaigns: [], total }
+
+  const byId = new Map<string, PublicCampaign>()
+  for (const chunk of chunks(ids, IDS_PER_REQUEST)) {
+    const rows = await db.from("campaigns").select(PUBLIC_CAMPAIGN_WITH_REFS).in("id", chunk)
+    if (rows.error) throw rows.error
+    for (const row of (rows.data ?? []) as unknown as PublicCampaign[]) byId.set(row.id, row)
+  }
+  // Keep the database's order; a campaign that left public view in between is dropped.
+  const campaigns = ids.flatMap((id) => byId.get(id) ?? [])
   const organizers = await listCampaignOrganizers(
     db,
     campaigns.map((c) => c.id)
   )
-  return campaigns.map((c) => ({ ...c, organizer: organizers.get(c.id) ?? null }))
+  return { campaigns: campaigns.map((c) => ({ ...c, organizer: organizers.get(c.id) ?? null })), total }
 }
 
 /** give.public_campaign_organizers reads at most this many ids per call. */
-const ORGANIZERS_PER_CALL = 100
+const ORGANIZERS_PER_CALL = IDS_PER_REQUEST
 
 /**
  * Public organizer cards of public campaigns, by campaign id, through
