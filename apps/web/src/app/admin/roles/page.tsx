@@ -2,7 +2,6 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
 import { ActionForm, SubmitButton } from "@/components/forms"
-import { Card } from "@/components/ui/Card"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { Field } from "@/components/ui/Field"
 import { requireSession } from "@/lib/auth/session"
@@ -30,54 +29,52 @@ export default async function StaffRolesPage() {
       intro={<p>Mỗi lần cấp, đổi hoặc thu quyền đều được ghi vào nhật ký. Luôn phải còn ít nhất một quản trị viên.</p>}
     >
       <AdminSection id="grant" title="Cấp quyền">
-        <Card className="max-w-3xl">
-          <ActionForm action={grantRole} resetOnSuccess className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field htmlFor="grant-user" label="Email hoặc mã người dùng DOS.Me">
-                <input
-                  id="grant-user"
-                  name="user"
-                  className="field"
-                  required
-                  maxLength={320}
-                  autoComplete="off"
-                  placeholder="ten@vidu.com"
-                />
-              </Field>
-              <Field
-                htmlFor="grant-role"
-                label="Quyền"
-                hint="Nếu người này đã có quyền khác, quyền cũ sẽ được thay bằng quyền mới."
-              >
-                <select id="grant-role" name="role" className="field" defaultValue="moderator">
-                  {STAFF_ROLES.map((role) => (
-                    <option key={role} value={role}>
-                      {ROLE_LABELS[role]}: {ROLE_DESCRIPTIONS[role]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-            <Field htmlFor="grant-reason" label="Lý do (không bắt buộc)">
-              <input id="grant-reason" name="reason" className="field" maxLength={500} />
+        <ActionForm action={grantRole} resetOnSuccess className="max-w-160 space-y-6">
+          <div className="grid gap-6 sm:grid-cols-2 [&>*]:min-w-0">
+            <Field htmlFor="grant-user" label="Email hoặc mã người dùng DOS.Me">
+              <input
+                id="grant-user"
+                name="user"
+                className="field"
+                required
+                maxLength={320}
+                autoComplete="off"
+                placeholder="ten@vidu.com"
+              />
             </Field>
-            <SubmitButton>Cấp quyền</SubmitButton>
-          </ActionForm>
-        </Card>
+            <Field
+              htmlFor="grant-role"
+              label="Quyền"
+              hint="Nếu người này đã có quyền khác, quyền cũ sẽ được thay bằng quyền mới."
+            >
+              <select id="grant-role" name="role" className="field" defaultValue="moderator">
+                {STAFF_ROLES.map((role) => (
+                  <option key={role} value={role}>
+                    {ROLE_LABELS[role]}: {ROLE_DESCRIPTIONS[role]}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <Field htmlFor="grant-reason" label="Lý do (không bắt buộc)">
+            <input id="grant-reason" name="reason" className="field" maxLength={500} />
+          </Field>
+          <SubmitButton>Cấp quyền</SubmitButton>
+        </ActionForm>
       </AdminSection>
 
       <AdminSection id="staff" title="Nhân sự hiện tại" count={staff.length}>
         {staff.length === 0 ? (
           <EmptyState title="Chưa có nhân sự nào." />
         ) : (
-          <ul className="divide-y divide-line card">
+          <ul className="divide-y divide-border card">
             {staff.map((member) => {
               const self = member.user_id === session.user.id
               const name = member.display_name || member.email || member.user_id
               return (
-                <li key={member.user_id} className="flex flex-wrap items-start gap-4 p-4 sm:p-5">
+                <li key={member.user_id} className="flex flex-wrap items-start gap-4 p-4 sm:p-6">
                   <div className="min-w-0 flex-1 basis-60 text-sm">
-                    <p className="text-base font-semibold text-ink">
+                    <p className="text-base font-semibold break-words text-fg">
                       {name}
                       {self && <span className="ml-2 font-normal text-muted">(bạn)</span>}
                     </p>
@@ -85,7 +82,7 @@ export default async function StaffRolesPage() {
                     <p className="text-muted">
                       {ROLE_LABELS[member.role] ?? member.role} · từ {formatDate(member.created_at)}
                     </p>
-                    <p className="mt-1 font-mono text-xs break-all text-muted">{member.user_id}</p>
+                    <p className="mt-1 font-mono text-sm break-all text-muted">{member.user_id}</p>
                   </div>
                   <div className="flex flex-wrap items-start gap-2">
                     <ActionForm
@@ -139,10 +136,10 @@ export default async function StaffRolesPage() {
             {changes.map((change) => (
               <tr key={change.id}>
                 <td className="px-4 py-3">
-                  <span className="font-semibold text-ink">{describeChange(change)}</span>{" "}
+                  <span className="font-semibold text-fg">{describeChange(change)}</span>{" "}
                   {change.action === "admin.revoke" ? "của" : "cho"} {change.user_email ?? change.user_id}
                 </td>
-                <td className="px-4 py-3 break-all">{change.actor_email ?? change.actor_id ?? "hệ thống"}</td>
+                <td className="px-4 py-3 break-words">{change.actor_email ?? change.actor_id ?? "hệ thống"}</td>
                 <td className="max-w-xs px-4 py-3 break-words">{change.reason || "—"}</td>
                 <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDate(change.created_at)}</td>
               </tr>

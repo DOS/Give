@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 
-import { TabNav } from "@/components/ui/Tabs"
+import { SectionNav } from "@/components/ui/Tabs"
 
 export type MeSection = "campaigns" | "contributions" | "notices" | "accounts"
 
@@ -12,26 +12,29 @@ const SECTIONS: { key: MeSection; href: string; label: string }[] = [
 ]
 
 /**
- * A top-level /me page (DOS/Give#96): the tabs between the signed-in
- * person's lists, then the page. On phones the tabs scroll sideways.
+ * A top-level /me page (DESIGN.md 8): the person's sections as a side
+ * navigation from 1024px (3 of 12 columns) and as tabs above the page below
+ * that, then the page itself.
  */
 export function MePage({ section, children }: { section: MeSection; children: ReactNode }) {
   return (
-    <div className="container-page pt-4 pb-16 sm:pt-6">
-      <TabNav
-        label="Trang của tôi"
-        items={SECTIONS.map((s) => ({ href: s.href, label: s.label, current: s.key === section }))}
-      />
-      <div className="mt-8 space-y-8">{children}</div>
+    <div className="container-page pt-6 pb-16 sm:pt-8 lg:grid lg:grid-cols-12 lg:gap-x-6 lg:pb-24">
+      <div className="min-w-0 lg:col-span-3">
+        <SectionNav
+          label="Trang của tôi"
+          items={SECTIONS.map((s) => ({ href: s.href, label: s.label, current: s.key === section }))}
+        />
+      </div>
+      <div className="mt-8 min-w-0 space-y-12 lg:col-span-9 lg:mt-0">{children}</div>
     </div>
   )
 }
 
-/** An inner /me page (an editor, a report): one centred column, no tabs. */
-export function MeDetail({ wide, children }: { wide?: boolean; children: ReactNode }) {
-  return (
-    <div className={`mx-auto w-full px-4 pt-4 pb-16 sm:px-6 sm:pt-6 ${wide ? "max-w-6xl" : "max-w-4xl"}`}>
-      <div className="space-y-8">{children}</div>
-    </div>
-  )
+/**
+ * An inner /me page (an editor, a report): the same container, no section
+ * navigation. Forms inside keep to 640px (`max-w-160`); a page that has a
+ * sidebar lays out its own 8/4 grid.
+ */
+export function MeDetail({ children }: { children: ReactNode }) {
+  return <div className="container-page space-y-12 pt-6 pb-16 sm:pt-8 lg:pb-24">{children}</div>
 }

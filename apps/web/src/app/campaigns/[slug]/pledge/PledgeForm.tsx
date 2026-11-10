@@ -25,12 +25,12 @@ export interface PledgeDefaults {
 /** A choice card's border and tint: chosen, open, or sold out. */
 function choiceClass(chosen: boolean, soldOut = false): string {
   return clsx(
-    "flex gap-3 rounded-md border p-4 sm:p-5",
+    "flex gap-3 rounded-md border p-4 transition-colors duration-150",
     soldOut
-      ? "cursor-not-allowed border-line bg-surface"
+      ? "cursor-not-allowed border-border bg-surface"
       : chosen
-        ? "cursor-pointer border-brand-600 bg-brand-50 ring-1 ring-brand-600"
-        : "cursor-pointer border-line bg-white hover:border-gray-400"
+        ? "cursor-pointer border-primary bg-primary-soft ring-1 ring-primary"
+        : "cursor-pointer border-border bg-raised hover:bg-surface"
   )
 }
 
@@ -73,7 +73,7 @@ export function PledgeForm({
   return (
     <ActionForm action={action} className="space-y-8">
       <fieldset className="space-y-3">
-        <legend className="mb-3 text-xl font-bold text-ink">Chọn phần quà</legend>
+        <legend className="mb-6 text-h2 text-fg">Chọn phần quà</legend>
         {tiers.map((t) => {
           const soldOut = isSoldOut(t) && t.id !== defaults.tier
           const month = deliveryMonth(t.estimated_delivery)
@@ -87,15 +87,15 @@ export function PledgeForm({
                 disabled={soldOut}
                 required
                 onChange={() => choose(t.id)}
-                className="mt-1 size-5 shrink-0 accent-brand-700"
+                className="mt-1 size-5 shrink-0 accent-primary"
               />
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                  <span className="font-semibold break-words text-ink">{t.title}</span>
-                  <span className="font-bold text-ink tabular-nums">Từ {formatVnd(t.min_amount)}</span>
+                  <span className="min-w-0 font-semibold break-words text-fg">{t.title}</span>
+                  <span className="font-bold text-fg tabular-nums">Từ {formatVnd(t.min_amount)}</span>
                 </span>
                 {t.description && (
-                  <span className="mt-1 block break-words whitespace-pre-line text-body">{t.description}</span>
+                  <span className="mt-1 block break-words whitespace-pre-line text-fg">{t.description}</span>
                 )}
                 <span className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
                   {month && <span>Dự kiến giao: {month}</span>}
@@ -118,11 +118,11 @@ export function PledgeForm({
             checked={tierId === NO_REWARD}
             required
             onChange={() => choose(NO_REWARD)}
-            className="mt-1 size-5 shrink-0 accent-brand-700"
+            className="mt-1 size-5 shrink-0 accent-primary"
           />
-          <span>
-            <span className="font-semibold text-ink">Ủng hộ không nhận quà</span>
-            <span className="mt-1 block text-body">
+          <span className="min-w-0">
+            <span className="font-semibold text-fg">Ủng hộ không nhận quà</span>
+            <span className="mt-1 block text-fg">
               Đồng hành cùng dự án với số tiền bạn chọn, từ {formatVnd(minContribution)}.
             </span>
           </span>
@@ -150,9 +150,9 @@ export function PledgeForm({
       </div>
 
       {tier?.requires_shipping && (
-        <fieldset className="space-y-4 rounded-md border border-line p-4 sm:p-5">
-          <legend className="px-1 text-lg font-bold text-ink">Địa chỉ nhận quà</legend>
-          {tier.shipping_note && <p className="whitespace-pre-line text-body">{tier.shipping_note}</p>}
+        <fieldset className="space-y-6">
+          <legend className="mb-6 text-h3 text-fg">Địa chỉ nhận quà</legend>
+          {tier.shipping_note && <p className="whitespace-pre-line text-fg">{tier.shipping_note}</p>}
           <Field htmlFor="ship-recipient" label="Người nhận">
             <input
               id="ship-recipient"
@@ -199,8 +199,8 @@ export function PledgeForm({
         </fieldset>
       )}
 
-      <fieldset className="space-y-4">
-        <legend className="mb-3 text-lg font-bold text-ink">Thông tin hiển thị</legend>
+      <fieldset className="space-y-6">
+        <legend className="mb-6 text-h3 text-fg">Thông tin hiển thị</legend>
         <Field htmlFor="pledge-name" label="Tên hiển thị">
           <input
             id="pledge-name"
@@ -218,9 +218,9 @@ export function PledgeForm({
               name="anonymous"
               defaultChecked={defaults.anonymous}
               aria-describedby="pledge-anonymous-hint"
-              className="mt-1 size-5 shrink-0 accent-brand-700"
+              className="mt-1 size-5 shrink-0 accent-primary"
             />
-            <span className="font-medium text-ink">Ủng hộ ẩn danh</span>
+            <span className="font-medium text-fg">Ủng hộ ẩn danh</span>
           </label>
           <p id="pledge-anonymous-hint" className="hint">
             Give sẽ không hiện tên bạn trên Give. Trang sao kê công khai của ngân hàng vẫn có thể hiện tên người chuyển.
@@ -238,7 +238,7 @@ export function PledgeForm({
         </Field>
       </fieldset>
 
-      <div className="space-y-3 border-t border-line pt-6">
+      <div className="space-y-3 border-t border-border pt-6">
         <SubmitButton className={buttonClass({ size: "lg", full: true })}>
           {changing ? "Lưu thay đổi" : "Cam kết ủng hộ"}
         </SubmitButton>

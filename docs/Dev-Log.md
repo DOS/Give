@@ -633,12 +633,12 @@ yarn install                      # Reinstall
 // Single shadow using ::before pseudo-element
 <div className="group relative before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:rounded-lg before:transition-all before:duration-300 before:content-[''] hover:z-50 hover:before:bottom-[-96px] hover:before:shadow-xl">
   {/* Main card - remove shadow on hover */}
-  <div className="relative rounded-lg bg-white shadow-sm transition-shadow duration-300 group-hover:shadow-none">
+  <div className="bg-white relative rounded-lg shadow-sm transition-shadow duration-300 group-hover:shadow-none">
     {/* Card content */}
   </div>
 
   {/* Expanded content - absolute overlay */}
-  <div className="invisible absolute top-full right-0 left-0 rounded-b-lg bg-white opacity-0 transition-all duration-300 group-hover:visible group-hover:opacity-100">
+  <div className="bg-white invisible absolute top-full right-0 left-0 rounded-b-lg opacity-0 transition-all duration-300 group-hover:visible group-hover:opacity-100">
     {/* Description and tags */}
   </div>
 </div>
@@ -738,12 +738,12 @@ yarn install                      # Reinstall
 ```tsx
 <div className="group relative before:pointer-events-none before:absolute before:inset-0 before:-z-10 before:rounded-lg before:transition-all before:duration-300 before:content-[''] hover:z-50 hover:before:bottom-[-96px] hover:before:shadow-xl">
   {/* Main card - consistent sizing */}
-  <div className="relative rounded-lg border-2 border-transparent bg-white shadow-sm transition-all duration-300 group-hover:shadow-none hover:border-blue-500">
+  <div className="bg-white hover:border-blue-500 relative rounded-lg border-2 border-transparent shadow-sm transition-all duration-300 group-hover:shadow-none">
     {/* Card content */}
   </div>
 
   {/* Expanded content - absolute overlay */}
-  <div className="invisible absolute top-full right-0 left-0 rounded-b-lg border-2 border-t-0 border-transparent bg-white opacity-0 transition-all duration-300 group-hover:visible group-hover:border-blue-500 group-hover:opacity-100">
+  <div className="bg-white group-hover:border-blue-500 invisible absolute top-full right-0 left-0 rounded-b-lg border-2 border-t-0 border-transparent opacity-0 transition-all duration-300 group-hover:visible group-hover:opacity-100">
     {/* Description và tags */}
   </div>
 </div>

@@ -93,7 +93,7 @@ function EvidenceCard({
   const isHidden = item.state?.hidden ?? false
   const kind = EVIDENCE_KINDS[item.kind] ?? item.kind
   return (
-    <li className="flex flex-col gap-6 card p-5 sm:flex-row sm:p-6">
+    <li className="flex min-w-0 flex-col gap-6 card p-4 sm:flex-row sm:p-6">
       <a
         href={evidenceUrl(item.storage_path)}
         target="_blank"
@@ -107,7 +107,7 @@ function EvidenceCard({
           width={192}
           height={192}
           unoptimized
-          className="h-48 w-48 rounded border border-line bg-surface object-contain"
+          className="h-48 w-48 rounded border border-border bg-surface object-contain"
         />
       </a>
       <div className="min-w-0 flex-1 space-y-4">
@@ -131,8 +131,8 @@ function EvidenceCard({
         )}
         {item.reports.length > 0 && (
           <div>
-            <p className="font-semibold text-ink">{item.reports.length} báo cáo đang mở</p>
-            <ul className="mt-1 list-disc space-y-1 pl-5 text-body">
+            <p className="font-semibold text-fg">{item.reports.length} báo cáo đang mở</p>
+            <ul className="mt-2 list-disc space-y-1 pl-6 text-fg">
               {item.reports.map((r) => (
                 <li key={r.id} className="break-words">
                   {r.reason ?? <span className="text-muted">(không ghi lý do)</span>}{" "}
@@ -142,7 +142,7 @@ function EvidenceCard({
             </ul>
           </div>
         )}
-        <ActionForm action={moderateEvidence.bind(null, item.evidence_id)} className="max-w-xl space-y-3">
+        <ActionForm action={moderateEvidence.bind(null, item.evidence_id)} className="max-w-160 space-y-4">
           <Field htmlFor={`reason-${item.evidence_id}`} label="Lý do (bắt buộc khi ẩn)">
             <input id={`reason-${item.evidence_id}`} name="reason" maxLength={500} className="field" />
           </Field>

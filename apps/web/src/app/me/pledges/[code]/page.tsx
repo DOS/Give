@@ -57,7 +57,7 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="grid gap-1 py-3 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-4">
       <dt className="text-muted">{label}</dt>
-      <dd className="break-words text-ink">{children}</dd>
+      <dd className="min-w-0 break-words text-fg">{children}</dd>
     </div>
   )
 }
@@ -101,7 +101,7 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
             Bạn chưa phải chuyển tiền. Khi dự án kết thúc ({formatDateTime(campaign.ends_at)}), nếu tổng cam kết đạt mục
             tiêu, Give báo bạn chuyển khoản; nếu không đạt, cam kết tự hủy.
           </p>
-          <div className="flex flex-wrap items-center gap-3 pt-1">
+          <div className="flex flex-wrap items-center gap-3 pt-2">
             <ButtonLink href={`/campaigns/${campaign.slug}/pledge`} variant="secondary">
               Đổi cam kết
             </ButtonLink>
@@ -269,58 +269,68 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 sm:py-12">
-      <header>
-        <p className="text-muted">Cam kết ủng hộ dự án</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
+    <div className="container-page pt-6 pb-16 sm:pt-8 lg:pb-24">
+      <header className="min-w-0">
+        <p className="text-sm text-muted">Cam kết ủng hộ dự án</p>
+        <h1 className="mt-2 text-h1-phone tracking-tight break-words sm:text-h1">
           <Link href={`/campaigns/${campaign.slug}`} className="underline-offset-4 hover:underline">
             {campaign.title}
           </Link>
         </h1>
-        <dl className="mt-5 flex flex-wrap gap-x-10 gap-y-3 border-y border-line py-4">
-          <div>
-            <dt className="text-sm text-muted">Số tiền cam kết</dt>
-            <dd>
-              <Money amount={pledge.intended_amount} size="lg" />
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-muted">Mã cam kết</dt>
-            <dd className="font-mono text-2xl font-semibold text-ink">{pledge.reference_code}</dd>
-          </div>
-          <div>
-            <dt className="text-sm text-muted">Trạng thái</dt>
-            <dd className="mt-1">
-              <PledgeStatusBadge status={pledge.status} />
-            </dd>
-          </div>
-        </dl>
       </header>
 
-      {body}
+      <div className="mt-8 flex flex-col gap-8 lg:grid lg:grid-cols-12 lg:gap-x-6">
+        <aside
+          aria-label="Cam kết"
+          className="min-w-0 lg:sticky lg:top-24 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:self-start"
+        >
+          <dl className="grid gap-4 card p-4 sm:grid-cols-2 sm:p-6 lg:grid-cols-1">
+            <div className="min-w-0">
+              <dt className="text-sm text-muted">Số tiền cam kết</dt>
+              <dd className="mt-1">
+                <Money amount={pledge.intended_amount} size="xl" />
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-sm text-muted">Mã cam kết</dt>
+              <dd className="mt-1 font-mono text-h2 break-all text-fg">{pledge.reference_code}</dd>
+            </div>
+            <div className="min-w-0 sm:col-span-2 lg:col-span-1">
+              <dt className="text-sm text-muted">Trạng thái</dt>
+              <dd className="mt-1">
+                <PledgeStatusBadge status={pledge.status} />
+              </dd>
+            </div>
+          </dl>
+        </aside>
 
-      <section aria-labelledby="pledge-details" className="card px-5 py-2 sm:px-6">
-        <h2 id="pledge-details" className="pt-3 text-lg font-bold">
-          Chi tiết cam kết
-        </h2>
-        <dl className="divide-y divide-line">
-          <Detail label="Phần quà">
-            <span className="font-semibold">
-              {pledge.reward_tier_id ? (tier?.title ?? "Phần quà của dự án") : "Ủng hộ không nhận quà"}
-            </span>
-            {month && <span className="text-muted"> · dự kiến giao {month}</span>}
-          </Detail>
-          {shipping && (
-            <Detail label="Giao tới">
-              {shipping.recipient} · {shipping.phone}
-              <br />
-              {shipping.address}
-            </Detail>
-          )}
-          <Detail label="Hiển thị">{pledge.is_anonymous ? "Ẩn danh" : (pledge.public_name ?? "—")}</Detail>
-          <Detail label="Cam kết lúc">{formatDateTime(pledge.created_at)}</Detail>
-        </dl>
-      </section>
+        <div className="min-w-0 space-y-8 lg:col-span-8 lg:row-start-1">
+          {body}
+
+          <section aria-labelledby="pledge-details">
+            <h2 id="pledge-details" className="text-h2">
+              Chi tiết cam kết
+            </h2>
+            <dl className="mt-6 divide-y divide-border border-y border-border">
+              <Detail label="Phần quà">
+                <span className="font-semibold">
+                  {pledge.reward_tier_id ? (tier?.title ?? "Phần quà của dự án") : "Ủng hộ không nhận quà"}
+                </span>
+                {month && <span className="text-muted"> · dự kiến giao {month}</span>}
+              </Detail>
+              {shipping && (
+                <Detail label="Giao tới">
+                  {shipping.recipient} · {shipping.phone}
+                  <br />
+                  {shipping.address}
+                </Detail>
+              )}
+              <Detail label="Hiển thị">{pledge.is_anonymous ? "Ẩn danh" : (pledge.public_name ?? "—")}</Detail>
+              <Detail label="Cam kết lúc">{formatDateTime(pledge.created_at)}</Detail>
+            </dl>
+          </section>
+        </div>
+      </div>
     </div>
   )
 }

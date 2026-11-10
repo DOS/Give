@@ -37,35 +37,35 @@ export function UnmatchedTransactionCard({
   const others = candidates.filter((c) => !waitsFor(c, tx.amount))
 
   return (
-    <li className="space-y-5 card p-5 sm:p-6">
-      <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-3">
+    <li className="min-w-0 space-y-6 card p-4 sm:p-6">
+      <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-3 [&>*]:min-w-0">
         <div>
           <dt className="text-sm text-muted">Số tiền vào</dt>
-          <dd className="text-xl font-bold text-brand-700 tabular-nums">+{formatVnd(tx.amount)}</dd>
+          <dd className="text-h3 font-bold text-primary tabular-nums">+{formatVnd(tx.amount)}</dd>
         </div>
         <div>
           <dt className="text-sm text-muted">Ngày</dt>
-          <dd className="text-ink">{tx.booked_date_only ? formatDate(tx.booked_at) : formatDateTime(tx.booked_at)}</dd>
+          <dd className="text-fg">{tx.booked_date_only ? formatDate(tx.booked_at) : formatDateTime(tx.booked_at)}</dd>
         </div>
         <div>
           <dt className="text-sm text-muted">Người chuyển</dt>
-          <dd className="break-words text-ink">
+          <dd className="break-words text-fg">
             {tx.counterparty_name ?? "—"}
             {tx.counterparty_account_masked && <span className="text-muted"> ({tx.counterparty_account_masked})</span>}
           </dd>
         </div>
         <div className="sm:col-span-3">
           <dt className="text-sm text-muted">Nội dung chuyển khoản</dt>
-          <dd className="font-mono break-words text-ink">{tx.description ?? "—"}</dd>
+          <dd className="font-mono break-words text-fg">{tx.description ?? "—"}</dd>
         </div>
         {campaignTitle && (
           <div className="sm:col-span-2">
             <dt className="text-sm text-muted">Chiến dịch</dt>
-            <dd className="break-words text-ink">{campaignTitle}</dd>
+            <dd className="break-words text-fg">{campaignTitle}</dd>
           </div>
         )}
         {tx.after_close && (
-          <div className="font-medium text-amber-800 sm:col-span-3">
+          <div className="font-medium text-warning sm:col-span-3">
             Tiền vào sau khi chiến dịch đã đóng hoặc kết thúc.
           </div>
         )}
@@ -74,7 +74,7 @@ export function UnmatchedTransactionCard({
       <ActionForm
         action={action}
         confirm={`Khớp giao dịch ${formatVnd(tx.amount)} với lượt ủng hộ đã chọn? Mỗi giao dịch chỉ khớp được một lần, và chưa sửa được sau khi khớp.`}
-        className="grid gap-4 border-t border-line pt-5 sm:grid-cols-[2fr_1fr_auto] sm:items-end"
+        className="grid gap-4 border-t border-border pt-6 sm:grid-cols-[2fr_1fr_auto] sm:items-end [&>*]:min-w-0"
       >
         <div>
           <label htmlFor={`contribution-${tx.id}`} className="label">
@@ -135,15 +135,15 @@ function ExplainInboundForm({
   action: (state: ActionResult, form: FormData) => Promise<ActionResult>
 }) {
   return (
-    <details className="group border-t border-line pt-3">
-      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 font-medium text-ink hover:text-brand-700 [&::-webkit-details-marker]:hidden">
+    <details className="group border-t border-border pt-3">
+      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 font-medium text-fg hover:text-primary [&::-webkit-details-marker]:hidden">
         Không phải tiền ủng hộ? Giải trình khoản này
-        <ChevronDownIcon width={18} height={18} className="transition-transform group-open:rotate-180" />
+        <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
       </summary>
       <ActionForm
         action={action}
         confirm={`Giải trình giao dịch ${formatVnd(tx.amount)} là không phải tiền ủng hộ? Loại khoản tiền sẽ hiện trên sao kê công khai; giải trình đã ghi thì không sửa được, và giao dịch không khớp được với lượt ủng hộ nào nữa.`}
-        className="mt-3 grid gap-5"
+        className="mt-3 grid max-w-160 gap-6"
       >
         <Callout tone="warning">
           Không dùng cho tiền chuyển đi bị ngân hàng trả lại (khoản chi hoặc khoản hoàn tiền không thành công): khoản đó

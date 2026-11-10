@@ -125,14 +125,14 @@ export default async function AdminStatementsPage() {
             {resolved.map((row) => (
               <tr key={row.id}>
                 <td className="px-4 py-3">
-                  <p className="font-semibold text-ink tabular-nums">{signedAmount(row.direction, row.amount)}</p>
+                  <p className="font-semibold text-fg tabular-nums">{signedAmount(row.direction, row.amount)}</p>
                   <p className="text-muted">
                     {bookedLabel(row)} · {labels.get(row.batch.receiving_account_id) ?? "—"} · lần #{row.batch.batch_no}{" "}
                     dòng {row.row_no}
                   </p>
                 </td>
                 <td className="px-4 py-3">
-                  <p className="font-semibold text-ink">{row.resolution ? RESOLUTION_LABELS[row.resolution] : "—"}</p>
+                  <p className="font-semibold text-fg">{row.resolution ? RESOLUTION_LABELS[row.resolution] : "—"}</p>
                   <p className="text-muted">
                     {rowStatusLabel(row.status)}. Lý do vào hàng chờ: {ambiguousReasonLabel(row.ambiguous_reason)}
                   </p>
@@ -153,7 +153,7 @@ export default async function AdminStatementsPage() {
 function RowFacts({ row }: { row: StatementRowView }) {
   return (
     <>
-      <span className={`font-semibold tabular-nums ${row.direction === "in" ? "text-brand-700" : "text-red-700"}`}>
+      <span className={`font-semibold tabular-nums ${row.direction === "in" ? "text-primary" : "text-danger"}`}>
         {signedAmount(row.direction, row.amount)}
       </span>{" "}
       · {bookedLabel(row)} · {row.description ?? "không có nội dung"}
@@ -186,12 +186,12 @@ function QueueCard({
           </Link>{" "}
           ({row.batch.parser}) · dòng {row.row_no}
         </p>
-        <p className="text-ink">
+        <p className="break-words text-fg">
           <RowFacts row={row} />
         </p>
         <Callout tone="warning">{ambiguousReasonLabel(row.ambiguous_reason)}</Callout>
         {candidate && (
-          <p className="rounded-md bg-surface p-3 text-sm">
+          <p className="rounded-md bg-surface p-4 text-sm break-words">
             Khớp với dòng {candidate.row_no} của một lần tải trước ({rowStatusLabel(candidate.status).toLowerCase()}):{" "}
             <RowFacts row={candidate} />
           </p>
@@ -202,7 +202,7 @@ function QueueCard({
         <ActionForm
           action={resolveStatementRow.bind(null, row.id)}
           confirm="Đánh dấu dòng này là giao dịch đã ghi? Dòng sẽ không được ghi thêm lần nữa."
-          className="space-y-3"
+          className="space-y-4"
         >
           <input type="hidden" name="resolution" value="duplicate" />
           <p className="label">{RESOLUTION_LABELS.duplicate}</p>
@@ -212,12 +212,12 @@ function QueueCard({
             </p>
           ) : (
             <>
-              <fieldset className="space-y-2 text-sm">
+              <fieldset className="space-y-1 text-sm">
                 <legend className="sr-only">Giao dịch mà dòng này lặp lại</legend>
                 {targets.shown.map((tx) => (
                   <label
                     key={tx.id}
-                    className="flex cursor-pointer items-start gap-3 rounded-md border border-line p-3 hover:border-gray-400 has-[:checked]:border-brand-600 has-[:checked]:bg-brand-50"
+                    className="flex min-w-0 cursor-pointer items-start gap-3 rounded p-3 transition-colors duration-150 hover:bg-surface has-[:checked]:bg-primary-soft"
                   >
                     <input
                       type="radio"
@@ -225,9 +225,9 @@ function QueueCard({
                       value={tx.id}
                       required
                       defaultChecked={tx.id === candidateTx}
-                      className="mt-1 size-4 accent-brand-700"
+                      className="mt-1 size-4 shrink-0 accent-primary"
                     />
-                    <span>
+                    <span className="min-w-0 break-words">
                       {bookedLabel(tx)} · <span className="tabular-nums">{formatVnd(tx.amount)}</span> ·{" "}
                       {tx.description ?? "—"}
                       {tx.counterparty_name ? ` · ${tx.counterparty_name}` : ""}{" "}
@@ -252,7 +252,7 @@ function QueueCard({
         <ActionForm
           action={resolveStatementRow.bind(null, row.id)}
           confirm="Nhập dòng này thành một giao dịch mới? Số tiền sẽ được tính vào sao kê của chiến dịch và không xóa được."
-          className="space-y-3"
+          className="space-y-4"
         >
           <input type="hidden" name="resolution" value="import" />
           <p className="label">{RESOLUTION_LABELS.import}</p>
@@ -261,8 +261,13 @@ function QueueCard({
           </p>
           {row.candidate_row_id && (
             <label className="flex cursor-pointer items-start gap-3 text-sm">
-              <input type="checkbox" name="override_candidate" required className="mt-1 size-4 accent-brand-700" />
-              <span>
+              <input
+                type="checkbox"
+                name="override_candidate"
+                required
+                className="mt-1 size-4 shrink-0 accent-primary"
+              />
+              <span className="min-w-0">
                 Tôi đã đối chiếu: đây là giao dịch khác với dòng {candidate ? `${candidate.row_no} ` : ""}của lần tải
                 trước.
               </span>
@@ -328,7 +333,7 @@ function AuditTrail({ entries, names }: { entries: AuditEntry[]; names: Map<stri
         <DataTable label="Nhật ký kiểm toán đối soát" head={["Thao tác", "Chi tiết", "Người thực hiện", "Lúc"]}>
           {entries.map((entry) => (
             <tr key={entry.id}>
-              <td className="px-4 py-3 font-medium text-ink">{AUDIT_ACTION_LABELS[entry.action] ?? entry.action}</td>
+              <td className="px-4 py-3 font-medium text-fg">{AUDIT_ACTION_LABELS[entry.action] ?? entry.action}</td>
               <td className="max-w-md px-4 py-3 break-words">{auditSummary(entry)}</td>
               <td className="px-4 py-3 break-all">
                 {entry.actor_id ? (names.get(entry.actor_id) ?? entry.actor_id) : "—"}

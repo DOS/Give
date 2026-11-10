@@ -108,11 +108,11 @@ function AccountCard({
     <ItemCard>
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <h3 className="text-lg font-semibold">
+          <h3 className="text-h3 break-words">
             {bank ? `${bank.shortName} – ${bank.name}` : account.bank_bin}{" "}
-            <span className="font-mono font-medium text-body">{account.account_number}</span>
+            <span className="font-mono font-medium text-fg">{account.account_number}</span>
           </h3>
-          <p className="text-sm text-muted">BIN {account.bank_bin}</p>
+          <p className="mt-1 text-sm text-muted">BIN {account.bank_bin}</p>
         </div>
         <AccountStatusBadge status={status} />
       </div>
@@ -146,7 +146,7 @@ function AccountCard({
             label={
               <>
                 Sao kê công khai (người tổ chức cung cấp, chưa kiểm chứng; tên miền:{" "}
-                <span className="font-semibold text-ink">{hostnameOf(account.public_statement_url)}</span>)
+                <span className="font-semibold text-fg">{hostnameOf(account.public_statement_url)}</span>)
               </>
             }
           >
@@ -164,7 +164,7 @@ function AccountCard({
         {status === "pending" && (
           <Fact label="Giao dịch cần thấy" wide>
             Chuyển đi {formatVnd(VERIFICATION_TRANSFER_AMOUNT)}, nội dung{" "}
-            <span className="rounded-sm bg-gray-100 px-1.5 font-mono font-bold">{account.verification_code}</span>
+            <span className="rounded bg-surface px-2 font-mono font-bold break-all">{account.verification_code}</span>
           </Fact>
         )}
         {account.review_note && (
@@ -189,7 +189,7 @@ function AccountCard({
             <ActionForm
               action={reviewAccount.bind(null, account.id)}
               confirm="Xác minh tài khoản này? Sau đó người tổ chức có thể gắn nó với chiến dịch để nhận tiền."
-              className="space-y-3"
+              className="space-y-6"
             >
               <input type="hidden" name="decision" value="verified" />
               <input type="hidden" name="expected_code" value={account.verification_code} />
@@ -221,7 +221,7 @@ function AccountCard({
                   ? "Từ chối tài khoản này? Số tài khoản sẽ được giải phóng để khai báo lại."
                   : "Khóa tài khoản này? Chiến dịch đang gắn với nó sẽ không nhận được tiền ủng hộ mới."
               }
-              className="space-y-3"
+              className="space-y-4"
             >
               {/* Rejecting frees the number; an account that was ever bound can only be disabled. */}
               <input type="hidden" name="decision" value={options.close} />

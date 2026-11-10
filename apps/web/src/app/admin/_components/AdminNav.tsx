@@ -1,9 +1,9 @@
 "use client"
 
 import { usePathname } from "next/navigation"
-import { useEffect, useRef } from "react"
 
-import { TabNav } from "@/components/ui/Tabs"
+import { ShieldIcon } from "@/components/ui/icons"
+import { SectionNav } from "@/components/ui/Tabs"
 
 export interface AdminNavLink {
   href: string
@@ -11,25 +11,21 @@ export interface AdminNavLink {
 }
 
 /**
- * The admin section's tabs; the current one follows the URL. On a phone the
- * row scrolls sideways, so the current tab is scrolled into view.
+ * The admin section's navigation (DESIGN.md 8): a side list from 1024px,
+ * tabs below; the current page follows the URL.
  */
 export function AdminNav({ links }: { links: readonly AdminNavLink[] }) {
   const pathname = usePathname()
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const current = ref.current?.querySelector<HTMLElement>('[aria-current="page"]')
-    const row = current?.closest("ul")
-    if (!current || !row || row.scrollWidth <= row.clientWidth) return
-    const tab = current.getBoundingClientRect()
-    const box = row.getBoundingClientRect()
-    row.scrollLeft += tab.left - box.left - (box.width - tab.width) / 2
-  }, [pathname])
-
   return (
-    <div ref={ref}>
-      <TabNav label="Trang quản trị" items={links.map((link) => ({ ...link, current: pathname === link.href }))} />
-    </div>
+    <SectionNav
+      label="Trang quản trị"
+      heading={
+        <>
+          <ShieldIcon width={20} height={20} />
+          Quản trị Give
+        </>
+      }
+      items={links.map((link) => ({ ...link, current: pathname === link.href }))}
+    />
   )
 }

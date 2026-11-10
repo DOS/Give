@@ -58,10 +58,7 @@ export function ActionForm({
     >
       <PendingContext.Provider value={pending}>{children}</PendingContext.Provider>
       {state?.message && (
-        <p
-          role={state.ok ? "status" : "alert"}
-          className={`mt-2 text-sm ${state.ok ? "text-green-700" : "text-red-700"}`}
-        >
+        <p role={state.ok ? "status" : "alert"} className={`mt-2 text-sm ${state.ok ? "text-primary" : "text-danger"}`}>
           {state.message}
         </p>
       )}

@@ -116,7 +116,7 @@ function ParkedCard({
             {formatDateTime(event.parked_at)}
           </p>
         </Callout>
-        <p className="font-mono text-xs break-all text-muted">{event.id}</p>
+        <p className="font-mono text-sm break-all text-muted">{event.id}</p>
       </div>
 
       <ItemActions>
@@ -182,8 +182,8 @@ function AuditTrail({ entries, names }: { entries: AuditEntry[]; names: Map<stri
           {entries.map((entry) => (
             <tr key={entry.id}>
               <td className="px-4 py-3">
-                <p className="font-medium text-ink">{INBOUND_AUDIT_LABELS[entry.action] ?? entry.action}</p>
-                <p className="font-mono text-xs break-all text-muted">{entry.entity_id}</p>
+                <p className="font-medium text-fg">{INBOUND_AUDIT_LABELS[entry.action] ?? entry.action}</p>
+                <p className="font-mono text-sm break-all text-muted">{entry.entity_id}</p>
               </td>
               <td className="max-w-md px-4 py-3 break-words">{auditSummary(entry)}</td>
               <td className="px-4 py-3 break-all">

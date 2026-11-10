@@ -42,32 +42,37 @@ export default async function UnmatchedPage({ params }: { params: Promise<{ id: 
         nhật ký kiểm toán.
       </PageHeader>
 
-      {breakdown && <PaidBreakdownCard breakdown={breakdown} />}
+      {/* One 8-column reading column (DESIGN.md 2.2). */}
+      <div className="lg:grid lg:grid-cols-12 lg:gap-x-6">
+        <div className="min-w-0 space-y-12 lg:col-span-8">
+          {breakdown && <PaidBreakdownCard breakdown={breakdown} />}
 
-      <section aria-labelledby="unmatched-heading">
-        <h2 id="unmatched-heading" className="mb-4 flex items-center gap-2 text-xl font-semibold tracking-tight">
-          Chờ khớp
-          <Badge tone={total > 0 ? "warning" : "neutral"}>
-            {total > unmatched.length ? `${unmatched.length} mới nhất / ${total}` : total}
-          </Badge>
-        </h2>
-        {unmatched.length === 0 ? (
-          <EmptyState title="Không có giao dịch nào chờ khớp." />
-        ) : (
-          <ul className="space-y-4">
-            {unmatched.map((tx) => (
-              <UnmatchedTransactionCard
-                key={tx.id}
-                tx={tx}
-                candidates={candidates}
-                action={matchTransaction.bind(null, tx.id)}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
+          <section aria-labelledby="unmatched-heading">
+            <h2 id="unmatched-heading" className="mb-6 flex flex-wrap items-center gap-3 text-h2">
+              Chờ khớp
+              <Badge tone={total > 0 ? "warning" : "neutral"}>
+                {total > unmatched.length ? `${unmatched.length} mới nhất / ${total}` : total}
+              </Badge>
+            </h2>
+            {unmatched.length === 0 ? (
+              <EmptyState title="Không có giao dịch nào chờ khớp." />
+            ) : (
+              <ul className="space-y-4">
+                {unmatched.map((tx) => (
+                  <UnmatchedTransactionCard
+                    key={tx.id}
+                    tx={tx}
+                    candidates={candidates}
+                    action={matchTransaction.bind(null, tx.id)}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
 
-      <ManualMatchList matches={matches} />
+          <ManualMatchList matches={matches} />
+        </div>
+      </div>
     </MeDetail>
   )
 }

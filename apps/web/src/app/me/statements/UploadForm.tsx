@@ -40,7 +40,7 @@ export function UploadForm({
   return (
     <form
       action={formAction}
-      className="space-y-5"
+      className="max-w-160 space-y-6"
       onSubmit={(event) => {
         // Keeps the chosen file and pickers when the server refuses the upload (see ActionForm).
         event.preventDefault()
@@ -108,15 +108,15 @@ export function UploadForm({
       )}
 
       {tooLarge ? (
-        <p role="alert" className="text-red-700">
+        <p role="alert" className="text-danger">
           File quá lớn (tối đa {Math.floor(maxBytes / 1024 / 1024)} MB). Hãy xuất sao kê theo khoảng thời gian ngắn hơn.
         </p>
       ) : (
         state?.message && (
-          <div role={state.ok ? "status" : "alert"} className={state.ok ? "text-brand-800" : "text-red-700"}>
+          <div role={state.ok ? "status" : "alert"} className={state.ok ? "text-primary" : "text-danger"}>
             <p>{state.message}</p>
             {state.batchId && (
-              <Link href={`/me/statements/${state.batchId}`} className="mt-1 inline-flex min-h-11 items-center link">
+              <Link href={`/me/statements/${state.batchId}`} className="inline-flex min-h-11 items-center link">
                 Xem từng dòng của sao kê →
               </Link>
             )}

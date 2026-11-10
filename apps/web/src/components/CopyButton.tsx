@@ -2,6 +2,8 @@
 
 import { useState } from "react"
 
+import { buttonClass } from "@/components/ui/Button"
+
 /**
  * Copies a value to the clipboard and says so for a moment. `name` says
  * what is copied ("số tài khoản") to screen readers, so several copy
@@ -13,7 +15,7 @@ export function CopyButton({ value, label = "Sao chép", name }: { value: string
   return (
     <button
       type="button"
-      className="btn-secondary shrink-0 gap-1.5 px-3 py-1 text-sm"
+      className={buttonClass({ variant: "secondary", className: "shrink-0" })}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value)
@@ -26,11 +28,11 @@ export function CopyButton({ value, label = "Sao chép", name }: { value: string
     >
       <svg
         viewBox="0 0 24 24"
-        width={16}
-        height={16}
+        width={20}
+        height={20}
         fill="none"
         stroke="currentColor"
-        strokeWidth={1.75}
+        strokeWidth={1.5}
         strokeLinecap="round"
         strokeLinejoin="round"
         aria-hidden

@@ -131,41 +131,50 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 sm:py-12">
-      <header>
-        <p className="text-muted">Ủng hộ chiến dịch</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
+    <div className="container-page pt-6 pb-16 sm:pt-8 lg:pb-24">
+      <header className="min-w-0">
+        <p className="text-sm text-muted">Ủng hộ chiến dịch</p>
+        <h1 className="mt-2 text-h1-phone tracking-tight break-words sm:text-h1">
           <Link href={`/campaigns/${campaign.slug}`} className="underline-offset-4 hover:underline">
             {campaign.title}
           </Link>
         </h1>
-        <dl className="mt-5 flex flex-wrap gap-x-10 gap-y-3 border-y border-line py-4">
-          <div>
-            <dt className="text-sm text-muted">Số tiền ủng hộ</dt>
-            <dd>
-              <Money amount={donation.intended_amount} size="lg" />
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-muted">Mã ủng hộ</dt>
-            <dd className="font-mono text-2xl font-semibold text-ink">{donation.reference_code}</dd>
-          </div>
-        </dl>
       </header>
-      <DonationStatus
-        code={donation.reference_code}
-        initial={{ status: donation.status, received_amount: Number(donation.received_amount) }}
-        qrExpired={qrExpired}
-        qrMsLeft={Math.max(0, expiresAt.getTime() - now.getTime())}
-        expiredNote={expiredNote}
-      >
-        {instructions}
-      </DonationStatus>
-      {guest && (
-        <p className="text-sm text-muted">
-          Trang này chỉ mở được trên trình duyệt bạn vừa dùng để ủng hộ, trong 7 ngày.
-        </p>
-      )}
+      <div className="mt-8 flex flex-col gap-8 lg:grid lg:grid-cols-12 lg:gap-x-6">
+        <aside
+          aria-label="Khoản ủng hộ"
+          className="min-w-0 lg:sticky lg:top-24 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:self-start"
+        >
+          <dl className="grid gap-4 card p-4 sm:grid-cols-2 sm:p-6 lg:grid-cols-1">
+            <div className="min-w-0">
+              <dt className="text-sm text-muted">Số tiền ủng hộ</dt>
+              <dd className="mt-1">
+                <Money amount={donation.intended_amount} size="xl" />
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-sm text-muted">Mã ủng hộ</dt>
+              <dd className="mt-1 font-mono text-h2 break-all text-fg">{donation.reference_code}</dd>
+            </div>
+          </dl>
+          {guest && (
+            <p className="mt-4 text-sm text-muted">
+              Trang này chỉ mở được trên trình duyệt bạn vừa dùng để ủng hộ, trong 7 ngày.
+            </p>
+          )}
+        </aside>
+        <div className="min-w-0 lg:col-span-8 lg:row-start-1">
+          <DonationStatus
+            code={donation.reference_code}
+            initial={{ status: donation.status, received_amount: Number(donation.received_amount) }}
+            qrExpired={qrExpired}
+            qrMsLeft={Math.max(0, expiresAt.getTime() - now.getTime())}
+            expiredNote={expiredNote}
+          >
+            {instructions}
+          </DonationStatus>
+        </div>
+      </div>
     </div>
   )
 }
