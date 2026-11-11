@@ -97,11 +97,16 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       ) : (
         interesting.length > 0 && (
           <section aria-labelledby="quan-tam-heading" className="container-page pt-16 lg:pt-24">
-            <div className="flex items-baseline justify-between gap-4">
+            {/* Phones get the 14px link from the HomeMobile mockup, so the heading keeps one line beside it
+                from 375px. Below that the link wraps under the heading instead of breaking the heading. */}
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h2 id="quan-tam-heading" className="text-h2">
                 Đang được quan tâm
               </h2>
-              <Link href="/campaigns" className="inline-flex min-h-11 shrink-0 items-center link whitespace-nowrap">
+              <Link
+                href="/campaigns"
+                className="inline-flex min-h-11 shrink-0 items-center text-sm link whitespace-nowrap sm:text-base"
+              >
                 Xem tất cả
               </Link>
             </div>
