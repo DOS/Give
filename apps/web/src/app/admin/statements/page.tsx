@@ -162,7 +162,7 @@ function RowFacts({ row }: { row: StatementRowView }) {
       {row.provider_tx_id ? (
         <span className="text-muted">
           {" "}
-          · <span className="font-mono text-base">{row.provider_tx_id}</span>
+          · <span className="font-mono text-[length:max(1em,1rem)]">{row.provider_tx_id}</span>
         </span>
       ) : null}
     </>
@@ -236,7 +236,7 @@ function QueueCard({
                       {bookedLabel(tx)} · <span className="tabular-nums">{formatVnd(tx.amount)}</span> ·{" "}
                       {tx.description ?? "—"}
                       {tx.counterparty_name ? ` · ${tx.counterparty_name}` : ""}{" "}
-                      <span className="font-mono text-base text-muted">{tx.provider_tx_id}</span>
+                      <span className="font-mono text-[length:max(1em,1rem)] text-muted">{tx.provider_tx_id}</span>
                       {tx.id === candidateTx && <span className="text-muted"> (dòng trước ứng với giao dịch này)</span>}
                     </span>
                   </label>

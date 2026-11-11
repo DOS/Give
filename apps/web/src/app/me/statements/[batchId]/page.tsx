@@ -147,7 +147,9 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
                     <td className="max-w-xs px-4 py-3 break-words">
                       {row.description ?? "—"}
                       {row.counterparty_name && <div className="text-sm text-muted">{row.counterparty_name}</div>}
-                      {row.provider_tx_id && <div className="font-mono text-base break-all text-muted">{row.provider_tx_id}</div>}
+                      {row.provider_tx_id && (
+                        <div className="font-mono text-base break-all text-muted">{row.provider_tx_id}</div>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">
                       {row.balance_after === null ? "—" : formatVnd(row.balance_after)}

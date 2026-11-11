@@ -111,7 +111,8 @@ function ParkedCard({
         </p>
         <Callout tone="warning" title={parkedReasonLabel(event.last_error)}>
           <p className="text-sm">
-            Mã lỗi: <span className="font-mono text-base">{event.last_error ?? "—"}</span> · đã thử {event.attempts} lần
+            Mã lỗi: <span className="font-mono text-[length:max(1em,1rem)] text-muted">{event.last_error ?? "—"}</span>{" "}
+            · đã thử {event.attempts} lần
             {event.last_attempt_at ? `, lần cuối ${formatDateTime(event.last_attempt_at)}` : ""} · dừng lúc{" "}
             {formatDateTime(event.parked_at)}
           </p>

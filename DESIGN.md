@@ -98,6 +98,7 @@ Rules:
 - **No look-alike characters:** codes use only `23456789ABCDEFGHJKMNPQRSTUVWXYZ`, with no 0/O or 1/I/L, so no system mono font can make a code ambiguous. A new kind of code uses the same alphabet.
 - **Shown as stored:** no spaces, dashes or grouping inside a code, and no lowercase. What a person copies must match the transfer content exactly.
 - **Copy button:** every code a person must type into another app has a "Sao chép" button next to it.
+- **Not inside a Badge:** a Badge holds only its status word; a code that goes with it sits next to the Badge as an inline code. Text the page cannot style (select options, toasts, notification text) shows codes in the text font.
 - **Other strings:** bank account numbers are numbers, set in Be Vietnam Pro with tabular numbers like money, not mono. Machine identifiers on admin screens (bank transaction ids, record ids, error codes) may use `font-mono` at 16px, weight 400, in `text-muted`.
 
 ## 4. Color
