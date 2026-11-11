@@ -5,7 +5,7 @@ import { TypeBadge } from "@/components/badges"
 import { ProgressBar } from "@/components/ProgressBar"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { CheckIcon } from "@/components/ui/icons"
-import type { ListedCampaign } from "@/lib/campaigns"
+import { STATUS_LABELS, type ListedCampaign } from "@/lib/campaigns"
 import { publicCoverUrl } from "@/lib/cover-urls"
 import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
 
@@ -14,7 +14,8 @@ import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
  * campaigns only: the cover goes through the public media route). A 16:9
  * cover, then the type label, a two-line title, the organizer's display name
  * with a verified check, the progress bar, one line of figures and one meta
- * line; no description and no category. The organizer comes from
+ * line (time left, or the status once the campaign has ended); no
+ * description and no category. The organizer comes from
  * give.public_campaign_organizers (listPublicCampaigns); a card without one
  * leaves the line out. `raised` and `people` come from give.public_campaigns
  * (lib/statement.ts). The whole card is one link named by the title, with a
@@ -45,7 +46,13 @@ export function CampaignCard({
     options.backers_count !== false && people !== undefined
       ? `${people} ${isGive ? "người ủng hộ" : "người đồng hành"}`
       : null,
-    options.time_remaining !== false && days !== null ? (days > 0 ? `Còn ${days} ngày` : "Đã hết hạn") : null,
+    campaign.status !== "live"
+      ? STATUS_LABELS[campaign.status]
+      : options.time_remaining !== false && days !== null
+        ? days > 0
+          ? `Còn ${days} ngày`
+          : "Đã hết hạn"
+        : null,
   ].filter(Boolean)
 
   return (

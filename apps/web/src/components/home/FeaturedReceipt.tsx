@@ -3,7 +3,7 @@ import Link from "next/link"
 import { TypeBadge } from "@/components/badges"
 import { ProgressBar } from "@/components/ProgressBar"
 import { MoneyRow } from "@/components/ui/Money"
-import type { PublicCampaign } from "@/lib/campaigns"
+import type { CardCampaign } from "@/lib/campaigns"
 import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
 import { raisedAmount, remainingAmount, statementHref, type MoneyTotals } from "@/lib/statement"
 
@@ -14,7 +14,7 @@ import { raisedAmount, remainingAmount, statementHref, type MoneyTotals } from "
  * (back). The figures are the same ones the campaign page and its statement
  * show. It floats, so it carries the floating shadow.
  */
-export function FeaturedReceipt({ campaign, totals }: { campaign: PublicCampaign; totals: MoneyTotals | undefined }) {
+export function FeaturedReceipt({ campaign, totals }: { campaign: CardCampaign; totals: MoneyTotals | undefined }) {
   const isGive = campaign.type === "give"
   const raised = raisedAmount(totals, campaign.type)
   const percent = progressPercent(raised, campaign.goal_amount)

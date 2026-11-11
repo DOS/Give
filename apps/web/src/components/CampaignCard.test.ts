@@ -12,7 +12,7 @@ vi.mock("next/image", () => ({ default: () => null }))
 
 const { CampaignCard } = await import("./CampaignCard")
 
-const campaign = (organizer: ListedCampaign["organizer"]) =>
+const campaign = (organizer: ListedCampaign["organizer"], extra: Partial<ListedCampaign> = {}) =>
   ({
     id: "1060c000-0000-4000-8000-000000000001",
     slug: "be-an",
@@ -24,6 +24,8 @@ const campaign = (organizer: ListedCampaign["organizer"]) =>
     cover: null,
     category: { id: "c1", slug: "y-te", name: "Y tế", icon: null, color: null },
     organizer,
+    status: "live",
+    ...extra,
   }) as unknown as ListedCampaign
 
 const render = (organizer: ListedCampaign["organizer"]) =>
@@ -52,5 +54,26 @@ describe("CampaignCard", () => {
     expect(html).not.toContain("Đã xác minh")
     // The title is followed directly by the progress block.
     expect(html).toMatch(/<\/h3><div class="mt-auto pt-2">/)
+  })
+
+  it("shows an ended campaign's status instead of the time left", () => {
+    const ended = (status: string, ends_at: string) =>
+      renderToStaticMarkup(
+        createElement(CampaignCard, {
+          campaign: campaign(null, { status, ends_at } as Partial<ListedCampaign>),
+          raised: 0,
+          people: 8,
+        })
+      )
+    const past = "2026-01-01T00:00:00Z"
+    expect(ended("succeeded", past)).toContain("8 người ủng hộ · Thành công")
+    expect(ended("closed", past)).toContain("8 người ủng hộ · Đã kết thúc")
+    expect(ended("settling", past)).toContain("Đang tất toán")
+    expect(ended("failed", past)).toContain("Không đạt mục tiêu")
+    for (const status of ["succeeded", "closed", "settling", "failed"])
+      expect(ended(status, past)).not.toContain("Đã hết hạn")
+    // A live campaign past its end date (before the closing job runs) still says so.
+    expect(ended("live", past)).toContain("Đã hết hạn")
+    expect(ended("live", "2999-01-01T00:00:00Z")).toMatch(/Còn \d+ ngày/)
   })
 })

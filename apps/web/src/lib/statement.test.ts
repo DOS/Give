@@ -108,6 +108,15 @@ describe("money totals", () => {
     expect(calls).toHaveLength(1)
   })
 
+  it("asks for 100 ids at a time, so the URL stays short for a long discovery page", async () => {
+    const ids = Array.from({ length: 250 }, (_, i) => `6a7e0000-0000-4000-8000-${String(i).padStart(12, "0")}`)
+    const calls: Call[] = []
+    const db = fakeDb((call) => ({ data: (op(call, "in")?.[1] as string[]).map((id) => ({ ...viewRow, id })) }), calls)
+    const totals = await listMoneyTotals(db as never, ids)
+    expect(calls.map((c) => (op(c, "in")?.[1] as string[]).length)).toEqual([100, 100, 50])
+    expect(totals.size).toBe(250)
+  })
+
   it("headlines paid money for give and pledged money for back", () => {
     const totals = { paid_amount: 10, pledged_amount: 99, other_in_amount: 0 } as MoneyTotals
     expect(raisedAmount(totals, "give")).toBe(10)

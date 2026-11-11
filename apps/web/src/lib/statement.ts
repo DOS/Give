@@ -102,15 +102,23 @@ export async function getMoneyTotals(db: Db, campaignId: string): Promise<MoneyT
   return data ? toTotals(data as unknown as TotalsRow) : null
 }
 
+/** The id filter travels in the URL, so ids are asked for this many at a time. */
+const TOTALS_PER_REQUEST = 100
+
 /** Totals of several public campaigns, by campaign id (for discovery cards). */
 export async function listMoneyTotals(db: Db, campaignIds: readonly string[]): Promise<Map<string, MoneyTotals>> {
-  if (campaignIds.length === 0) return new Map()
-  const { data, error } = await db
-    .from("public_campaigns")
-    .select(TOTALS_COLUMNS)
-    .in("id", [...campaignIds])
-  if (error) throw error
-  return new Map(((data ?? []) as unknown as TotalsRow[]).map((row) => [row.id, toTotals(row)]))
+  const totals = new Map<string, MoneyTotals>()
+  const chunks: string[][] = []
+  for (let i = 0; i < campaignIds.length; i += TOTALS_PER_REQUEST)
+    chunks.push(campaignIds.slice(i, i + TOTALS_PER_REQUEST))
+  const reads = await Promise.all(
+    chunks.map((chunk) => db.from("public_campaigns").select(TOTALS_COLUMNS).in("id", chunk))
+  )
+  for (const { data, error } of reads) {
+    if (error) throw error
+    for (const row of (data ?? []) as unknown as TotalsRow[]) totals.set(row.id, toTotals(row))
+  }
+  return totals
 }
 
 /**
