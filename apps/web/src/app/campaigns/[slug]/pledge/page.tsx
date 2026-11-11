@@ -19,6 +19,7 @@ import { listPublicTiers, organizesCampaign, ownPledgesOnCampaign } from "@/serv
 
 import { cancelPledge, savePledge } from "./actions"
 import { PledgeForm, type PledgeDefaults } from "./PledgeForm"
+import { RefCode } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Ủng hộ dự án", robots: { index: false, follow: false } }
 
@@ -132,7 +133,7 @@ export default async function PledgePage({
           {open && (
             <Callout tone="info" title={`Bạn đã cam kết ${formatVnd(open.intended_amount)}`}>
               <p>
-                Mã cam kết <span className="font-mono font-semibold">{open.reference_code}</span>.
+                Mã cam kết <RefCode>{open.reference_code}</RefCode>.
                 {accepting
                   ? " Bạn có thể đổi phần quà, số tiền hoặc hủy cam kết cho tới khi dự án kết thúc. Đổi cam kết sẽ tạo mã mới."
                   : ""}

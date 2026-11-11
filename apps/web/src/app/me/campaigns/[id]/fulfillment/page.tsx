@@ -36,6 +36,7 @@ import { checkInputClass } from "../../../_components/Panel"
 import { FULFILLMENT_TONES } from "../../../_components/tones"
 
 import { setFulfillment } from "./actions"
+import { RefCode } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Giao quà cho người ủng hộ", robots: { index: false } }
 
@@ -249,7 +250,7 @@ function FulfillmentForm({
                   <p className="break-words text-fg">
                     {pledge.reward_tier_id ? (tierTitle.get(pledge.reward_tier_id) ?? "Phần thưởng") : "Không nhận quà"}{" "}
                     · <span className="tabular-nums">{formatVnd(pledge.intended_amount)}</span> · Mã{" "}
-                    <span className="font-mono">{pledge.reference_code}</span>
+                    <RefCode>{pledge.reference_code}</RefCode>
                   </p>
                   {address.length > 0 && (
                     <address className="text-fg not-italic">

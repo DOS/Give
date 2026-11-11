@@ -82,7 +82,7 @@ export default async function StaffRolesPage() {
                     <p className="text-muted">
                       {ROLE_LABELS[member.role] ?? member.role} · từ {formatDate(member.created_at)}
                     </p>
-                    <p className="mt-1 font-mono text-sm break-all text-muted">{member.user_id}</p>
+                    <p className="mt-1 font-mono text-base break-all text-muted">{member.user_id}</p>
                   </div>
                   <div className="flex flex-wrap items-start gap-2">
                     <ActionForm

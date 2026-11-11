@@ -26,6 +26,7 @@ import { cancelPledge } from "@/app/campaigns/[slug]/pledge/actions"
 import { isSessionRejected, paymentCampaign } from "@/server/contributions"
 import { getTierTitle, loadPledgeMoney, ownPledgeByCode, type OwnPledge } from "@/server/pledges"
 import { buildDonationPayload, isDonationCode, renderVietQrSvg } from "@/server/vietqr"
+import { RefCode } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Cam kết ủng hộ", robots: { index: false, follow: false } }
 
@@ -206,7 +207,13 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
               accountName={payment.account.account_name}
               amount={payment.amount_due}
               reference={payment.reference_code}
-              footnote={`Giữ nguyên nội dung ${payment.reference_code} để Give khớp khoản thanh toán. Tiền đi thẳng vào tài khoản của người tạo dự án; Give không giữ tiền. Give cập nhật trạng thái khi đối soát sao kê, có thể sau vài ngày.`}
+              footnote={
+                <>
+                  Giữ nguyên nội dung <RefCode>{payment.reference_code}</RefCode> để Give khớp khoản thanh toán. Tiền đi
+                  thẳng vào tài khoản của người tạo dự án; Give không giữ tiền. Give cập nhật trạng thái khi đối soát
+                  sao kê, có thể sau vài ngày.
+                </>
+              }
             />
           </>
         )
@@ -293,7 +300,9 @@ export default async function PledgePaymentPage({ params }: { params: Promise<{ 
             </div>
             <div className="min-w-0">
               <dt className="text-sm text-muted">Mã cam kết</dt>
-              <dd className="mt-1 font-mono text-h2 break-all text-fg">{pledge.reference_code}</dd>
+              <dd className="mt-1">
+                <RefCode size="lg">{pledge.reference_code}</RefCode>
+              </dd>
             </div>
             <div className="min-w-0 sm:col-span-2 lg:col-span-1">
               <dt className="text-sm text-muted">Trạng thái</dt>

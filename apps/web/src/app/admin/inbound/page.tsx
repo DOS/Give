@@ -111,12 +111,12 @@ function ParkedCard({
         </p>
         <Callout tone="warning" title={parkedReasonLabel(event.last_error)}>
           <p className="text-sm">
-            Mã lỗi: <span className="font-mono">{event.last_error ?? "—"}</span> · đã thử {event.attempts} lần
+            Mã lỗi: <span className="font-mono text-base">{event.last_error ?? "—"}</span> · đã thử {event.attempts} lần
             {event.last_attempt_at ? `, lần cuối ${formatDateTime(event.last_attempt_at)}` : ""} · dừng lúc{" "}
             {formatDateTime(event.parked_at)}
           </p>
         </Callout>
-        <p className="font-mono text-sm break-all text-muted">{event.id}</p>
+        <p className="font-mono text-base break-all text-muted">{event.id}</p>
       </div>
 
       <ItemActions>
@@ -183,7 +183,7 @@ function AuditTrail({ entries, names }: { entries: AuditEntry[]; names: Map<stri
             <tr key={entry.id}>
               <td className="px-4 py-3">
                 <p className="font-medium text-fg">{INBOUND_AUDIT_LABELS[entry.action] ?? entry.action}</p>
-                <p className="font-mono text-sm break-all text-muted">{entry.entity_id}</p>
+                <p className="font-mono text-base break-all text-muted">{entry.entity_id}</p>
               </td>
               <td className="max-w-md px-4 py-3 break-words">{auditSummary(entry)}</td>
               <td className="px-4 py-3 break-all">

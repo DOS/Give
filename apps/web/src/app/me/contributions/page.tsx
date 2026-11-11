@@ -18,6 +18,7 @@ import { pledgeBalances, type PledgeBalance } from "@/server/pledges"
 
 import { MePage } from "../_components/MePage"
 import { DONATION_TONES, toneOf } from "../_components/tones"
+import { RefCode } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Ủng hộ của tôi", robots: { index: false } }
 
@@ -136,7 +137,7 @@ async function ContributionList({ session }: { session: Session }) {
                       : `Dự định ${formatVnd(c.intended_amount)}`}
                 </p>
                 <p className="mt-1 text-sm text-muted">
-                  Mã <span className="font-mono">{c.reference_code}</span> · {formatDate(c.created_at)}
+                  Mã <RefCode>{c.reference_code}</RefCode> · {formatDate(c.created_at)}
                 </p>
               </div>
             </div>

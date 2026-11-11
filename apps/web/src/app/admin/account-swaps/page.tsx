@@ -107,7 +107,7 @@ function AccountLine({ account }: { account: NonNullable<SwapForReview["old_bind
   return (
     <dd className="mt-1 flex flex-wrap items-center gap-2 text-fg">
       <span className="min-w-0 break-words">
-        {bankLabel(account.bank_bin)} · <span className="font-mono">{account.account_number}</span> ·{" "}
+        {bankLabel(account.bank_bin)} · <span className="tabular-nums">{account.account_number}</span> ·{" "}
         {account.account_name}
       </span>
       <AccountStatusBadge status={account.verification_status} />

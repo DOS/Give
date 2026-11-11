@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 
 import { AccountStatusBadge, VerificationBadge } from "@/components/badges"
+import { CopyButton } from "@/components/CopyButton"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
@@ -29,6 +30,7 @@ import { MePage } from "../_components/MePage"
 import { checkInputClass, checkLabelClass } from "../_components/Panel"
 
 import { bindAccount, registerAccount, releaseAccount } from "./actions"
+import { RefCode } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Tài khoản nhận tiền", robots: { index: false } }
 
@@ -277,7 +279,12 @@ function AccountItem({
             <span className="font-semibold">{formatVnd(VERIFICATION_TRANSFER_AMOUNT)}</span> tới một tài khoản khác của
             bạn, với nội dung chuyển khoản đúng là:
           </p>
-          <p className="font-mono text-h3 font-bold tracking-wider break-all text-fg">{account.verification_code}</p>
+          <p className="flex items-center justify-between gap-3">
+            <RefCode size="lg" className="min-w-0">
+              {account.verification_code}
+            </RefCode>
+            <CopyButton value={account.verification_code} name="nội dung chuyển khoản xác minh" />
+          </p>
           <p>
             Give đối chiếu giao dịch này trên sao kê của tài khoản (trang sao kê công khai nếu có) rồi xác minh. Nếu
             cần, đội ngũ Give sẽ liên hệ để xem biên lai.
