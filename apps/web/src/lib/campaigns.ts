@@ -223,7 +223,7 @@ export type DiscoveryStatus = "live" | "ended" | "all"
 
 /**
  * Discovery orders, as give.discover_campaigns defines them (DOS-Me
- * `20261111160000_give_discover_campaigns.sql`; ties end newest first):
+ * `20261111170000_give_discover_campaigns.sql`; ties end newest first):
  * - featured ("Nổi bật"): live first, then most supporters (backers for back
  *   campaigns), then the highest share of the goal raised;
  * - newest ("Mới nhất"): most recently approved first;
@@ -388,7 +388,7 @@ function chunks<T>(items: readonly T[], size: number): T[][] {
 /**
  * Public campaigns for discovery and the home page. The database filters,
  * orders and counts them (give.discover_campaigns, DOS-Me
- * `20261111160000_give_discover_campaigns.sql`) and returns the first `limit`
+ * `20261111170000_give_discover_campaigns.sql`) and returns the first `limit`
  * ids; their card columns are then read by id, and each gets its
  * organizer's public card for the campaign cards (DESIGN.md 6, Card).
  */
