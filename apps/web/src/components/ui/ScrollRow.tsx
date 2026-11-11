@@ -24,8 +24,11 @@ export function ScrollRow({ className, children }: { className?: string; childre
     }
     update()
     el.addEventListener("scroll", update, { passive: true })
+    // The row's own box follows its container; its children change size when a
+    // label changes (a client-side navigation keeps this instance), so watch both.
     const resize = new ResizeObserver(update)
     resize.observe(el)
+    for (const child of el.children) resize.observe(child)
     return () => {
       el.removeEventListener("scroll", update)
       resize.disconnect()
