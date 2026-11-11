@@ -279,10 +279,8 @@ function AccountItem({
             <span className="font-semibold">{formatVnd(VERIFICATION_TRANSFER_AMOUNT)}</span> tới một tài khoản khác của
             bạn, với nội dung chuyển khoản đúng là:
           </p>
-          <p className="flex items-center justify-between gap-3">
-            <RefCode size="lg" className="min-w-0">
-              {account.verification_code}
-            </RefCode>
+          <p className="flex flex-wrap items-center justify-between gap-3">
+            <RefCode size="lg">{account.verification_code}</RefCode>
             <CopyButton value={account.verification_code} name="nội dung chuyển khoản xác minh" />
           </p>
           <p>

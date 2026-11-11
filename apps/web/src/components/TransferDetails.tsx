@@ -24,11 +24,9 @@ function Row({
   return (
     <div className={clsx("py-3", emphasis && "mt-2 rounded-md bg-warning-soft px-3")}>
       <dt className={clsx("text-sm", emphasis ? "font-semibold text-fg" : "text-muted")}>{label}</dt>
-      <dd className="mt-1 flex items-center justify-between gap-3">
+      <dd className="mt-1 flex flex-wrap items-center justify-between gap-3">
         {emphasis ? (
-          <RefCode size="lg" className="min-w-0">
-            {value}
-          </RefCode>
+          <RefCode size="lg">{value}</RefCode>
         ) : (
           <span className="min-w-0 font-semibold break-all text-fg tabular-nums">{value}</span>
         )}

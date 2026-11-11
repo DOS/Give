@@ -8,8 +8,10 @@ import type { ReactNode } from "react"
  * bank app; its 32px line height applies when the parent is a block (a
  * `dd` or `p`). `inline` is one step above the line, and never below 16px
  * (16px in a 14px line, 18px in a 16px line), since mono reads a step
- * smaller than Be Vietnam Pro at the same px. `translate="no"` stops page
- * translators from rewriting the code.
+ * smaller than Be Vietnam Pro at the same px. A code never breaks across
+ * lines (9 characters always fit); put it in a wrapping row so a button
+ * next to it moves below instead. `translate="no"` stops page translators
+ * from rewriting the code.
  */
 export function RefCode({
   size = "inline",
@@ -24,7 +26,7 @@ export function RefCode({
     <span
       translate="no"
       className={clsx(
-        "font-mono font-semibold tracking-wide break-all text-fg",
+        "font-mono font-semibold tracking-wide whitespace-nowrap text-fg",
         size === "lg" ? "text-h2" : "text-[length:max(1.125em,1rem)]",
         className
       )}
