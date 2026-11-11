@@ -2,7 +2,7 @@ import { EmptyState } from "@/components/ui/EmptyState"
 import { formatDateTime, formatVnd } from "@/lib/format"
 import type { InboundExplanation, ManualMatch, PaidBreakdown } from "@/lib/reconciliation"
 import { inboundExplanationLabel } from "@/lib/statement"
-import { RefCode } from "@/components/ui/RefCode"
+import { MachineId, RefCode } from "@/components/ui/RefCode"
 
 /**
  * "Đã thanh toán" and its parts; a manual match or an explanation moves money
@@ -58,7 +58,7 @@ export function ManualMatchList({ matches, titles }: { matches: ManualMatch[]; t
                 {m.contribution ? (
                   <RefCode>{m.contribution.reference_code}</RefCode>
                 ) : (
-                  <span className="font-mono text-muted">{m.contribution_id}</span>
+                  <MachineId className="text-muted">{m.contribution_id}</MachineId>
                 )}
                 {titles && <span className="text-muted"> · {titles.get(m.tx.campaign_id) ?? "Chiến dịch"}</span>}
               </span>

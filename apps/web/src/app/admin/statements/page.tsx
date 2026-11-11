@@ -34,6 +34,7 @@ import { dbAs } from "@/lib/supabase"
 
 import { AdminPage, AdminSection, DataTable, ItemActions, ItemCard, ItemList } from "../_components/ui"
 import { resolveStatementRow } from "./actions"
+import { MachineId } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Đối soát sao kê", robots: { index: false } }
 
@@ -162,7 +163,7 @@ function RowFacts({ row }: { row: StatementRowView }) {
       {row.provider_tx_id ? (
         <span className="text-muted">
           {" "}
-          · <span className="font-mono text-[length:max(1em,1rem)]">{row.provider_tx_id}</span>
+          · <MachineId>{row.provider_tx_id}</MachineId>
         </span>
       ) : null}
     </>
@@ -236,7 +237,7 @@ function QueueCard({
                       {bookedLabel(tx)} · <span className="tabular-nums">{formatVnd(tx.amount)}</span> ·{" "}
                       {tx.description ?? "—"}
                       {tx.counterparty_name ? ` · ${tx.counterparty_name}` : ""}{" "}
-                      <span className="font-mono text-[length:max(1em,1rem)] text-muted">{tx.provider_tx_id}</span>
+                      <MachineId className="text-muted">{tx.provider_tx_id}</MachineId>
                       {tx.id === candidateTx && <span className="text-muted"> (dòng trước ứng với giao dịch này)</span>}
                     </span>
                   </label>
