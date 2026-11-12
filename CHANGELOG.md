@@ -64,7 +64,18 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - Dependabot opens its PRs against `dev` (#117); dependency bumps (#109,
   #114, #116, #118).
 
-### Waiting in DOS.Me
+### Database (DOS.Me)
 
-- #120: staff lock on the owner-or-staff RPC paths (DOS/DOS.Me#1652).
-  Approved for `dev`; its migration is being renamed after a version clash.
+- Staff lock on the owner-or-staff RPC paths: a role change and the
+  owner-or-staff actions no longer race (#120 / DOS/DOS.Me#1652). Migration
+  `20261112060000_give_owner_or_staff_role_revoke_lock`.
+
+### Waiting for Production
+
+DOS.Me migrations on Beta only, to promote together with JOY's approval:
+`20261111120000` (#106), `20261111173000` (#107) and `20261112060000`
+(#120). At promotion, note:
+
+- Deleting an admin account during a role change fails fast with
+  `GIVE_ACCOUNT_DELETION_BUSY`; retry it.
+- A rare owner-moderator cancel race fails closed.
