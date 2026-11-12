@@ -219,4 +219,19 @@ describe("matchTransaction", () => {
       "không khớp được nữa"
     )
   })
+
+  it("says why when the account's owner is not the campaign's organizer (DOS/Give#136)", async () => {
+    const message =
+      "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy liên hệ đội ngũ Give để kiểm tra lại tài khoản nhận và chiến dịch."
+    state.serviceHandler = () => ({ error: { code: "23514", message: "GIVE_ACCOUNT_OWNER_MISMATCH" } })
+    const result = await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION }))
+    expect(result).toEqual({ ok: false, message })
+    expect(result?.message).not.toContain("GIVE_")
+    expect(revalidatePath).not.toHaveBeenCalled()
+
+    // Finance staff matching from /admin/unmatched read the same message.
+    state.userId = OTHER
+    state.responses["rpc:is_admin"] = { data: true }
+    expect(await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION }))).toEqual({ ok: false, message })
+  })
 })

@@ -43,6 +43,10 @@ const MATCH_MESSAGES: Record<string, string> = {
     "Giao dịch này đã được nhân viên tài chính giải trình là không phải tiền ủng hộ, nên không khớp được nữa.",
   GIVE_TRANSACTION_UNATTRIBUTED:
     "Giao dịch này chưa thuộc chiến dịch nào (tài khoản không gắn với chiến dịch lúc nhận tiền), nên chưa khớp được.",
+  // The account's owner is not the campaign's organizer (DOS/Give#119): only
+  // staff can repair that, so the message sends the reader to them.
+  GIVE_ACCOUNT_OWNER_MISMATCH:
+    "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy liên hệ đội ngũ Give để kiểm tra lại tài khoản nhận và chiến dịch.",
 }
 
 export async function matchTransaction(
