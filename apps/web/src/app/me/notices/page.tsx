@@ -69,7 +69,7 @@ async function NoticeList({ session }: { session: Session }) {
       </PageHeader>
 
       {notices.length === 0 ? (
-        <EmptyState title="Chưa có thông báo nào.">
+        <EmptyState level={2} title="Chưa có thông báo nào.">
           Give báo cho bạn ở đây khi tiền ủng hộ về, khi chiến dịch được duyệt và khi có việc cần bạn làm.
         </EmptyState>
       ) : (

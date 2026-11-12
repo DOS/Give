@@ -12,6 +12,11 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Discovery follow-ups: the empty-state title is a real heading (H3 under a
+  section, H2 directly under the page title; the home page follows in
+  #134); `DESIGN.md` states the menu breakpoint as "below 768px a sheet,
+  from 768px a popover", which the menus already did; migration version in
+  two code comments (#128 / #133).
 - `DESIGN.md` rule for reference codes: `RefCode` and `MachineId`
   components, the monospace stack, sizes and the copy button. Screens show
   payment and statement codes through them (#123 / #130).

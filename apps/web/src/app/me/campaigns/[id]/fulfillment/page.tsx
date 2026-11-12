@@ -138,6 +138,7 @@ export default async function FulfillmentPage({
 
           {pledges.length === 0 ? (
             <EmptyState
+              level={2}
               title={filtered ? "Không có lượt ủng hộ nào khớp bộ lọc." : "Chưa có người ủng hộ nào thanh toán đủ."}
             />
           ) : (

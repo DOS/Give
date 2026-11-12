@@ -170,7 +170,7 @@ A tag is **not** a button-sized box.
 
 - **Layout:** one row only. On the left: the type tabs ("Tất cả / Từ thiện / Dự án sáng tạo"), the "Danh mục" menu and the "Trạng thái" menu (Đang gây quỹ / Đã kết thúc / Tất cả). On the right: the result count ("128 chiến dịch") and the "Sắp xếp" menu (Nổi bật / Mới nhất / Sắp kết thúc / Gần đạt mục tiêu).
 - **Menu labels:** a menu button reads "Name: value" ("Sắp xếp: Nổi bật"). Where the row is tight it shows only the value; the name stays in the accessible name. If the longest values still do not fit from 768px, only the "Danh mục" button shrinks and ends in an ellipsis (the chosen category also shows under "Đang lọc"). The row never wraps and never pushes the page sideways.
-- **Phones:** the row scrolls sideways, with no wrapping onto a second line. An edge fades only on the side that still has more to scroll to. Up to 768px the menus open as a sheet fixed to the bottom of the screen.
+- **Phones:** the row scrolls sideways, with no wrapping onto a second line. An edge fades only on the side that still has more to scroll to. Below 768px the menus open as a sheet fixed to the bottom of the screen; from 768px, where the row no longer scrolls, they open as a popover under their button.
 - **State:** every control is a link; filters, order and page live in the URL. Changing a filter or the order goes back to the first page.
 - **Type control:** a segmented control on a `surface` strip, 36px items, the current item on `surface-raised`.
 - **No chip wall:** never show every category as a wall of chips.
@@ -202,6 +202,7 @@ A tag is **not** a button-sized box.
 ### Empty state
 
 - An icon (40px, `text-muted`), an H3, one line of text and at most one button.
+- The title always looks like an H3. In the page outline it is an H3 under a section's H2, and an H2 where the empty state stands directly under the page's H1.
 - Centered inside its region, no dashed border.
 
 ### Badge (status)

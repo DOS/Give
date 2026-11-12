@@ -84,6 +84,7 @@ async function ContributionList({ session }: { session: Session }) {
   if (contributions.length === 0) {
     return (
       <EmptyState
+        level={2}
         title="Bạn chưa ủng hộ chiến dịch hay dự án nào."
         action={<ButtonLink href="/campaigns">Khám phá chiến dịch</ButtonLink>}
       >
