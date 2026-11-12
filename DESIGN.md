@@ -198,6 +198,7 @@ A tag is **not** a button-sized box.
 
 - Text tabs with a 2px `primary` underline on the active tab.
 - 44px high, 24px apart, on a 1px `border` baseline that spans the container.
+- **Narrow screens:** the row scrolls sideways, with no wrapping. While it overflows, an edge fades into `bg` only on the side that still has more tabs (an overlay, as on the filter bar, not a mask); the baseline stays whole under the fade. A row that fits has no fade.
 
 ### Empty state
 

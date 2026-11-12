@@ -19,12 +19,14 @@ export interface TabItem {
  * carries aria-current, so they work without JavaScript and every tab has
  * its own URL. 44px high, 24px apart, a 2px primary underline on the active
  * tab over a 1px border baseline. Scrolls sideways on narrow screens instead
- * of wrapping.
+ * of wrapping; while it overflows, the edge with more tabs fades into the
+ * page (ScrollRow). The fades stop above the baseline, so the border runs
+ * the full width.
  */
 export function TabNav({ label, items, className }: { label: string; items: readonly TabItem[]; className?: string }) {
   return (
     <nav aria-label={label} className={clsx("border-b border-border", className)}>
-      <ul className="-mb-px flex [scrollbar-width:none] gap-6 overflow-x-auto">
+      <ScrollRow as="ul" wrapClassName="-mb-px" className="gap-6" fadeClassName="bottom-0.5">
         {items.map((item) => (
           <li key={item.href} className="shrink-0">
             <Link
@@ -42,7 +44,7 @@ export function TabNav({ label, items, className }: { label: string; items: read
             </Link>
           </li>
         ))}
-      </ul>
+      </ScrollRow>
     </nav>
   )
 }
