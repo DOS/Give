@@ -90,6 +90,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           <EmptyState
             title="Chưa có chiến dịch nào đang gây quỹ"
             level={2}
+            flush
             action={<ButtonLink href="/start">Tạo chiến dịch đầu tiên</ButtonLink>}
           >
             Chiến dịch hiện ở đây ngay khi được duyệt.
