@@ -12,6 +12,10 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Tabs: a tab row that does not fit and scrolls sideways (`/me`, `/admin`,
+  the campaign and statement pages) fades at the edge that has more tabs;
+  no fade where the row fits. A tab reached by keyboard is scrolled clear
+  of the fade (#124 / #140).
 - Home: the cards sit 24px under the "Đang được quan tâm" heading row
   (under the wrapped link below 375px). The "Xem tất cả" link is one line
   of text with an invisible 44px touch target (`hit-area`); the campaign

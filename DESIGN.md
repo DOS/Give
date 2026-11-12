@@ -198,6 +198,7 @@ A tag is **not** a button-sized box.
 
 - Text tabs with a 2px `primary` underline on the active tab.
 - 44px high, 24px apart, on a 1px `border` baseline that spans the container.
+- **When the row does not fit** (phones, and `/admin` up to 1024px): it scrolls sideways, with no wrapping. While it overflows, a 24px edge fades into `bg` only on the side that still has more tabs (an overlay, as on the filter bar, not a mask); the baseline stays whole under the fade. A tab focused from the keyboard is scrolled 24px clear of the edge. A row that fits has no fade; before JavaScript runs, the right edge fades as a fallback.
 
 ### Empty state
 
