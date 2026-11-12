@@ -11,8 +11,9 @@ import { LedgerIcon } from "@/components/ui/icons"
  * empty state stands in for the content directly under the page's H1.
  *
  * It keeps 48px above and below inside a panel or a list region. `flush`
- * drops that padding where the empty state is a page section's only content
- * (home), so the section spacing of DESIGN.md 2.4 is the whole distance.
+ * drops that padding where the page section that holds it already carries
+ * the "Between page sections" padding of DESIGN.md 2.4 and has no other
+ * content (home), so that distance is the whole gap.
  */
 export function EmptyState({
   title,
