@@ -12,9 +12,9 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
-- Tabs: on narrow screens the tab row (`/me`, `/admin`, the campaign page)
-  fades at the edge that has more tabs while it scrolls sideways; no fade
-  where the row fits (#124 / #140).
+- Tabs: a tab row that scrolls sideways (`/me`, `/admin`, the campaign and
+  statement pages, mostly on phones) fades at the edge that has more tabs;
+  no fade where the row fits (#124 / #140).
 - Discovery follow-ups: the empty-state title is a real heading (H3 under a
   section, H2 directly under the page title; the home page follows in
   #134); `DESIGN.md` states the menu breakpoint as "below 768px a sheet,

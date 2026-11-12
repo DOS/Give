@@ -21,12 +21,13 @@ export interface TabItem {
  * tab over a 1px border baseline. Scrolls sideways on narrow screens instead
  * of wrapping; while it overflows, the edge with more tabs fades into the
  * page (ScrollRow). The fades stop above the baseline, so the border runs
- * the full width.
+ * the full width; the scroll padding keeps a tab reached by keyboard clear
+ * of the fade.
  */
 export function TabNav({ label, items, className }: { label: string; items: readonly TabItem[]; className?: string }) {
   return (
     <nav aria-label={label} className={clsx("border-b border-border", className)}>
-      <ScrollRow as="ul" wrapClassName="-mb-px" className="gap-6" fadeClassName="bottom-0.5">
+      <ScrollRow as="ul" wrapClassName="-mb-px" className="scroll-px-6 gap-6" fadeClassName="bottom-0.5">
         {items.map((item) => (
           <li key={item.href} className="shrink-0">
             <Link
