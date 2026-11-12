@@ -101,9 +101,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             {/* Phones get the 14px link from the HomeMobile mockup, so the heading keeps one line beside it
                 from 375px. Below that the link wraps under the heading instead of breaking the heading.
                 The link is one line of text with an invisible 44px hit area, so from 375px the row is as
-                tall as the heading and the cards sit 24px below it; below 375px they sit 24px below the
-                wrapped link. */}
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                tall as the heading and the cards sit 24px below it; below 375px the wrapped link sits 8px
+                under the heading and the cards 24px below the link. */}
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
               <h2 id="quan-tam-heading" className="text-h2">
                 Đang được quan tâm
               </h2>
