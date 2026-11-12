@@ -135,6 +135,22 @@ and approvals do not carry between PO sessions.
 - JOY (2026-10-31), on PO lines: "Nếu như chia gặp vấn đề thì 1 PO thôi"
 - JOY (2026-10-31), on branches: "DOS.Me lên main là lên prod mà. Chỉ là
   phải PR dev thôi. Hiện chưa có gì thì làm trên dev rồi PR main luôn nhỉ?"
+- JOY (2026-11-11), on archiving: "Mấy cái lưu trữ các phiên xong rồi không
+  cần hỏi tao". The PO archives finished sub-sessions without asking.
+- JOY (2026-11-12): "Tao sắp migrate qua Mac nên xong các task hiện tại thì
+  dừng và update docs, changelog cần thiết nhé". The line paused after
+  #123 and #120; the next PO session starts from the board and
+  `CHANGELOG.md`.
+
+Screenshot branches (`assets/pr-<n>-screenshots`): every commit on them adds
+`apps/web/vercel.json` with `{"git":{"deploymentEnabled":false}}`, so Vercel
+skips the failing preview build. Never delete or rewrite these branches; PR
+images link to them.
+
+The PO's check-in file and memory live on the machine, outside this
+repository (`~/.claude/po-state/` and `~/.claude/projects/`). They are not
+moved with the repository; GitHub (issues, PR comments, the board) is the
+record a new machine starts from.
 
 Notes: the board's WIP column limits are a GitHub UI setting the API cannot
 set; the PO enforces the WIP limit above. `default_branch` is still `main`;
