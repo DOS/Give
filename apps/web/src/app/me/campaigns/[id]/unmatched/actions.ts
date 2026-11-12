@@ -43,6 +43,18 @@ const MATCH_MESSAGES: Record<string, string> = {
     "Giao dịch này đã được nhân viên tài chính giải trình là không phải tiền ủng hộ, nên không khớp được nữa.",
   GIVE_TRANSACTION_UNATTRIBUTED:
     "Giao dịch này chưa thuộc chiến dịch nào (tài khoản không gắn với chiến dịch lúc nhận tiền), nên chưa khớp được.",
+  // The account's owner is not the campaign's organizer (the database rule of
+  // DOS/Give#119, worded in #136). Only an admin data repair clears it, so the
+  // organizer is sent to the Give team.
+  GIVE_ACCOUNT_OWNER_MISMATCH:
+    "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy liên hệ đội ngũ Give để kiểm tra lại tài khoản nhận và chiến dịch.",
+}
+
+/** The same code worded for finance staff, who are the Give team: it goes to an admin. */
+const STAFF_MATCH_MESSAGES: Record<string, string> = {
+  ...MATCH_MESSAGES,
+  GIVE_ACCOUNT_OWNER_MISMATCH:
+    "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy báo quản trị viên kiểm tra lại tài khoản nhận và người tổ chức của chiến dịch trước khi xử lý giao dịch này.",
 }
 
 export async function matchTransaction(
@@ -96,7 +108,10 @@ export async function matchTransaction(
       p_actor_id: session.user.id,
     })
     .single()
-  if (error) return fail(dbErrorMessage(error, MATCH_MESSAGES))
+  if (error) {
+    const asOrganizer = campaign.organizer_id === session.user.id
+    return fail(dbErrorMessage(error, asOrganizer ? MATCH_MESSAGES : STAFF_MATCH_MESSAGES))
+  }
 
   let after = null
   try {

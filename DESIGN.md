@@ -205,6 +205,7 @@ A tag is **not** a button-sized box.
 - An icon (40px, `text-muted`), an H3, one line of text and at most one button.
 - The title always looks like an H3. In the page outline it is an H3 under a section's H2, and an H2 where the empty state stands directly under the page's H1.
 - Centered inside its region, no dashed border.
+- Where the page section that holds it already carries the "Between page sections" padding of 2.4 and has no other content (home with no campaign), it adds no vertical space of its own (`flush` on the component): that distance is the whole gap to the section above and below.
 
 ### Badge (status)
 

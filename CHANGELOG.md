@@ -15,6 +15,10 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - Tag: an interactive tag takes its invisible 44px touch target from the
   shared `hit-area` utility instead of its own classes; nothing changes on
   screen (#141 / #146).
+- Home: with no campaign raising funds, the empty state sits at the
+  section distance from the hero and from "Hai cách gây quỹ" (64px, 96px
+  from 1024px) instead of 112px and 144px. Other empty states keep their
+  48px padding (#143 / #147).
 - Tabs: a tab row that does not fit and scrolls sideways (`/me`, `/admin`,
   the campaign and statement pages) fades at the edge that has more tabs;
   no fade where the row fits. A tab reached by keyboard is scrolled clear
@@ -73,6 +77,9 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - Unmatched incoming money that is not a donation is explained (#49 / #69);
   disbursements and the statement queue read the database's replay flag
   (#56 / #74); guest donation creation is rate-limited (#47 / #68).
+- Manual match: a clear message when the receiving account does not belong
+  to the campaign's organizer, instead of the generic database error
+  (#136 / #145).
 
 ### Platform
 
