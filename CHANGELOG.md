@@ -12,6 +12,12 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Home: the cards sit 24px under the "Đang được quan tâm" heading row
+  (under the wrapped link below 375px). The "Xem tất cả" link is one line
+  of text with an invisible 44px touch target (`hit-area`); the campaign
+  page's "Sao kê" header gets the same fix (#131 / #139).
+- Home: with no campaign raising funds, the empty-state title is an H2, so
+  the outline does not skip a level (#134 / #139).
 - Discovery follow-ups: the empty-state title is a real heading (H3 under a
   section, H2 directly under the page title; the home page follows in
   #134); `DESIGN.md` states the menu breakpoint as "below 768px a sheet,
