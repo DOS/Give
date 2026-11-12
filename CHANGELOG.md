@@ -15,7 +15,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - Home: with no campaign raising funds, the empty state sits at the
   section distance from the hero and from "Hai cách gây quỹ" (64px, 96px
   from 1024px) instead of 112px and 144px. Other empty states keep their
-  48px padding (#143 / #PRNUM).
+  48px padding (#143 / #147).
 - Tabs: a tab row that does not fit and scrolls sideways (`/me`, `/admin`,
   the campaign and statement pages) fades at the edge that has more tabs;
   no fade where the row fits. A tab reached by keyboard is scrolled clear
