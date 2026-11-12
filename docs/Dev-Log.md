@@ -1,5 +1,8 @@
 # Development Log - Give Project
 
+> Historical log from the 2025 Strapi prototype; not kept up to date. Current
+> changes are in [CHANGELOG.md](../CHANGELOG.md).
+
 ## Session Date: 2025-06-29 (Latest Update)
 
 ### 📋 Current Session Summary
