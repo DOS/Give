@@ -2,6 +2,7 @@ import { EmptyState } from "@/components/ui/EmptyState"
 import { formatDateTime, formatVnd } from "@/lib/format"
 import type { InboundExplanation, ManualMatch, PaidBreakdown } from "@/lib/reconciliation"
 import { inboundExplanationLabel } from "@/lib/statement"
+import { MachineId, RefCode } from "@/components/ui/RefCode"
 
 /**
  * "Đã thanh toán" and its parts; a manual match or an explanation moves money
@@ -54,7 +55,11 @@ export function ManualMatchList({ matches, titles }: { matches: ManualMatch[]; t
             <li key={m.bank_transaction_id} className="flex flex-wrap justify-between gap-x-4 gap-y-1 p-4 sm:px-6">
               <span className="min-w-0 break-words">
                 <span className="font-semibold text-fg tabular-nums">+{formatVnd(m.tx.amount)}</span> → lượt ủng hộ{" "}
-                <span className="font-mono">{m.contribution?.reference_code ?? m.contribution_id}</span>
+                {m.contribution ? (
+                  <RefCode>{m.contribution.reference_code}</RefCode>
+                ) : (
+                  <MachineId className="text-muted">{m.contribution_id}</MachineId>
+                )}
                 {titles && <span className="text-muted"> · {titles.get(m.tx.campaign_id) ?? "Chiến dịch"}</span>}
               </span>
               <span className="text-sm text-muted">Khớp lúc {formatDateTime(m.matched_at)}</span>

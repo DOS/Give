@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 
 import { CopyButton } from "@/components/CopyButton"
 import { SaveQrButton } from "@/components/SaveQrButton"
+import { RefCode } from "@/components/ui/RefCode"
 import { formatVnd } from "@/lib/format"
 
 function Row({
@@ -17,16 +18,18 @@ function Row({
   copy?: string
   /** What the copy button copies, for screen readers ("số tài khoản"). */
   copyName?: string
-  /** The transfer content: tinted and set in mono, since a wrong one cannot be matched. */
+  /** The transfer content: tinted and set as a large code (DESIGN.md 3), since a wrong one cannot be matched. */
   emphasis?: boolean
 }) {
   return (
     <div className={clsx("py-3", emphasis && "mt-2 rounded-md bg-warning-soft px-3")}>
       <dt className={clsx("text-sm", emphasis ? "font-semibold text-fg" : "text-muted")}>{label}</dt>
-      <dd className="mt-1 flex items-center justify-between gap-3">
-        <span className={clsx("min-w-0 font-semibold break-all text-fg", emphasis && "font-mono text-h3")}>
-          {value}
-        </span>
+      <dd className="mt-1 flex flex-wrap items-center justify-between gap-3">
+        {emphasis ? (
+          <RefCode size="lg">{value}</RefCode>
+        ) : (
+          <span className="min-w-0 font-semibold break-all text-fg tabular-nums">{value}</span>
+        )}
         {copy !== undefined && <CopyButton value={copy} name={copyName} />}
       </dd>
     </div>

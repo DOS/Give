@@ -12,6 +12,7 @@ import {
   type UnmatchedTransaction,
 } from "@/lib/reconciliation"
 import { INBOUND_EXPLANATION_KINDS } from "@/lib/statement"
+import { MachineId } from "@/components/ui/RefCode"
 
 /**
  * One incoming transaction without a match, and the form that matches it to
@@ -56,7 +57,9 @@ export function UnmatchedTransactionCard({
         </div>
         <div className="sm:col-span-3">
           <dt className="text-sm text-muted">Nội dung chuyển khoản</dt>
-          <dd className="font-mono break-words text-fg">{tx.description ?? "—"}</dd>
+          <dd className="text-fg">
+            <MachineId>{tx.description ?? "—"}</MachineId>
+          </dd>
         </div>
         {campaignTitle && (
           <div className="sm:col-span-2">

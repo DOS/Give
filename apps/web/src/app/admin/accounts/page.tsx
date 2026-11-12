@@ -29,6 +29,7 @@ import { dbAs } from "@/lib/supabase"
 
 import { AdminPage, AdminSection, Fact, Facts, ItemActions, ItemCard, ItemList } from "../_components/ui"
 import { reviewAccount } from "./actions"
+import { RefCode } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Xác minh tài khoản nhận", robots: { index: false } }
 
@@ -110,7 +111,7 @@ function AccountCard({
         <div className="min-w-0">
           <h3 className="text-h3 break-words">
             {bank ? `${bank.shortName} – ${bank.name}` : account.bank_bin}{" "}
-            <span className="font-mono font-medium text-fg">{account.account_number}</span>
+            <span className="font-medium text-fg tabular-nums">{account.account_number}</span>
           </h3>
           <p className="mt-1 text-sm text-muted">BIN {account.bank_bin}</p>
         </div>
@@ -163,8 +164,7 @@ function AccountCard({
         )}
         {status === "pending" && (
           <Fact label="Giao dịch cần thấy" wide>
-            Chuyển đi {formatVnd(VERIFICATION_TRANSFER_AMOUNT)}, nội dung{" "}
-            <span className="rounded bg-surface px-2 font-mono font-bold break-all">{account.verification_code}</span>
+            Chuyển đi {formatVnd(VERIFICATION_TRANSFER_AMOUNT)}, nội dung <RefCode>{account.verification_code}</RefCode>
           </Fact>
         )}
         {account.review_note && (

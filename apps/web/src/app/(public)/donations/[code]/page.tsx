@@ -22,6 +22,7 @@ import {
   type PaymentContribution,
 } from "@/server/contributions"
 import { buildDonationPayload, isDonationCode, renderVietQrSvg } from "@/server/vietqr"
+import { RefCode } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Chuyển khoản ủng hộ", robots: { index: false, follow: false } }
 
@@ -89,8 +90,8 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
     open && account ? (
       <Callout title="Mã QR của khoản này đã hết hạn hiển thị">
         <p>
-          Nếu bạn đã chuyển khoản với nội dung{" "}
-          <span className="font-mono font-semibold">{donation.reference_code}</span>, Give vẫn ghi nhận khi tiền về.
+          Nếu bạn đã chuyển khoản với nội dung <RefCode>{donation.reference_code}</RefCode>, Give vẫn ghi nhận khi tiền
+          về.
         </p>
         <p>
           <Link href={`/campaigns/${campaign.slug}`} className="link">
@@ -123,7 +124,12 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
         accountName={account.account_name}
         amount={donation.intended_amount}
         reference={donation.reference_code}
-        footnote={`Giữ nguyên nội dung ${donation.reference_code} để Give khớp khoản ủng hộ. Tiền đi thẳng vào tài khoản của chiến dịch; Give không giữ tiền.`}
+        footnote={
+          <>
+            Giữ nguyên nội dung <RefCode>{donation.reference_code}</RefCode> để Give khớp khoản ủng hộ. Tiền đi thẳng
+            vào tài khoản của chiến dịch; Give không giữ tiền.
+          </>
+        }
       />
     )
   } else if (!received && !qrExpired) {
@@ -154,7 +160,9 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
             </div>
             <div className="min-w-0">
               <dt className="text-sm text-muted">Mã ủng hộ</dt>
-              <dd className="mt-1 font-mono text-h2 break-all text-fg">{donation.reference_code}</dd>
+              <dd className="mt-1">
+                <RefCode size="lg">{donation.reference_code}</RefCode>
+              </dd>
             </div>
           </dl>
           {guest && (

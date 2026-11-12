@@ -82,6 +82,26 @@ Rules:
 - At most 3 sizes on one card, not counting the Badge.
 - Muted text is for metadata only, never for content a donor needs to act on.
 
+### Reference codes
+
+Give's reference codes (`GV…` for donations and pledges, `XM…` for account verification, such as `GVA7K3M9P`) are copied by hand into banking apps, so they are set in mono, one character at a time. In code this is the `RefCode` component (and `MachineId` for the other strings below); pages never set `font-mono` themselves.
+
+| Style        | Size / line height                                                | Weight | Use                                                                                                                               |
+| ------------ | ----------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Code, large  | 24 / 32                                                           | 600    | The code a person types into a bank app (the transfer content, the verification code) and the "Mã ủng hộ" / "Mã cam kết" key fact |
+| Code, inline | One step above the line: 16px in a 14px line, 18px in a 16px line | 600    | A code inside a sentence, a list row or a meta line                                                                               |
+
+Rules:
+
+- **Font:** the system mono stack (`font-mono`: SF Mono on Apple, Consolas on Windows, the system monospace on Android and Linux), 0.025em letter spacing, `text` color, never muted. Give loads no mono web font.
+- **Minimum 16px:** mono reads a step smaller than Be Vietnam Pro at the same px (its capitals are about 14% shorter, so a 16px code looks like 14px text). So an inline code is set one step above its line, and a code is never below 16px.
+- **No look-alike characters:** codes use only `23456789ABCDEFGHJKMNPQRSTUVWXYZ`, with no 0/O or 1/I/L, so no system mono font can make a code ambiguous. A new kind of code uses the same alphabet.
+- **Shown as stored:** no spaces, dashes or grouping inside a code, and no lowercase. What a person copies must match the transfer content exactly.
+- **Copy button:** every code a person must type into another app has a "Sao chép" button next to it.
+- **Not inside a Badge:** a Badge holds only its status word; a code that goes with it sits next to the Badge as an inline code. Text the page cannot style (select options, toasts, notification text) shows codes in the text font.
+- **Inputs:** a field where a person types a code is `font-mono` and uppercase, and the campaign story editor (Markdown source) is `font-mono`, both at the field's 16px.
+- **Other strings:** bank account numbers are numbers, set in Be Vietnam Pro with tabular numbers like money, not mono. Machine strings on staff screens (bank transaction ids, raw transfer descriptions, record ids, error codes, parser names) use `MachineId`: mono, weight 400, the line's size but at least 16px, in `text` or `text-muted`.
+
 ## 4. Color
 
 Colors are **semantic tokens**, and every component uses the tokens, never raw palette classes like `gray-500`. Both themes are designed. The site declares `color-scheme: light dark` and follows the visitor's system setting, so browsers never apply their own forced dark mode.
@@ -216,7 +236,7 @@ A tag is **not** a button-sized box.
 
 - Covers are real photos supplied by organizers.
 - Placeholders are a flat `surface` fill with the type icon, never illustrations that look like content.
-- Icons come from lucide (outline, 1.5px stroke): 20px in text, 24px in navigation, 40px in empty states.
+- Icons come from lucide (outline, 1.5px stroke): 16px inside a line of text (meta lines, links, labels), 20px in buttons (6.Button), 24px in navigation, 40px in empty states.
 
 ## 10. Motion
 

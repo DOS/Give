@@ -24,6 +24,7 @@ import { dbAs } from "@/lib/supabase"
 
 import { AdminPage, AdminSection, DataTable, ItemActions, ItemCard, ItemList } from "../_components/ui"
 import { dismissInboundEvent, retryInboundEvent } from "./actions"
+import { MachineId } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Sự kiện tiền vào bị dừng", robots: { index: false } }
 
@@ -111,12 +112,15 @@ function ParkedCard({
         </p>
         <Callout tone="warning" title={parkedReasonLabel(event.last_error)}>
           <p className="text-sm">
-            Mã lỗi: <span className="font-mono">{event.last_error ?? "—"}</span> · đã thử {event.attempts} lần
+            Mã lỗi: <MachineId className="text-muted">{event.last_error ?? "—"}</MachineId> · đã thử {event.attempts}{" "}
+            lần
             {event.last_attempt_at ? `, lần cuối ${formatDateTime(event.last_attempt_at)}` : ""} · dừng lúc{" "}
             {formatDateTime(event.parked_at)}
           </p>
         </Callout>
-        <p className="font-mono text-sm break-all text-muted">{event.id}</p>
+        <p className="text-muted">
+          <MachineId>{event.id}</MachineId>
+        </p>
       </div>
 
       <ItemActions>
@@ -183,7 +187,9 @@ function AuditTrail({ entries, names }: { entries: AuditEntry[]; names: Map<stri
             <tr key={entry.id}>
               <td className="px-4 py-3">
                 <p className="font-medium text-fg">{INBOUND_AUDIT_LABELS[entry.action] ?? entry.action}</p>
-                <p className="font-mono text-sm break-all text-muted">{entry.entity_id}</p>
+                <p className="text-muted">
+                  <MachineId>{entry.entity_id}</MachineId>
+                </p>
               </td>
               <td className="max-w-md px-4 py-3 break-words">{auditSummary(entry)}</td>
               <td className="px-4 py-3 break-all">

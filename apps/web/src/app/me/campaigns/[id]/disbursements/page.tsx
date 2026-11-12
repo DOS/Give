@@ -39,6 +39,7 @@ import { MeDetail } from "../../../_components/MePage"
 import { fileInputClass } from "../../../_components/Panel"
 
 import { addEvidence, explainDisbursement } from "./actions"
+import { RefCode } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Giải trình khoản chi", robots: { index: false } }
 
@@ -348,7 +349,16 @@ function Explanation({
     <div className="mt-6 space-y-3 border-t border-border pt-6">
       <p className="max-w-[68ch] break-words text-fg">{disbursement.purpose}</p>
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-        {disbursement.is_refund && <Badge tone="info">Hoàn tiền{refundCode ? ` cho ${refundCode}` : ""}</Badge>}
+        {disbursement.is_refund && (
+          <span className="inline-flex flex-wrap items-center gap-x-2">
+            <Badge tone="info">Hoàn tiền</Badge>
+            {refundCode && (
+              <span>
+                cho lượt <RefCode>{refundCode}</RefCode>
+              </span>
+            )}
+          </span>
+        )}
         {category && <span>{category}</span>}
         {disbursement.recipient && <span className="break-words">Người nhận: {disbursement.recipient}</span>}
         <span>Giải trình lúc {formatDateTime(disbursement.explained_at)}</span>

@@ -12,6 +12,7 @@ import { dbAs } from "@/lib/supabase"
 
 import { AdminPage, AdminSection, DataTable } from "../_components/ui"
 import { grantRole, revokeRole } from "./actions"
+import { MachineId } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Phân quyền nhân sự", robots: { index: false } }
 
@@ -82,7 +83,9 @@ export default async function StaffRolesPage() {
                     <p className="text-muted">
                       {ROLE_LABELS[member.role] ?? member.role} · từ {formatDate(member.created_at)}
                     </p>
-                    <p className="mt-1 font-mono text-sm break-all text-muted">{member.user_id}</p>
+                    <p className="mt-1 text-muted">
+                      <MachineId>{member.user_id}</MachineId>
+                    </p>
                   </div>
                   <div className="flex flex-wrap items-start gap-2">
                     <ActionForm

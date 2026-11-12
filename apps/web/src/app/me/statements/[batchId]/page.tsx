@@ -24,6 +24,7 @@ import { dbAs } from "@/lib/supabase"
 
 import { MeDetail } from "../../_components/MePage"
 import { ROW_TONES } from "../../_components/tones"
+import { MachineId } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Sao kê đã tải", robots: { index: false } }
 
@@ -56,7 +57,9 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
         </div>
         <div className="min-w-0">
           <dt className="text-sm text-muted">Định dạng</dt>
-          <dd className="mt-1 font-mono break-words text-fg">{batch.parser}</dd>
+          <dd className="mt-1 text-fg">
+            <MachineId>{batch.parser}</MachineId>
+          </dd>
         </div>
         <div>
           <dt className="text-sm text-muted">Khoảng thời gian</dt>
@@ -148,7 +151,9 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
                       {row.description ?? "—"}
                       {row.counterparty_name && <div className="text-sm text-muted">{row.counterparty_name}</div>}
                       {row.provider_tx_id && (
-                        <div className="font-mono text-sm break-all text-muted">{row.provider_tx_id}</div>
+                        <div className="text-muted">
+                          <MachineId>{row.provider_tx_id}</MachineId>
+                        </div>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap tabular-nums">
