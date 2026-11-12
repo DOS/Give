@@ -12,6 +12,9 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Tag: an interactive tag takes its invisible 44px touch target from the
+  shared `hit-area` utility instead of its own classes; nothing changes on
+  screen (#141).
 - Tabs: a tab row that does not fit and scrolls sideways (`/me`, `/admin`,
   the campaign and statement pages) fades at the edge that has more tabs;
   no fade where the row fits. A tab reached by keyboard is scrolled clear
