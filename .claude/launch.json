@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "give-web-95",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "apps/web", "exec", "next", "dev", "--turbopack", "--port", "3195"],
+      "port": 3195
+    }
+  ]
+}
