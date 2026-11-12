@@ -56,11 +56,11 @@ export function StatementPreview({
         <h2 id="sao-ke-heading" className="text-h2">
           Sao kê
         </h2>
-        <Link href={statementHref(slug, "all")} className="inline-flex min-h-11 shrink-0 items-center text-sm link">
+        <Link href={statementHref(slug, "all")} className="hit-area shrink-0 text-sm link">
           Xem toàn bộ sao kê
         </Link>
       </div>
-      <p className="text-sm text-muted">Đối chiếu với sao kê ngân hàng của tài khoản nhận.</p>
+      <p className="mt-2 text-sm text-muted">Đối chiếu với sao kê ngân hàng của tài khoản nhận.</p>
 
       <div className="mt-4 space-y-4">
         {isBack ? (

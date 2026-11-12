@@ -247,3 +247,13 @@
 @utility link {
   @apply font-semibold text-primary underline-offset-4 hover:underline;
 }
+
+/*
+ * A text link beside a section heading keeps its own line height, so the
+ * heading row is as tall as the heading and the 24px to the content holds
+ * (section 2.4). The 44px touch target is an invisible hit area centered on
+ * the link, as for Tag (section 6).
+ */
+@utility hit-area {
+  @apply relative before:absolute before:inset-x-0 before:top-1/2 before:h-11 before:-translate-y-1/2 before:content-[''];
+}

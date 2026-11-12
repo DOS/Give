@@ -89,6 +89,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         <section className="container-page pt-16 lg:pt-24">
           <EmptyState
             title="Chưa có chiến dịch nào đang gây quỹ"
+            level={2}
             action={<ButtonLink href="/start">Tạo chiến dịch đầu tiên</ButtonLink>}
           >
             Chiến dịch hiện ở đây ngay khi được duyệt.
@@ -98,15 +99,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         interesting.length > 0 && (
           <section aria-labelledby="quan-tam-heading" className="container-page pt-16 lg:pt-24">
             {/* Phones get the 14px link from the HomeMobile mockup, so the heading keeps one line beside it
-                from 375px. Below that the link wraps under the heading instead of breaking the heading. */}
+                from 375px. Below that the link wraps under the heading instead of breaking the heading.
+                The link is one line of text with an invisible 44px hit area, so the row is as tall as the
+                heading and the cards sit 24px below it. */}
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h2 id="quan-tam-heading" className="text-h2">
                 Đang được quan tâm
               </h2>
-              <Link
-                href="/campaigns"
-                className="inline-flex min-h-11 shrink-0 items-center text-sm link whitespace-nowrap sm:text-base"
-              >
+              <Link href="/campaigns" className="hit-area shrink-0 text-sm link whitespace-nowrap sm:text-base">
                 Xem tất cả
               </Link>
             </div>
