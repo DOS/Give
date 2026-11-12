@@ -43,7 +43,11 @@ export default async function MyAccountsPage() {
     return (
       <MePage section="accounts">
         <PageHeader title="Tài khoản nhận tiền" />
-        <EmptyState title="Bạn chưa có hồ sơ người tổ chức." action={<ButtonLink href="/start">Tạo hồ sơ</ButtonLink>}>
+        <EmptyState
+          level={2}
+          title="Bạn chưa có hồ sơ người tổ chức."
+          action={<ButtonLink href="/start">Tạo hồ sơ</ButtonLink>}
+        >
           Bạn cần tạo hồ sơ người tổ chức (tên pháp lý trùng với tên chủ tài khoản ngân hàng) trước khi khai báo tài
           khoản nhận.
         </EmptyState>

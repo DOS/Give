@@ -39,7 +39,7 @@ async function CampaignList({ session }: { session: Session }) {
 
   if (campaigns.length === 0) {
     return (
-      <EmptyState title="Bạn chưa có chiến dịch nào.">
+      <EmptyState level={2} title="Bạn chưa có chiến dịch nào.">
         Gây quỹ từ thiện hoặc cho một dự án sáng tạo. Bản nháp chỉ bạn thấy cho tới khi bạn gửi duyệt.
       </EmptyState>
     )

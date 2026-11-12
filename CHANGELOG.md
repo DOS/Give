@@ -15,6 +15,10 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - `DESIGN.md` rule for reference codes: `RefCode` and `MachineId`
   components, the monospace stack, sizes and the copy button. Screens show
   payment and statement codes through them (#123 / #130).
+- Discovery follow-ups: the empty-state title is a real heading (H3 under a
+  section, H2 directly under the page title); `DESIGN.md` states the menu
+  breakpoint as "below 768px a sheet, from 768px a popover", which the
+  menus already did; migration version in two code comments (#128).
 - Home: the "Đang được quan tâm" heading stays on one line on phones
   (#126 / #129).
 - Discovery: status filter, sort and "Xem thêm" paging (#107 / #127).
