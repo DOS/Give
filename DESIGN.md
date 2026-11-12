@@ -202,6 +202,7 @@ A tag is **not** a button-sized box.
 ### Empty state
 
 - An icon (40px, `text-muted`), an H3, one line of text and at most one button.
+- The title always looks like an H3. In the page outline it is an H3 under a section's H2, and an H2 where the empty state stands directly under the page's H1.
 - Centered inside its region, no dashed border.
 
 ### Badge (status)
