@@ -70,6 +70,9 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - Unmatched incoming money that is not a donation is explained (#49 / #69);
   disbursements and the statement queue read the database's replay flag
   (#56 / #74); guest donation creation is rate-limited (#47 / #68).
+- Manual match: a clear message when the receiving account does not belong
+  to the campaign's organizer, instead of the generic database error
+  (#136 / #145).
 
 ### Platform
 
