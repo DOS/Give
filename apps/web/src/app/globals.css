@@ -252,7 +252,8 @@
  * A text link beside a section heading keeps its own line height, so the
  * heading row is as tall as the heading and the 24px to the content holds
  * (section 2.4). The 44px touch target is an invisible hit area centered on
- * the link, as for Tag (section 6).
+ * the link, as for Tag (section 6). Use it on a one-line link that is a
+ * block or a flex item, not on an inline link that can wrap.
  */
 @utility hit-area {
   @apply relative before:absolute before:inset-x-0 before:top-1/2 before:h-11 before:-translate-y-1/2 before:content-[''];
