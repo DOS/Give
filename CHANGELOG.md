@@ -12,6 +12,9 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Tag: an interactive tag takes its invisible 44px touch target from the
+  shared `hit-area` utility instead of its own classes; nothing changes on
+  screen (#141 / #146).
 - Home: with no campaign raising funds, the empty state sits at the
   section distance from the hero and from "Hai cách gây quỹ" (64px, 96px
   from 1024px) instead of 112px and 144px. Other empty states keep their
