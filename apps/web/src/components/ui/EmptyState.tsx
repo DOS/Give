@@ -6,12 +6,13 @@ import { LedgerIcon } from "@/components/ui/icons"
 /**
  * What a list shows when it has nothing (DESIGN.md 6): a 40px muted icon, an
  * H3, one line of text and at most one button, centered, no dashed border.
- * The title is a heading that always looks like an H3; `level` is its place
- * in the page outline: 3 under a section's H2 (the default), 2 where the
- * empty state stands in for the content directly under the page's H1.
+ * Inside a page the title is a heading that looks like an H3; `level` is its
+ * place in the page outline: 3 under a section's H2 (the default), 2 where
+ * the empty state stands in for the content directly under the page's H1.
+ * A whole page (`level={1}`, below) differs.
  *
- * Its text is one short sentence, balanced so a phone never leaves one word
- * alone on a second line.
+ * Its text is balanced, so a phone never leaves one word alone on a line;
+ * inside a page it is one short sentence.
  *
  * It keeps 48px above and below and 16px at the sides inside a panel, a
  * list or a tab. `flush` drops all of that where the page section that
@@ -23,8 +24,9 @@ import { LedgerIcon } from "@/components/ui/icons"
  * may not open): it is the page body in the container, 64px above and below
  * (96px from 640px), its title is the page's H1 and looks like one, 12px
  * above its text, and the text, which a visitor may need to act on, is in
- * the text color, balanced. Its `action` may hold a secondary button next to
- * the primary.
+ * the text color, balanced, at most two sentences. Its action row is full
+ * width, so the page's `action` may hold a secondary button before the
+ * primary, stacked at full width on phones. `flush` does not apply to it.
  */
 export function EmptyState({
   title,

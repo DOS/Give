@@ -31,7 +31,14 @@ describe("EmptyState", () => {
     expect(page).toContain("container-page py-16 sm:py-24")
     expect(page).toContain('<h1 class="mt-4 text-h1-phone tracking-tight sm:text-h1">')
     expect(page).toMatch(/<p class="[^"]*\bmt-3 text-fg\b[^"]*">/)
-    expect(page).toContain("text-balance")
-    expect(page).not.toContain('text-muted">Một')
+    const text = page.match(/<p class="([^"]*)">Một/)?.[1] ?? ""
+    expect(text.split(" ")).toEqual(expect.arrayContaining(["text-balance", "text-fg"]))
+    expect(text.split(" ")).not.toContain("text-muted")
+  })
+
+  it("gives a whole page a full-width action row, so stacked phone buttons can fill it", () => {
+    const page = html({ level: 1, action: "x" })
+    expect(page).toMatch(/<div class="mt-6 flex justify-center w-full">x<\/div>/)
+    expect(html({ action: "x" })).toContain('<div class="mt-6 flex justify-center">x</div>')
   })
 })
