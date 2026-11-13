@@ -8,14 +8,17 @@ const html = (props: Partial<Parameters<typeof EmptyState>[0]> = {}) =>
   renderToStaticMarkup(createElement(EmptyState, { title: "Chưa có gì", ...props }))
 
 describe("EmptyState", () => {
-  it("keeps 48px above and below by default", () => {
-    expect(html()).toContain("py-12")
+  it("keeps 48px above and below and 16px at the sides by default", () => {
+    expect(html()).toContain("px-4 py-12")
   })
 
-  it("adds no vertical padding of its own when flush (DESIGN.md 6, home)", () => {
+  it("adds no padding of its own when flush (DESIGN.md 6, home)", () => {
     const flush = html({ flush: true })
-    expect(flush).not.toContain("py-12")
-    expect(flush).not.toMatch(/\bp[ytb]-\d/)
+    expect(flush).not.toMatch(/\bp[xytblr]?-\d/)
+  })
+
+  it("balances its sentence so no word is left alone on a line", () => {
+    expect(html({ children: "Một câu ngắn." })).toContain("text-balance")
   })
 
   it("is an H3 by default and an H2 at level 2, with the same look", () => {
