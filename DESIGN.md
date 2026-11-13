@@ -141,9 +141,11 @@ Each component lives in `apps/web/src/components/ui` and is built on shadcn/ui (
 ### Focus ring
 
 - **Site-wide:** an element focused from the keyboard (`:focus-visible`) shows a 2px `primary` ring 2px outside its box, so the ring reaches 4px beyond the element.
-- **A ring is always whole:** it is never cut off, never under an edge fade and never touches the next control. Where 4px outside is not free, the ring moves inside the element, at the same 2px:
+- **Inside instead:** where those 4px are not free, the ring is drawn inside the element, at the same 2px:
   - Tabs: inside the tab.
   - The segmented control (filter bar): inside the item, because the items sit 4px apart and 4px from the strip's edge.
+  - A campaign card and a reward tier that can be chosen, where the whole box is one link: inside the box's edge.
+- **In the filter bar, a tag row and a tab row** the ring of a control that receives keyboard focus is whole: not cut off by the row, not under an edge fade, not touching the next control. With scripting turned off the row cannot bring a partly visible control into view, so this holds for a control that is fully in view.
 - **Fields** (input, select, textarea) differ: the 2px ring sits on the field's own edge with no offset and shows on every focus, pointer included.
 
 ### Button
@@ -209,7 +211,7 @@ A tag is **not** a button-sized box.
 
 - Text tabs with a 2px `primary` underline on the active tab.
 - 44px high, 24px apart, on a 1px `border` baseline that spans the container.
-- **When the row does not fit** (phones, and `/admin` up to 1024px): it scrolls sideways, with no wrapping. While it overflows, a 24px edge fades into `bg` only on the side that still has more tabs (an overlay, as on the filter bar, not a mask); the baseline stays whole under the fade. A tab focused from the keyboard is scrolled 24px clear of the edge; its focus ring is drawn inside the tab (see Focus ring), so that is enough. A row that fits has no fade; before JavaScript runs, the right edge fades as a fallback, and with scripting turned off no edge fades.
+- **When the row does not fit** (phones, and `/admin` up to 1024px): it scrolls sideways, with no wrapping. While it overflows, a 24px edge fades into `bg` only on the side that still has more tabs (an overlay, as on the filter bar, not a mask); the baseline stays whole under the fade. A tab focused from the keyboard is scrolled 24px clear of the edge; its focus ring is drawn inside the tab (see Focus ring). A row that fits has no fade; before JavaScript runs, the right edge fades as a fallback, and with scripting turned off no edge fades.
 
 ### Empty state
 

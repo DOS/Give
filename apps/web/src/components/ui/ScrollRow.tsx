@@ -13,7 +13,8 @@ const ROOM = 5
  * 6, filter bar). An edge fades into the page only on the side that still has
  * more to scroll to; before JavaScript runs, the right edge fades. With
  * scripting turned off nothing can tell which side has more, so no edge fades
- * and nothing is covered (`noscript:hidden`). The fades are overlays, not
+ * and nothing is covered (`noscript:hidden`, in browsers that know the
+ * `scripting` media feature; others keep the right fade). The fades are overlays, not
  * masks, so a menu sheet opened from inside the row stays visible. An item
  * focused from the keyboard is scrolled clear of them; focus inside such a
  * sheet, which is fixed to the screen, leaves the row where it is.
@@ -25,15 +26,15 @@ const ROOM = 5
  * which would shave a fraction off the last ring. An equal negative margin
  * takes the room back, and the fades keep to the old edge. The keyboard reveal
  * clears the fade by the same 5px more, so the ring is clear of it too, not
- * only the item. Only a ring may show in the room: while the row has anything scrolled
- * past an end, a solid cover hides the room there, as the clip did before. So
- * nothing moves at rest or while scrolling. Room above and below is the
+ * only the item. Only a ring may show in the room: while the row has anything
+ * scrolled past an end, a solid cover hides the room there, as the clip did
+ * before. So nothing moves at rest or while scrolling. Room above and below is the
  * caller's (`className`, `wrapClassName`). TabNav needs none: its ring is
  * drawn inside the tab.
  *
  * The filter bar stops scrolling at 768px, so its fades are hidden from there
  * (the default `fadeClassName`). A row that can overflow at any width, such as
- * TabNav's list (`as="ul"`), passes its own.
+ * TabNav's list (`as="ul"`) or FilterNav's tags, passes its own.
  */
 export function ScrollRow({
   as: Row = "div",
@@ -90,7 +91,8 @@ export function ScrollRow({
     // the click.
     const reveal = (event: FocusEvent) => {
       const item = event.target
-      if (!(item instanceof HTMLElement) || !item.matches(":focus-visible")) return
+      // The row itself can take focus (Firefox puts a scroller in the tab order).
+      if (!(item instanceof HTMLElement) || item === el || !item.matches(":focus-visible")) return
       // A menu sheet opened from the row is a descendant, but it is fixed to the
       // screen: scrolling the row does not move it, so it is not ours to reveal.
       for (let node: HTMLElement | null = item; node && node !== el; node = node.parentElement) {
