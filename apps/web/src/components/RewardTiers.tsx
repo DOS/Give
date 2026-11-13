@@ -78,6 +78,8 @@ export function RewardTiers({
           return (
             <li
               key={tier.id}
+              // The ring of a choosable tier is on the whole box (RingBoxScroll).
+              data-ring-box={choosable || undefined}
               className={clsx(
                 "relative card p-4 transition-colors duration-150",
                 choosable ? "hover:border-primary" : "bg-surface"
