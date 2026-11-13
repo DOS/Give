@@ -13,6 +13,15 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Focus rings outside the shared components are whole: a control focused
+  from the keyboard is scrolled clear of the sticky header, the bottom of
+  the screen and, on a campaign page below 1024px, the support bar (a
+  campaign card or reward tier as a whole box); the home receipt's title
+  link keeps its whole ring under the two-line clamp, and its hit box is
+  the two-line title block; rings show in `primary` from the first frame
+  instead of fading in from the text colour; the skip link gets its 16px
+  by 8px padding. Anchor jumps and mouse focus on links and buttons land
+  where they did. `DESIGN.md` 6 adds "Scrolled clear" (#171 / #173).
 - Empty pages, icons and the home headline: the 404, error and
   donation-not-found pages are now the whole-page empty state (the page's
   H1, balanced text), so a phone no longer leaves "công khai.", "phút." or

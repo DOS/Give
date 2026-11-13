@@ -56,7 +56,10 @@ export function CampaignCard({
   ].filter(Boolean)
 
   return (
-    <article className="group relative flex h-full min-w-0 flex-col overflow-hidden card transition-colors duration-150 hover:border-muted">
+    <article
+      data-ring-box
+      className="group relative flex h-full min-w-0 flex-col overflow-hidden card transition-colors duration-150 hover:border-muted"
+    >
       <div className="relative aspect-video overflow-hidden rounded-t-md bg-surface">
         {campaign.cover?.storage_path ? (
           <Image

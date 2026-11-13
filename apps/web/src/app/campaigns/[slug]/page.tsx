@@ -508,11 +508,13 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
 
 /**
  * Below 1024px the main action stays at the bottom of the screen (sticky, so
- * it settles above the footer at the end of the page).
+ * it settles above the footer at the end of the page). While it shows, a
+ * control focused from the keyboard is scrolled clear of it with its ring
+ * (`data-action-bar`, globals.css; DESIGN.md 6, Focus ring).
  */
 function MobileActionBar({ children }: { children: ReactNode }) {
   return (
-    <div className="sticky bottom-0 z-30 border-t border-border bg-bg lg:hidden">
+    <div data-action-bar className="sticky bottom-0 z-30 border-t border-border bg-bg lg:hidden">
       <div className="container-page flex gap-2 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">{children}</div>
     </div>
   )

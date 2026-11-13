@@ -162,6 +162,48 @@
     @apply outline-2 outline-offset-2 outline-primary;
   }
 
+  /*
+   * Section 6: the ring is `primary`. Section 10's colour transitions
+   * (`transition-colors` includes outline-color) would fade it in from the
+   * text colour; with the outline colour `primary` at rest too (no outline
+   * shows), there is nothing to fade when focus arrives.
+   */
+  *,
+  ::before,
+  ::after {
+    @apply outline-primary;
+  }
+
+  /*
+   * Section 6, Focus ring, "Scrolled clear": a control focused from the
+   * keyboard is scrolled into view with its whole ring (4px) plus 1px for
+   * scroll rounding, clear of the 65px sticky header (64px and its 1px
+   * border) and of the bottom of the screen. `scroll-margin` only applies when
+   * the browser scrolls that element into view, so anchor jumps to a section
+   * and mouse focus on links and buttons land where they did; a field matches
+   * :focus-visible on every focus (section 6, Fields), so it gets the same
+   * room when a tap scrolls it into view. Not inside the sticky header or
+   * support bar, which do not scroll away, nor inside a menu sheet, which
+   * scrolls on its own below the header. A whole-box link's box
+   * (`data-ring-box`) gets the same room: RingBoxScroll brings it into view.
+   */
+  :focus-visible:not([data-site-header] *, [data-action-bar] *, [data-menu-panel] *),
+  [data-ring-box] {
+    scroll-margin-block: 70px 5px;
+  }
+
+  /*
+   * Below 1024px the campaign page's support bar (`data-action-bar`) is sticky
+   * at the bottom of the screen: clear it instead, its height (1px border,
+   * 12px, a 52px button, its bottom padding) plus the same 5px.
+   */
+  @media (width < 64rem) {
+    :root:has([data-action-bar]) :focus-visible:not([data-site-header] *, [data-action-bar] *, [data-menu-panel] *),
+    :root:has([data-action-bar]) [data-ring-box] {
+      scroll-margin-bottom: calc(65px + max(12px, env(safe-area-inset-bottom)) + 5px);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

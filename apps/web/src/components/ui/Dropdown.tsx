@@ -106,6 +106,8 @@ export function Dropdown({
       />
       <div
         ref={panel}
+        // Its own scroller (a sheet), clear of the header: no focus scroll room (globals.css).
+        data-menu-panel
         className={clsx(
           "fixed inset-x-0 bottom-0 z-50 max-h-[70vh] overflow-y-auto rounded-t-md border-t border-border bg-raised p-2 shadow-float md:absolute md:inset-x-auto md:top-13 md:bottom-auto md:left-0 md:w-72 md:rounded-md md:border",
           panelClassName
