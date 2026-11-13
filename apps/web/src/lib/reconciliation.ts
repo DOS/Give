@@ -15,6 +15,15 @@ import { formatVnd } from "./format"
  * finance/admin staff see its transactions, contributions and ledger.
  */
 
+/**
+ * Why an incoming transaction has no campaign (campaign_id NULL): when it was
+ * recorded, its account had no binding that covered it, or the account's
+ * owner was not the organizer of the bound campaign (DOS/Give#119, worded in
+ * #148). give.record_bank_transaction keeps both out of every campaign.
+ */
+export const UNATTRIBUTED_CAUSES =
+  "lúc nhận tiền, tài khoản nhận không gắn với chiến dịch nào, hoặc không thuộc về người tổ chức của chiến dịch được gắn"
+
 /** Contribution statuses give.match_transaction accepts. */
 export const MATCHABLE_STATUSES = [
   "awaiting_transfer",
@@ -53,6 +62,16 @@ const TX_COLUMNS =
   "id, campaign_id, receiving_account_id, provider_tx_id, amount, booked_at, booked_date_only, description, " +
   "counterparty_name, counterparty_account_masked, source, after_close"
 
+/** An unmatched transaction with the owner of its receiving account, as far as the caller may read it. */
+export interface UnmatchedRow extends UnmatchedTransaction {
+  /**
+   * receiving_accounts.owner_user_id, or null when the caller may not read the
+   * account: finance/admin staff read every account, anyone else only the
+   * accounts they own (receiving_accounts_read).
+   */
+  account_owner_id: string | null
+}
+
 /**
  * Incoming, attributed transactions with neither a match nor an explanation,
  * newest first. Every such transaction is posted to 'unmatched_in' when it is
@@ -61,12 +80,14 @@ const TX_COLUMNS =
 export async function listUnmatched(
   db: Db,
   { campaignId, limit = 100 }: { campaignId?: string; limit?: number } = {}
-): Promise<{ transactions: UnmatchedTransaction[]; total: number }> {
+): Promise<{ transactions: UnmatchedRow[]; total: number }> {
   let query = db
     .from("bank_transactions")
-    .select(`${TX_COLUMNS}, transaction_matches(bank_transaction_id), inbound_explanations(bank_transaction_id)`, {
-      count: "exact",
-    })
+    .select(
+      `${TX_COLUMNS}, transaction_matches(bank_transaction_id), inbound_explanations(bank_transaction_id), ` +
+        "account:receiving_accounts!receiving_account_id(owner_user_id)",
+      { count: "exact" }
+    )
     .eq("direction", "in")
     .not("campaign_id", "is", null)
     .is("transaction_matches", null)
@@ -78,12 +99,46 @@ export async function listUnmatched(
     (data ?? []) as unknown as (UnmatchedTransaction & {
       transaction_matches?: unknown
       inbound_explanations?: unknown
+      account?: { owner_user_id: string } | { owner_user_id: string }[] | null
     })[]
-  ).map(({ transaction_matches: _match, inbound_explanations: _explanation, ...tx }) => ({
+  ).map(({ transaction_matches: _match, inbound_explanations: _explanation, account, ...tx }) => ({
     ...tx,
     amount: Number(tx.amount),
+    account_owner_id: one(account)?.owner_user_id ?? null,
   }))
   return { transactions, total: count ?? transactions.length }
+}
+
+/**
+ * True when the transaction's receiving account is not owned by its campaign's
+ * organizer: give.match_transaction then refuses every match with
+ * GIVE_ACCOUNT_OWNER_MISMATCH (DOS/Give#119). Only a transaction attributed
+ * before the two came to differ (a direct data edit) is in this state; it
+ * stays 'unmatched_in' and keeps blocking the release of the binding
+ * (DOS/Give#148). An account the caller may not read counts as not the
+ * organizer's when the caller is the organizer, since organizers read their
+ * own accounts. False when the organizer is unknown: the database still
+ * refuses, and the page only words it in advance.
+ */
+export function accountOwnerMismatch(
+  tx: Pick<UnmatchedRow, "account_owner_id">,
+  organizerId: string | null | undefined
+): boolean {
+  if (!organizerId) return false
+  return tx.account_owner_id !== organizerId
+}
+
+/**
+ * The organizer of each campaign, for finance/admin staff: authenticated may
+ * not read campaigns.organizer_id, so it comes through give.managed_campaigns,
+ * which returns every campaign to staff and only their own to organizers.
+ */
+export async function campaignOrganizers(db: Db, ids: readonly string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids)]
+  if (unique.length === 0) return new Map()
+  const { data, error } = await db.rpc("managed_campaigns", {}).select("id, organizer_id").in("id", unique)
+  if (error) throw error
+  return new Map(((data ?? []) as { id: string; organizer_id: string }[]).map((c) => [c.id, c.organizer_id]))
 }
 
 /** PostgREST embeds a one-to-one relation as an object; some setups send an array. */

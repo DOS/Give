@@ -199,8 +199,9 @@ describe("matchTransaction", () => {
       "Chỉ khớp được các khoản tiền vào."
     )
     state.responses.bank_transactions = { data: { ...tx().data, campaign_id: null } }
-    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toContain(
-      "chưa thuộc chiến dịch nào"
+    // Both causes of a transaction with no campaign (DOS/Give#148).
+    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toBe(
+      "Giao dịch này chưa thuộc chiến dịch nào (lúc nhận tiền, tài khoản nhận không gắn với chiến dịch nào, hoặc không thuộc về người tổ chức của chiến dịch được gắn), nên chưa khớp được."
     )
     expect(state.serviceCalls).toHaveLength(0)
   })

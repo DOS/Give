@@ -50,6 +50,12 @@ describe("dbErrorMessage", () => {
     )
   })
 
+  it("words the account owner refusal on paths other than the match action (DOS/Give#148)", () => {
+    expect(dbErrorMessage({ code: "23514", message: "GIVE_ACCOUNT_OWNER_MISMATCH" })).toBe(
+      "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch không được tính cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch."
+    )
+  })
+
   it("never echoes unknown internals", () => {
     const message = dbErrorMessage({ code: "XX000", message: "internal: relation give.secret" })
     expect(message).not.toContain("give.secret")

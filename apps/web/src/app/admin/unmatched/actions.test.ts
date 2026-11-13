@@ -156,7 +156,9 @@ describe("explainTransaction", () => {
       "Chỉ giải trình được các khoản tiền vào"
     )
     state.responses.bank_transactions = tx({ campaign_id: null })
-    expect((await explainTransaction(TX, null, form(VALID)))?.message).toContain("chưa thuộc chiến dịch nào")
+    expect((await explainTransaction(TX, null, form(VALID)))?.message).toBe(
+      "Giao dịch này chưa thuộc chiến dịch nào (lúc nhận tiền, tài khoản nhận không gắn với chiến dịch nào, hoặc không thuộc về người tổ chức của chiến dịch được gắn), nên không cần giải trình."
+    )
     state.responses.bank_transactions = { data: null }
     expect((await explainTransaction(TX, null, form(VALID)))?.message).toBe(
       "Không tìm thấy giao dịch, hoặc bạn không có quyền với giao dịch này."

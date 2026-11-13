@@ -9,6 +9,8 @@ import {
   listInboundExplanations,
   listManualMatches,
   listUnmatched,
+  accountOwnerMismatch,
+  campaignOrganizers,
   normalizeReferenceCode,
   paidAfterExplain,
   paidAfterMatch,
@@ -19,6 +21,8 @@ import {
 } from "./reconciliation"
 
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
+const ORGANIZER = "33333333-3333-4333-8333-333333333333"
+const OTHER = "44444444-4444-4444-8444-444444444444"
 
 /** formatVnd puts a no-break space before the đồng sign. */
 const vnd = (text: string) => text.replace(/ ₫/g, " ₫")
@@ -103,10 +107,13 @@ describe("listUnmatched", () => {
       calls
     ) as unknown as Db
     expect(await listUnmatched(db, { campaignId: CAMPAIGN })).toEqual({
-      transactions: [{ id: "t", campaign_id: CAMPAIGN, amount: 150000 }],
+      transactions: [{ id: "t", campaign_id: CAMPAIGN, amount: 150000, account_owner_id: null }],
       total: 1,
     })
     expect(calls[0].target).toBe("bank_transactions")
+    expect(String(op(calls[0], "select")?.[0])).toContain(
+      "account:receiving_accounts!receiving_account_id(owner_user_id)"
+    )
     expect(calls[0].ops).toEqual(
       expect.arrayContaining([
         ["eq", "direction", "in"],
@@ -116,6 +123,60 @@ describe("listUnmatched", () => {
         ["eq", "campaign_id", CAMPAIGN],
       ])
     )
+  })
+
+  it("reads the owner of each transaction's receiving account, as an object or a one-row array", async () => {
+    const db = fakeDb(() => ({
+      data: [
+        { id: "a", campaign_id: CAMPAIGN, amount: 1, account: { owner_user_id: ORGANIZER } },
+        { id: "b", campaign_id: CAMPAIGN, amount: 2, account: [{ owner_user_id: OTHER }] },
+        { id: "c", campaign_id: CAMPAIGN, amount: 3, account: null },
+      ],
+      count: 7,
+    })) as unknown as Db
+    const { transactions, total } = await listUnmatched(db)
+    expect(transactions.map((t) => [t.id, t.account_owner_id])).toEqual([
+      ["a", ORGANIZER],
+      ["b", OTHER],
+      ["c", null],
+    ])
+    expect(transactions[0]).not.toHaveProperty("account")
+    expect(total).toBe(7)
+  })
+})
+
+describe("accountOwnerMismatch (DOS/Give#148)", () => {
+  it("is true when the account's owner is not the campaign's organizer", () => {
+    expect(accountOwnerMismatch({ account_owner_id: ORGANIZER }, ORGANIZER)).toBe(false)
+    expect(accountOwnerMismatch({ account_owner_id: OTHER }, ORGANIZER)).toBe(true)
+  })
+
+  it("counts an account the organizer may not read as not theirs", () => {
+    // Organizers read only the accounts they own (receiving_accounts_read).
+    expect(accountOwnerMismatch({ account_owner_id: null }, ORGANIZER)).toBe(true)
+  })
+
+  it("is false when the organizer is unknown, leaving the refusal to the database", () => {
+    expect(accountOwnerMismatch({ account_owner_id: OTHER }, undefined)).toBe(false)
+    expect(accountOwnerMismatch({ account_owner_id: null }, null)).toBe(false)
+  })
+})
+
+describe("campaignOrganizers", () => {
+  it("reads organizers through managed_campaigns, once per campaign", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(() => ({ data: [{ id: CAMPAIGN, organizer_id: ORGANIZER }] }), calls) as unknown as Db
+    expect(await campaignOrganizers(db, [CAMPAIGN, CAMPAIGN])).toEqual(new Map([[CAMPAIGN, ORGANIZER]]))
+    expect(calls).toHaveLength(1)
+    expect(calls[0].target).toBe("rpc:managed_campaigns")
+    expect(op(calls[0], "select")).toEqual(["id, organizer_id"])
+    expect(calls[0].ops).toEqual(expect.arrayContaining([["in", "id", [CAMPAIGN]]]))
+  })
+
+  it("does not call the database without campaigns", async () => {
+    const calls: Call[] = []
+    expect(await campaignOrganizers(fakeDb(() => ({ data: [] }), calls) as unknown as Db, [])).toEqual(new Map())
+    expect(calls).toHaveLength(0)
   })
 })
 
