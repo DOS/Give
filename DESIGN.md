@@ -165,6 +165,7 @@ A tag is **not** a button-sized box.
 - Look: a `surface` fill with no border.
 - Interactive tags: hover goes to `border`; the selected state is a `primary-soft` fill with `primary` text.
 - The 44px touch target comes from an invisible hit area (padding or `::after`), not from a bigger visible box.
+- Focus: the site-wide ring (2px `primary`, 2px outside the box) is whole on every tag, also at the ends of a row that scrolls sideways (see Filter bar, focus room).
 
 ### Filter bar (discovery)
 
@@ -173,6 +174,7 @@ A tag is **not** a button-sized box.
 - **Phones:** the row scrolls sideways, with no wrapping onto a second line. An edge fades only on the side that still has more to scroll to. Below 768px the menus open as a sheet fixed to the bottom of the screen; from 768px, where the row no longer scrolls, they open as a popover under their button.
 - **State:** every control is a link; filters, order and page live in the URL. Changing a filter or the order goes back to the first page.
 - **Type control:** a segmented control on a `surface` strip, 36px items, the current item on `surface-raised`.
+- **Focus room:** a row that scrolls sideways clips at its edge, so the filter bar and the statement's tag row keep room for the focus ring just outside the container: 5px at each end (the 4px of the ring plus 1px for scroll rounding), and on the filter bar 4px above and below. This room is not layout spacing and shows nothing but a ring: items still start at the container edge, the fades cover the same 24px inside it, and anything scrolled past an end is covered in the room.
 - **No chip wall:** never show every category as a wall of chips.
 
 ### Card (campaign)
