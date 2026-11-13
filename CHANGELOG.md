@@ -101,7 +101,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - Unmatched queues: a transaction whose receiving account is not owned by
   the campaign's organizer shows why it cannot be matched instead of a match
   form; `/admin/unmatched` lists incoming money that belongs to no campaign
-  (read only); the "no campaign" message names both causes (#148 / #164).
+  (read only); the "no campaign" message names every cause (#148 / #164).
 
 ### Platform
 

@@ -199,9 +199,9 @@ describe("matchTransaction", () => {
       "Chỉ khớp được các khoản tiền vào."
     )
     state.responses.bank_transactions = { data: { ...tx().data, campaign_id: null } }
-    // Both causes of a transaction with no campaign (DOS/Give#148).
+    // The causes of a transaction with no campaign (DOS/Give#148).
     expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toBe(
-      "Giao dịch này không thuộc chiến dịch nào, nên không khớp được. Lý do có thể là: khoản chuyển thử để xác minh tài khoản; tiền vào khi tài khoản chưa gắn với chiến dịch nào hoặc trước khi chiến dịch gửi duyệt; tiền vào sau khi tài khoản được nhả, hoặc được ghi nhận khi tài khoản đã được nhả (ví dụ sao kê nhập muộn); hoặc tài khoản không thuộc về người tổ chức của chiến dịch được gắn."
+      "Giao dịch này không thuộc chiến dịch nào, nên không khớp được. Lý do có thể là: khoản chuyển thử để xác minh tài khoản; tiền vào khi tài khoản chưa gắn với chiến dịch nào hoặc khi chiến dịch chưa gửi duyệt; tiền vào tài khoản cũ sau khi chiến dịch đã đổi sang tài khoản khác; tiền vào sau khi tài khoản được nhả, hoặc tiền vào trước đó nhưng đến khi tài khoản đã được nhả mới được ghi nhận (ví dụ sao kê nhập muộn); hoặc tài khoản không thuộc về người tổ chức của chiến dịch được gắn."
     )
     expect(state.serviceCalls).toHaveLength(0)
   })

@@ -20,13 +20,14 @@ import { formatVnd } from "./format"
  * as possible causes after "Lý do có thể là: ". When it was recorded, no
  * binding of its account covered its booking (give.binding_covers_booking:
  * no binding, a draft campaign or one not yet submitted, a verification
- * transfer on the binding day, booked after the binding ended, or recorded
- * after an ordinary release, since only bindings a swap ended are searched),
+ * transfer on the binding day, booked on the old account from an approved
+ * swap on, booked after the binding ended, or recorded after an ordinary
+ * release, since only bindings a swap ended are searched),
  * or the account's owner was not the organizer of the bound campaign
  * (DOS/Give#119). Worded in DOS/Give#148.
  */
 export const UNATTRIBUTED_CAUSES =
-  "khoản chuyển thử để xác minh tài khoản; tiền vào khi tài khoản chưa gắn với chiến dịch nào hoặc trước khi chiến dịch gửi duyệt; tiền vào sau khi tài khoản được nhả, hoặc được ghi nhận khi tài khoản đã được nhả (ví dụ sao kê nhập muộn); hoặc tài khoản không thuộc về người tổ chức của chiến dịch được gắn"
+  "khoản chuyển thử để xác minh tài khoản; tiền vào khi tài khoản chưa gắn với chiến dịch nào hoặc khi chiến dịch chưa gửi duyệt; tiền vào tài khoản cũ sau khi chiến dịch đã đổi sang tài khoản khác; tiền vào sau khi tài khoản được nhả, hoặc tiền vào trước đó nhưng đến khi tài khoản đã được nhả mới được ghi nhận (ví dụ sao kê nhập muộn); hoặc tài khoản không thuộc về người tổ chức của chiến dịch được gắn"
 
 /** Contribution statuses give.match_transaction accepts. */
 export const MATCHABLE_STATUSES = [
