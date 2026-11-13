@@ -12,6 +12,8 @@ const STROKE = 1.5
  * Drawn larger than the grid (the 40px icons of empty states and cover
  * placeholders), an icon keeps a 1.5px stroke on screen instead of scaling
  * it up, like lucide's absoluteStrokeWidth. Smaller icons scale as drawn.
+ * The size is read from the numeric `width` prop, so size a large icon with
+ * `width`/`height`, not with a CSS class.
  */
 function Icon({ children, ...props }: SVGProps<SVGSVGElement>) {
   const size = Number(props.width ?? 20)
