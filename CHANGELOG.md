@@ -106,6 +106,9 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   bounded (#51).
 - Dependabot opens its PRs against `dev` (#117); dependency bumps (#109,
   #114, #116, #118).
+- `tailwindcss` and `@tailwindcss/postcss` 4.3.5, moved onto `dev` from
+  Dependabot's #160 and #162, which it opened against `main`; nothing
+  changes on screen (#163 / #166).
 
 ### Database (DOS.Me)
 
