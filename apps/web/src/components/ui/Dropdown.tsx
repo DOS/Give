@@ -14,7 +14,9 @@ import { CloseIcon } from "@/components/ui/icons"
  * of the screen over a dimmed page, with its title and a close button, so a
  * sideways-scrolling filter row cannot clip it. The sheet's scrim covers the
  * menu button too, so there focus moves into the sheet when it opens (to the
- * checked item), and going back to the button closes it.
+ * checked item), and going back to the button closes it. With scripting
+ * turned off the scrim and the close button would do nothing, and the scrim
+ * would cover the button, so both are hidden: the button closes the sheet.
  */
 export function Dropdown({
   title,
@@ -95,7 +97,7 @@ export function Dropdown({
       <div
         ref={scrim}
         aria-hidden
-        className="fixed inset-0 z-50 bg-scrim md:hidden"
+        className="fixed inset-0 z-50 bg-scrim md:hidden noscript:hidden"
         // Focus was in the sheet, which this hides: give it back to the button.
         onClick={() => {
           if (root.current) root.current.open = false
@@ -108,8 +110,13 @@ export function Dropdown({
           "fixed inset-x-0 bottom-0 z-50 max-h-[70vh] overflow-y-auto rounded-t-md border-t border-border bg-raised p-2 shadow-float md:absolute md:inset-x-auto md:top-13 md:bottom-auto md:left-0 md:w-72 md:rounded-md md:border",
           panelClassName
         )}
+        // A link chosen from the keyboard (no pointer: detail 0) would leave focus
+        // on nothing once the menu closes; the menu outlives the navigation, so
+        // give focus back to its button.
         onClick={(event) => {
-          if ((event.target as Element).closest("a") && root.current) root.current.open = false
+          if (!(event.target as Element).closest("a") || !root.current) return
+          root.current.open = false
+          if (event.detail === 0) root.current.querySelector("summary")?.focus()
         }}
       >
         <div className="flex items-center justify-between pl-2 md:hidden">
@@ -117,7 +124,7 @@ export function Dropdown({
           <button
             type="button"
             aria-label="Đóng"
-            className="inline-flex size-11 items-center justify-center rounded text-fg hover:bg-surface focus-visible:-outline-offset-4"
+            className="inline-flex size-11 items-center justify-center rounded text-fg hover:bg-surface focus-visible:-outline-offset-4 noscript:hidden"
             onClick={() => {
               if (root.current) root.current.open = false
               root.current?.querySelector("summary")?.focus()

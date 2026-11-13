@@ -61,7 +61,8 @@ export function TabNav({ label, items, className }: { label: string; items: read
  * so it works without JavaScript; the hidden one is out of the
  * accessibility tree. On phones the tab row scrolls the current tab into
  * view. Each item is 44px; the current one is the selected
- * fill (primary-soft with primary text), as on a tag.
+ * fill (primary-soft with primary text), as on a tag. The items stack 4px
+ * apart, so the focus ring is drawn 2px inside each (DESIGN.md 6).
  */
 export function SectionNav({
   label,
@@ -87,7 +88,7 @@ export function SectionNav({
                 href={item.href}
                 aria-current={item.current ? "page" : undefined}
                 className={clsx(
-                  "flex min-h-11 items-center rounded px-3 text-base transition-colors duration-150",
+                  "flex min-h-11 items-center rounded px-3 text-base transition-colors duration-150 focus-visible:-outline-offset-4",
                   item.current ? "bg-primary-soft font-semibold text-primary" : "text-fg hover:bg-surface"
                 )}
               >

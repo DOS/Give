@@ -15,6 +15,12 @@ import type { Session } from "@/lib/auth/session"
  */
 const iconButton =
   "relative inline-flex size-11 items-center justify-center rounded text-fg transition-colors duration-150 hover:bg-surface focus-visible:-outline-offset-4"
+/*
+ * The bell's unread badge sits in the corner the inside ring runs through, and
+ * a positioned badge paints over an outline: draw the ring on ::after, above
+ * the badge, at the same place (2px wide, 2px in from the edge).
+ */
+const bellButton = `${iconButton} focus-visible:outline-none focus-visible:after:absolute focus-visible:after:inset-1 focus-visible:after:z-10 focus-visible:after:outline-2 focus-visible:after:outline-primary focus-visible:after:content-['']`
 const menuLink =
   "flex min-h-11 items-center rounded px-3 text-base text-fg hover:bg-surface focus-visible:-outline-offset-4"
 
@@ -50,7 +56,7 @@ export function SiteHeader({ session, unread }: { session: Session | null; unrea
   const name = session ? (session.user.name ?? session.user.email ?? "Tài khoản") : null
 
   const notices = session && (
-    <Link href="/me/notices" className={iconButton} aria-label={unread ? `Thông báo, ${unread} chưa đọc` : "Thông báo"}>
+    <Link href="/me/notices" className={bellButton} aria-label={unread ? `Thông báo, ${unread} chưa đọc` : "Thông báo"}>
       <BellIcon width={24} height={24} />
       {unread && (
         <span className="absolute top-1 right-0.5 min-w-5 rounded bg-accent px-1 text-center text-xs leading-5 font-semibold text-bg">
