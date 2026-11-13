@@ -13,18 +13,30 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
-- Discovery menus: while a menu is open, keyboard focus stays in it. On
+- Discovery menus: keyboard focus never sits outside an open menu. On
   phones opening the sheet moves focus to the checked item, and Tab or
   Shift+Tab out of the sheet closes it instead of reaching the page behind
-  it; the 768px popover also closes when focus leaves it, and tapping the
-  dimmed page gives focus back to the menu button (#158 / #169).
+  it; the 768px popover also closes when focus leaves it; tapping the
+  dimmed page or choosing an item with the keyboard gives focus back to
+  the menu button. With scripting turned off a tap on the menu button
+  closes the sheet (#158 / #169).
 - Focus rings everywhere are whole and touch nothing: the tab ring clears
-  the label's first and last letter, menu items, the sheet's "Đóng" and the
-  header's icon buttons draw their ring inside, and footer links are 28px
-  boxes centred in their 36px rows, so nothing moves. The discovery type
-  control's current item has a border line instead of a shadow on a 4px
-  strip, and the header search field is 44px high. `DESIGN.md` 6 states
-  the rule site-wide (#159 / #169).
+  the label's first and last letter; menu items, the sheet's "Đóng", the
+  header's icon buttons and menu links and the `/me` and `/admin` side
+  list draw their ring inside (on the bell, above the unread badge); footer
+  links are 28px boxes centred in their 36px rows. Nothing moves at rest.
+  The discovery type control's current item has a border line instead of
+  a shadow on a 4px strip, and the header search field is 44px high.
+  `DESIGN.md` 6 states the rule site-wide (#159 / #169).
+- Home and empty states: the home headline reads in two lines
+  ("Gây quỹ minh bạch, / từng đồng đều có sao kê") where it fits; an
+  empty state's sentence is balanced, so a phone never leaves one word
+  alone on its second line; icons larger than 24px (empty states, the
+  404 and error pages, cards without a photo, the organizer's "Giao
+  quà" block) keep a 1.5px line instead of a heavier one. `DESIGN.md`
+  now states the empty state's padding and centring, the empty home
+  hero, the "Hai cách" panels and the home's feature icons
+  (#149 / #165).
 - Discovery on phones: moving keyboard focus inside an open menu sheet
   ("Danh mục", "Trạng thái", "Sắp xếp") no longer scrolls the filter bar
   behind it (#152 / #156).
@@ -118,6 +130,9 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   bounded (#51).
 - Dependabot opens its PRs against `dev` (#117); dependency bumps (#109,
   #114, #116, #118).
+- `tailwindcss` and `@tailwindcss/postcss` 4.3.5, moved onto `dev` from
+  Dependabot's #160 and #162, which it opened against `main`; nothing
+  changes on screen (#163 / #166).
 
 ### Database (DOS.Me)
 

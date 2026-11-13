@@ -33,7 +33,7 @@ There is exactly one page container, used by the header, every page body and the
 | Gutter, 640 to 1023px | 24px   |
 | Gutter, 1024px and up | 32px   |
 
-1200px is the content width; the gutter sits outside it, so at 1440px the content starts at x = 120. In code this is `container-page`. No page sets its own `max-w-*` on the outer wrapper. Inner text blocks may be narrower (see 2.3), but they start at the container's left edge, never centered on their own.
+1200px is the content width; the gutter sits outside it, so at 1440px the content starts at x = 120. In code this is `container-page`. No page sets its own `max-w-*` on the outer wrapper. Inner text blocks may be narrower (see 2.3), but they start at the container's left edge, never centered on their own, except an empty state (6) and the discovery pagination (8), which are centered in their region.
 
 ### 2.2 Grid
 
@@ -118,7 +118,7 @@ Colors are **semantic tokens**, and every component uses the tokens, never raw p
 | `primary-fg`     | #FFFFFF        | #052E22        | Text on primary                            |
 | `primary-soft`   | #ECFDF5        | #0B2A21        | Selected chip, info background             |
 | `accent`         | #C2410C        | #FB923C        | "Dự án sáng tạo" label and icon only       |
-| `accent-soft`    | #FFF7ED        | #2A1A0E        | Background of the "Dự án" label            |
+| `accent-soft`    | #FFF7ED        | #2A1A0E        | Fill of "Dự án" labels and icon tiles      |
 | `danger`         | #B42318        | #F97066        | Errors, destructive actions                |
 | `warning`        | #B54708        | #FDB022        | Deadlines, attention                       |
 | `primary-hover`  | #065F46        | #6EE7B7        | Hover state of primary buttons             |
@@ -220,10 +220,11 @@ A tag is **not** a button-sized box.
 
 ### Empty state
 
-- An icon (40px, `text-muted`), an H3, one line of text and at most one button.
+- An icon (40px, `text-muted`), an H3, one short sentence of text, which may wrap to two balanced lines on phones, and at most one button.
 - The title always looks like an H3. In the page outline it is an H3 under a section's H2, and an H2 where the empty state stands directly under the page's H1.
 - Centered inside its region, no dashed border.
-- Where the page section that holds it already carries the "Between page sections" padding of 2.4 and has no other content (home with no campaign), it adds no vertical space of its own (`flush` on the component): that distance is the whole gap to the section above and below.
+- It keeps 48px above and below and 16px at the sides inside its region (a panel, a list, a tab).
+- Where the page section that holds it already carries the "Between page sections" padding of 2.4 and has no other content (home with no campaign), it adds no space of its own (`flush` on the component): that distance is the whole gap to the section above and below, and the container gutter is its side margin.
 
 ### Badge (status)
 
@@ -254,11 +255,16 @@ A tag is **not** a button-sized box.
 | Donate / pledge    | Form template (2.2), with a campaign summary strip on top                                                                                                                                                                                                                                                                                                 |
 | /me, /admin        | Same container. Page header (H1 + one action), then content tables or forms. Side navigation from 1024px, top tabs below.                                                                                                                                                                                                                                 |
 
+- **Home hero:** with no live campaign the hero has no statement card; the right columns stay empty.
+- **"Hai cách gây quỹ" panels:** the two panels are not cards: 24px padding, 32px from 1024px.
+
 ## 9. Imagery and icons
 
 - Covers are real photos supplied by organizers.
 - Placeholders are a flat `surface` fill with the type icon, never illustrations that look like content.
 - Icons come from lucide (outline, 1.5px stroke): 16px inside a line of text (meta lines, links, labels), 20px in buttons (6.Button), 24px in navigation, 40px in empty states.
+- The stroke is 1.5px at 24px; icons drawn larger keep a 1.5px rendered stroke, and smaller icons scale it down (1px at 16px).
+- 24px also for the home's feature icons (trust strip, "Hai cách"); the "Hai cách" icon sits in a 44px tile, radius 4px, filled `primary-soft` or `accent-soft` with the matching icon color.
 
 ## 10. Motion
 

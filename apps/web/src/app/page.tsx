@@ -61,7 +61,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <section className="border-b border-border">
         <div className="container-page grid-page items-center gap-y-8 py-12 sm:py-16 lg:py-24">
           <div className="col-span-full min-w-0 lg:col-span-7">
-            <h1 className="max-w-[14ch] text-display-phone tracking-tight sm:text-display">
+            <h1 className="max-w-[18ch] text-display-phone tracking-tight sm:text-display">
               Gây quỹ minh&nbsp;bạch, từng đồng đều có sao kê
             </h1>
             <p className="mt-4 max-w-[52ch] text-lg text-muted sm:mt-6">

@@ -1,11 +1,23 @@
 import type { SVGProps } from "react"
 
+/** The grid the icons are drawn on, and their stroke at that size (DESIGN.md 9). */
+const GRID = 24
+const STROKE = 1.5
+
 /**
  * The few line icons the kit uses (lucide-style outline, 24px grid, 1.5 stroke; DESIGN.md 9), inline so no
  * icon package is needed. Decorative by default: pass aria-label and
  * aria-hidden={false} to give one a name.
+ *
+ * Drawn larger than the grid (the 40px icons of empty states and cover
+ * placeholders), an icon keeps a 1.5px stroke on screen instead of scaling
+ * it up, like lucide's absoluteStrokeWidth. Smaller icons scale as drawn.
+ * The size is read from the numeric `width` prop, so size a large icon with
+ * `width`/`height`, not with a CSS class.
  */
 function Icon({ children, ...props }: SVGProps<SVGSVGElement>) {
+  const size = Number(props.width ?? 20)
+  const strokeWidth = size > GRID ? (STROKE * GRID) / size : STROKE
   return (
     <svg
       viewBox="0 0 24 24"
@@ -13,7 +25,7 @@ function Icon({ children, ...props }: SVGProps<SVGSVGElement>) {
       height={20}
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.5}
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden
