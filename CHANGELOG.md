@@ -122,7 +122,7 @@ has no Production deploy. Behaviour to know:
 
 ### Waiting for Production
 
-- The test-only changes DOS/DOS.Me#1663 (#135) and DOS/DOS.Me#1664 (#144) are
+- The test-only changes #135 / DOS/DOS.Me#1663 and #144 / DOS/DOS.Me#1664 are
   on DOS.Me `dev` and are to be promoted together (#155). Until then DOS.Me
   `main` carries `give_staff_role_revoke_lock.test.sql` with the known test
   defect of #135; no CI job runs it.
