@@ -97,7 +97,9 @@ export function SectionNav({
 
 /**
  * A filter row of tags (statement filters): one line that scrolls sideways
- * on narrow screens, never a wrapping chip wall (DESIGN.md 11).
+ * on narrow screens, never a wrapping chip wall (DESIGN.md 11). The row
+ * keeps room for the focus ring of its first and last tag (`ringRoom`); the
+ * first tag stays on the container edge.
  */
 export function FilterNav({
   label,
@@ -110,7 +112,7 @@ export function FilterNav({
 }) {
   return (
     <nav aria-label={label} className={className}>
-      <ScrollRow className="gap-2 py-2">
+      <ScrollRow ringRoom className="gap-2 py-2">
         {items.map((item) => (
           <TagLink key={item.href} href={item.href} current={item.current}>
             {item.label}

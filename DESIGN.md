@@ -165,6 +165,7 @@ A tag is **not** a button-sized box.
 - Look: a `surface` fill with no border.
 - Interactive tags: hover goes to `border`; the selected state is a `primary-soft` fill with `primary` text.
 - The 44px touch target comes from an invisible hit area (padding or `::after`), not from a bigger visible box.
+- Focus: the 2px `primary` ring at a 2px offset is whole on every tag. A row that scrolls sideways (the statement filters, the discovery filter bar) keeps room for it outside the container edge (`ScrollRow`'s `ringRoom`), so the first item still starts at the container edge and the edge fades stay where they are.
 
 ### Filter bar (discovery)
 
