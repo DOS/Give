@@ -15,7 +15,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - Filter rows: the keyboard focus ring is no longer cut off at the edge of
   a row that scrolls sideways: the first and last tag of the statement
   filters, and the menu buttons of the discovery filter bar below 768px.
-  Nothing moves at rest (#150 / #PRNUM).
+  Nothing moves at rest (#150 / #151).
 - Tag: an interactive tag takes its invisible 44px touch target from the
   shared `hit-area` utility instead of its own classes; nothing changes on
   screen (#141 / #146).

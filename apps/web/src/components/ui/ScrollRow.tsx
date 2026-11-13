@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 
 /** The width of an edge fade (`w-6`), in pixels. */
 const FADE = 24
-/** The inline room `ringRoom` adds on each side (`px-1.25`), in pixels. */
+/** The inline room `ringRoom` adds on each side (`px-[5px]`), in pixels. */
 const ROOM = 5
 
 /**
@@ -18,12 +18,14 @@ const ROOM = 5
  * The scrolling element clips whatever leaves its padding box, focus rings
  * included. With `ringRoom`, a row whose first and last items carry the
  * standard ring (2px at a 2px offset) gets 5px of inline room for it: the 4px
- * of the ring, and 1px because a browser scrolls to whole pixels, which could
- * shave a fraction off the last ring. An equal negative margin takes the room
- * back, each fade starts with a solid strip over it, and the keyboard reveal
- * measures from the old edge, so nothing moves at rest or while scrolling.
- * Room above and below is the caller's (`className`, `wrapClassName`).
- * TabNav needs none: its ring is drawn inside the tab.
+ * of the ring, and 1px because the scroll extent can round to whole pixels,
+ * which would shave a fraction off the last ring. An equal negative margin
+ * takes the room back, and the fades and the keyboard reveal keep to the old
+ * edge. Only a ring may show in the room: while the row has anything scrolled
+ * past an end, a solid cover hides the room there, as the clip did before. So
+ * nothing moves at rest or while scrolling. Room above and below is the
+ * caller's (`className`, `wrapClassName`). TabNav needs none: its ring is
+ * drawn inside the tab.
  *
  * The filter bar stops scrolling at 768px, so its fades are hidden from there
  * (the default `fadeClassName`). A row that can overflow at any width, such as
@@ -51,6 +53,8 @@ export function ScrollRow({
 }) {
   const row = useRef<HTMLDivElement & HTMLUListElement>(null)
   const [more, setMore] = useState({ left: false, right: true })
+  // Ring room only: whether anything at all is scrolled past each end.
+  const [past, setPast] = useState({ left: false, right: true })
 
   useEffect(() => {
     const el = row.current
@@ -59,6 +63,13 @@ export function ScrollRow({
       const left = el.scrollLeft > 1
       const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1
       setMore((m) => (m.left === left && m.right === right ? m : { left, right }))
+      if (!ringRoom) return
+      // A row that stopped scrolling (the filter bar from 768px) clips nothing. At the
+      // end, under 1px can stay out of reach of a whole-pixel scroll: that is not content.
+      const scrolls = getComputedStyle(el).overflowX !== "visible"
+      const pastLeft = scrolls && el.scrollLeft > 0
+      const pastRight = scrolls && el.scrollWidth - el.clientWidth - el.scrollLeft > 0.75
+      setPast((p) => (p.left === pastLeft && p.right === pastRight ? p : { left: pastLeft, right: pastRight }))
     }
     update()
     el.addEventListener("scroll", update, { passive: true })
@@ -94,16 +105,13 @@ export function ScrollRow({
     }
   }, [ringRoom])
 
-  const fade = clsx(
-    "pointer-events-none absolute inset-y-0 transition-opacity duration-150",
-    // With ring room the fade is ROOM wider and solid over the room, so it ends where it did.
-    ringRoom ? "w-7.25 from-[5px]" : "w-6"
-  )
+  const fade = "pointer-events-none absolute inset-y-0 w-6 transition-opacity duration-150"
+  const cover = "pointer-events-none absolute inset-y-0 w-[5px] bg-bg"
   return (
-    <div className={clsx("relative min-w-0", ringRoom && "-mx-1.25", wrapClassName)}>
+    <div className={clsx("relative min-w-0", ringRoom && "-mx-[5px]", wrapClassName)}>
       <Row
         ref={row}
-        className={clsx("flex [scrollbar-width:none] items-center overflow-x-auto", ringRoom && "px-1.25", className)}
+        className={clsx("flex [scrollbar-width:none] items-center overflow-x-auto", ringRoom && "px-[5px]", className)}
       >
         {children}
       </Row>
@@ -112,7 +120,8 @@ export function ScrollRow({
         className={clsx(
           fade,
           fadeClassName,
-          "left-0 bg-linear-to-r from-bg to-transparent",
+          ringRoom ? "left-[5px]" : "left-0",
+          "bg-linear-to-r from-bg to-transparent",
           more.left ? "opacity-100" : "opacity-0"
         )}
       />
@@ -121,10 +130,13 @@ export function ScrollRow({
         className={clsx(
           fade,
           fadeClassName,
-          "right-0 bg-linear-to-l from-bg to-transparent",
+          ringRoom ? "right-[5px]" : "right-0",
+          "bg-linear-to-l from-bg to-transparent",
           more.right ? "opacity-100" : "opacity-0"
         )}
       />
+      {ringRoom && past.left && <span aria-hidden className={clsx(cover, "left-0")} />}
+      {ringRoom && past.right && <span aria-hidden className={clsx(cover, "right-0")} />}
     </div>
   )
 }
