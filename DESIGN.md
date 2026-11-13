@@ -118,7 +118,7 @@ Colors are **semantic tokens**, and every component uses the tokens, never raw p
 | `primary-fg`     | #FFFFFF        | #052E22        | Text on primary                            |
 | `primary-soft`   | #ECFDF5        | #0B2A21        | Selected chip, info background             |
 | `accent`         | #C2410C        | #FB923C        | "Dự án sáng tạo" label and icon only       |
-| `accent-soft`    | #FFF7ED        | #2A1A0E        | Fill of the "Dự án" label and its tile     |
+| `accent-soft`    | #FFF7ED        | #2A1A0E        | Fill of "Dự án" labels and icon tiles      |
 | `danger`         | #B42318        | #F97066        | Errors, destructive actions                |
 | `warning`        | #B54708        | #FDB022        | Deadlines, attention                       |
 | `primary-hover`  | #065F46        | #6EE7B7        | Hover state of primary buttons             |
@@ -257,7 +257,7 @@ A tag is **not** a button-sized box.
 - Covers are real photos supplied by organizers.
 - Placeholders are a flat `surface` fill with the type icon, never illustrations that look like content.
 - Icons come from lucide (outline, 1.5px stroke): 16px inside a line of text (meta lines, links, labels), 20px in buttons (6.Button), 24px in navigation, 40px in empty states.
-- The stroke is 1.5px at 24px; icons drawn larger keep a 1.5px rendered stroke, and smaller icons scale with it.
+- The stroke is 1.5px at 24px; icons drawn larger keep a 1.5px rendered stroke, and smaller icons scale it down (1px at 16px).
 - 24px also for the home's feature icons (trust strip, "Hai cách"); the "Hai cách" icon sits in a 44px tile, radius 4px, filled `primary-soft` or `accent-soft` with the matching icon color.
 
 ## 10. Motion
