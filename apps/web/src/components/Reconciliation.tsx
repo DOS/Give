@@ -1,6 +1,12 @@
 import { EmptyState } from "@/components/ui/EmptyState"
-import { formatDateTime, formatVnd } from "@/lib/format"
-import type { InboundExplanation, ManualMatch, PaidBreakdown } from "@/lib/reconciliation"
+import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
+import {
+  transactionSourceLabel,
+  type InboundExplanation,
+  type ManualMatch,
+  type PaidBreakdown,
+  type UnattributedTransaction,
+} from "@/lib/reconciliation"
 import { inboundExplanationLabel } from "@/lib/statement"
 import { MachineId, RefCode } from "@/components/ui/RefCode"
 
@@ -105,5 +111,56 @@ export function InboundExplanationList({
         </ul>
       )}
     </section>
+  )
+}
+
+/**
+ * Incoming money recorded with no campaign, read only (DOS/Give#148): what
+ * came in, when, to which account and from whom. Why it has no campaign is
+ * for DOS/Give#138, since give.audit_log is readable by admins only.
+ */
+export function UnattributedList({
+  transactions,
+  total,
+  accounts,
+}: {
+  transactions: UnattributedTransaction[]
+  total: number
+  /** Labels of the receiving accounts, by id. */
+  accounts: Map<string, string>
+}) {
+  return (
+    <div className="space-y-3">
+      {total > transactions.length && (
+        <p className="text-muted">
+          Đang hiện {transactions.length} khoản mới nhất trong tổng số {total} khoản.
+        </p>
+      )}
+      <ul className="divide-y divide-border card">
+        {transactions.map((tx) => (
+          <li key={tx.id} className="space-y-1 p-4 sm:px-6">
+            <p className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+              <span className="min-w-0 break-words">
+                <span className="font-semibold text-fg tabular-nums">+{formatVnd(tx.amount)}</span>
+                <span className="text-muted"> · {accounts.get(tx.receiving_account_id) ?? "Tài khoản nhận"}</span>
+              </span>
+              <span className="text-sm text-muted">
+                {tx.booked_date_only ? formatDate(tx.booked_at) : formatDateTime(tx.booked_at)} ·{" "}
+                {transactionSourceLabel(tx.source)}
+              </span>
+            </p>
+            <p className="break-words text-fg">
+              Người chuyển: {tx.counterparty_name ?? "—"}
+              {tx.counterparty_account_masked && (
+                <span className="text-muted"> ({tx.counterparty_account_masked})</span>
+              )}
+            </p>
+            <p className="break-words text-muted">
+              Nội dung: <MachineId>{tx.description ?? "—"}</MachineId>
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

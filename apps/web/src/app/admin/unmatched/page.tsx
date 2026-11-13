@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
-import { InboundExplanationList, ManualMatchList } from "@/components/Reconciliation"
+import { InboundExplanationList, ManualMatchList, UnattributedList } from "@/components/Reconciliation"
 import { UnmatchedTransactionCard } from "@/components/UnmatchedTransaction"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { explainTransaction } from "@/app/admin/unmatched/actions"
@@ -9,7 +9,17 @@ import { matchTransaction } from "@/app/me/campaigns/[id]/unmatched/actions"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
 import { campaignRefs, FINANCE_ROLES } from "@/lib/receiving-accounts"
-import { listInboundExplanations, listManualMatches, listMatchCandidates, listUnmatched } from "@/lib/reconciliation"
+import {
+  campaignOrganizers,
+  listInboundExplanations,
+  listManualMatches,
+  listMatchCandidates,
+  listUnattributed,
+  listUnmatched,
+  ownerMismatchNotice,
+  UNATTRIBUTED_CAUSES,
+} from "@/lib/reconciliation"
+import { accountLabels } from "@/lib/statement-import"
 import { dbAs } from "@/lib/supabase"
 
 import { AdminPage, AdminSection, ItemList } from "../_components/ui"
@@ -22,19 +32,25 @@ export default async function AdminUnmatchedPage() {
   // Finance and admin staff only; others get a 404.
   if (!(await isStaff(db, FINANCE_ROLES))) notFound()
 
-  const [{ transactions: unmatched, total }, matches, explanations] = await Promise.all([
+  const [{ transactions: unmatched, total }, unattributed, matches, explanations] = await Promise.all([
     listUnmatched(db),
+    listUnattributed(db),
     listManualMatches(db),
     listInboundExplanations(db),
   ])
   const campaignIds = [...new Set(unmatched.map((tx) => tx.campaign_id))]
-  const [refs, candidateLists] = await Promise.all([
+  const [refs, candidateLists, organizers, accounts] = await Promise.all([
     campaignRefs(db, [
       ...campaignIds,
       ...matches.map((m) => m.tx.campaign_id),
       ...explanations.map((e) => e.tx.campaign_id),
     ]),
     Promise.all(campaignIds.map((id) => listMatchCandidates(db, id))),
+    campaignOrganizers(db, campaignIds),
+    accountLabels(
+      db,
+      unattributed.transactions.map((tx) => tx.receiving_account_id)
+    ),
   ])
   const candidates = new Map(campaignIds.map((id, i) => [id, candidateLists[i]]))
   const titles = new Map([...refs].map(([id, ref]) => [id, ref.title]))
@@ -77,9 +93,27 @@ export default async function AdminUnmatchedPage() {
                 action={matchTransaction.bind(null, tx.id)}
                 explainAction={explainTransaction.bind(null, tx.id)}
                 campaignTitle={titles.get(tx.campaign_id) ?? tx.campaign_id}
+                matchBlocked={ownerMismatchNotice(tx, organizers.get(tx.campaign_id), session.user.id)}
               />
             ))}
           </ItemList>
+        )}
+      </AdminSection>
+
+      <AdminSection
+        id="unattributed"
+        title="Tiền vào chưa thuộc chiến dịch nào"
+        count={
+          unattributed.total > unattributed.transactions.length
+            ? `${unattributed.transactions.length} mới nhất / ${unattributed.total}`
+            : unattributed.total
+        }
+        lead={`Tiền đã vào một tài khoản nhận nhưng không được tính cho chiến dịch nào: ${UNATTRIBUTED_CAUSES}. Các khoản này không nằm trong tổng của chiến dịch nào và không khớp hay giải trình được ở đây; hãy báo quản trị viên để kiểm tra tài khoản nhận.`}
+      >
+        {unattributed.transactions.length === 0 ? (
+          <EmptyState title="Không có khoản tiền vào nào chưa thuộc chiến dịch." />
+        ) : (
+          <UnattributedList transactions={unattributed.transactions} total={unattributed.total} accounts={accounts} />
         )}
       </AdminSection>
 
