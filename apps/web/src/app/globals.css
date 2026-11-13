@@ -175,14 +175,26 @@
   }
 
   /*
-   * Section 6, Focus ring: below 1024px the campaign page's support bar
-   * (`data-action-bar`) is sticky at the bottom of the screen. A control
-   * focused from the keyboard is scrolled clear of it with its whole ring:
-   * the bar (1px border, 12px, a 52px button, its bottom padding) plus the
-   * 4px of the ring and 1px for scroll rounding.
+   * Section 6, Focus ring, "Scrolled clear": a control focused from the
+   * keyboard is scrolled into view with its whole ring (4px) plus 1px for
+   * scroll rounding, clear of the 65px sticky header (64px and its 1px
+   * border) and of the bottom of the screen. `scroll-margin` only applies when
+   * the browser scrolls the element itself into view, so anchor jumps to a
+   * section and mouse focus land where they did. Not inside the sticky header
+   * or support bar, which do not scroll away, nor inside a menu sheet, which
+   * scrolls on its own below the header.
+   */
+  :focus-visible:not([data-site-header] *, [data-action-bar] *, [data-menu-panel] *) {
+    scroll-margin-block: 70px 5px;
+  }
+
+  /*
+   * Below 1024px the campaign page's support bar (`data-action-bar`) is sticky
+   * at the bottom of the screen: clear it instead, its height (1px border,
+   * 12px, a 52px button, its bottom padding) plus the same 5px.
    */
   @media (width < 64rem) {
-    :root:has([data-action-bar]) :focus-visible:not([data-action-bar] *) {
+    :root:has([data-action-bar]) :focus-visible:not([data-site-header] *, [data-action-bar] *, [data-menu-panel] *) {
       scroll-margin-bottom: calc(65px + max(12px, env(safe-area-inset-bottom)) + 5px);
     }
   }

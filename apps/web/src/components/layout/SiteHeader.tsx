@@ -75,10 +75,11 @@ export function SiteHeader({ session, unread }: { session: Session | null; unrea
   )
 
   return (
-    <header className="sticky top-0 z-40 border-b border-border bg-bg">
+    <header data-site-header className="sticky top-0 z-40 border-b border-border bg-bg">
+      {/* `not-sr-only` resets padding to 0, so the padding is set on focus, after it. */}
       <a
         href="#main"
-        className="sr-only z-50 rounded bg-bg px-4 py-2 font-medium text-fg focus:not-sr-only focus:absolute focus:top-2 focus:left-2"
+        className="sr-only z-50 rounded bg-bg font-medium text-fg focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:px-4 focus:py-2"
       >
         Chuyển tới nội dung chính
       </a>
