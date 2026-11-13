@@ -177,7 +177,12 @@ export default async function CampaignsPage({
 
       <div className="mt-6 border-b border-border pb-4 sm:mt-8 sm:pb-6">
         {/* Room for the focus rings the scrolling row would clip: at the ends (ringRoom) and, here, above and below. */}
-        <ScrollRow ringRoom wrapClassName="-my-1" className="gap-2 py-1 md:overflow-visible lg:gap-3">
+        <ScrollRow
+          ringRoom
+          coverClassName="md:hidden"
+          wrapClassName="-my-1"
+          className="gap-2 py-1 md:overflow-visible lg:gap-3"
+        >
           <SegmentedNav
             label="Loại chiến dịch"
             items={TYPE_TABS.map((tab) => ({

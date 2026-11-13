@@ -37,6 +37,7 @@ export function ScrollRow({
   wrapClassName,
   fadeClassName = "md:hidden",
   ringRoom = false,
+  coverClassName,
   children,
 }: {
   /** The scrolling element: a plain div, or a list whose children are its items. */
@@ -49,6 +50,11 @@ export function ScrollRow({
   fadeClassName?: string
   /** Inline room for the focus ring of the first and last item (see above). */
   ringRoom?: boolean
+  /**
+   * Classes of the covers over the ring room, which are `bg` and render on the
+   * server at the right end: hide them where the row cannot scroll.
+   */
+  coverClassName?: string
   children: ReactNode
 }) {
   const row = useRef<HTMLDivElement & HTMLUListElement>(null)
@@ -65,7 +71,8 @@ export function ScrollRow({
       setMore((m) => (m.left === left && m.right === right ? m : { left, right }))
       if (!ringRoom) return
       // A row that stopped scrolling (the filter bar from 768px) clips nothing. At the
-      // end, under 1px can stay out of reach of a whole-pixel scroll: that is not content.
+      // end, a fractional scroll offset can leave a fraction of a pixel that no scroll
+      // reaches; the row is at its end then, so no cover (it would hide the last ring).
       const scrolls = getComputedStyle(el).overflowX !== "visible"
       const pastLeft = scrolls && el.scrollLeft > 0
       const pastRight = scrolls && el.scrollWidth - el.clientWidth - el.scrollLeft > 0.75
@@ -106,7 +113,7 @@ export function ScrollRow({
   }, [ringRoom])
 
   const fade = "pointer-events-none absolute inset-y-0 w-6 transition-opacity duration-150"
-  const cover = "pointer-events-none absolute inset-y-0 w-[5px] bg-bg"
+  const cover = clsx("pointer-events-none absolute inset-y-0 w-[5px] bg-bg", coverClassName)
   return (
     <div className={clsx("relative min-w-0", ringRoom && "-mx-[5px]", wrapClassName)}>
       <Row
