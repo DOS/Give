@@ -13,6 +13,15 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Home and empty states: the home headline reads in two lines
+  ("Gây quỹ minh bạch, / từng đồng đều có sao kê") where it fits; an
+  empty state's sentence is balanced, so a phone never leaves one word
+  alone on its second line; icons larger than 24px (empty states, the
+  404 and error pages, cards without a photo) keep the 1.5px line of the
+  other icons instead of a heavier one. `DESIGN.md` now states the empty
+  state's padding and centring, the empty home hero, the "Hai cách"
+  panels and the home's feature icons (#149 / #PR).
+
 - Discovery on phones: moving keyboard focus inside an open menu sheet
   ("Danh mục", "Trạng thái", "Sắp xếp") no longer scrolls the filter bar
   behind it (#152 / #156).
