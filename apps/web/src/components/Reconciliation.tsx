@@ -159,6 +159,9 @@ export function UnattributedList({
             <p className="break-words text-muted">
               Nội dung chuyển khoản: {tx.description ? <MachineId>{tx.description}</MachineId> : "—"}
             </p>
+            <p className="text-sm break-words text-muted">
+              Mã giao dịch: <MachineId>{tx.provider_tx_id}</MachineId>
+            </p>
           </li>
         ))}
       </ul>

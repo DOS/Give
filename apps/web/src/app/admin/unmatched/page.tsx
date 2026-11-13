@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 
 import { InboundExplanationList, ManualMatchList, UnattributedList } from "@/components/Reconciliation"
 import { UnmatchedTransactionCard } from "@/components/UnmatchedTransaction"
+import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { explainTransaction } from "@/app/admin/unmatched/actions"
 import { matchTransaction } from "@/app/me/campaigns/[id]/unmatched/actions"
@@ -17,6 +18,7 @@ import {
   listUnattributed,
   listUnmatched,
   ownerMismatchNotice,
+  UNATTRIBUTED_CAUSES,
 } from "@/lib/reconciliation"
 import { accountLabels } from "@/lib/statement-import"
 import { dbAs } from "@/lib/supabase"
@@ -33,7 +35,8 @@ export default async function AdminUnmatchedPage() {
 
   const [{ transactions: unmatched, total }, unattributed, matches, explanations] = await Promise.all([
     listUnmatched(db),
-    listUnattributed(db),
+    // A read-only section: if it cannot be read, the queue above still renders.
+    listUnattributed(db).catch(() => null),
     listManualMatches(db),
     listInboundExplanations(db),
   ])
@@ -45,10 +48,10 @@ export default async function AdminUnmatchedPage() {
       ...explanations.map((e) => e.tx.campaign_id),
     ]),
     Promise.all(campaignIds.map((id) => listMatchCandidates(db, id))),
-    campaignOrganizers(db, campaignIds),
-    accountLabels(
-      db,
-      unattributed.transactions.map((tx) => tx.receiving_account_id)
+    // Without organizers the match forms stay and the database still refuses.
+    campaignOrganizers(db, campaignIds).catch(() => new Map<string, string>()),
+    accountLabels(db, unattributed?.transactions.map((tx) => tx.receiving_account_id) ?? []).catch(
+      () => new Map<string, string>()
     ),
   ])
   const candidates = new Map(campaignIds.map((id, i) => [id, candidateLists[i]]))
@@ -103,13 +106,17 @@ export default async function AdminUnmatchedPage() {
         id="unattributed"
         title="Tiền vào chưa thuộc chiến dịch nào"
         count={
-          unattributed.total > unattributed.transactions.length
-            ? `${unattributed.transactions.length} mới nhất / ${unattributed.total}`
-            : unattributed.total
+          !unattributed
+            ? undefined
+            : unattributed.total > unattributed.transactions.length
+              ? `${unattributed.transactions.length} mới nhất / ${unattributed.total}`
+              : unattributed.total
         }
-        lead="Tiền đã vào một tài khoản nhận nhưng không được tính cho chiến dịch nào, vì lúc nhận tiền tài khoản đó không gắn với chiến dịch nào, hoặc không thuộc về người tổ chức của chiến dịch được gắn. Các khoản này không nằm trong tổng của chiến dịch nào và không khớp hay giải trình được ở đây: hãy báo quản trị viên kiểm tra tài khoản nhận."
+        lead={`Tiền đã vào một tài khoản nhận nhưng không được tính cho chiến dịch nào, vì ${UNATTRIBUTED_CAUSES}. Các khoản này không nằm trong tổng của chiến dịch nào và không khớp hay giải trình được ở đây. Khoản chuyển thử để xác minh tài khoản là bình thường; các khoản khác cần quản trị viên kiểm tra tài khoản nhận.`}
       >
-        {unattributed.transactions.length === 0 ? (
+        {!unattributed ? (
+          <Callout tone="warning">Chưa đọc được danh sách này. Hãy tải lại trang sau ít phút.</Callout>
+        ) : unattributed.transactions.length === 0 ? (
           <EmptyState title="Không có khoản tiền vào nào chưa thuộc chiến dịch.">
             Tiền vào tài khoản nhận mà không thuộc chiến dịch nào sẽ hiện ở đây.
           </EmptyState>

@@ -122,6 +122,7 @@ describe("listUnmatched", () => {
     expect(String(op(calls[0], "select")?.[0])).toContain(
       "account:receiving_accounts!receiving_account_id(owner_user_id)"
     )
+    expect(String(op(calls[0], "select")?.[0])).toContain("binding:account_bindings!binding_id(receiving_account_id)")
     expect(calls[0].ops).toEqual(
       expect.arrayContaining([
         ["eq", "direction", "in"],

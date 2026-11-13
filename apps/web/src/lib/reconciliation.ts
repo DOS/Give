@@ -16,13 +16,15 @@ import { formatVnd } from "./format"
  */
 
 /**
- * Why an incoming transaction has no campaign (campaign_id NULL): when it was
- * recorded, its account had no binding that covered it, or the account's
- * owner was not the organizer of the bound campaign (DOS/Give#119, worded in
- * #148). give.record_bank_transaction keeps both out of every campaign.
+ * Why a transaction has no campaign (campaign_id NULL, never changed later):
+ * no binding of its account covered its booking (give.binding_covers_booking:
+ * no active binding, a draft campaign or one not yet submitted, after the
+ * binding ended, or a verification transfer on the binding day), or the
+ * account's owner was not the organizer of the bound campaign (DOS/Give#119).
+ * Worded in DOS/Give#148.
  */
 export const UNATTRIBUTED_CAUSES =
-  "lúc nhận tiền, tài khoản nhận không gắn với chiến dịch nào, hoặc không thuộc về người tổ chức của chiến dịch được gắn"
+  "lúc nhận tiền, giao dịch nằm ngoài thời gian tài khoản gắn với một chiến dịch đã gửi duyệt (ví dụ khoản chuyển thử để xác minh tài khoản, tiền vào trước khi chiến dịch gửi duyệt hoặc sau khi tài khoản được nhả), hoặc tài khoản không thuộc về người tổ chức của chiến dịch được gắn"
 
 /** Contribution statuses give.match_transaction accepts. */
 export const MATCHABLE_STATUSES = [

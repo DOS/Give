@@ -104,7 +104,7 @@ const GIVE_MESSAGES: Record<string, string> = {
   // action words it itself (#136); this wording covers any other path, such
   // as a statement upload or a parked event, if one raises it later (#148).
   GIVE_ACCOUNT_OWNER_MISMATCH:
-    "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch không được tính cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch.",
+    "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch này không xử lý được cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch.",
   GIVE_ACCOUNT_HISTORY_OPEN:
     "Tài khoản này đã được đổi ra khỏi một chiến dịch mà phần tiền chưa xong (chiến dịch chưa kết thúc đủ 30 ngày, hoặc còn giao dịch chưa đối chiếu, chưa giải trình, hoặc còn dòng sao kê chưa ghi nhận), nên chưa dùng cho chiến dịch khác được.",
   // Reward tiers and fulfillment of back campaigns (DOS/Give#30, #83).

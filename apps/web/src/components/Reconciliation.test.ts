@@ -39,6 +39,7 @@ describe("UnattributedList (DOS/Give#148)", () => {
     expect(html).toContain("TRAN THI B")
     expect(html).toContain("CHUYEN TIEN")
     expect(html).toContain("nguồn: sao kê tải lên")
+    expect(html).toContain("FT-a")
     // A missing note is a plain dash, not set in the machine-id face.
     expect(html).toMatch(/Nội dung chuyển khoản: (<!-- -->)?—/)
     expect(html).not.toMatch(/<form|<button/)

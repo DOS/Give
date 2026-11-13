@@ -52,7 +52,7 @@ describe("labels", () => {
     expect(uploadErrorMessage("processing_failed")).toBe("Có lỗi xảy ra. Hãy thử lại sau.")
     // Not raised on this path today; worded in case it is (DOS/Give#148).
     expect(uploadErrorMessage("GIVE_ACCOUNT_OWNER_MISMATCH", 4)).toBe(
-      "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch không được tính cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch (dòng 4 của file)."
+      "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch này không xử lý được cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch (dòng 4 của file)."
     )
   })
 

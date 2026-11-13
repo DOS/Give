@@ -201,7 +201,7 @@ describe("matchTransaction", () => {
     state.responses.bank_transactions = { data: { ...tx().data, campaign_id: null } }
     // Both causes of a transaction with no campaign (DOS/Give#148).
     expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toBe(
-      "Giao dịch này chưa thuộc chiến dịch nào (lúc nhận tiền, tài khoản nhận không gắn với chiến dịch nào, hoặc không thuộc về người tổ chức của chiến dịch được gắn), nên chưa khớp được."
+      "Giao dịch này không thuộc chiến dịch nào (lúc nhận tiền, giao dịch nằm ngoài thời gian tài khoản gắn với một chiến dịch đã gửi duyệt (ví dụ khoản chuyển thử để xác minh tài khoản, tiền vào trước khi chiến dịch gửi duyệt hoặc sau khi tài khoản được nhả), hoặc tài khoản không thuộc về người tổ chức của chiến dịch được gắn), nên không khớp được."
     )
     expect(state.serviceCalls).toHaveLength(0)
   })
