@@ -62,9 +62,7 @@ export function UnmatchedTransactionCard({
         </div>
         <div className="sm:col-span-3">
           <dt className="text-sm text-muted">Nội dung chuyển khoản</dt>
-          <dd className="text-fg">
-            <MachineId>{tx.description ?? "—"}</MachineId>
-          </dd>
+          <dd className="text-fg">{tx.description ? <MachineId>{tx.description}</MachineId> : "—"}</dd>
         </div>
         {campaignTitle && (
           <div className="sm:col-span-2">

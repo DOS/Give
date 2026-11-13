@@ -157,7 +157,7 @@ describe("explainTransaction", () => {
     )
     state.responses.bank_transactions = tx({ campaign_id: null })
     expect((await explainTransaction(TX, null, form(VALID)))?.message).toBe(
-      "Giao dịch này không thuộc chiến dịch nào (lúc nhận tiền, giao dịch nằm ngoài thời gian tài khoản gắn với một chiến dịch đã gửi duyệt (ví dụ khoản chuyển thử để xác minh tài khoản, tiền vào trước khi chiến dịch gửi duyệt hoặc sau khi tài khoản được nhả), hoặc tài khoản không thuộc về người tổ chức của chiến dịch được gắn), nên không cần giải trình."
+      "Giao dịch này không thuộc chiến dịch nào, nên không cần giải trình. Lý do có thể là: khoản chuyển thử để xác minh tài khoản; tiền vào khi tài khoản chưa gắn với chiến dịch nào hoặc trước khi chiến dịch gửi duyệt; tiền vào sau khi tài khoản được nhả, hoặc được ghi nhận khi tài khoản đã được nhả (ví dụ sao kê nhập muộn); hoặc tài khoản không thuộc về người tổ chức của chiến dịch được gắn."
     )
     state.responses.bank_transactions = { data: null }
     expect((await explainTransaction(TX, null, form(VALID)))?.message).toBe(

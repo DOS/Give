@@ -41,7 +41,7 @@ const EXPLAIN_MESSAGES: Record<string, string> = {
   GIVE_TRANSACTION_ALREADY_EXPLAINED:
     "Giao dịch này đã được giải trình với nội dung khác. Giải trình đã ghi thì không sửa được.",
   GIVE_TRANSACTION_NOT_INBOUND: "Chỉ giải trình được các khoản tiền vào ở đây; khoản chi do người tổ chức giải trình.",
-  GIVE_TRANSACTION_UNATTRIBUTED: `Giao dịch này không thuộc chiến dịch nào (${UNATTRIBUTED_CAUSES}), nên không cần giải trình.`,
+  GIVE_TRANSACTION_UNATTRIBUTED: `Giao dịch này không thuộc chiến dịch nào, nên không cần giải trình. Lý do có thể là: ${UNATTRIBUTED_CAUSES}.`,
   GIVE_EXPLANATION_KIND_INVALID: "Chọn loại khoản tiền.",
   GIVE_REASON_REQUIRED: "Ghi lý do vì sao đây không phải tiền ủng hộ.",
   GIVE_EVIDENCE_REQUIRED:

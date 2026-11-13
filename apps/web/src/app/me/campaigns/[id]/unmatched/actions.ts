@@ -44,7 +44,7 @@ const MATCH_MESSAGES: Record<string, string> = {
   GIVE_TRANSACTION_NOT_INBOUND: "Chỉ khớp được các khoản tiền vào.",
   GIVE_TRANSACTION_EXPLAINED:
     "Giao dịch này đã được nhân viên tài chính giải trình là không phải tiền ủng hộ, nên không khớp được nữa.",
-  GIVE_TRANSACTION_UNATTRIBUTED: `Giao dịch này không thuộc chiến dịch nào (${UNATTRIBUTED_CAUSES}), nên không khớp được.`,
+  GIVE_TRANSACTION_UNATTRIBUTED: `Giao dịch này không thuộc chiến dịch nào, nên không khớp được. Lý do có thể là: ${UNATTRIBUTED_CAUSES}.`,
   // The account's owner is not the campaign's organizer (the database rule of
   // DOS/Give#119, worded in #136). Only an admin data repair clears it, so the
   // organizer is sent to the Give team.
