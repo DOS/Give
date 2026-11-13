@@ -11,17 +11,21 @@ const ROOM = 5
 /**
  * One row that scrolls sideways when it does not fit, never wrapping (DESIGN.md
  * 6, filter bar). An edge fades into the page only on the side that still has
- * more to scroll to; before JavaScript runs, the right edge fades. The fades
- * are overlays, not masks, so a menu sheet opened from inside the row stays
- * visible. An item focused from the keyboard is scrolled clear of them.
+ * more to scroll to; before JavaScript runs, the right edge fades. With
+ * scripting turned off nothing can tell which side has more, so no edge fades
+ * and nothing is covered (`noscript:hidden`). The fades are overlays, not
+ * masks, so a menu sheet opened from inside the row stays visible. An item
+ * focused from the keyboard is scrolled clear of them; focus inside such a
+ * sheet, which is fixed to the screen, leaves the row where it is.
  *
  * The scrolling element clips whatever leaves its padding box, focus rings
  * included. With `ringRoom`, a row whose first and last items carry the
  * standard ring (2px at a 2px offset) gets 5px of inline room for it: the 4px
  * of the ring, and 1px because the scroll extent can round to whole pixels,
  * which would shave a fraction off the last ring. An equal negative margin
- * takes the room back, and the fades and the keyboard reveal keep to the old
- * edge. Only a ring may show in the room: while the row has anything scrolled
+ * takes the room back, and the fades keep to the old edge. The keyboard reveal
+ * clears the fade by the same 5px more, so the ring is clear of it too, not
+ * only the item. Only a ring may show in the room: while the row has anything scrolled
  * past an end, a solid cover hides the room there, as the clip did before. So
  * nothing moves at rest or while scrolling. Room above and below is the
  * caller's (`className`, `wrapClassName`). TabNav needs none: its ring is
@@ -87,16 +91,24 @@ export function ScrollRow({
     const reveal = (event: FocusEvent) => {
       const item = event.target
       if (!(item instanceof HTMLElement) || !item.matches(":focus-visible")) return
+      // A menu sheet opened from the row is a descendant, but it is fixed to the
+      // screen: scrolling the row does not move it, so it is not ours to reveal.
+      for (let node: HTMLElement | null = item; node && node !== el; node = node.parentElement) {
+        if (getComputedStyle(node).position === "fixed") return
+      }
       const box = el.getBoundingClientRect()
       const rect = item.getBoundingClientRect()
       // The fades cover FADE inside the row's edge as it is without ring room.
+      // With ring room the items carry the ring outside their box, so clear the
+      // fade by ROOM more: the ring, and the pixel a scroll offset can round by.
       const room = ringRoom ? ROOM : 0
       const left = box.left + room
       const right = box.right - room
-      if (rect.left < left + FADE || rect.width > right - left - 2 * FADE) {
-        el.scrollLeft += rect.left - left - FADE
-      } else if (rect.right > right - FADE) {
-        el.scrollLeft += rect.right - right + FADE
+      const clear = FADE + room
+      if (rect.left < left + clear || rect.width > right - left - 2 * clear) {
+        el.scrollLeft += rect.left - left - clear
+      } else if (rect.right > right - clear) {
+        el.scrollLeft += rect.right - right + clear
       }
     }
     el.addEventListener("focusin", reveal)
@@ -112,8 +124,8 @@ export function ScrollRow({
     }
   }, [ringRoom])
 
-  const fade = "pointer-events-none absolute inset-y-0 w-6 transition-opacity duration-150"
-  const cover = clsx("pointer-events-none absolute inset-y-0 w-[5px] bg-bg", coverClassName)
+  const fade = "pointer-events-none absolute inset-y-0 w-6 transition-opacity duration-150 noscript:hidden"
+  const cover = clsx("pointer-events-none absolute inset-y-0 w-[5px] bg-bg noscript:hidden", coverClassName)
   return (
     <div className={clsx("relative min-w-0", ringRoom && "-mx-[5px]", wrapClassName)}>
       <Row

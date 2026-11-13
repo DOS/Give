@@ -12,6 +12,19 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Discovery on phones: moving keyboard focus inside an open menu sheet
+  ("Danh mục", "Trạng thái", "Sắp xếp") no longer scrolls the filter bar
+  behind it (#152 / #PRNUM).
+- Focus rings: the discovery type control draws its ring inside the item,
+  so it no longer touches the next item or the strip's edge; an item
+  reached by keyboard in a filter row is scrolled clear of the edge fade
+  together with its ring; with scripting turned off the filter and tab
+  rows show no edge fade, so nothing hides the last item or its ring.
+  `DESIGN.md` 6 now states the focus ring and its exceptions
+  (#153 / #PRNUM).
+- Statement: the filter tag row fades at the edge with more tags at any
+  width when it does not fit, not only on phones; with today's labels
+  nothing changes on screen (#154 / #PRNUM).
 - Filter rows: the keyboard focus ring is no longer cut off at the edge of
   a row that scrolls sideways: the first and last tag of the statement
   filters, and the menu buttons of the discovery filter bar below 768px.

@@ -138,6 +138,14 @@ Contrast: body text >= 4.5:1, large text and icons >= 3:1, in both themes.
 
 Each component lives in `apps/web/src/components/ui` and is built on shadcn/ui (Radix) primitives, restyled with the tokens above. Pages never restyle a component inline. If a page needs a variant, it is added to the component and listed here.
 
+### Focus ring
+
+- **Site-wide:** an element focused from the keyboard (`:focus-visible`) shows a 2px `primary` ring 2px outside its box, so the ring reaches 4px beyond the element.
+- **A ring is always whole:** it is never cut off, never under an edge fade and never touches the next control. Where 4px outside is not free, the ring moves inside the element, at the same 2px:
+  - Tabs: inside the tab.
+  - The segmented control (filter bar): inside the item, because the items sit 4px apart and 4px from the strip's edge.
+- **Fields** (input, select, textarea) differ: the 2px ring sits on the field's own edge with no offset and shows on every focus, pointer included.
+
 ### Button
 
 | Size         | Height | Padding x | Text      |
@@ -153,7 +161,7 @@ Each component lives in `apps/web/src/components/ui` and is built on shadcn/ui (
 ### Input, select, textarea
 
 - Height 44px, 1px `border` on a `surface` fill.
-- Focus: 2px `primary` ring.
+- Focus: a 2px `primary` ring on the field's edge, with no offset (see Focus ring).
 - The label is 14px, weight 500, and sits 8px above the input.
 - Helper text and errors go 8px below the input, in 14px.
 
@@ -165,16 +173,17 @@ A tag is **not** a button-sized box.
 - Look: a `surface` fill with no border.
 - Interactive tags: hover goes to `border`; the selected state is a `primary-soft` fill with `primary` text.
 - The 44px touch target comes from an invisible hit area (padding or `::after`), not from a bigger visible box.
-- Focus: the site-wide ring (2px `primary`, 2px outside the box) is whole on every tag, also at the ends of a row that scrolls sideways (see Filter bar, focus room).
+- Focus: the site-wide ring (see Focus ring) is whole on every tag, also at the ends of a row that scrolls sideways (see Filter bar, focus room).
 
 ### Filter bar (discovery)
 
 - **Layout:** one row only. On the left: the type tabs ("Tất cả / Từ thiện / Dự án sáng tạo"), the "Danh mục" menu and the "Trạng thái" menu (Đang gây quỹ / Đã kết thúc / Tất cả). On the right: the result count ("128 chiến dịch") and the "Sắp xếp" menu (Nổi bật / Mới nhất / Sắp kết thúc / Gần đạt mục tiêu).
 - **Menu labels:** a menu button reads "Name: value" ("Sắp xếp: Nổi bật"). Where the row is tight it shows only the value; the name stays in the accessible name. If the longest values still do not fit from 768px, only the "Danh mục" button shrinks and ends in an ellipsis (the chosen category also shows under "Đang lọc"). The row never wraps and never pushes the page sideways.
-- **Phones:** the row scrolls sideways, with no wrapping onto a second line. An edge fades only on the side that still has more to scroll to. Below 768px the menus open as a sheet fixed to the bottom of the screen; from 768px, where the row no longer scrolls, they open as a popover under their button.
+- **Phones:** the row scrolls sideways, with no wrapping onto a second line. An edge fades only on the side that still has more to scroll to; with scripting turned off the page cannot tell, so no edge fades. Below 768px the menus open as a sheet fixed to the bottom of the screen; from 768px, where the row no longer scrolls, they open as a popover under their button.
 - **State:** every control is a link; filters, order and page live in the URL. Changing a filter or the order goes back to the first page.
-- **Type control:** a segmented control on a `surface` strip, 36px items, the current item on `surface-raised`.
-- **Focus room:** a row that scrolls sideways clips at its edge, so the filter bar and the statement's tag row keep room for the focus ring just outside the container: 5px at each end (the 4px of the ring plus 1px for scroll rounding), and on the filter bar 4px above and below. This room is not layout spacing and shows nothing but a ring: items still start at the container edge, the fades cover the same 24px inside it, and anything scrolled past an end is covered in the room.
+- **Type control:** a segmented control on a `surface` strip, 36px items, the current item on `surface-raised`. Its focus ring is drawn inside the item (see Focus ring).
+- **Focus room:** a row that scrolls sideways clips at its edge, so the filter bar and the statement's tag row keep room for the focus ring just outside the container: 5px at each end (the 4px of the ring plus 1px for scroll rounding), and on the filter bar 4px above and below. This room is not layout spacing and shows nothing but a ring: items still start at the container edge, the fades cover the same 24px inside it, and anything scrolled past an end is covered in the room. An item focused from the keyboard is scrolled clear of the fade together with its ring: 29px from the edge (the 24px fade plus these 5px). Focus inside an open menu sheet does not move the row behind it.
+- **Statement tag row:** the same one row of tags at every width. It can overflow at any width (a longer label, a larger count), so its edge fades are not limited to phones.
 - **No chip wall:** never show every category as a wall of chips.
 
 ### Card (campaign)
@@ -200,7 +209,7 @@ A tag is **not** a button-sized box.
 
 - Text tabs with a 2px `primary` underline on the active tab.
 - 44px high, 24px apart, on a 1px `border` baseline that spans the container.
-- **When the row does not fit** (phones, and `/admin` up to 1024px): it scrolls sideways, with no wrapping. While it overflows, a 24px edge fades into `bg` only on the side that still has more tabs (an overlay, as on the filter bar, not a mask); the baseline stays whole under the fade. A tab focused from the keyboard is scrolled 24px clear of the edge. A row that fits has no fade; before JavaScript runs, the right edge fades as a fallback.
+- **When the row does not fit** (phones, and `/admin` up to 1024px): it scrolls sideways, with no wrapping. While it overflows, a 24px edge fades into `bg` only on the side that still has more tabs (an overlay, as on the filter bar, not a mask); the baseline stays whole under the fade. A tab focused from the keyboard is scrolled 24px clear of the edge; its focus ring is drawn inside the tab (see Focus ring), so that is enough. A row that fits has no fade; before JavaScript runs, the right edge fades as a fallback, and with scripting turned off no edge fades.
 
 ### Empty state
 
