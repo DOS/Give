@@ -17,7 +17,6 @@ import {
   listUnattributed,
   listUnmatched,
   ownerMismatchNotice,
-  UNATTRIBUTED_CAUSES,
 } from "@/lib/reconciliation"
 import { accountLabels } from "@/lib/statement-import"
 import { dbAs } from "@/lib/supabase"
@@ -108,10 +107,12 @@ export default async function AdminUnmatchedPage() {
             ? `${unattributed.transactions.length} mới nhất / ${unattributed.total}`
             : unattributed.total
         }
-        lead={`Tiền đã vào một tài khoản nhận nhưng không được tính cho chiến dịch nào: ${UNATTRIBUTED_CAUSES}. Các khoản này không nằm trong tổng của chiến dịch nào và không khớp hay giải trình được ở đây; hãy báo quản trị viên để kiểm tra tài khoản nhận.`}
+        lead="Tiền đã vào một tài khoản nhận nhưng không được tính cho chiến dịch nào, vì lúc nhận tiền tài khoản đó không gắn với chiến dịch nào, hoặc không thuộc về người tổ chức của chiến dịch được gắn. Các khoản này không nằm trong tổng của chiến dịch nào và không khớp hay giải trình được ở đây: hãy báo quản trị viên kiểm tra tài khoản nhận."
       >
         {unattributed.transactions.length === 0 ? (
-          <EmptyState title="Không có khoản tiền vào nào chưa thuộc chiến dịch." />
+          <EmptyState title="Không có khoản tiền vào nào chưa thuộc chiến dịch.">
+            Tiền vào tài khoản nhận mà không thuộc chiến dịch nào sẽ hiện ở đây.
+          </EmptyState>
         ) : (
           <UnattributedList transactions={unattributed.transactions} total={unattributed.total} accounts={accounts} />
         )}

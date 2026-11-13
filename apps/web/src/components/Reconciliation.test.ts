@@ -30,12 +30,17 @@ function render(transactions: UnattributedTransaction[], total: number) {
 
 describe("UnattributedList (DOS/Give#148)", () => {
   it("lists each transaction read only: amount, account, sender, note and source", () => {
-    const html = render([tx("a"), tx("b", { receiving_account_id: "other", counterparty_name: null })], 2)
+    const html = render(
+      [tx("a"), tx("b", { receiving_account_id: "other", counterparty_name: null, description: null })],
+      2
+    )
     expect(html).toContain("VCB · ****6789 · A")
     expect(html).toContain("Tài khoản nhận")
     expect(html).toContain("TRAN THI B")
     expect(html).toContain("CHUYEN TIEN")
-    expect(html).toContain("sao kê tải lên")
+    expect(html).toContain("nguồn: sao kê tải lên")
+    // A missing note is a plain dash, not set in the machine-id face.
+    expect(html).toMatch(/Nội dung chuyển khoản: (<!-- -->)?—/)
     expect(html).not.toMatch(/<form|<button/)
     expect(html).not.toContain("Đang hiện")
   })

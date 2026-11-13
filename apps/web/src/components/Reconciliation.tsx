@@ -132,7 +132,7 @@ export function UnattributedList({
   return (
     <div className="space-y-3">
       {total > transactions.length && (
-        <p className="text-muted">
+        <p className="text-sm text-muted">
           Đang hiện {transactions.length} khoản mới nhất trong tổng số {total} khoản.
         </p>
       )}
@@ -142,10 +142,11 @@ export function UnattributedList({
             <p className="flex flex-wrap justify-between gap-x-4 gap-y-1">
               <span className="min-w-0 break-words">
                 <span className="font-semibold text-fg tabular-nums">+{formatVnd(tx.amount)}</span>
-                <span className="text-muted"> · {accounts.get(tx.receiving_account_id) ?? "Tài khoản nhận"}</span>
+                <span className="text-muted"> · </span>
+                {accounts.get(tx.receiving_account_id) ?? "Tài khoản nhận"}
               </span>
               <span className="text-sm text-muted">
-                {tx.booked_date_only ? formatDate(tx.booked_at) : formatDateTime(tx.booked_at)} ·{" "}
+                {tx.booked_date_only ? formatDate(tx.booked_at) : formatDateTime(tx.booked_at)} · nguồn:{" "}
                 {transactionSourceLabel(tx.source)}
               </span>
             </p>
@@ -156,7 +157,7 @@ export function UnattributedList({
               )}
             </p>
             <p className="break-words text-muted">
-              Nội dung: <MachineId>{tx.description ?? "—"}</MachineId>
+              Nội dung chuyển khoản: {tx.description ? <MachineId>{tx.description}</MachineId> : "—"}
             </p>
           </li>
         ))}
