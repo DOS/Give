@@ -9,7 +9,13 @@ import { PageHeader } from "@/components/ui/PageHeader"
 import { requireSession } from "@/lib/auth/session"
 import { getCampaignById } from "@/lib/campaigns"
 import { isUuid } from "@/lib/ids"
-import { listManualMatches, listMatchCandidates, listUnmatched, paidBreakdown } from "@/lib/reconciliation"
+import {
+  listManualMatches,
+  listMatchCandidates,
+  listUnmatched,
+  ownerMismatchNotice,
+  paidBreakdown,
+} from "@/lib/reconciliation"
 import { dbAs } from "@/lib/supabase"
 
 import { MeDetail } from "../../../_components/MePage"
@@ -64,6 +70,7 @@ export default async function UnmatchedPage({ params }: { params: Promise<{ id: 
                     tx={tx}
                     candidates={candidates}
                     action={matchTransaction.bind(null, tx.id)}
+                    matchBlocked={ownerMismatchNotice(tx, campaign.organizer_id, session.user.id)}
                   />
                 ))}
               </ul>

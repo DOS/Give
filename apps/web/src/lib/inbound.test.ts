@@ -32,6 +32,7 @@ describe("parkedReasonLabel", () => {
     expect(parkedReasonLabel("GIVE_NOT_ALLOWED")).toContain("không còn quyền")
     expect(parkedReasonLabel("STATEMENT_PAYLOAD_INVALID")).toContain("Tải lại đúng file")
     expect(parkedReasonLabel("STATEMENT_PART_WAITING")).toContain("Phần trước")
+    expect(parkedReasonLabel("GIVE_ACCOUNT_OWNER_MISMATCH")).toContain("không thuộc về người tổ chức")
     expect(parkedReasonLabel(null)).toBe("Không có mã lỗi.")
     expect(parkedReasonLabel("something_else")).toBe("Lỗi khác.")
   })

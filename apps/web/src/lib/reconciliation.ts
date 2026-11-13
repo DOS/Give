@@ -15,6 +15,20 @@ import { formatVnd } from "./format"
  * finance/admin staff see its transactions, contributions and ledger.
  */
 
+/**
+ * Why a transaction has no campaign (campaign_id NULL, never changed later),
+ * as possible causes after "Lý do có thể là: ". When it was recorded, no
+ * binding of its account covered its booking (give.binding_covers_booking:
+ * no binding, a draft campaign or one not yet submitted, a verification
+ * transfer on the binding day, booked on the old account from an approved
+ * swap on, booked after the binding ended, or recorded after an ordinary
+ * release, since only bindings a swap ended are searched),
+ * or the account's owner was not the organizer of the bound campaign
+ * (DOS/Give#119). Worded in DOS/Give#148.
+ */
+export const UNATTRIBUTED_CAUSES =
+  "khoản chuyển thử để xác minh tài khoản; tiền vào khi tài khoản chưa gắn với chiến dịch nào hoặc khi chiến dịch chưa gửi duyệt; tiền vào tài khoản cũ sau khi chiến dịch đã đổi sang tài khoản khác; tiền vào sau khi tài khoản được nhả, hoặc tiền vào trước đó nhưng đến khi tài khoản đã được nhả mới được ghi nhận (ví dụ sao kê nhập muộn); hoặc tài khoản không thuộc về người tổ chức của chiến dịch được gắn"
+
 /** Contribution statuses give.match_transaction accepts. */
 export const MATCHABLE_STATUSES = [
   "awaiting_transfer",
@@ -53,6 +67,23 @@ const TX_COLUMNS =
   "id, campaign_id, receiving_account_id, provider_tx_id, amount, booked_at, booked_date_only, description, " +
   "counterparty_name, counterparty_account_masked, source, after_close"
 
+/** An unmatched transaction with the owner of its receiving account, as far as the caller may read it. */
+export interface UnmatchedRow extends UnmatchedTransaction {
+  /**
+   * receiving_accounts.owner_user_id, or null when the caller may not read the
+   * account: finance/admin staff read every account, anyone else only the
+   * accounts they own (receiving_accounts_read).
+   */
+  account_owner_id: string | null
+  /**
+   * The receiving account of the binding that attributed the transaction
+   * (bank_transactions.binding_id), or null when the caller may not read the
+   * binding. The organizer reads the bindings of their campaigns
+   * (account_bindings_read).
+   */
+  binding_account_id: string | null
+}
+
 /**
  * Incoming, attributed transactions with neither a match nor an explanation,
  * newest first. Every such transaction is posted to 'unmatched_in' when it is
@@ -61,12 +92,15 @@ const TX_COLUMNS =
 export async function listUnmatched(
   db: Db,
   { campaignId, limit = 100 }: { campaignId?: string; limit?: number } = {}
-): Promise<{ transactions: UnmatchedTransaction[]; total: number }> {
+): Promise<{ transactions: UnmatchedRow[]; total: number }> {
   let query = db
     .from("bank_transactions")
-    .select(`${TX_COLUMNS}, transaction_matches(bank_transaction_id), inbound_explanations(bank_transaction_id)`, {
-      count: "exact",
-    })
+    .select(
+      `${TX_COLUMNS}, transaction_matches(bank_transaction_id), inbound_explanations(bank_transaction_id), ` +
+        "account:receiving_accounts!receiving_account_id(owner_user_id), " +
+        "binding:account_bindings!binding_id(receiving_account_id)",
+      { count: "exact" }
+    )
     .eq("direction", "in")
     .not("campaign_id", "is", null)
     .is("transaction_matches", null)
@@ -78,12 +112,134 @@ export async function listUnmatched(
     (data ?? []) as unknown as (UnmatchedTransaction & {
       transaction_matches?: unknown
       inbound_explanations?: unknown
+      account?: { owner_user_id: string } | { owner_user_id: string }[] | null
+      binding?: { receiving_account_id: string } | { receiving_account_id: string }[] | null
     })[]
-  ).map(({ transaction_matches: _match, inbound_explanations: _explanation, ...tx }) => ({
+  ).map(({ transaction_matches: _match, inbound_explanations: _explanation, account, binding, ...tx }) => ({
+    ...tx,
+    amount: Number(tx.amount),
+    account_owner_id: one(account)?.owner_user_id ?? null,
+    binding_account_id: one(binding)?.receiving_account_id ?? null,
+  }))
+  return { transactions, total: count ?? transactions.length }
+}
+
+/**
+ * True when the transaction's receiving account is not owned by its campaign's
+ * organizer: give.match_transaction then refuses every match with
+ * GIVE_ACCOUNT_OWNER_MISMATCH (DOS/Give#119). Only a transaction attributed
+ * before the two came to differ (a direct data edit) is in this state; it
+ * stays 'unmatched_in' and keeps blocking the release of the binding
+ * (DOS/Give#148).
+ *
+ * Uses only what the reader may read. Staff read every account, so the owner
+ * is compared. Organizers read only their own accounts, so an account they
+ * cannot read is not theirs, but only when they can read the transaction's
+ * binding and it points at that account: a missing binding or an account
+ * left out for any other reason never shows the notice. False when the
+ * organizer is unknown; the database refuses the match either way.
+ */
+export function accountOwnerMismatch(
+  tx: Pick<UnmatchedRow, "receiving_account_id" | "account_owner_id" | "binding_account_id">,
+  organizerId: string | null | undefined
+): boolean {
+  if (!organizerId) return false
+  if (tx.account_owner_id !== null) return tx.account_owner_id !== organizerId
+  return tx.binding_account_id !== null && tx.binding_account_id === tx.receiving_account_id
+}
+
+/** GIVE_ACCOUNT_OWNER_MISMATCH for the campaign's organizer (DOS/Give#136): only an admin data repair clears it. */
+export const OWNER_MISMATCH_FOR_ORGANIZER =
+  "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy liên hệ đội ngũ Give để kiểm tra lại tài khoản nhận và chiến dịch."
+
+/** The same for finance staff, who are the Give team: it goes to an admin. */
+export const OWNER_MISMATCH_FOR_STAFF =
+  "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy báo quản trị viên kiểm tra lại tài khoản nhận và người tổ chức của chiến dịch trước khi xử lý giao dịch này."
+
+/**
+ * The notice an unmatched row shows instead of its match form when no match
+ * can succeed (DOS/Give#148), worded for the reader; null otherwise.
+ */
+export function ownerMismatchNotice(
+  tx: Pick<UnmatchedRow, "receiving_account_id" | "account_owner_id" | "binding_account_id">,
+  organizerId: string | null | undefined,
+  viewerId: string
+): string | null {
+  if (!accountOwnerMismatch(tx, organizerId)) return null
+  return viewerId === organizerId ? OWNER_MISMATCH_FOR_ORGANIZER : OWNER_MISMATCH_FOR_STAFF
+}
+
+// ---------------------------------------------------------------------------
+// Incoming money that belongs to no campaign (DOS/Give#148)
+// ---------------------------------------------------------------------------
+
+export interface UnattributedTransaction {
+  id: string
+  receiving_account_id: string
+  provider_tx_id: string
+  amount: number
+  booked_at: string
+  booked_date_only: boolean
+  description: string | null
+  counterparty_name: string | null
+  counterparty_account_masked: string | null
+  source: string
+}
+
+/**
+ * Incoming transactions recorded with no campaign (campaign_id NULL: see
+ * UNATTRIBUTED_CAUSES), newest first, with their count. Read with the
+ * caller's token; under bank_transactions_read only finance/admin staff (and
+ * the account's owner) read them. No campaign's totals include them, and no
+ * action in the app attributes them.
+ */
+export async function listUnattributed(
+  db: Db,
+  { limit = 100 }: { limit?: number } = {}
+): Promise<{ transactions: UnattributedTransaction[]; total: number }> {
+  const { data, error, count } = await db
+    .from("bank_transactions")
+    .select(
+      "id, receiving_account_id, provider_tx_id, amount, booked_at, booked_date_only, description, " +
+        "counterparty_name, counterparty_account_masked, source",
+      { count: "exact" }
+    )
+    .eq("direction", "in")
+    .is("campaign_id", null)
+    .order("booked_at", { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  const transactions = ((data ?? []) as unknown as UnattributedTransaction[]).map((tx) => ({
     ...tx,
     amount: Number(tx.amount),
   }))
   return { transactions, total: count ?? transactions.length }
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  webhook: "ngân hàng báo về",
+  api_poll: "đọc từ ngân hàng",
+  statement_import: "sao kê tải lên",
+  chain_indexer: "chuỗi khối",
+  manual: "nhập tay",
+}
+
+/** How the transaction reached Give, in words. */
+export function transactionSourceLabel(source: string): string {
+  return SOURCE_LABELS[source] ?? source
+}
+
+/**
+ * The organizer of each campaign, for finance/admin staff: authenticated may
+ * not read campaigns.organizer_id, so it comes through give.managed_campaigns,
+ * which returns every campaign to staff and only their own to organizers.
+ */
+export async function campaignOrganizers(db: Db, ids: readonly string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(ids)]
+  if (unique.length === 0) return new Map()
+  const { data, error } = await db.rpc("managed_campaigns", {}).select("id, organizer_id").in("id", unique)
+  if (error) throw error
+  return new Map(((data ?? []) as { id: string; organizer_id: string }[]).map((c) => [c.id, c.organizer_id]))
 }
 
 /** PostgREST embeds a one-to-one relation as an object; some setups send an array. */

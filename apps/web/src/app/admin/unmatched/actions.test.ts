@@ -156,7 +156,9 @@ describe("explainTransaction", () => {
       "Chỉ giải trình được các khoản tiền vào"
     )
     state.responses.bank_transactions = tx({ campaign_id: null })
-    expect((await explainTransaction(TX, null, form(VALID)))?.message).toContain("chưa thuộc chiến dịch nào")
+    expect((await explainTransaction(TX, null, form(VALID)))?.message).toBe(
+      "Giao dịch này không thuộc chiến dịch nào, nên không cần giải trình. Lý do có thể là: khoản chuyển thử để xác minh tài khoản; tiền vào khi tài khoản chưa gắn với chiến dịch nào hoặc khi chiến dịch chưa gửi duyệt; tiền vào tài khoản cũ sau khi chiến dịch đã đổi sang tài khoản khác; tiền vào sau khi tài khoản được nhả, hoặc tiền vào trước đó nhưng đến khi tài khoản đã được nhả mới được ghi nhận (ví dụ sao kê nhập muộn); hoặc tài khoản không thuộc về người tổ chức của chiến dịch được gắn."
+    )
     state.responses.bank_transactions = { data: null }
     expect((await explainTransaction(TX, null, form(VALID)))?.message).toBe(
       "Không tìm thấy giao dịch, hoặc bạn không có quyền với giao dịch này."

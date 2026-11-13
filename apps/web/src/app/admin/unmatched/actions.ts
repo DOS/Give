@@ -8,7 +8,13 @@ import { dbErrorMessage, done, fail, type ActionResult, type DbErrorLike } from 
 import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
-import { getIncoming, MAX_EXPLANATION_LENGTH, paidAfterExplain, paidBreakdown } from "@/lib/reconciliation"
+import {
+  getIncoming,
+  MAX_EXPLANATION_LENGTH,
+  paidAfterExplain,
+  paidBreakdown,
+  UNATTRIBUTED_CAUSES,
+} from "@/lib/reconciliation"
 import { inboundExplanationLabel, isInboundExplanationKind } from "@/lib/statement"
 import { dbAs, dbService } from "@/lib/supabase"
 
@@ -35,8 +41,7 @@ const EXPLAIN_MESSAGES: Record<string, string> = {
   GIVE_TRANSACTION_ALREADY_EXPLAINED:
     "Giao dịch này đã được giải trình với nội dung khác. Giải trình đã ghi thì không sửa được.",
   GIVE_TRANSACTION_NOT_INBOUND: "Chỉ giải trình được các khoản tiền vào ở đây; khoản chi do người tổ chức giải trình.",
-  GIVE_TRANSACTION_UNATTRIBUTED:
-    "Giao dịch này chưa thuộc chiến dịch nào (tài khoản không gắn với chiến dịch lúc nhận tiền), nên không cần giải trình.",
+  GIVE_TRANSACTION_UNATTRIBUTED: `Giao dịch này không thuộc chiến dịch nào, nên không cần giải trình. Lý do có thể là: ${UNATTRIBUTED_CAUSES}.`,
   GIVE_EXPLANATION_KIND_INVALID: "Chọn loại khoản tiền.",
   GIVE_REASON_REQUIRED: "Ghi lý do vì sao đây không phải tiền ủng hộ.",
   GIVE_EVIDENCE_REQUIRED:

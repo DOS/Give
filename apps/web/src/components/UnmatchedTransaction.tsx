@@ -18,7 +18,9 @@ import { MachineId } from "@/components/ui/RefCode"
  * One incoming transaction without a match, and the form that matches it to
  * a contribution of its campaign (a pick from the list, or a typed code).
  * With explainAction (finance/admin page), also the form that explains it as
- * money that is not a donation.
+ * money that is not a donation. With matchBlocked, a notice that says why no
+ * match can succeed takes the match form's place (DOS/Give#148); the
+ * explanation form stays (DOS/Give#137).
  */
 export function UnmatchedTransactionCard({
   tx,
@@ -26,6 +28,7 @@ export function UnmatchedTransactionCard({
   action,
   explainAction,
   campaignTitle,
+  matchBlocked,
 }: {
   tx: UnmatchedTransaction
   candidates: MatchCandidate[]
@@ -33,6 +36,8 @@ export function UnmatchedTransactionCard({
   explainAction?: (state: ActionResult, form: FormData) => Promise<ActionResult>
   /** Shown on the admin page, where transactions of many campaigns are listed. */
   campaignTitle?: string
+  /** Why the database refuses every match of this transaction, worded for the reader. */
+  matchBlocked?: string | null
 }) {
   const sameAmount = candidates.filter((c) => waitsFor(c, tx.amount))
   const others = candidates.filter((c) => !waitsFor(c, tx.amount))
@@ -57,9 +62,7 @@ export function UnmatchedTransactionCard({
         </div>
         <div className="sm:col-span-3">
           <dt className="text-sm text-muted">Nội dung chuyển khoản</dt>
-          <dd className="text-fg">
-            <MachineId>{tx.description ?? "—"}</MachineId>
-          </dd>
+          <dd className="text-fg">{tx.description ? <MachineId>{tx.description}</MachineId> : "—"}</dd>
         </div>
         {campaignTitle && (
           <div className="sm:col-span-2">
@@ -74,51 +77,57 @@ export function UnmatchedTransactionCard({
         )}
       </dl>
 
-      <ActionForm
-        action={action}
-        confirm={`Khớp giao dịch ${formatVnd(tx.amount)} với lượt ủng hộ đã chọn? Mỗi giao dịch chỉ khớp được một lần, và chưa sửa được sau khi khớp.`}
-        className="grid gap-4 border-t border-border pt-6 sm:grid-cols-[2fr_1fr_auto] sm:items-end [&>*]:min-w-0"
-      >
-        <div>
-          <label htmlFor={`contribution-${tx.id}`} className="label">
-            Lượt ủng hộ
-          </label>
-          <select id={`contribution-${tx.id}`} name="contribution_id" className="field" defaultValue="">
-            <option value="">Chọn lượt ủng hộ…</option>
-            {sameAmount.length > 0 && (
-              <optgroup label="Đang chờ đúng số tiền này">
-                {sameAmount.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {candidateLabel(c)}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-            {others.length > 0 && (
-              <optgroup label="Lượt ủng hộ khác">
-                {others.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {candidateLabel(c)}
-                  </option>
-                ))}
-              </optgroup>
-            )}
-          </select>
+      {matchBlocked ? (
+        <div className="border-t border-border pt-6">
+          <Callout tone="warning">{matchBlocked}</Callout>
         </div>
-        <div>
-          <label htmlFor={`code-${tx.id}`} className="label">
-            hoặc mã ủng hộ
-          </label>
-          <input
-            id={`code-${tx.id}`}
-            name="reference_code"
-            className="field font-mono uppercase"
-            placeholder="GV…"
-            maxLength={16}
-          />
-        </div>
-        <SubmitButton className={buttonClass()}>Khớp</SubmitButton>
-      </ActionForm>
+      ) : (
+        <ActionForm
+          action={action}
+          confirm={`Khớp giao dịch ${formatVnd(tx.amount)} với lượt ủng hộ đã chọn? Mỗi giao dịch chỉ khớp được một lần, và chưa sửa được sau khi khớp.`}
+          className="grid gap-4 border-t border-border pt-6 sm:grid-cols-[2fr_1fr_auto] sm:items-end [&>*]:min-w-0"
+        >
+          <div>
+            <label htmlFor={`contribution-${tx.id}`} className="label">
+              Lượt ủng hộ
+            </label>
+            <select id={`contribution-${tx.id}`} name="contribution_id" className="field" defaultValue="">
+              <option value="">Chọn lượt ủng hộ…</option>
+              {sameAmount.length > 0 && (
+                <optgroup label="Đang chờ đúng số tiền này">
+                  {sameAmount.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {candidateLabel(c)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {others.length > 0 && (
+                <optgroup label="Lượt ủng hộ khác">
+                  {others.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {candidateLabel(c)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </div>
+          <div>
+            <label htmlFor={`code-${tx.id}`} className="label">
+              hoặc mã ủng hộ
+            </label>
+            <input
+              id={`code-${tx.id}`}
+              name="reference_code"
+              className="field font-mono uppercase"
+              placeholder="GV…"
+              maxLength={16}
+            />
+          </div>
+          <SubmitButton className={buttonClass()}>Khớp</SubmitButton>
+        </ActionForm>
+      )}
 
       {explainAction && <ExplainInboundForm tx={tx} action={explainAction} />}
     </li>
