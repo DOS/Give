@@ -30,8 +30,15 @@ export function FeaturedReceipt({ campaign, totals }: { campaign: CardCampaign; 
     <article className="min-w-0 card shadow-float">
       <div className="border-b border-dashed border-border p-4 sm:p-6">
         <TypeBadge type={campaign.type} />
-        <h2 className="mt-3 line-clamp-2 text-h3 break-words">
-          <Link href={`/campaigns/${campaign.slug}`} className="hover:underline hover:underline-offset-4">
+        {/* The clamp sits on the link, not the h2: an element's own outline is
+            not clipped by its own overflow, so the focus ring stays whole
+            (DESIGN.md 6, Focus ring). `w-fit` keeps a one-line title's ring on
+            its text. */}
+        <h2 className="mt-3 text-h3 break-words">
+          <Link
+            href={`/campaigns/${campaign.slug}`}
+            className="line-clamp-2 w-fit max-w-full hover:underline hover:underline-offset-4"
+          >
             {campaign.title}
           </Link>
         </h2>

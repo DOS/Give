@@ -162,6 +162,31 @@
     @apply outline-2 outline-offset-2 outline-primary;
   }
 
+  /*
+   * Section 6 / 10: the ring is `primary` from its first frame. At rest the
+   * outline colour is `primary` too (no outline shows), so a colour
+   * transition on the element (`transition-colors` includes outline-color)
+   * has nothing to fade when focus arrives.
+   */
+  *,
+  ::before,
+  ::after {
+    @apply outline-primary;
+  }
+
+  /*
+   * Section 6, Focus ring: below 1024px the campaign page's support bar
+   * (`data-action-bar`) is sticky at the bottom of the screen. A control
+   * focused from the keyboard is scrolled clear of it with its whole ring:
+   * the bar (1px border, 12px, a 52px button, its bottom padding) plus the
+   * 4px of the ring and 1px for scroll rounding.
+   */
+  @media (width < 64rem) {
+    :root:has([data-action-bar]) :focus-visible:not([data-action-bar] *) {
+      scroll-margin-bottom: calc(65px + max(12px, env(safe-area-inset-bottom)) + 5px);
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
