@@ -98,6 +98,10 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - Manual match: a clear message when the receiving account does not belong
   to the campaign's organizer, instead of the generic database error
   (#136 / #145).
+- Unmatched queues: a transaction whose receiving account is not owned by
+  the campaign's organizer shows why it cannot be matched instead of a match
+  form; `/admin/unmatched` lists incoming money that belongs to no campaign
+  (read only); the "no campaign" message names both causes (#148 / #164).
 
 ### Platform
 
