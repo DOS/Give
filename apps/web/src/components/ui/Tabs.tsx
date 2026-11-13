@@ -99,7 +99,9 @@ export function SectionNav({
  * A filter row of tags (statement filters): one line that scrolls sideways
  * on narrow screens, never a wrapping chip wall (DESIGN.md 11). The row
  * keeps room for the focus ring of its first and last tag (`ringRoom`); the
- * first tag stays on the container edge.
+ * first tag stays on the container edge. Unlike the discovery filter bar, the
+ * row can overflow at any width (a longer label, a larger count), so its edge
+ * fades are not limited to phones.
  */
 export function FilterNav({
   label,
@@ -112,7 +114,7 @@ export function FilterNav({
 }) {
   return (
     <nav aria-label={label} className={className}>
-      <ScrollRow ringRoom className="gap-2 py-2">
+      <ScrollRow ringRoom fadeClassName="" className="gap-2 py-2">
         {items.map((item) => (
           <TagLink key={item.href} href={item.href} current={item.current}>
             {item.label}
@@ -126,7 +128,10 @@ export function FilterNav({
 
 /**
  * A segmented control of links (discovery's campaign type): a surface strip
- * with the current item raised. Each item is its own URL.
+ * with the current item raised. Each item is its own URL. The items sit 4px
+ * apart and 4px from the strip's edge, which the site-wide ring (4px outward)
+ * would fill, so the focus ring is drawn inside the item, as on a tab
+ * (DESIGN.md 6, Focus ring).
  */
 export function SegmentedNav({
   label,
@@ -146,7 +151,7 @@ export function SegmentedNav({
               href={item.href}
               aria-current={item.current ? "page" : undefined}
               className={clsx(
-                "inline-flex h-9 items-center rounded px-2.5 text-sm font-semibold whitespace-nowrap transition-colors duration-150",
+                "inline-flex h-9 items-center rounded px-2.5 text-sm font-semibold whitespace-nowrap transition-colors duration-150 focus-visible:-outline-offset-2",
                 item.current ? "bg-raised text-fg shadow-xs" : "text-muted hover:text-fg"
               )}
             >
