@@ -8,9 +8,13 @@ import { CloseIcon } from "@/components/ui/icons"
 /**
  * A menu button built on <details>, so it opens without JavaScript. With
  * JavaScript it also closes on Escape (focus returns to the button), on a
- * click outside and after a link inside is followed. Below 768px the panel is
- * a sheet fixed to the bottom of the screen over a dimmed page, with its
- * title and a close button, so a sideways-scrolling filter row cannot clip it.
+ * click outside, after a link inside is followed and when keyboard focus
+ * leaves it, so focus never sits on a page the menu covers (as the header
+ * menus do, Disclosure). Below 768px the panel is a sheet fixed to the bottom
+ * of the screen over a dimmed page, with its title and a close button, so a
+ * sideways-scrolling filter row cannot clip it. The sheet's scrim covers the
+ * menu button too, so there focus moves into the sheet when it opens (to the
+ * checked item), and going back to the button closes it.
  */
 export function Dropdown({
   title,
@@ -30,12 +34,32 @@ export function Dropdown({
   children: ReactNode
 }) {
   const root = useRef<HTMLDetailsElement>(null)
+  const scrim = useRef<HTMLDivElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const details = root.current
     if (!details) return
     const close = () => {
       details.open = false
+    }
+    // The scrim shows only where the panel is a sheet (below 768px).
+    const isSheet = () => !!scrim.current && getComputedStyle(scrim.current).display !== "none"
+    const onToggle = () => {
+      if (!details.open || !isSheet()) return
+      const sheet = panel.current
+      const checked = sheet?.querySelector<HTMLElement>('a[aria-current="page"]')
+      ;(checked ?? sheet?.querySelector<HTMLElement>("a[href]"))?.focus()
+    }
+    const onFocusOut = (event: FocusEvent) => {
+      const next = event.relatedTarget
+      // No new target: the window lost focus, or a click on nothing focusable
+      // (a click outside closes the menu on its own).
+      if (!details.open || !(next instanceof Node) || panel.current?.contains(next)) return
+      // Beside a popover the button is in view, and a click on it toggles the
+      // menu itself; under a sheet's scrim it is not.
+      if (details.contains(next) && !isSheet()) return
+      close()
     }
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape" && details.open) {
@@ -46,9 +70,13 @@ export function Dropdown({
     const onClick = (event: MouseEvent) => {
       if (details.open && !details.contains(event.target as Node)) close()
     }
+    details.addEventListener("toggle", onToggle)
+    details.addEventListener("focusout", onFocusOut)
     document.addEventListener("keydown", onKey)
     document.addEventListener("click", onClick)
     return () => {
+      details.removeEventListener("toggle", onToggle)
+      details.removeEventListener("focusout", onFocusOut)
       document.removeEventListener("keydown", onKey)
       document.removeEventListener("click", onClick)
     }
@@ -65,13 +93,17 @@ export function Dropdown({
         {summary}
       </summary>
       <div
+        ref={scrim}
         aria-hidden
         className="fixed inset-0 z-50 bg-scrim md:hidden"
+        // Focus was in the sheet, which this hides: give it back to the button.
         onClick={() => {
           if (root.current) root.current.open = false
+          root.current?.querySelector("summary")?.focus()
         }}
       />
       <div
+        ref={panel}
         className={clsx(
           "fixed inset-x-0 bottom-0 z-50 max-h-[70vh] overflow-y-auto rounded-t-md border-t border-border bg-raised p-2 shadow-float md:absolute md:inset-x-auto md:top-13 md:bottom-auto md:left-0 md:w-72 md:rounded-md md:border",
           panelClassName
@@ -85,7 +117,7 @@ export function Dropdown({
           <button
             type="button"
             aria-label="Đóng"
-            className="inline-flex size-11 items-center justify-center rounded text-fg hover:bg-surface"
+            className="inline-flex size-11 items-center justify-center rounded text-fg hover:bg-surface focus-visible:-outline-offset-4"
             onClick={() => {
               if (root.current) root.current.open = false
               root.current?.querySelector("summary")?.focus()

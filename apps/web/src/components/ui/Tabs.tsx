@@ -22,21 +22,27 @@ export interface TabItem {
  * of wrapping; while it overflows, the edge with more tabs fades into the
  * page (ScrollRow). The fades stop above the baseline, so the border runs
  * the full width, and a tab reached by keyboard is scrolled clear of them.
+ *
+ * The focus ring is drawn inside the tab (DESIGN.md 6, Focus ring), and a
+ * tab reaches 4px past its label on each side (a negative margin with equal
+ * padding), so the ring clears the label's first and last glyph while the
+ * labels stay 24px apart and the first one on the container edge. The
+ * underline keeps to the label. The row's ring room holds those 4px at
+ * each end.
  */
 export function TabNav({ label, items, className }: { label: string; items: readonly TabItem[]; className?: string }) {
   return (
     <nav aria-label={label} className={clsx("border-b border-border", className)}>
-      <ScrollRow as="ul" wrapClassName="-mb-px" className="gap-6" fadeClassName="bottom-0.5">
+      <ScrollRow as="ul" ringRoom wrapClassName="-mb-px" className="gap-6" fadeClassName="bottom-0.5">
         {items.map((item) => (
           <li key={item.href} className="shrink-0">
             <Link
               href={item.href}
               aria-current={item.current ? "page" : undefined}
               className={clsx(
-                "inline-flex h-11 items-center gap-1 border-b-2 text-base font-semibold whitespace-nowrap transition-colors duration-150 focus-visible:-outline-offset-2",
-                item.current
-                  ? "border-primary text-fg"
-                  : "border-transparent text-muted hover:border-border hover:text-fg"
+                "relative -mx-1 inline-flex h-11 items-center gap-1 px-1 pb-0.5 text-base font-semibold whitespace-nowrap transition-colors duration-150 focus-visible:-outline-offset-2",
+                "after:absolute after:inset-x-1 after:bottom-0 after:h-0.5 after:transition-colors after:duration-150",
+                item.current ? "text-fg after:bg-primary" : "text-muted hover:text-fg hover:after:bg-border"
               )}
             >
               {item.label}
@@ -128,7 +134,9 @@ export function FilterNav({
 
 /**
  * A segmented control of links (discovery's campaign type): a surface strip
- * with the current item raised. Each item is its own URL. The items sit 4px
+ * with the current item raised and outlined by a 1px border line, drawn
+ * inside the item so nothing moves (no shadow: it does not float, DESIGN.md
+ * 5). Each item is its own URL. The items sit 4px
  * apart and 4px from the strip's edge, which the site-wide ring (4px outward)
  * would fill, so the focus ring is drawn inside the item, as on a tab
  * (DESIGN.md 6, Focus ring).
@@ -144,7 +152,7 @@ export function SegmentedNav({
 }) {
   return (
     <nav aria-label={label} className={clsx("shrink-0", className)}>
-      <ul className="flex gap-1 rounded-md bg-surface p-1">
+      <ul className="flex gap-1 rounded bg-surface p-1">
         {items.map((item) => (
           <li key={item.href}>
             <Link
@@ -152,7 +160,7 @@ export function SegmentedNav({
               aria-current={item.current ? "page" : undefined}
               className={clsx(
                 "inline-flex h-9 items-center rounded px-2.5 text-sm font-semibold whitespace-nowrap transition-colors duration-150 focus-visible:-outline-offset-2",
-                item.current ? "bg-raised text-fg shadow-xs" : "text-muted hover:text-fg"
+                item.current ? "bg-raised text-fg ring-1 ring-border ring-inset" : "text-muted hover:text-fg"
               )}
             >
               {item.label}

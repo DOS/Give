@@ -13,6 +13,18 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Discovery menus: while a menu is open, keyboard focus stays in it. On
+  phones opening the sheet moves focus to the checked item, and Tab or
+  Shift+Tab out of the sheet closes it instead of reaching the page behind
+  it; the 768px popover also closes when focus leaves it, and tapping the
+  dimmed page gives focus back to the menu button (#158 / #PR).
+- Focus rings everywhere are whole and touch nothing: the tab ring clears
+  the label's first and last letter, menu items, the sheet's "Đóng" and the
+  header's icon buttons draw their ring inside, and footer links are 28px
+  boxes 8px apart (same 36px spacing and hit area). The discovery type
+  control's current item has a border line instead of a shadow on a 4px
+  strip, and the header search field is 44px high. `DESIGN.md` 6 states
+  the rule site-wide (#159 / #PR).
 - Discovery on phones: moving keyboard focus inside an open menu sheet
   ("Danh mục", "Trạng thái", "Sắp xếp") no longer scrolls the filter bar
   behind it (#152 / #156).

@@ -7,9 +7,16 @@ import { buttonClass } from "@/components/ui/Button"
 import { BellIcon, ChevronDownIcon, CloseIcon, MenuIcon, SearchIcon } from "@/components/ui/icons"
 import type { Session } from "@/lib/auth/session"
 
+/*
+ * Icon buttons sit side by side and menu links stack 4px apart or closer, so
+ * the site-wide ring (4px outside) would touch the neighbour: both draw their
+ * focus ring inside, 2px in from their edge, so it stays 2px clear of the
+ * next control's box too (DESIGN.md 6, Focus ring).
+ */
 const iconButton =
-  "relative inline-flex size-11 items-center justify-center rounded text-fg transition-colors duration-150 hover:bg-surface"
-const menuLink = "flex min-h-11 items-center rounded px-3 text-base text-fg hover:bg-surface"
+  "relative inline-flex size-11 items-center justify-center rounded text-fg transition-colors duration-150 hover:bg-surface focus-visible:-outline-offset-4"
+const menuLink =
+  "flex min-h-11 items-center rounded px-3 text-base text-fg hover:bg-surface focus-visible:-outline-offset-4"
 
 /** The search box: a plain GET to discovery, so it works before hydration. */
 function SearchForm({ id, className }: { id: string; className?: string }) {
@@ -26,7 +33,7 @@ function SearchForm({ id, className }: { id: string; className?: string }) {
           type="search"
           maxLength={80}
           placeholder="Tìm chiến dịch, dự án"
-          className="field min-h-10 py-1.5 pl-10"
+          className="field pl-10"
         />
       </div>
     </form>

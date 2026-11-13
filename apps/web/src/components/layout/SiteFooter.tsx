@@ -33,6 +33,10 @@ const SECTIONS: { title: string; links: { href: string; label: string }[] }[] = 
  * Site footer (DESIGN.md 7): the sitemap of pages that exist today, 4
  * columns from 1024px and 2 below, then the bottom line in Small. About,
  * help and legal pages join it when they are written.
+ *
+ * Links are 28px boxes 8px apart (a 36px pitch), each with an invisible
+ * 36px hit area (`before`), so the focus ring, 4px outside the box, stays
+ * clear of the next link (DESIGN.md 6, Focus ring).
  */
 export function SiteFooter() {
   return (
@@ -47,12 +51,12 @@ export function SiteFooter() {
         {SECTIONS.map((section) => (
           <nav key={section.title} aria-label={section.title} className="min-w-0">
             <h2 className="text-sm font-semibold text-fg">{section.title}</h2>
-            <ul className="mt-1">
+            <ul className="mt-1 flex flex-col gap-2 py-1">
               {section.links.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="inline-flex min-h-9 items-center text-muted transition-colors duration-150 hover:text-fg hover:underline"
+                    className="relative inline-flex min-h-7 items-center text-muted transition-colors duration-150 before:absolute before:inset-x-0 before:-inset-y-1 before:content-[''] hover:text-fg hover:underline"
                   >
                     {link.label}
                   </Link>

@@ -141,11 +141,15 @@ Each component lives in `apps/web/src/components/ui` and is built on shadcn/ui (
 ### Focus ring
 
 - **Site-wide:** an element focused from the keyboard (`:focus-visible`) shows a 2px `primary` ring 2px outside its box, so the ring reaches 4px beyond the element.
-- **Inside instead:** where those 4px are not free, or the whole box is one link, the ring is drawn inside the element, at the same 2px:
-  - Tabs: inside the tab.
-  - The segmented control (filter bar): inside the item, because the items sit 4px apart and 4px from the strip's edge.
-  - A campaign card and a reward tier that can be chosen, where the whole box is one link: inside the box's edge.
-- **In the filter bar, a tag row and a tab row** the ring of a control that receives keyboard focus is whole: not cut off by the row, not under an edge fade, not touching the next control. A control wider than the space between the fades starts at the left fade. With scripting turned off the row cannot bring a partly visible control into view, so this holds for a control that is fully in view, in a browser that reports scripting as off; an older one keeps the right-edge fade.
+- **Whole, everywhere:** the ring of a control that receives keyboard focus is whole: not cut off by its container, not over the control's own text, and not touching another control's box. The one exception is the skip link ("Chuyển tới nội dung chính"), which shows over the header logo only while it has focus.
+- **Inside instead:** where those 4px are not free, or the whole box is one link, the ring is drawn inside the element, 2px wide:
+  - On the element's edge:
+    - Tabs: inside the tab, which reaches 4px past its label on each side, so the ring clears the label.
+    - The segmented control (filter bar): inside the item, because the items sit 4px apart and 4px from the strip's edge.
+    - A campaign card and a reward tier that can be chosen, where the whole box is one link: inside the box's edge.
+  - 2px in from the edge, where the element's box meets the next control's: the items of a menu sheet or popover and the sheet's "Đóng", the header's menu links, and the header's icon buttons ("Tìm kiếm", "Thông báo", "Mở menu").
+- **Room instead:** bare text links stacked in a list (the footer columns) are 28px boxes 8px apart, each with an invisible 36px hit area, so the site-wide ring stays 4px clear of the next link.
+- **In the filter bar, a tag row and a tab row** the ring is also never under an edge fade. A control wider than the space between the fades starts at the left fade. With scripting turned off the row cannot bring a partly visible control into view, so this holds for a control that is fully in view, in a browser that reports scripting as off; an older one keeps the right-edge fade.
 - **Fields** (input, select, textarea) differ: the 2px ring sits on the field's own edge with no offset and shows on every focus, pointer included.
 
 ### Button
@@ -183,7 +187,8 @@ A tag is **not** a button-sized box.
 - **Menu labels:** a menu button reads "Name: value" ("Sắp xếp: Nổi bật"). Where the row is tight it shows only the value; the name stays in the accessible name. If the longest values still do not fit from 768px, only the "Danh mục" button shrinks and ends in an ellipsis (the chosen category also shows under "Đang lọc"). The row never wraps and never pushes the page sideways.
 - **Phones:** the row scrolls sideways, with no wrapping onto a second line. An edge fades only on the side that still has more to scroll to; with scripting turned off the page cannot tell, so no edge fades. Below 768px the menus open as a sheet fixed to the bottom of the screen; from 768px, where the row no longer scrolls, they open as a popover under their button.
 - **State:** every control is a link; filters, order and page live in the URL. Changing a filter or the order goes back to the first page.
-- **Type control:** a segmented control on a `surface` strip, 36px items, the current item on `surface-raised`. Its focus ring is drawn inside the item (see Focus ring).
+- **Type control:** a segmented control on a `surface` strip with a 4px radius, 36px items, the current item on `surface-raised` with a 1px `border` line drawn inside it and no shadow. Its focus ring is drawn inside the item (see Focus ring).
+- **Menus and keyboard focus:** a menu keeps keyboard focus while it is open. On phones, opening the sheet moves focus to the checked item, and focus that leaves the sheet (Tab past the last item, or Shift+Tab back to the menu button) closes it; from 768px the popover closes when focus moves past its button or its last item. Closing with Escape, "Đóng" or the dimmed page gives focus back to the menu button. Without JavaScript the menu only opens and closes.
 - **Focus room:** a row that scrolls sideways clips at its edge, so the filter bar and the statement's tag row keep room for the focus ring just outside the container: 5px at each end (the 4px of the ring plus 1px for scroll rounding), and on the filter bar 4px above and below. This room is not layout spacing and shows nothing but a ring: items still start at the container edge, the fades cover the same 24px inside it, and anything scrolled past an end is covered in the room. An item focused from the keyboard is scrolled clear of the fade together with its ring: 29px from the edge (the 24px fade plus these 5px). Focus inside an open menu sheet does not move the row behind it.
 - **Statement tag row:** the same one row of tags at every width. It can overflow at any width (a longer label, a larger count), so its edge fades are not limited to phones.
 - **No chip wall:** never show every category as a wall of chips.
@@ -209,8 +214,8 @@ A tag is **not** a button-sized box.
 
 ### Tabs
 
-- Text tabs with a 2px `primary` underline on the active tab.
-- 44px high, 24px apart, on a 1px `border` baseline that spans the container.
+- Text tabs with a 2px `primary` underline on the active tab, as wide as the label.
+- 44px high, labels 24px apart, on a 1px `border` baseline that spans the container. Each tab reaches 4px past its label on each side, as room for its focus ring; the first label stays on the container edge.
 - **When the row does not fit** (phones, and `/admin` up to 1024px): it scrolls sideways, with no wrapping. While it overflows, a 24px edge fades into `bg` only on the side that still has more tabs (an overlay, as on the filter bar, not a mask); the baseline stays whole under the fade. A tab focused from the keyboard is scrolled 24px clear of the edge; its focus ring is drawn inside the tab (see Focus ring). A row that fits has no fade; before JavaScript runs, the right edge fades as a fallback, and with scripting turned off no edge fades.
 
 ### Empty state
@@ -230,12 +235,13 @@ A tag is **not** a button-sized box.
 - **Header:**
   - 64px high, `bg` with a 1px bottom `border`, sticky.
   - Left: the logo, 28px.
-  - Center: search, at most 480px wide, which opens a full-width sheet on phones.
+  - Center: search, a 44px field (6.Input) at most 480px wide, which opens a full-width sheet on phones.
   - Right: "Khám phá", "Tạo chiến dịch" (secondary button sm) and the account menu (or "Đăng nhập" ghost).
   - All aligned to the container.
 - **Footer:**
   - `bg` band with a 1px top `border`, 64px top padding (48px on phones), as in the approved mockups, so it stays apart from the `surface` organizer band above it.
   - 4 columns from 1024px, 2 below, real links only.
+  - Links stack 36px apart: 28px boxes 8px apart, each with a 36px hit area (see 6.Focus ring).
   - Bottom line in Small.
 
 ## 8. Page templates
