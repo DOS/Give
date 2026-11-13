@@ -21,7 +21,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - Focus rings everywhere are whole and touch nothing: the tab ring clears
   the label's first and last letter, menu items, the sheet's "Đóng" and the
   header's icon buttons draw their ring inside, and footer links are 28px
-  boxes 8px apart (same 36px spacing and hit area). The discovery type
+  boxes centred in their 36px rows, so nothing moves. The discovery type
   control's current item has a border line instead of a shadow on a 4px
   strip, and the header search field is 44px high. `DESIGN.md` 6 states
   the rule site-wide (#159 / #169).

@@ -141,14 +141,14 @@ Each component lives in `apps/web/src/components/ui` and is built on shadcn/ui (
 ### Focus ring
 
 - **Site-wide:** an element focused from the keyboard (`:focus-visible`) shows a 2px `primary` ring 2px outside its box, so the ring reaches 4px beyond the element.
-- **Whole, everywhere:** the ring of a control that receives keyboard focus is whole: not cut off by its container, not over the control's own text, and not touching another control's box. The one exception is the skip link ("Chuyển tới nội dung chính"), which shows over the header logo only while it has focus.
+- **Whole, everywhere:** the ring of a control that receives keyboard focus is whole: not cut off by its container, not over the control's own text, and not touching another control's box. The exceptions are the skip link ("Chuyển tới nội dung chính"), which shows over the header logo only while it has focus, and a footer link that wraps (see Room instead).
 - **Inside instead:** where those 4px are not free, or the whole box is one link, the ring is drawn inside the element, 2px wide:
   - On the element's edge:
     - Tabs: inside the tab, which reaches 4px past its label on each side, so the ring clears the label.
     - The segmented control (filter bar): inside the item, because the items sit 4px apart and 4px from the strip's edge.
     - A campaign card and a reward tier that can be chosen, where the whole box is one link: inside the box's edge.
   - 2px in from the edge, where the element's box meets the next control's: the items of a menu sheet or popover and the sheet's "Đóng", the header's menu links, and the header's icon buttons ("Tìm kiếm", "Thông báo", "Mở menu").
-- **Room instead:** bare text links stacked in a list (the footer columns) are 28px boxes 8px apart, each with an invisible 36px hit area, so the site-wide ring stays 4px clear of the next link.
+- **Room instead:** bare text links stacked in a list (the footer columns): each link is a 28px box centred in its 36px row, and the row is its hit area, so the site-wide ring stays 4px clear of the next link. A link that wraps onto two lines fills its row; its ring then meets the edge of the next link's box, 4px clear of that link's text.
 - **In the filter bar, a tag row and a tab row** the ring is also never under an edge fade. A control wider than the space between the fades starts at the left fade. With scripting turned off the row cannot bring a partly visible control into view, so this holds for a control that is fully in view, in a browser that reports scripting as off; an older one keeps the right-edge fade.
 - **Fields** (input, select, textarea) differ: the 2px ring sits on the field's own edge with no offset and shows on every focus, pointer included.
 
@@ -241,7 +241,7 @@ A tag is **not** a button-sized box.
 - **Footer:**
   - `bg` band with a 1px top `border`, 64px top padding (48px on phones), as in the approved mockups, so it stays apart from the `surface` organizer band above it.
   - 4 columns from 1024px, 2 below, real links only.
-  - Links stack 36px apart: 28px boxes 8px apart, each with a 36px hit area (see 6.Focus ring).
+  - Each link is a 28px box centred in a 36px row, which is its hit area (see 6.Focus ring).
   - Bottom line in Small.
 
 ## 8. Page templates
