@@ -130,7 +130,7 @@ Contrast: body text >= 4.5:1, large text and icons >= 3:1, in both themes.
 
 ## 5. Shape, borders, elevation
 
-- Radius: 4px for buttons, inputs, chips, images and badges; 6px for cards and dialogs. Nothing larger, and no pills.
+- Radius: 4px for buttons, inputs, chips, images and badges; 6px for cards, dialogs and panels with a fill and no border (`surface` or a soft color, such as the "Hai cách" panels and notices). Nothing larger, and no pills.
 - Borders are 1px `border`. A screen has at most two levels: page and card.
 - Shadow appears only on floating things (menus, dialogs, the sticky funding box on scroll): `0 8px 24px rgb(0 0 0 / 0.08)`. Cards in a grid have a border and no shadow.
 
@@ -220,11 +220,12 @@ A tag is **not** a button-sized box.
 
 ### Empty state
 
-- An icon (40px, `text-muted`), an H3, one short sentence of text, which may wrap to two balanced lines on phones, and at most one button.
-- The title always looks like an H3. In the page outline it is an H3 under a section's H2, and an H2 where the empty state stands directly under the page's H1.
+- An icon (40px, `text-muted`), an H3, one short sentence of text, which may wrap to two balanced lines on phones, and at most one button. A whole page differs (below).
+- The title looks like an H3, except on a whole page. In the page outline it is an H3 under a section's H2, and an H2 where the empty state stands directly under the page's H1.
 - Centered inside its region, no dashed border.
 - It keeps 48px above and below and 16px at the sides inside its region (a panel, a list, a tab).
 - Where the page section that holds it already carries the "Between page sections" padding of 2.4 and has no other content (home with no campaign), it adds no space of its own (`flush` on the component): that distance is the whole gap to the section above and below, and the container gutter is its side margin.
+- **Whole page** (not found, an error, a donation the visitor may not open): the empty state is the page body, centered in the container with 64px above and below (96px from 640px). Its title is the page's H1 and looks like one, 12px above its text; the text is in `text`, balanced, at most two sentences, and a secondary button may come before the primary: side by side from 640px, stacked at full width below.
 
 ### Badge (status)
 
@@ -256,13 +257,13 @@ A tag is **not** a button-sized box.
 | /me, /admin        | Same container. Page header (H1 + one action), then content tables or forms. Side navigation from 1024px, top tabs below.                                                                                                                                                                                                                                 |
 
 - **Home hero:** with no live campaign the hero has no statement card; the right columns stay empty.
-- **"Hai cách gây quỹ" panels:** the two panels are not cards: 24px padding, 32px from 1024px.
+- **"Hai cách gây quỹ" panels:** the two panels are not cards: no border, radius 6px, 24px padding, 32px from 1024px.
 
 ## 9. Imagery and icons
 
 - Covers are real photos supplied by organizers.
 - Placeholders are a flat `surface` fill with the type icon, never illustrations that look like content.
-- Icons come from lucide (outline, 1.5px stroke): 16px inside a line of text (meta lines, links, labels), 20px in buttons (6.Button), 24px in navigation, 40px in empty states.
+- Icons come from lucide (outline, 1.5px stroke): 16px inside a line of text (meta lines, links, labels), 20px in buttons (6.Button), 24px in navigation, 40px in empty states and on a cover placeholder.
 - The stroke is 1.5px at 24px; icons drawn larger keep a 1.5px rendered stroke, and smaller icons scale it down (1px at 16px).
 - 24px also for the home's feature icons (trust strip, "Hai cách"); the "Hai cách" icon sits in a 44px tile, radius 4px, filled `primary-soft` or `accent-soft` with the matching icon color.
 
