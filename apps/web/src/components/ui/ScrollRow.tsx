@@ -14,10 +14,11 @@ const ROOM = 5
  * more to scroll to; before JavaScript runs, the right edge fades. With
  * scripting turned off nothing can tell which side has more, so no edge fades
  * and nothing is covered (`noscript:hidden`, in browsers that know the
- * `scripting` media feature; others keep the right fade). The fades are overlays, not
- * masks, so a menu sheet opened from inside the row stays visible. An item
- * focused from the keyboard is scrolled clear of them; focus inside such a
- * sheet, which is fixed to the screen, leaves the row where it is.
+ * `scripting` media feature; others keep the right fade and, with ring room,
+ * the right cover). The fades are overlays, not masks, so a menu sheet opened
+ * from inside the row stays visible. An item focused from the keyboard is
+ * scrolled clear of them; focus inside such a sheet, which is fixed to the
+ * screen, leaves the row where it is.
  *
  * The scrolling element clips whatever leaves its padding box, focus rings
  * included. With `ringRoom`, a row whose first and last items carry the
@@ -28,8 +29,8 @@ const ROOM = 5
  * clears the fade by the same 5px more, so the ring is clear of it too, not
  * only the item. Only a ring may show in the room: while the row has anything
  * scrolled past an end, a solid cover hides the room there, as the clip did
- * before. So nothing moves at rest or while scrolling. Room above and below is the
- * caller's (`className`, `wrapClassName`). TabNav needs none: its ring is
+ * before. So nothing moves at rest or while scrolling. Room above and below is
+ * the caller's (`className`, `wrapClassName`). TabNav needs none: its ring is
  * drawn inside the tab.
  *
  * The filter bar stops scrolling at 768px, so its fades are hidden from there

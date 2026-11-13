@@ -141,11 +141,11 @@ Each component lives in `apps/web/src/components/ui` and is built on shadcn/ui (
 ### Focus ring
 
 - **Site-wide:** an element focused from the keyboard (`:focus-visible`) shows a 2px `primary` ring 2px outside its box, so the ring reaches 4px beyond the element.
-- **Inside instead:** where those 4px are not free, the ring is drawn inside the element, at the same 2px:
+- **Inside instead:** where those 4px are not free, or the whole box is one link, the ring is drawn inside the element, at the same 2px:
   - Tabs: inside the tab.
   - The segmented control (filter bar): inside the item, because the items sit 4px apart and 4px from the strip's edge.
   - A campaign card and a reward tier that can be chosen, where the whole box is one link: inside the box's edge.
-- **In the filter bar, a tag row and a tab row** the ring of a control that receives keyboard focus is whole: not cut off by the row, not under an edge fade, not touching the next control. With scripting turned off the row cannot bring a partly visible control into view, so this holds for a control that is fully in view.
+- **In the filter bar, a tag row and a tab row** the ring of a control that receives keyboard focus is whole: not cut off by the row, not under an edge fade, not touching the next control. A control wider than the space between the fades starts at the left fade. With scripting turned off the row cannot bring a partly visible control into view, so this holds for a control that is fully in view, in a browser that reports scripting as off; an older one keeps the right-edge fade.
 - **Fields** (input, select, textarea) differ: the 2px ring sits on the field's own edge with no offset and shows on every focus, pointer included.
 
 ### Button
