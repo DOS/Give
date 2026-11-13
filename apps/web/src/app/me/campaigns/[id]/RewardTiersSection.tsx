@@ -1,7 +1,7 @@
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
-import { ChevronDownIcon, GiftIcon } from "@/components/ui/icons"
+import { ChevronDownIcon } from "@/components/ui/icons"
 import type { CampaignStatus } from "@/lib/campaigns"
 import { formatVnd } from "@/lib/format"
 import { deliveryMonth } from "@/lib/pledges"
@@ -275,7 +275,6 @@ export function FulfillmentLink({ campaignId }: { campaignId: string }) {
       aria-labelledby="fulfillment-title"
       className="flex scroll-mt-24 flex-col gap-4 rounded-md bg-surface p-4 sm:flex-row sm:items-center sm:p-6"
     >
-      <GiftIcon width={40} height={40} className="hidden shrink-0 text-primary sm:block" />
       <div className="min-w-0 flex-1">
         <h2 id="fulfillment-title" className="text-h2">
           Giao quà cho người ủng hộ

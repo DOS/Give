@@ -60,7 +60,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       <section className="border-b border-border">
         <div className="container-page grid-page items-center gap-y-8 py-12 sm:py-16 lg:py-24">
-          <div className="col-span-full min-w-0 lg:col-span-7">
+          {/* Eight columns from 1024px (the receipt card keeps 9 to 12), so the headline's second line, about
+              560px at 48px, fits from 1024px; the 18ch and 52ch measures still cap the headline and paragraph. */}
+          <div className="col-span-full min-w-0 lg:col-span-8">
             <h1 className="max-w-[18ch] text-display-phone tracking-tight sm:text-display">
               Gây quỹ minh&nbsp;bạch, từng đồng đều có sao kê
             </h1>

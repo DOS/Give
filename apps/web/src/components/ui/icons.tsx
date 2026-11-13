@@ -135,13 +135,6 @@ export const ChevronDownIcon = (p: SVGProps<SVGSVGElement>) => (
   </Icon>
 )
 
-export const GiftIcon = (p: SVGProps<SVGSVGElement>) => (
-  <Icon {...p}>
-    <path d="M4 11h16v9H4ZM3 7h18v4H3ZM12 7v13" />
-    <path d="M12 7c-1.5-3-5-3.5-5-1s3.5 1 5 1c1.5 0 5 1.5 5-1s-3.5-2-5 1Z" />
-  </Icon>
-)
-
 export const CheckIcon = (p: SVGProps<SVGSVGElement>) => (
   <Icon {...p}>
     <path d="M20 6 9 17l-5-5" />

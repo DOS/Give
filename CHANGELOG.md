@@ -22,6 +22,13 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   instead of fading in from the text colour; the skip link gets its 16px
   by 8px padding. Anchor jumps and mouse focus on links and buttons land
   where they did. `DESIGN.md` 6 adds "Scrolled clear" (#171 / #173).
+- Empty pages, icons and the home headline: the 404, error and
+  donation-not-found pages are now the whole-page empty state (the page's
+  H1, balanced text), so a phone no longer leaves "công khai.", "phút." or
+  "khoản đó." alone on a line. The organizer's "Giao quà" block has no
+  icon. The home headline stays on two lines at 1024 to 1040px. `DESIGN.md`
+  now also names the 40px cover placeholder icon and the 6px radius of
+  `surface` panels such as "Hai cách" (#170 / #172).
 - Discovery menus: keyboard focus never sits outside an open menu. On
   phones opening the sheet moves focus to the checked item, and Tab or
   Shift+Tab out of the sheet closes it instead of reaching the page behind
