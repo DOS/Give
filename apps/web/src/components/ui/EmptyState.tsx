@@ -18,6 +18,13 @@ import { LedgerIcon } from "@/components/ui/icons"
  * holds it already carries the "Between page sections" padding of
  * DESIGN.md 2.4 and the container gutter, and has no other content (home),
  * so those distances are the whole gap.
+ *
+ * `level={1}` is the whole page (not found, an error, a donation the visitor
+ * may not open): it is the page body in the container, 64px above and below
+ * (96px from 640px), its title is the page's H1 and looks like one, 12px
+ * above its text, and the text, which a visitor may need to act on, is in
+ * the text color, balanced. Its `action` may hold a secondary button next to
+ * the primary.
  */
 export function EmptyState({
   title,
@@ -28,19 +35,29 @@ export function EmptyState({
   children,
 }: {
   title: string
-  level?: 2 | 3
+  level?: 1 | 2 | 3
   flush?: boolean
   icon?: ReactNode
   action?: ReactNode
   children?: ReactNode
 }) {
-  const Heading = level === 2 ? "h2" : "h3"
+  const page = level === 1
+  const Heading = page ? "h1" : level === 2 ? "h2" : "h3"
   return (
-    <div className={clsx("flex flex-col items-center text-center", !flush && "px-4 py-12")}>
+    <div
+      className={clsx(
+        "flex flex-col items-center text-center",
+        page ? "container-page py-16 sm:py-24" : !flush && "px-4 py-12"
+      )}
+    >
       <span className="text-muted">{icon ?? <LedgerIcon width={40} height={40} />}</span>
-      <Heading className="mt-4 text-h3 text-fg">{title}</Heading>
-      {children && <p className="mt-2 max-w-[68ch] text-balance text-muted">{children}</p>}
-      {action && <div className="mt-6 flex justify-center">{action}</div>}
+      <Heading className={page ? "mt-4 text-h1-phone tracking-tight sm:text-h1" : "mt-4 text-h3 text-fg"}>
+        {title}
+      </Heading>
+      {children && (
+        <p className={clsx("max-w-[68ch] text-balance", page ? "mt-3 text-fg" : "mt-2 text-muted")}>{children}</p>
+      )}
+      {action && <div className={clsx("mt-6 flex justify-center", page && "w-full")}>{action}</div>}
     </div>
   )
 }
