@@ -30,8 +30,8 @@ const ROOM = 5
  * only the item. Only a ring may show in the room: while the row has anything
  * scrolled past an end, a solid cover hides the room there, as the clip did
  * before. So nothing moves at rest or while scrolling. Room above and below is
- * the caller's (`className`, `wrapClassName`). TabNav needs none: its ring is
- * drawn inside the tab.
+ * the caller's (`className`, `wrapClassName`). TabNav uses the same room for
+ * the 4px each tab reaches past its label, with the ring inside the tab.
  *
  * The filter bar stops scrolling at 768px, so its fades are hidden from there
  * (the default `fadeClassName`). A row that can overflow at any width, such as

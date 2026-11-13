@@ -41,7 +41,11 @@ const SHRINK = "md:min-w-0 md:shrink"
 /** The id of the n-th card (1-based), so "Xem thêm" can land on the first new one. */
 const cardId = (n: number) => `chien-dich-${n}`
 
-/** A menu of links, the current one checked (inside a Dropdown). */
+/**
+ * A menu of links, the current one checked (inside a Dropdown). The items
+ * stack with no gap, so the focus ring is drawn inside each, 2px in from its
+ * edge (DESIGN.md 6, Focus ring).
+ */
 function MenuLinks({ label, items }: { label: string; items: { href: string; label: string; current: boolean }[] }) {
   return (
     <nav aria-label={label}>
@@ -52,7 +56,7 @@ function MenuLinks({ label, items }: { label: string; items: { href: string; lab
               href={item.href}
               aria-current={item.current ? "page" : undefined}
               className={clsx(
-                "flex min-h-11 items-center gap-3 rounded px-2 text-sm",
+                "flex min-h-11 items-center gap-3 rounded px-2 text-sm focus-visible:-outline-offset-4",
                 item.current ? "bg-primary-soft font-semibold text-primary" : "text-fg hover:bg-surface"
               )}
             >

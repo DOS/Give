@@ -7,9 +7,22 @@ import { buttonClass } from "@/components/ui/Button"
 import { BellIcon, ChevronDownIcon, CloseIcon, MenuIcon, SearchIcon } from "@/components/ui/icons"
 import type { Session } from "@/lib/auth/session"
 
+/*
+ * Icon buttons sit side by side and menu links stack 4px apart or closer, so
+ * the site-wide ring (4px outside) would touch the neighbour: both draw their
+ * focus ring inside, 2px in from their edge, so it stays 2px clear of the
+ * next control's box too (DESIGN.md 6, Focus ring).
+ */
 const iconButton =
-  "relative inline-flex size-11 items-center justify-center rounded text-fg transition-colors duration-150 hover:bg-surface"
-const menuLink = "flex min-h-11 items-center rounded px-3 text-base text-fg hover:bg-surface"
+  "relative inline-flex size-11 items-center justify-center rounded text-fg transition-colors duration-150 hover:bg-surface focus-visible:-outline-offset-4"
+/*
+ * The bell's unread badge sits in the corner the inside ring runs through, and
+ * a positioned badge paints over an outline: draw the ring on ::after, above
+ * the badge, at the same place (2px wide, 2px in from the edge).
+ */
+const bellButton = `${iconButton} focus-visible:outline-none focus-visible:after:absolute focus-visible:after:inset-1 focus-visible:after:z-10 focus-visible:after:outline-2 focus-visible:after:outline-primary focus-visible:after:content-['']`
+const menuLink =
+  "flex min-h-11 items-center rounded px-3 text-base text-fg hover:bg-surface focus-visible:-outline-offset-4"
 
 /** The search box: a plain GET to discovery, so it works before hydration. */
 function SearchForm({ id, className }: { id: string; className?: string }) {
@@ -26,7 +39,7 @@ function SearchForm({ id, className }: { id: string; className?: string }) {
           type="search"
           maxLength={80}
           placeholder="Tìm chiến dịch, dự án"
-          className="field min-h-10 py-1.5 pl-10"
+          className="field pl-10"
         />
       </div>
     </form>
@@ -43,7 +56,7 @@ export function SiteHeader({ session, unread }: { session: Session | null; unrea
   const name = session ? (session.user.name ?? session.user.email ?? "Tài khoản") : null
 
   const notices = session && (
-    <Link href="/me/notices" className={iconButton} aria-label={unread ? `Thông báo, ${unread} chưa đọc` : "Thông báo"}>
+    <Link href="/me/notices" className={bellButton} aria-label={unread ? `Thông báo, ${unread} chưa đọc` : "Thông báo"}>
       <BellIcon width={24} height={24} />
       {unread && (
         <span className="absolute top-1 right-0.5 min-w-5 rounded bg-accent px-1 text-center text-xs leading-5 font-semibold text-bg">
