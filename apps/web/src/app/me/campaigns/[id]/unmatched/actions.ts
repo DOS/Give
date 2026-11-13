@@ -13,9 +13,12 @@ import {
   getIncoming,
   MATCHABLE_STATUSES,
   normalizeReferenceCode,
+  OWNER_MISMATCH_FOR_ORGANIZER,
+  OWNER_MISMATCH_FOR_STAFF,
   paidAfterMatch,
   paidBreakdown,
   REFERENCE_CODE,
+  UNATTRIBUTED_CAUSES,
 } from "@/lib/reconciliation"
 import { dbAs, dbService } from "@/lib/supabase"
 
@@ -41,20 +44,17 @@ const MATCH_MESSAGES: Record<string, string> = {
   GIVE_TRANSACTION_NOT_INBOUND: "Chỉ khớp được các khoản tiền vào.",
   GIVE_TRANSACTION_EXPLAINED:
     "Giao dịch này đã được nhân viên tài chính giải trình là không phải tiền ủng hộ, nên không khớp được nữa.",
-  GIVE_TRANSACTION_UNATTRIBUTED:
-    "Giao dịch này chưa thuộc chiến dịch nào (tài khoản không gắn với chiến dịch lúc nhận tiền), nên chưa khớp được.",
+  GIVE_TRANSACTION_UNATTRIBUTED: `Giao dịch này không thuộc chiến dịch nào, nên không khớp được. Lý do có thể là: ${UNATTRIBUTED_CAUSES}.`,
   // The account's owner is not the campaign's organizer (the database rule of
   // DOS/Give#119, worded in #136). Only an admin data repair clears it, so the
   // organizer is sent to the Give team.
-  GIVE_ACCOUNT_OWNER_MISMATCH:
-    "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy liên hệ đội ngũ Give để kiểm tra lại tài khoản nhận và chiến dịch.",
+  GIVE_ACCOUNT_OWNER_MISMATCH: OWNER_MISMATCH_FOR_ORGANIZER,
 }
 
 /** The same code worded for finance staff, who are the Give team: it goes to an admin. */
 const STAFF_MATCH_MESSAGES: Record<string, string> = {
   ...MATCH_MESSAGES,
-  GIVE_ACCOUNT_OWNER_MISMATCH:
-    "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy báo quản trị viên kiểm tra lại tài khoản nhận và người tổ chức của chiến dịch trước khi xử lý giao dịch này.",
+  GIVE_ACCOUNT_OWNER_MISMATCH: OWNER_MISMATCH_FOR_STAFF,
 }
 
 export async function matchTransaction(
