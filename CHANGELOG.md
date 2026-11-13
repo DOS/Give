@@ -2,7 +2,8 @@
 
 What changed on `dev`, newest first. Each line names the issue and the PR
 as `#issue / #PR`, or only the PR when it had no separate issue. `main` has no Production deploy yet (see
-`docs/product-owner-config.md`), so nothing below is released.
+`docs/product-owner-config.md`), so no app change below is released; the
+database changes that reached Production are listed under "On Production".
 
 The schema for these changes lives in DOS/DOS.Me `supabase/migrations`.
 Migrations merged into DOS.Me `dev` run on the Beta Supabase branch only;
@@ -98,13 +99,30 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - Staff lock on the owner-or-staff RPC paths: a role change and the
   owner-or-staff actions no longer race (#120 / DOS/DOS.Me#1652). Migration
   `20261112060000_give_owner_or_staff_role_revoke_lock`.
+- Reconciliation checks the account owner: an inbound or outbound bank
+  transaction is not attributed to, or matched on, a campaign whose organizer
+  does not own the receiving account (#119 / DOS/DOS.Me#1662). Migration
+  `20261112090000_give_reconciliation_account_owner`.
 
-### Waiting for Production
+### On Production (database only)
 
-DOS.Me migrations on Beta only, to promote together with JOY's approval:
-`20261111120000` (#106), `20261111173000` (#107) and `20261112060000`
-(#120). At promotion, note:
+Promoted to DOS.Me `main` on 2026-11-13 with JOY's approval, by the selective
+promotion DOS/DOS.Me#1666 (merge commit `dcd67080`; runbook
+`docs/superpowers/runbooks/give-promotion-2026-11.md` in DOS/DOS.Me):
+`20261111120000` (#106), `20261111173000` (#107), `20261112060000` (#120) and
+`20261112090000` (#119). Function definitions only; the Give app itself still
+has no Production deploy. Behaviour to know:
 
 - Deleting an admin account during a role change fails fast with
   `GIVE_ACCOUNT_DELETION_BUSY`; retry it.
 - A rare owner-moderator cancel race fails closed.
+- A bank transaction on an account the campaign's organizer does not own is
+  recorded unattributed, and a manual match on it is refused with
+  `GIVE_ACCOUNT_OWNER_MISMATCH` (#119; follow-ups #137, #138).
+
+### Waiting for Production
+
+- The test-only changes #135 / DOS/DOS.Me#1663 and #144 / DOS/DOS.Me#1664 are
+  on DOS.Me `dev` and are to be promoted together (#155). Until then DOS.Me
+  `main` carries `give_staff_role_revoke_lock.test.sql` with the known test
+  defect of #135; no CI job runs it.
