@@ -26,9 +26,13 @@ export function RingBoxScroll() {
       const box = target.closest<HTMLElement>("[data-ring-box]")
       if (!box) return
       const row = box.closest<HTMLElement>("[data-scroll-row]")
-      const rowLeft = row?.scrollLeft ?? 0
+      // Both axes: the row scrolls sideways, but a fraction of a pixel of vertical overflow would let it move too.
+      const [rowLeft, rowTop] = [row?.scrollLeft ?? 0, row?.scrollTop ?? 0]
       box.scrollIntoView({ block: "nearest", inline: "nearest" })
-      if (row) row.scrollLeft = rowLeft
+      if (row) {
+        row.scrollLeft = rowLeft
+        row.scrollTop = rowTop
+      }
     }
     document.addEventListener("focusin", reveal)
     return () => document.removeEventListener("focusin", reveal)
