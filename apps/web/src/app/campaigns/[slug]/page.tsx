@@ -251,7 +251,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               <div className="mt-4 flex items-start gap-3 text-sm">
                 {organizer && (
                   <span
-                    className="inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-surface font-bold text-muted"
+                    className="inline-flex size-9 shrink-0 items-center justify-center rounded bg-surface font-bold text-muted"
                     aria-hidden
                   >
                     {organizer.display_name.trim().charAt(0).toUpperCase()}

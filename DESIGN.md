@@ -131,7 +131,7 @@ Contrast: body text >= 4.5:1, large text and icons >= 3:1, in both themes.
 ## 5. Shape, borders, elevation
 
 - Radius: 4px for buttons, inputs, chips, images and badges; 6px for cards, dialogs and panels with a fill and no border (`surface` or a soft color, such as the "Hai cách" panels and notices). Nothing larger, and no pills.
-- Some `surface` or soft fills are not panels and keep 4px: icon tiles (9), the filter bar's segmented strip (6, Type control), and the hover (`surface`) or selected (soft color) fill of a row in a list.
+- Some `surface` or soft fills are not panels and keep 4px: icon tiles (9), skeletons, the filter bar's segmented strip (6, Type control), and the hover (`surface`) or selected (soft color) fill of a row in a list.
 - Borders are 1px `border`. A screen has at most two levels: page and card.
 - Shadow appears only on floating things (menus, dialogs, the sticky funding box on scroll): `0 8px 24px rgb(0 0 0 / 0.08)`. Cards in a grid have a border and no shadow.
 
@@ -180,7 +180,7 @@ A tag is **not** a button-sized box.
 - Size: 28px high, 10px horizontal padding, 14px text, radius 4px.
 - Look: a `surface` fill with no border.
 - Interactive tags: hover goes to `border`; the selected state is a `primary-soft` fill with `primary` text.
-- The 44px touch target comes from an invisible hit area (padding or `::after`), not from a bigger visible box.
+- The 44px touch target comes from an invisible hit area (`::before`, `hit-area`), not from a bigger visible box.
 - Focus: the site-wide ring (see Focus ring) is whole on every tag, also at the ends of a row that scrolls sideways (see Filter bar, focus room).
 
 ### Filter bar (discovery)
@@ -268,7 +268,7 @@ A tag is **not** a button-sized box.
 - Icons come from lucide (outline, 1.5px stroke): 16px inside a line of text (meta lines, links, labels), 20px in buttons (6.Button), 24px in navigation, 40px in empty states and on a cover placeholder.
 - The stroke is 1.5px at 24px; icons drawn larger keep a 1.5px rendered stroke, and smaller icons scale it down (1px at 16px).
 - 24px also for the home's feature icons (trust strip, "Hai cách").
-- An icon tile is a soft fill behind one icon: radius 4px, filled `primary-soft` or `accent-soft` with the icon in the matching color. It is 44px with a 24px icon on the "Hai cách" panels, 44px with a 20px icon on a `/me/contributions` row (from 640px), and 40px with a 20px icon on the statement totals ("Minh bạch tài chính").
+- An icon tile is a small square fill behind one icon or initial, radius 4px. Filled `primary-soft` or `accent-soft` with the icon in the matching color, it is 44px with a 24px icon on the "Hai cách" panels, 44px with a 20px icon on a `/me/contributions` row (from 640px), and 40px with a 20px icon on the statement totals ("Minh bạch tài chính"). Filled `surface` in `text-muted`, it is 44px with a 20px icon on a `/me/accounts` row (from 640px), 40px with a 20px icon on a receiving-account row in `/me/campaigns/[id]`, and 36px with the organizer's bold 14px initial on the campaign page.
 
 ## 10. Motion
 

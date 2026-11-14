@@ -1,4 +1,10 @@
 // @vitest-environment happy-dom
+/**
+ * Tests both `ScrollRow` and `RingBoxScroll` (`@/components/layout/RingBoxScroll`),
+ * which share the stubbed row layout below and coordinate on `focusin`: `ScrollRow`
+ * places a focused whole-box link clear of its edge fade first, and `RingBoxScroll`
+ * scrolls the page to the box while putting that row's scroll position back.
+ */
 import { act, createElement, type ComponentProps, type ReactNode } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
@@ -151,7 +157,7 @@ describe("ScrollRow keyboard reveal", () => {
   })
 })
 
-describe("RingBoxScroll with a ring box inside a ScrollRow", () => {
+describe("RingBoxScroll", () => {
   it("scrolls the page to the box after the row has placed it, then puts the row's position back", () => {
     render(createElement("div", null, createElement(RingBoxScroll), inRow(card)))
     const box = boxOf("card")
@@ -199,13 +205,19 @@ describe("RingBoxScroll with a ring box inside a ScrollRow", () => {
         inRow(null)
       )
     )
-    const scrollIntoView = vi.fn()
-    boxOf("alone").scrollIntoView = scrollIntoView
-    // The row is scrolled but holds no box: it is not the one to put back, and stays where it is.
     row.scrollLeft = 40
+    // Move the unrelated row inside the mock so any fallback that saves and puts back a row on the
+    // page (such as the first `[data-scroll-row]`) resets it to 40 / 0 and fails the assertion.
+    const scrollIntoView = vi.fn(() => {
+      row.scrollLeft = 90
+      row.scrollTop = 2
+    })
+    boxOf("alone").scrollIntoView = scrollIntoView
     focus(document.getElementById("alone")!)
+    expect(scrollIntoView).toHaveBeenCalledOnce()
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" })
-    expect(row.scrollLeft).toBe(40)
+    expect(row.scrollLeft).toBe(90)
+    expect(row.scrollTop).toBe(2)
   })
 
   it("does nothing on pointer focus", () => {

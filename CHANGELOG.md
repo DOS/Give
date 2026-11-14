@@ -13,14 +13,27 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Home on phones (below 640px): the organizer band ("Bạn có một việc cần
+  gây quỹ?") has 64px vertical padding, up from 48px, the gap between
+  page sections of `DESIGN.md` 2.4, as it already had from 640px. On the
+  campaign page, the organizer's initial tile takes the 4px radius of an
+  icon tile (was 6px). `DESIGN.md` 9 widens icon tiles to include
+  `surface` tiles (the bank icon boxes on `/me/accounts` and
+  `/me/campaigns/[id]`, and the organizer's initial tile), 5 names
+  skeletons with the 4px fills that are not panels, and 6 names
+  `::before` (`hit-area`) for the tag's 44px touch target.
+  `ScrollRow.test.ts` notes at the top that it also tests
+  `RingBoxScroll`, and its outside-any-row test moves the row in the
+  mock so a fallback to another row fails (#182 / #187).
 - Home on phones (below 640px): the hero's bottom padding is 64px, up
   from 48px, the gap between page sections of `DESIGN.md` 2.4, as it
   already was from 640px. `DESIGN.md` 5 now says "Some `surface` or soft
   fills are not panels and keep 4px" and lists the filter bar's
   segmented strip with them, which 6 already gives 4px (no screen
-  change). A test covers a campaign card or reward tier inside a
-  sideways-scrolling row: it is scrolled clear of the edge fade as a
-  whole box, and the page's own scroll to it leaves the row where it is
+  change). A test covers the ring-box path when a campaign card or
+  reward tier is placed inside a sideways-scrolling row (no page uses
+  this path yet): it is scrolled clear of the edge fade as a whole box,
+  and the page's own scroll to it leaves the row where it is
   (#180 / #181).
 - Home with no live campaign: the hero's one action is the primary button
   "Tạo chiến dịch của bạn"; "Khám phá chiến dịch", which led to an empty

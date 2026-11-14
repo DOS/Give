@@ -193,7 +193,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       </section>
 
       <section aria-labelledby="to-chuc-heading" className="border-t border-border bg-surface">
-        <div className="container-page flex flex-col gap-6 py-12 sm:py-16 md:flex-row md:items-center md:justify-between md:gap-8">
+        <div className="container-page flex flex-col gap-6 py-16 md:flex-row md:items-center md:justify-between md:gap-8">
           <div className="min-w-0">
             <h2 id="to-chuc-heading" className="text-h2">
               Bạn có một việc cần gây quỹ?
