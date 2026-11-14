@@ -636,7 +636,9 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                   {submitBlocked && (
                     <Callout tone="warning" role="alert">
                       Chưa gửi duyệt được: chiến dịch cần gắn một tài khoản nhận tiền đã xác minh, đứng tên bạn.{" "}
-                      {accounts?.bound && accounts.boundHasTransactions && !isGive ? (
+                      {accounts?.bound &&
+                      accounts.boundHasTransactions &&
+                      !canAskSwap(campaign.status, campaign.type, accounts.boundHasTransactions) ? (
                         <>
                           Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: hãy liên hệ
                           đội ngũ Give để được hỗ trợ.

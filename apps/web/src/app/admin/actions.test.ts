@@ -172,6 +172,33 @@ describe("requestChanges", () => {
     expect((await requestChanges(CAMPAIGN, null, form("   ")))?.ok).toBe(false)
     expect(state.calls).toHaveLength(0)
   })
+
+  it("reports not found only when the campaign row is absent (DOS/Give#77)", async () => {
+    state.handler = (call) => (op(call, "maybeSingle") ? { data: null } : undefined)
+    expect(await requestChanges(CAMPAIGN, null, form("Fix."))).toEqual({
+      ok: false,
+      message: "Không tìm thấy chiến dịch, hoặc bạn không có quyền với chiến dịch này.",
+    })
+    expect(transitions()).toEqual([])
+  })
+
+  it("surfaces a failed status read instead of claiming the campaign was not found (DOS/Give#77)", async () => {
+    state.handler = (call) =>
+      op(call, "maybeSingle") ? { error: { code: "PGRST303", message: "JWT expired" } } : undefined
+    expect(await requestChanges(CAMPAIGN, null, form("Fix."))).toEqual({
+      ok: false,
+      message: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+    })
+    expect(transitions()).toEqual([])
+
+    state.calls.length = 0
+    state.handler = (call) => (op(call, "maybeSingle") ? { error: { message: "TypeError: fetch failed" } } : undefined)
+    expect(await requestChanges(CAMPAIGN, null, form("Fix."))).toEqual({
+      ok: false,
+      message: "Có lỗi xảy ra. Hãy thử lại sau.",
+    })
+    expect(transitions()).toEqual([])
+  })
 })
 
 describe("setVerification", () => {

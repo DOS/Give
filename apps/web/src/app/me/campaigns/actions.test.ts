@@ -239,6 +239,32 @@ describe("submitForReview", () => {
     expect(transitioned()).toBe(true)
   })
 
+  it("tells a sent-back give campaign whose unusable account holds money to request a swap, not to release (DOS/Give#77)", async () => {
+    const base = reads({
+      acct: account({ verification_status: "disabled" }),
+      campaign: owned({ type: "give", status: "changes_requested" }),
+    })
+    state.userHandler = (call) => (call.target === "bank_transactions" ? { data: [{ id: "t" }] } : base(call))
+    expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({
+      ok: false,
+      message: submitUnusableAccount("Tài khoản chưa được xác minh.", true, true),
+    })
+    expect(transitioned()).toBe(false)
+  })
+
+  it("tells a draft give campaign whose unusable account holds money to contact Give, since drafts cannot swap (DOS/Give#77)", async () => {
+    const base = reads({
+      acct: account({ verification_status: "disabled" }),
+      campaign: owned({ type: "give", status: "draft" }),
+    })
+    state.userHandler = (call) => (call.target === "bank_transactions" ? { data: [{ id: "t" }] } : base(call))
+    expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({
+      ok: false,
+      message: submitUnusableAccount("Tài khoản chưa được xác minh.", true, false),
+    })
+    expect(transitioned()).toBe(false)
+  })
+
   it("tells a back campaign whose unusable account holds money to contact Give, not to swap", async () => {
     const base = reads({
       acct: account({ verification_status: "disabled" }),

@@ -163,6 +163,14 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Money (M1)
 
+- Follow-ups from #64 (`apps/web`): `requestChanges` reports a failed
+  campaign status read instead of "not found"; `checkSubmitAccount`,
+  `loadEditorAccounts` and the campaign editor check `canAskSwap` when an
+  unusable bound account already recorded a bank transaction so only
+  sent-back `give` campaigns are pointed to the finance-approved account
+  swap while drafts and `back` campaigns are told to contact Give; tests
+  cover `checkSubmitAccount`, `submitForReview` with money history and the
+  non-owned binding fallback of `openingBlock` (#77).
 - An admin can send an explanation of incoming money as "không phải tiền
   ủng hộ" back to unmatched: "Đưa về chưa khớp" on each item of "Đã giải
   trình gần đây" on `/admin/unmatched`, with a required private reason (up to

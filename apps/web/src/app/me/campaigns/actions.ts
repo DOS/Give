@@ -253,7 +253,13 @@ export async function submitForReview(
   // back: DOS/Give#85); give.transition_campaign re-checks it under its locks.
   let problem
   try {
-    problem = await checkSubmitAccount(dbAs(session.accessToken), campaign.id, session.user.id, campaign.type)
+    problem = await checkSubmitAccount(
+      dbAs(session.accessToken),
+      campaign.id,
+      session.user.id,
+      campaign.type,
+      campaign.status
+    )
   } catch (error) {
     return fail(dbErrorMessage(error as { message?: string; code?: string }))
   }
