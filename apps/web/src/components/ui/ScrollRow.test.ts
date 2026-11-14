@@ -27,26 +27,28 @@ let row: HTMLElement
 const rect = (left: number, width: number) =>
   ({ left, right: left + width, width, top: 0, bottom: 44, height: 44, x: left, y: 0 }) as DOMRect
 
-/** Gives the rendered row a scroll position of its own, clamped like a browser's. */
-function stubRow() {
-  row = container.querySelector<HTMLElement>("[data-scroll-row]")!
-  let left = 0
-  let top = 0
-  Object.defineProperties(row, {
-    clientWidth: { configurable: true, get: () => ROW_WIDTH },
-    scrollWidth: { configurable: true, get: () => CONTENT_WIDTH },
-    scrollLeft: {
-      configurable: true,
-      get: () => left,
-      set: (value: number) => (left = Math.min(Math.max(value, 0), CONTENT_WIDTH - ROW_WIDTH)),
-    },
-    scrollTop: { configurable: true, get: () => top, set: (value: number) => (top = value) },
-  })
+/** Gives each rendered row a scroll position of its own, clamped like a browser's. `row` is the last one. */
+function stubRows() {
+  for (const each of container.querySelectorAll<HTMLElement>("[data-scroll-row]")) {
+    let left = 0
+    let top = 0
+    Object.defineProperties(each, {
+      clientWidth: { configurable: true, get: () => ROW_WIDTH },
+      scrollWidth: { configurable: true, get: () => CONTENT_WIDTH },
+      scrollLeft: {
+        configurable: true,
+        get: () => left,
+        set: (value: number) => (left = Math.min(Math.max(value, 0), CONTENT_WIDTH - ROW_WIDTH)),
+      },
+      scrollTop: { configurable: true, get: () => top, set: (value: number) => (top = value) },
+    })
+    row = each
+  }
 }
 
 function render(children: ReactNode) {
   act(() => root.render(children))
-  stubRow()
+  stubRows()
 }
 
 /** Focus as the keyboard does (`:focus-visible`) or as a pointer does: the event reaches the row, then the document. */
@@ -93,7 +95,8 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
     if (this.hasAttribute("data-scroll-row")) return rect(0, ROW_WIDTH)
     const x = this.getAttribute("data-x")
-    return x === null ? rect(0, 0) : rect(Number(x) - row.scrollLeft, Number(this.getAttribute("data-w")))
+    const scrolled = this.closest<HTMLElement>("[data-scroll-row]")?.scrollLeft ?? 0
+    return x === null ? rect(0, 0) : rect(Number(x) - scrolled, Number(this.getAttribute("data-w")))
   })
   container = document.createElement("div")
   document.body.append(container)
@@ -173,6 +176,19 @@ describe("RingBoxScroll with a ring box inside a ScrollRow", () => {
     expect(row.scrollTop).toBe(0)
   })
 
+  it("puts back the row that holds the box, not another row on the page", () => {
+    render(createElement("div", null, createElement(RingBoxScroll), inRow(null), inRow(card)))
+    const other = container.querySelector<HTMLElement>("[data-scroll-row]")!
+    expect(other).not.toBe(row)
+    other.scrollLeft = 40
+    boxOf("card").scrollIntoView = vi.fn(() => {
+      row.scrollLeft = 500 - ROW_WIDTH
+    })
+    focus(document.getElementById("card")!)
+    expect(row.scrollLeft).toBe(500 - (ROW_WIDTH - ROOM - FADE - ROOM))
+    expect(other.scrollLeft).toBe(40)
+  })
+
   it("only scrolls the page for a box outside any row", () => {
     render(
       createElement(
@@ -185,9 +201,11 @@ describe("RingBoxScroll with a ring box inside a ScrollRow", () => {
     )
     const scrollIntoView = vi.fn()
     boxOf("alone").scrollIntoView = scrollIntoView
+    // The row is scrolled but holds no box: it is not the one to put back, and stays where it is.
+    row.scrollLeft = 40
     focus(document.getElementById("alone")!)
     expect(scrollIntoView).toHaveBeenCalledWith({ block: "nearest", inline: "nearest" })
-    expect(row.scrollLeft).toBe(0)
+    expect(row.scrollLeft).toBe(40)
   })
 
   it("does nothing on pointer focus", () => {

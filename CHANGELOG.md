@@ -13,10 +13,12 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
-- Home on phones (below 640px): the hero keeps 64px under its last line,
-  up from 48px, the gap between page sections of `DESIGN.md` 2.4, as it
-  already had from 640px. `DESIGN.md` 5 now says "Some `surface` or soft
-  fills are not panels and keep 4px" (wording only). A test covers a
+- Home on phones (below 640px): the hero's bottom padding is 64px, up
+  from 48px, the gap between page sections of `DESIGN.md` 2.4, as it
+  already was from 640px. `DESIGN.md` 5 now says "Some `surface` or soft
+  fills are not panels and keep 4px" and lists the filter bar's
+  segmented strip with them, which 6 already gives 4px (no screen
+  change). A test covers a
   campaign card or reward tier inside a sideways-scrolling row: it is
   scrolled clear of the edge fade as a whole box, and the page's own
   scroll to it leaves the row where it is (#180 / #181).

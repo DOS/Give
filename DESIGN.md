@@ -131,7 +131,7 @@ Contrast: body text >= 4.5:1, large text and icons >= 3:1, in both themes.
 ## 5. Shape, borders, elevation
 
 - Radius: 4px for buttons, inputs, chips, images and badges; 6px for cards, dialogs and panels with a fill and no border (`surface` or a soft color, such as the "Hai cách" panels and notices). Nothing larger, and no pills.
-- Some `surface` or soft fills are not panels and keep 4px: icon tiles (9), and the hover (`surface`) or selected (soft color) fill of a row in a list.
+- Some `surface` or soft fills are not panels and keep 4px: icon tiles (9), the filter bar's segmented strip (6, Type control), and the hover (`surface`) or selected (soft color) fill of a row in a list.
 - Borders are 1px `border`. A screen has at most two levels: page and card.
 - Shadow appears only on floating things (menus, dialogs, the sticky funding box on scroll): `0 8px 24px rgb(0 0 0 / 0.08)`. Cards in a grid have a border and no shadow.
 
