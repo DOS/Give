@@ -224,6 +224,12 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   corrected again. The app reads a corrected transaction as matched, not
   explained, and the public statement shows it as a donation only
   (#71 / #198).
+- Statement reconciliation (`/admin/statements`): finance staff can resolve
+  an `event_dismissed` statement row (such as a test file or a statement
+  uploaded to the wrong account) as `not_a_transaction` with a mandatory
+  note, recording no bank transaction; `/me/statements/[batchId]` counts
+  and badges those rows (#78). Needs DOS.Me migration
+  `20261114080500_give_statement_row_not_a_transaction`.
 
 ### Platform
 
@@ -264,6 +270,11 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   `20261116090000_give_correct_inbound_explanation`. The Give app's #71
   change reads the new table, so it needs this migration on Production
   before it is released.
+- Statement-row `not_a_transaction` resolution: `give.resolve_statement_import_row`
+  accepts `not_a_transaction` for `event_dismissed` rows that have no active
+  duplicate pointing to them, writes the audit row without creating a bank
+  transaction, and unblocks `give.release_account_binding` (#78). Migration
+  `20261114080500_give_statement_row_not_a_transaction`.
 
 ### On Production (database only)
 
@@ -283,6 +294,9 @@ has no Production deploy. Behaviour to know:
 
 ### Waiting for Production
 
+- Migration `20261114080500_give_statement_row_not_a_transaction.sql` (#78)
+  must reach DOS.Me `main` before deploying the `not_a_transaction` staff
+  resolution in `apps/web`.
 - The test-only changes #135 / DOS/DOS.Me#1663 and #144 / DOS/DOS.Me#1664 are
   on DOS.Me `dev` and are to be promoted together (#155). Until then DOS.Me
   `main` carries `give_staff_role_revoke_lock.test.sql` with the known test

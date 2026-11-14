@@ -3,11 +3,13 @@ import type { Db } from "./campaigns"
 import { dbErrorMessage } from "./errors"
 import { formatVnd } from "./format"
 import { isUuid } from "./ids"
+import { inboundExplanationLabel } from "./statement"
 
 /**
  * Statement uploads and the staff queue of ambiguous rows (design sections
  * 2.4 and 5.2; DDL in DOS-Me
- * `supabase/migrations/20261101170000_give_statement_import.sql`).
+ * `supabase/migrations/20261101170000_give_statement_import.sql` and
+ * `20261114080500_give_statement_row_not_a_transaction.sql`).
  *
  * Reads run with the caller's token: RLS shows a batch and its rows to the
  * account's owner and to finance/admin staff, and the column grants leave
@@ -16,7 +18,7 @@ import { isUuid } from "./ids"
  * give.resolve_statement_import_row, both as the service role.
  */
 
-export type RowStatus = "ready" | "duplicate" | "ambiguous" | "imported"
+export type RowStatus = "ready" | "duplicate" | "ambiguous" | "imported" | "not_a_transaction"
 export type AmbiguousReason =
   | "provider_id_repeated"
   | "provider_id_conflict"
@@ -27,13 +29,14 @@ export type AmbiguousReason =
   | "file_mismatch"
   | "possible_recorded"
   | "event_dismissed"
-export type Resolution = "import" | "duplicate"
+export type Resolution = "import" | "duplicate" | "not_a_transaction"
 
 export const ROW_STATUS_LABELS: Record<RowStatus, string> = {
   ready: "Chờ nhập",
   duplicate: "Trùng, đã bỏ qua",
   ambiguous: "Chờ nhân viên tài chính",
   imported: "Đã nhập",
+  not_a_transaction: "Không phải giao dịch, đã bỏ qua",
 }
 
 /** Why a row went to staff, in the words a finance reviewer needs. */
@@ -50,16 +53,27 @@ export const AMBIGUOUS_REASON_LABELS: Record<AmbiguousReason, string> = {
     "Một ngày khác trong file không khớp với lần tải trước (ngân hàng có thể đã chuyển dòng sang ngày khác).",
   possible_recorded: "Có thể đã được ghi nhận: đã có giao dịch cùng chiều, cùng số tiền vào khoảng ngày này.",
   event_dismissed:
-    "Dòng của một lần tải sao kê mà đội tài chính đã bỏ qua. Đối chiếu với sao kê của ngân hàng: nhập nếu đây là giao dịch thật, hoặc đánh dấu là trùng nếu giao dịch đã được ghi. Dòng không có thật (file thử) chưa xử lý được ở đây; hãy báo đội ngũ Give.",
+    "Dòng của một lần tải sao kê mà đội tài chính đã bỏ qua. Đối chiếu với sao kê của ngân hàng: nhập nếu đây là giao dịch thật chưa được ghi, đánh dấu là giao dịch đã ghi nếu bị trùng, hoặc đánh dấu không phải giao dịch thật (ví dụ file thử, tải nhầm tài khoản).",
 }
 
 export const RESOLUTION_LABELS: Record<Resolution, string> = {
   import: "Nhập thành giao dịch mới",
   duplicate: "Là giao dịch đã ghi",
+  not_a_transaction: "Không phải giao dịch thật",
+}
+
+/** Reasons where a staged row can be fake or from another account, not a real transaction of this account (DOS/Give#78). */
+export function allowsNotATransaction(reason: AmbiguousReason | string | null | undefined): boolean {
+  return reason === "event_dismissed"
 }
 
 export function rowStatusLabel(status: string): string {
   return Object.hasOwn(ROW_STATUS_LABELS, status) ? ROW_STATUS_LABELS[status as RowStatus] : status
+}
+
+export function resolutionLabel(resolution: string | null | undefined): string {
+  if (!resolution) return "—"
+  return Object.hasOwn(RESOLUTION_LABELS, resolution) ? RESOLUTION_LABELS[resolution as Resolution] : resolution
 }
 
 export function ambiguousReasonLabel(reason: string | null | undefined): string {
@@ -489,4 +503,24 @@ export async function listReconciliationAudit(db: Db, limit = 50): Promise<Audit
     .limit(limit)
   if (error) throw error
   return (data ?? []) as AuditEntry[]
+}
+
+/** One-line summary of a reconciliation audit entry for /admin/statements. */
+export function reconciliationAuditSummary(entry: AuditEntry): string {
+  const after = entry.after ?? {}
+  if (entry.action === "statement_import_row.resolve") {
+    const label = resolutionLabel(typeof after.resolution === "string" ? after.resolution : null)
+    const note = typeof after.note === "string" ? after.note : ""
+    return `${label}${after.override_candidate === true ? " (xác nhận khác dòng trước)" : ""}: ${note}`
+  }
+  if (entry.action === "bank_transaction.manual_match") {
+    return `${formatVnd(Number(after.amount ?? 0))} chuyển từ "chưa khớp" sang "đã khớp", lượt ủng hộ ${String(after.contribution_id ?? "—")}`
+  }
+  if (entry.action === "bank_transaction.explain_inbound") {
+    const kind = typeof after.kind === "string" ? inboundExplanationLabel(after.kind) : "—"
+    const reason = typeof after.reason === "string" ? after.reason : ""
+    const evidence = typeof after.evidence === "string" ? after.evidence : ""
+    return `${formatVnd(Number(after.amount ?? 0))} chuyển từ "chưa khớp" sang "không phải tiền ủng hộ" (${kind}): ${reason}. Bằng chứng: ${evidence}`
+  }
+  return ""
 }

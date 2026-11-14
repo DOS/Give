@@ -13,6 +13,7 @@ import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import { listStaff } from "@/lib/staff"
 import {
   accountLabels,
+  allowsNotATransaction,
   ambiguousReasonLabel,
   AUDIT_ACTION_LABELS,
   DUPLICATE_WINDOW_DAYS,
@@ -21,15 +22,16 @@ import {
   listDuplicateTargets,
   listReconciliationAudit,
   listResolvedRows,
+  reconciliationAuditSummary,
   RESOLUTION_LABELS,
+  resolutionLabel,
   rowStatusLabel,
   signedAmount,
   type AuditEntry,
-  type QueueRow,
   type DuplicateTargets,
+  type QueueRow,
   type StatementRowView,
 } from "@/lib/statement-import"
-import { inboundExplanationLabel } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
 import { AdminPage, AdminSection, DataTable, ItemActions, ItemCard, ItemList } from "../_components/ui"
@@ -133,7 +135,7 @@ export default async function AdminStatementsPage() {
                   </p>
                 </td>
                 <td className="px-4 py-3">
-                  <p className="font-semibold text-fg">{row.resolution ? RESOLUTION_LABELS[row.resolution] : "—"}</p>
+                  <p className="font-semibold text-fg">{resolutionLabel(row.resolution)}</p>
                   <p className="text-muted">
                     {rowStatusLabel(row.status)}. Lý do vào hàng chờ: {ambiguousReasonLabel(row.ambiguous_reason)}
                   </p>
@@ -282,47 +284,49 @@ function QueueCard({
           <NoteField id={`import-note-${row.id}`} />
           <SubmitButton>Nhập thành giao dịch mới</SubmitButton>
         </ActionForm>
+
+        {allowsNotATransaction(row.ambiguous_reason) && (
+          <ActionForm
+            action={resolveStatementRow.bind(null, row.id)}
+            confirm="Đánh dấu dòng này không phải giao dịch thật? Dòng sẽ được bỏ qua, không ghi vào sổ và không đổi lại được."
+            className="space-y-4"
+          >
+            <input type="hidden" name="resolution" value="not_a_transaction" />
+            <p className="label">{RESOLUTION_LABELS.not_a_transaction}</p>
+            <p className="text-sm text-muted">
+              Chỉ chọn khi dòng này không có trên sao kê thật của tài khoản (ví dụ file thử, tải nhầm tài khoản).
+            </p>
+            <NoteField
+              id={`not-tx-note-${row.id}`}
+              placeholder="Ghi chú bắt buộc: vì sao không phải giao dịch thật và đã đối chiếu với nguồn nào (ví dụ: file thử, tải nhầm tài khoản)"
+            />
+            <SubmitButton className="btn-secondary">Không phải giao dịch thật</SubmitButton>
+          </ActionForm>
+        )}
       </ItemActions>
     </ItemCard>
   )
 }
 
-function NoteField({ id }: { id: string }) {
+function NoteField({
+  id,
+  placeholder = "Ghi chú bắt buộc: đã đối chiếu với nguồn nào (sao kê trên trang ngân hàng, ngày giờ, mã giao dịch)",
+}: {
+  id: string
+  placeholder?: string
+}) {
   return (
     <>
       <label htmlFor={id} className="sr-only">
         Ghi chú
       </label>
-      <textarea
-        id={id}
-        name="note"
-        className="field"
-        rows={2}
-        required
-        maxLength={1000}
-        placeholder="Ghi chú bắt buộc: đã đối chiếu với nguồn nào (sao kê trên trang ngân hàng, ngày giờ, mã giao dịch)"
-      />
+      <textarea id={id} name="note" className="field" rows={2} required maxLength={1000} placeholder={placeholder} />
     </>
   )
 }
 
 function auditSummary(entry: AuditEntry): string {
-  const after = entry.after ?? {}
-  if (entry.action === "statement_import_row.resolve") {
-    const resolution = after.resolution === "import" || after.resolution === "duplicate" ? after.resolution : null
-    const note = typeof after.note === "string" ? after.note : ""
-    return `${resolution ? RESOLUTION_LABELS[resolution] : "—"}${after.override_candidate === true ? " (xác nhận khác dòng trước)" : ""}: ${note}`
-  }
-  if (entry.action === "bank_transaction.manual_match") {
-    return `${formatVnd(Number(after.amount ?? 0))} chuyển từ "chưa khớp" sang "đã khớp", lượt ủng hộ ${String(after.contribution_id ?? "—")}`
-  }
-  if (entry.action === "bank_transaction.explain_inbound") {
-    const kind = typeof after.kind === "string" ? inboundExplanationLabel(after.kind) : "—"
-    const reason = typeof after.reason === "string" ? after.reason : ""
-    const evidence = typeof after.evidence === "string" ? after.evidence : ""
-    return `${formatVnd(Number(after.amount ?? 0))} chuyển từ "chưa khớp" sang "không phải tiền ủng hộ" (${kind}): ${reason}. Bằng chứng: ${evidence}`
-  }
-  return ""
+  return reconciliationAuditSummary(entry)
 }
 
 function AuditTrail({ entries, names }: { entries: AuditEntry[]; names: Map<string, string> }) {

@@ -23,6 +23,7 @@ export const ROW_TONES: Record<RowStatus, BadgeTone> = {
   duplicate: "neutral",
   ambiguous: "warning",
   imported: "brand",
+  not_a_transaction: "neutral",
 }
 
 /** The tone of a status read from the database as a plain string; neutral when unknown. */
