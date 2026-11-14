@@ -21,9 +21,9 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - The organizer's "Give đã ẩn khỏi sao kê" note on the disbursements page
   takes the 6px radius of a filled notice (was 4px). `DESIGN.md` 8 states
   the home hero's split from 1024px: the text spans 8 columns and the
-  receipt card the last 4. `DESIGN.md` 5 and 9 say that icon tiles and the
-  hover or selected fill of a list row are not panels and keep 4px (no
-  screen change). A campaign card or reward tier placed inside a
+  receipt card the last 4. `DESIGN.md` 5 says that icon tiles and the
+  hover or selected fill of a list row are not panels and keep 4px, and 9
+  names every icon tile (no screen change). A campaign card or reward tier placed inside a
   row that scrolls sideways would be scrolled clear of the row's edge fade
   as a whole box (no screen has one today) (#175 / #177).
 - Focus rings outside the shared components are whole: a control focused
