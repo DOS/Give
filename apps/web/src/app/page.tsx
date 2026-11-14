@@ -59,7 +59,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       )}
 
       <section className="border-b border-border">
-        <div className="container-page grid-page items-center gap-y-8 py-12 sm:py-16 lg:py-24">
+        {/* The bottom is a gap between page sections, 64px on phones and 96px from 1024px (DESIGN.md 2.4), as
+            the top of the next section is; the top under the header keeps 48px on phones. */}
+        <div className="container-page grid-page items-center gap-y-8 pt-12 pb-16 sm:pt-16 lg:py-24">
           {/* Eight columns from 1024px (the receipt card keeps 9 to 12), so the headline's second line, about
               560px at 48px, fits from 1024px; the 18ch and 52ch measures still cap the headline and paragraph. */}
           <div className="col-span-full min-w-0 lg:col-span-8">
