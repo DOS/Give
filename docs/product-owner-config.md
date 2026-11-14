@@ -60,7 +60,11 @@ Platform, which hold every Production and DOS.Me migration step, so the
 owner still approves Production in one chat. Each PO dispatches only issues
 of its own lines and runs the acceptance gate of its own PRs. Before taking
 an issue, a PO checks its latest protocol comment for another session's
-claim.
+claim. Neither PO merges, accepts or posts an acceptance on the other's PR.
+A Production or DOS.Me migration step is Platform's, even when a Campaigns PR
+needs it: only the Give Product Owner runs it, with JOY's approval. In the
+table, "none" means no PO session in this desktop app: Campaigns is owned by
+the Qwen Code PO, and Platform by the Give Product Owner.
 
 | Line                                                   | Label            | Product Line option id | PO session                                                |
 | ------------------------------------------------------ | ---------------- | ---------------------- | --------------------------------------------------------- |
@@ -139,6 +143,7 @@ claim.
 - JOY (2026-10-29): "Làm liên tục đi"
 - JOY (2026-10-31): "setup sao cho nó có scrumban đi, có time box á"
 - JOY (2026-10-31), on PO lines: "Nếu như chia gặp vấn đề thì 1 PO thôi"
+  (superseded 2026-11-14, below)
 - JOY (2026-10-31), on branches: "DOS.Me lên main là lên prod mà. Chỉ là
   phải PR dev thôi. Hiện chưa có gì thì làm trên dev rồi PR main luôn nhỉ?"
 - JOY (2026-11-11), on archiving: "Mấy cái lưu trữ các phiên xong rồi không
