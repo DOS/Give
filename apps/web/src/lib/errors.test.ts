@@ -56,6 +56,15 @@ describe("dbErrorMessage", () => {
     )
   })
 
+  it("words non-transaction statement row resolution refusals (DOS/Give#78)", () => {
+    expect(dbErrorMessage({ code: "23514", message: "GIVE_RESOLUTION_NOT_FOR_REASON: balance_break" })).toBe(
+      "Chỉ đánh dấu “không phải giao dịch thật” được cho dòng thuộc lần tải sao kê đã bị đội tài chính bỏ qua."
+    )
+    expect(dbErrorMessage({ code: "23514", message: "GIVE_ROW_HAS_ACTIVE_DUPLICATE" })).toContain(
+      "Một lần tải sao kê khác có dòng đã được bỏ qua vì trùng với dòng này"
+    )
+  })
+
   it("never echoes unknown internals", () => {
     const message = dbErrorMessage({ code: "XX000", message: "internal: relation give.secret" })
     expect(message).not.toContain("give.secret")
