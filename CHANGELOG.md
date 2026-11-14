@@ -23,9 +23,10 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   the home hero's split from 1024px: the text spans 8 columns and the
   receipt card the last 4. `DESIGN.md` 5 says that icon tiles and the
   hover or selected fill of a list row are not panels and keep 4px, and 9
-  names every icon tile (no screen change). A campaign card or reward tier placed inside a
-  row that scrolls sideways would be scrolled clear of the row's edge fade
-  as a whole box (no screen has one today) (#175 / #177).
+  names every icon tile (no screen change). A campaign card or reward
+  tier placed inside a row that scrolls sideways would be scrolled clear
+  of the row's edge fade as a whole box (no screen has one today)
+  (#175 / #177).
 - Focus rings outside the shared components are whole: a control focused
   from the keyboard is scrolled clear of the sticky header, the bottom of
   the screen and, on a campaign page below 1024px, the support bar (a
