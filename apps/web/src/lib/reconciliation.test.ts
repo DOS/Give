@@ -395,6 +395,19 @@ describe("reference codes and candidates", () => {
     expect(waitsFor({ ...pledge, status: "paid", received_amount: 500_000, refunded_amount: 50_000 }, 50_000)).toBe(
       false
     )
+
+    // Refunded give donations keep status 'received' in the database, so they must not be suggested again.
+    const refundedDonation: MatchCandidate = {
+      ...candidate,
+      kind: "donation",
+      status: "received",
+      intended_amount: 500_000,
+      received_amount: 500_000,
+      refunded_amount: 500_000,
+    }
+    expect(waitsFor(refundedDonation, 500_000)).toBe(false)
+    expect(waitsFor({ ...refundedDonation, refunded_amount: 100_000 }, 100_000)).toBe(false)
+    expect(waitsFor({ ...refundedDonation, received_amount: 600_000, refunded_amount: 200_000 }, 100_000)).toBe(false)
   })
 
   it("reads ledger refunds with match candidates and never falls back to gross (DOS/Give#93)", async () => {

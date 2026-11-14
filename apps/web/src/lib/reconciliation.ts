@@ -346,17 +346,25 @@ export async function listMatchCandidates(db: Db, campaignId: string): Promise<M
 }
 
 /**
- * True when the contribution still waits for this exact net amount due
- * (intended - (received - refunded), as give.pledge_payment and
- * give.pledge_balances compute since DOS/Give#89). A 'paid' pledge is already
- * settled (a later partial refund is compensation, not a balance due).
+ * True when the contribution still waits for this exact amount:
+ * - pledges ('payment_due', 'partially_paid'): net amount due
+ *   intended - (received - refunded), matching give.pledge_payment and
+ *   give.pledge_balances (DOS/Give#89, DOS/Give#93); a 'paid' pledge is
+ *   already settled (a later partial refund is compensation, not due again);
+ * - donations: intended - received while nothing has been refunded (a refunded
+ *   gift is never owed back by the donor, even though status stays 'received').
  */
 export function waitsFor(
-  c: Pick<MatchCandidate, "status" | "intended_amount" | "received_amount" | "refunded_amount">,
+  c: Pick<MatchCandidate, "kind" | "status" | "intended_amount" | "received_amount" | "refunded_amount">,
   amount: number
 ): boolean {
-  if (c.status === "paid" || !(amount > 0)) return false
-  return c.intended_amount - (c.received_amount - c.refunded_amount) === amount
+  if (!(amount > 0)) return false
+  if (c.kind === "pledge") {
+    if (c.status !== "payment_due" && c.status !== "partially_paid") return false
+    return c.intended_amount - (c.received_amount - c.refunded_amount) === amount
+  }
+  if (c.refunded_amount > 0) return false
+  return c.intended_amount - c.received_amount === amount
 }
 
 /** Finds a contribution of the campaign by id or by its reference code. */
