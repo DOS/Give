@@ -440,7 +440,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 <p className="mt-2 text-sm text-muted">
                   Góp từ {formatVnd(campaign.min_contribution)}. Tiền chuyển thẳng vào tài khoản nhận của chiến dịch.
                 </p>
-                <div className="mt-4 card p-4 sm:p-6">
+                <div className="mt-6 card p-4 sm:p-6">
                   <DonateForm campaignId={campaign.id} defaultName={session?.user.name ?? ""} signedIn={!!session} />
                 </div>
               </section>

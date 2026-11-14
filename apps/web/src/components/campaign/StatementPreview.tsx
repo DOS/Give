@@ -62,7 +62,7 @@ export function StatementPreview({
       </div>
       <p className="mt-2 text-sm text-muted">Đối chiếu với sao kê ngân hàng của tài khoản nhận.</p>
 
-      <div className="mt-4 space-y-4">
+      <div className="mt-6 space-y-4">
         {isBack ? (
           <PledgeTotals totals={totals} />
         ) : (

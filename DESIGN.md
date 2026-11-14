@@ -53,13 +53,14 @@ Spacing uses a 4px base. These are the only values allowed:
 
 `4, 8, 12, 16, 24, 32, 48, 64, 96`
 
-| Where                            | Space                         |
-| -------------------------------- | ----------------------------- |
-| Between page sections            | 96px desktop, 64px phone      |
-| Section heading to its content   | 24px                          |
-| Between related items in a group | 12 or 16px                    |
-| Inside a card                    | 24px padding (16px on phones) |
-| Between form fields              | 24px                          |
+| Where                                | Space                                  |
+| ------------------------------------ | -------------------------------------- |
+| Between page sections                | 96px desktop, 64px phone               |
+| Section heading to its content       | 24px                                   |
+| Section heading to one-line subtitle | 8px; subtitle to section content: 24px |
+| Between related items in a group     | 12 or 16px                             |
+| Inside a card                        | 24px padding (16px on phones)          |
+| Between form fields                  | 24px                                   |
 
 ## 3. Type
 
