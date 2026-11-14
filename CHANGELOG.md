@@ -18,10 +18,10 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   already was from 640px. `DESIGN.md` 5 now says "Some `surface` or soft
   fills are not panels and keep 4px" and lists the filter bar's
   segmented strip with them, which 6 already gives 4px (no screen
-  change). A test covers a
-  campaign card or reward tier inside a sideways-scrolling row: it is
-  scrolled clear of the edge fade as a whole box, and the page's own
-  scroll to it leaves the row where it is (#180 / #181).
+  change). A test covers a campaign card or reward tier inside a
+  sideways-scrolling row: it is scrolled clear of the edge fade as a
+  whole box, and the page's own scroll to it leaves the row where it is
+  (#180 / #181).
 - Home with no live campaign: the hero's one action is the primary button
   "Tạo chiến dịch của bạn"; "Khám phá chiến dịch", which led to an empty
   list, is not shown, and the empty state drops its own "Tạo chiến dịch
