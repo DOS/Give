@@ -11,6 +11,7 @@ import {
   donationCookiesToDrop,
   donationCookieToken,
   guestContribution,
+  guestContributionAccess,
   paymentAccount,
   statusTokenHash,
 } from "."
@@ -110,6 +111,14 @@ describe("donationCookiesToDrop", () => {
     expect(donationCookiesToDrop(["__Host-give_at", ...names])).toEqual(names.slice(0, 3))
     expect(donationCookiesToDrop(names.slice(0, 19))).toEqual([])
   })
+
+  it("ignores unprefixed sibling-subdomain cookies on deployed hosts", () => {
+    const alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+    const hostCookies = Array.from({ length: 19 }, (_, i) => `__Host-give_dn_GVAAAAA${alphabet[i]}`)
+    const tossed = Array.from({ length: 5 }, (_, i) => `give_dn_GVBBBBB${alphabet[i]}`)
+    expect(donationCookiesToDrop([...tossed, ...hostCookies], "give.dos.me")).toEqual([])
+    expect(donationCookiesToDrop([...hostCookies, ...tossed], "localhost")).toEqual([])
+  })
 })
 
 describe("guestContribution", () => {
@@ -162,6 +171,49 @@ describe("guestContribution", () => {
     const calls: Call[] = []
     expect(await guestContribution(fakeDb(() => undefined, calls) as never, "GVABCDEFG", "nope")).toBeNull()
     expect(calls).toHaveLength(0)
+  })
+
+  it("does not query for a malformed reference code", async () => {
+    const calls: Call[] = []
+    expect(await guestContributionAccess(fakeDb(() => undefined, calls) as never, "GV0OIL123", TOKEN, now)).toBeNull()
+    expect(calls).toHaveLength(0)
+  })
+
+  it("returns the token expiry alongside the stripped donation fields", async () => {
+    const calls: Call[] = []
+    const access = await guestContributionAccess(
+      fakeDb(
+        () => ({
+          data: row({
+            guest_name: "Secret Name",
+            guest_email: "secret@example.com",
+            public_name: "Lan",
+            message: "Private note",
+          }),
+        }),
+        calls
+      ) as never,
+      "GVABCDEFG",
+      TOKEN,
+      now
+    )
+    expect(access).toEqual({
+      donation: {
+        id: "33333333-3333-4333-8333-333333333333",
+        campaign_id: CAMPAIGN,
+        intended_amount: 200000,
+        received_amount: 0,
+        reference_code: "GVABCDEFG",
+        status: "awaiting_transfer",
+        created_at: "2026-10-31T23:00:00.000Z",
+      },
+      expiresAt: new Date("2026-11-07T23:00:00.000Z"),
+    })
+    const selected = String(op(calls[0], "select")?.[0])
+    for (const pii of ["guest_name", "guest_email", "public_name", "message", "is_anonymous"]) {
+      expect(selected).not.toContain(pii)
+      expect(JSON.stringify(access)).not.toContain(pii)
+    }
   })
 })
 

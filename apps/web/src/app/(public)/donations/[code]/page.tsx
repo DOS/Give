@@ -7,8 +7,10 @@ import { DonationStatus } from "@/components/DonationStatus"
 import { TransferDetails } from "@/components/TransferDetails"
 import { Callout } from "@/components/ui/Callout"
 import { Money } from "@/components/ui/Money"
+import { RefCode } from "@/components/ui/RefCode"
+import { siteOrigin } from "@/lib/auth/origin"
 import { getSession } from "@/lib/auth/session"
-import { qrExpiresAt } from "@/lib/contributions"
+import { donationTrackingPath, qrExpiresAt } from "@/lib/contributions"
 import { dbAs, dbService } from "@/lib/supabase"
 import {
   acceptsDonations,
@@ -22,7 +24,8 @@ import {
   type PaymentContribution,
 } from "@/server/contributions"
 import { buildDonationPayload, isDonationCode, renderVietQrSvg } from "@/server/vietqr"
-import { RefCode } from "@/components/ui/RefCode"
+
+import { TrackingLinkButton } from "./TrackingLinkButton"
 
 export const metadata: Metadata = { title: "Chuyển khoản ủng hộ", robots: { index: false, follow: false } }
 
@@ -37,17 +40,18 @@ const timeFormat = new Intl.DateTimeFormat("vi-VN", {
 
 /**
  * The donation, if the visitor may see it: a signed-in donor's own one, or a
- * guest's whose status token cookie (set by the donate action) matches. A
- * donor whose session ended is sent to sign in and back; anyone else gets
- * the not-found page, which explains where the page can be opened.
+ * guest's whose status token cookie (set by the donate action or a saved
+ * tracking link) matches. A donor whose session ended is sent to sign in and
+ * back; anyone else gets the not-found page, which explains where the page
+ * can be opened.
  */
-async function loadDonation(code: string): Promise<{ donation: PaymentContribution; guest: boolean }> {
+async function loadDonation(code: string): Promise<{ donation: PaymentContribution; guestToken: string | null }> {
   const session = await getSession()
   let sessionRejected = false
   if (session) {
     try {
       const own = await ownContribution(dbAs(session.accessToken), session.user.id, code)
-      if (own) return { donation: own, guest: false }
+      if (own) return { donation: own, guestToken: null }
     } catch (error) {
       if (!isSessionRejected(error)) throw error
       sessionRejected = true
@@ -55,7 +59,7 @@ async function loadDonation(code: string): Promise<{ donation: PaymentContributi
   }
   const token = donationCookieToken(await cookies(), code, hostnameFrom((await headers()).get("host")))
   const guest = token ? await guestContribution(dbService(), code, token) : null
-  if (guest) return { donation: guest, guest: true }
+  if (guest && token) return { donation: guest, guestToken: token }
   if (sessionRejected) redirect(`/auth/login?return_path=${encodeURIComponent(`/donations/${code}`)}`)
   notFound()
 }
@@ -63,7 +67,7 @@ async function loadDonation(code: string): Promise<{ donation: PaymentContributi
 export default async function DonationPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
   if (!isDonationCode(code)) notFound()
-  const { donation, guest } = await loadDonation(code)
+  const { donation, guestToken } = await loadDonation(code)
 
   const service = dbService()
   const campaign = await paymentCampaign(service, donation.campaign_id)
@@ -165,10 +169,17 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
               </dd>
             </div>
           </dl>
-          {guest && (
-            <p className="mt-4 text-sm text-muted">
-              Trang này chỉ mở được trên trình duyệt bạn vừa dùng để ủng hộ, trong 7 ngày.
-            </p>
+          {guestToken && (
+            <div className="mt-4 space-y-3">
+              <p className="max-w-[68ch] text-sm text-fg">
+                Lưu đường dẫn theo dõi để xem trạng thái khoản ủng hộ này trên thiết bị khác trong 7 ngày. Đường dẫn
+                không chứa thông tin cá nhân.
+              </p>
+              <TrackingLinkButton
+                path={donationTrackingPath(donation.reference_code, guestToken)}
+                origin={siteOrigin()}
+              />
+            </div>
           )}
         </aside>
         <div className="min-w-0 lg:col-span-8 lg:row-start-1">

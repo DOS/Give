@@ -24,8 +24,8 @@ export default function DonationNotFound() {
         </div>
       }
     >
-      Nếu bạn ủng hộ mà không đăng nhập, trang chuyển khoản chỉ mở được trên trình duyệt bạn đã dùng để ủng hộ, trong 7
-      ngày. Nếu bạn ủng hộ khi đã đăng nhập, hãy đăng nhập đúng tài khoản đó.
+      Nếu bạn ủng hộ mà không đăng nhập, trang này mở được bằng đường dẫn theo dõi đã lưu hoặc trên trình duyệt vừa ủng
+      hộ, trong 7 ngày. Nếu đã đăng nhập, hãy đăng nhập đúng tài khoản đó.
     </EmptyState>
   )
 }
