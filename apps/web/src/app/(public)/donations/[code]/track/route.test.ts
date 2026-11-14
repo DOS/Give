@@ -203,9 +203,12 @@ describe("GET /donations/[code]/track (DOS/Give#50)", () => {
   })
 
   it.each([
-    ["an image subresource", { "sec-fetch-mode": "no-cors", "sec-fetch-dest": "image" }],
-    ["an iframe embed", { "sec-fetch-mode": "navigate", "sec-fetch-dest": "iframe" }],
-    ["a background fetch", { "sec-fetch-mode": "cors", "sec-fetch-dest": "empty" }],
+    [
+      "an image subresource",
+      { "sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors", "sec-fetch-dest": "image" },
+    ],
+    ["an iframe embed", { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "iframe" }],
+    ["a background fetch", { "sec-fetch-site": "same-origin", "sec-fetch-mode": "cors", "sec-fetch-dest": "empty" }],
   ])("refuses %s with 404 before querying or setting cookies", async (_name, headers) => {
     const response = await GET(trackRequest({ headers }), { params: Promise.resolve({ code: "GVABCDEFG" }) })
     expect(response.status).toBe(404)
@@ -213,12 +216,19 @@ describe("GET /donations/[code]/track (DOS/Give#50)", () => {
     expect(state.serviceCalls).toHaveLength(0)
   })
 
-  it("allows top-level browser navigations", async () => {
-    const response = await GET(
-      trackRequest({ headers: { "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" } }),
+  it("allows top-level browser navigations and non-browser HTTP clients", async () => {
+    const browserNav = await GET(
+      trackRequest({
+        headers: { "sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" },
+      }),
       { params: Promise.resolve({ code: "GVABCDEFG" }) }
     )
-    expect(response.status).toBe(303)
+    expect(browserNav.status).toBe(303)
+
+    const nodeFetch = await GET(trackRequest({ headers: { "sec-fetch-mode": "cors" } }), {
+      params: Promise.resolve({ code: "GVABCDEFG" }),
+    })
+    expect(nodeFetch.status).toBe(303)
   })
 
   it("selects payment columns only and never logs the secret token on database failure", async () => {

@@ -145,7 +145,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   link; opening it on another browser or device validates the token in
   constant time, sets the httpOnly `__Host-` status cookie and `303`-redirects
   to the clean `/donations/[code]` URL without personal data or `Referer`
-  leakage (#50).
+  leakage (#50 / #186).
 - Donate flow with VietQR and a guest status page (#44).
 - Payment channel interface and statement-import pipeline (#16 / #61);
   statement upload, ambiguous-row queue and manual matching (#20 / #62);

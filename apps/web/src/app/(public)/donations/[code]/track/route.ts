@@ -33,11 +33,14 @@ function notFound() {
  * token expires.
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ code: string }> }) {
-  // Refuse subresource requests (images, iframes, scripts, background fetches)
-  // so a foreign page cannot plant or evict guest donation cookies.
+  // Refuse browser subresource requests (images, iframes, scripts, background
+  // fetches) so another page cannot plant or evict guest donation cookies.
+  // Browsers always send Sec-Fetch-Site with mode and dest; Node's fetch sends
+  // Sec-Fetch-Mode alone.
+  const site = request.headers.get("sec-fetch-site")
   const mode = request.headers.get("sec-fetch-mode")
   const dest = request.headers.get("sec-fetch-dest")
-  if ((mode && mode !== "navigate") || (dest && dest !== "document")) {
+  if (site && (mode !== "navigate" || dest !== "document")) {
     return notFound()
   }
 
