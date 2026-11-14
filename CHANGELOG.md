@@ -176,6 +176,8 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - `tailwindcss` and `@tailwindcss/postcss` 4.3.5, moved onto `dev` from
   Dependabot's #160 and #162, which it opened against `main`; nothing
   changes on screen (#163 / #166).
+- `next` 16.4.6 and `eslint` 10.14.0, packaged onto `dev` from Dependabot's
+  #179 and #178; nothing changes on screen (#183 / #184).
 
 ### Database (DOS.Me)
 
