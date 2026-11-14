@@ -159,6 +159,16 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Money (M1)
 
+- Follow-ups from #64 (`apps/web`): `approveCampaign` and `requestChanges`
+  report a failed campaign pre-read instead of "not found";
+  `checkSubmitAccount`, `loadEditorAccounts` and `/me/campaigns/[id]` load
+  editable bindings' transaction history and gate swap guidance on
+  `canAskSwap` so only sent-back `give` campaigns are pointed to the
+  finance-approved account swap while drafts and `back` campaigns with
+  recorded transactions hide early release and direct the organizer to
+  contact Give; tests cover `checkSubmitAccount`, `loadEditorAccounts`,
+  `submitForReview`, `/me/campaigns/[id]` and the non-owned binding
+  fallback of `openingBlock` (#77 / #190).
 - Guest donation tracking link across devices: a guest holding a valid status
   token on `/donations/[code]` can copy a reusable `/donations/[code]/track`
   link; opening it on another browser or device validates the token in
