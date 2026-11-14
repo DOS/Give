@@ -257,7 +257,7 @@ A tag is **not** a button-sized box.
 | Donate / pledge    | Form template (2.2), with a campaign summary strip on top                                                                                                                                                                                                                                                                                                 |
 | /me, /admin        | Same container. Page header (H1 + one action), then content tables or forms. Side navigation from 1024px, top tabs below.                                                                                                                                                                                                                                 |
 
-- **Home hero:** with no live campaign the hero has no statement card; the right columns stay empty.
+- **Home hero:** from 1024px the text spans 8 columns and the statement receipt card 4 (columns 9 to 12). With no live campaign the hero has no statement card and the right columns stay empty; its one action is "Tạo chiến dịch của bạn", a primary button, and the empty state under the hero has no button of its own.
 - **"Hai cách gây quỹ" panels:** the two panels are not cards: no border, radius 6px, 24px padding, 32px from 1024px.
 
 ## 9. Imagery and icons

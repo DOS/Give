@@ -376,7 +376,7 @@ function Explanation({
                 {EVIDENCE_KINDS[e.kind] ?? e.kind} ({formatDate(e.created_at)})
               </a>
               {hidden.has(e.id) && (
-                <span className="min-w-0 rounded bg-danger-soft px-2 py-1 text-sm break-words text-fg">
+                <span className="min-w-0 rounded-md bg-danger-soft px-2 py-1 text-sm break-words text-fg">
                   Give đã ẩn khỏi sao kê
                   {hidden.get(e.id)?.reason ? `: ${hidden.get(e.id)?.reason}` : ""}. Hãy tải lên bản đã che thông tin cá
                   nhân.

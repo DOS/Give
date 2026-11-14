@@ -133,6 +133,8 @@ export function ScrollRow({
     <div className={clsx("relative min-w-0", ringRoom && "-mx-[5px]", wrapClassName)}>
       <Row
         ref={row}
+        // RingBoxScroll keeps this row where its own keyboard reveal left it.
+        data-scroll-row=""
         className={clsx("flex [scrollbar-width:none] items-center overflow-x-auto", ringRoom && "px-[5px]", className)}
       >
         {children}

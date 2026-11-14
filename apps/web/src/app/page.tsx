@@ -71,12 +71,21 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               xem.
             </p>
             <div className="mt-6 flex flex-col gap-2 sm:mt-8 sm:flex-row sm:items-center sm:gap-6">
-              <ButtonLink href="/campaigns" size="lg" className="max-sm:w-full">
-                Khám phá chiến dịch
-              </ButtonLink>
-              <Link href="/start" className="inline-flex min-h-11 items-center justify-center link">
-                Tạo chiến dịch của bạn
-              </Link>
+              {/* With no live campaign, discovery would open an empty list: the one action is to create one. */}
+              {campaigns.length === 0 ? (
+                <ButtonLink href="/start" size="lg" className="max-sm:w-full">
+                  Tạo chiến dịch của bạn
+                </ButtonLink>
+              ) : (
+                <>
+                  <ButtonLink href="/campaigns" size="lg" className="max-sm:w-full">
+                    Khám phá chiến dịch
+                  </ButtonLink>
+                  <Link href="/start" className="inline-flex min-h-11 items-center justify-center link">
+                    Tạo chiến dịch của bạn
+                  </Link>
+                </>
+              )}
             </div>
           </div>
           {featured && (
@@ -89,12 +98,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       {campaigns.length === 0 ? (
         <section className="container-page pt-16 lg:pt-24">
-          <EmptyState
-            title="Chưa có chiến dịch nào đang gây quỹ"
-            level={2}
-            flush
-            action={<ButtonLink href="/start">Tạo chiến dịch đầu tiên</ButtonLink>}
-          >
+          {/* No button of its own: the hero above already offers "Tạo chiến dịch của bạn" (DESIGN.md 8). */}
+          <EmptyState title="Chưa có chiến dịch nào đang gây quỹ" level={2} flush>
             Chiến dịch hiện ở đây ngay khi được duyệt.
           </EmptyState>
         </section>
