@@ -79,7 +79,8 @@ export async function requestChanges(campaignId: string, _state: ActionResult, f
   if (fromStatus !== "in_review" && fromStatus !== "approved") return fail(STATUS_CHANGED)
   const db = dbAs(session.accessToken)
 
-  const { data } = await db.from("campaigns").select("status").eq("id", campaignId).maybeSingle()
+  const { data, error: readError } = await db.from("campaigns").select("status").eq("id", campaignId).maybeSingle()
+  if (readError) return fail(dbErrorMessage(readError))
   const current = data as { status: string } | null
   if (!current) return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_NOT_FOUND" }))
   if (current.status !== fromStatus) return fail(STATUS_CHANGED)

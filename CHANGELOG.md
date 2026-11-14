@@ -159,6 +159,14 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Money (M1)
 
+- Follow-ups from #64 (`apps/web`): `requestChanges` reports a failed
+  campaign status read instead of "not found"; `checkSubmitAccount`,
+  `loadEditorAccounts` and the campaign editor check `canAskSwap` when an
+  unusable bound account already recorded a bank transaction so only
+  sent-back `give` campaigns are pointed to the finance-approved account
+  swap while drafts and `back` campaigns are told to contact Give; tests
+  cover `checkSubmitAccount`, `submitForReview` with money history and the
+  non-owned binding fallback of `openingBlock` (#77).
 - Guest donation tracking link across devices: a guest holding a valid status
   token on `/donations/[code]` can copy a reusable `/donations/[code]/track`
   link; opening it on another browser or device validates the token in

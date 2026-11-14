@@ -1,4 +1,10 @@
-import { bindingHasTransactions, listCampaignSwaps, SWAP_STATUSES, type AccountSwapRequest } from "./account-swaps"
+import {
+  bindingHasTransactions,
+  canAskSwap,
+  listCampaignSwaps,
+  SWAP_STATUSES,
+  type AccountSwapRequest,
+} from "./account-swaps"
 import type { CampaignStatus, CampaignType, Db, Organizer } from "./campaigns"
 import { getOrganizer } from "./campaigns"
 import {
@@ -71,7 +77,8 @@ export async function checkSubmitAccount(
   db: Db,
   campaignId: string,
   organizerId: string,
-  type: CampaignType
+  type: CampaignType,
+  status: CampaignStatus = "changes_requested"
 ): Promise<string | null> {
   const [bindings, organizer] = await Promise.all([
     activeBindingsOfCampaign(db, campaignId),
@@ -85,7 +92,7 @@ export async function checkSubmitAccount(
     bound !== null && accountUnusableReason(bound, organizer) !== null
       ? await bindingHasTransactions(db, bindings[0].id)
       : false
-  return submitAccountProblem(bound, organizer, hasTransactions, type === "give")
+  return submitAccountProblem(bound, organizer, hasTransactions, canAskSwap(status, type, hasTransactions))
 }
 
 export interface AccountChoice {
@@ -154,7 +161,10 @@ export interface EditorAccounts {
 /**
  * Why the editor knows a campaign has no usable receiving account (so an
  * approved one does not open): none bound, or the bound one unusable. Null
- * when it has one, or when the accounts could not be read.
+ * when it has one, or when the accounts could not be read. A data-defect
+ * binding to an account the organizer does not own also reads as `"no_account"`
+ * (`boundAccountOf` searches own accounts only); the editor's status notice
+ * tells the organizer to contact Give if binding fails (DOS/Give#77).
  */
 export function openingBlock(
   accounts: Pick<EditorAccounts, "bound" | "boundUnusable"> | null
@@ -199,6 +209,11 @@ export async function loadEditorAccounts(
     boundHasTransactions,
     swaps,
     choices: accountChoices(accounts, campaignId, organizer, refs),
-    submitBlocked: submitAccountProblem(bound, organizer, boundHasTransactions, type === "give"),
+    submitBlocked: submitAccountProblem(
+      bound,
+      organizer,
+      boundHasTransactions,
+      canAskSwap(status, type, boundHasTransactions)
+    ),
   }
 }
