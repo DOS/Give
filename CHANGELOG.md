@@ -24,7 +24,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   `::before` (`hit-area`) for the tag's 44px touch target.
   `ScrollRow.test.ts` notes at the top that it also tests
   `RingBoxScroll`, and its outside-any-row test moves the row in the
-  mock so a fallback to another row fails (#182).
+  mock so a fallback to another row fails (#182 / #187).
 - Home on phones (below 640px): the hero's bottom padding is 64px, up
   from 48px, the gap between page sections of `DESIGN.md` 2.4, as it
   already was from 640px. `DESIGN.md` 5 now says "Some `surface` or soft
