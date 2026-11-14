@@ -5,6 +5,7 @@ import { fakeDb, op, type Call } from "@/test/fake-db"
 import type { Db } from "./campaigns"
 import {
   accountLabel,
+  allowsNotATransaction,
   ambiguousReasonLabel,
   AMBIGUOUS_REASON_LABELS,
   AUDIT_ACTION_LABELS,
@@ -15,8 +16,12 @@ import {
   listDuplicateTargets,
   listReconciliationAudit,
   listUploadAccounts,
+  reconciliationAuditSummary,
+  resolutionLabel,
   rowStatusLabel,
   uploadErrorMessage,
+  type AmbiguousReason,
+  type AuditEntry,
 } from "./statement-import"
 
 const USER = "11111111-1111-4111-8111-111111111111"
@@ -39,8 +44,21 @@ describe("labels", () => {
       ].sort()
     )
     expect(ambiguousReasonLabel("balance_break")).toContain("Số dư chạy")
+    expect(ambiguousReasonLabel("event_dismissed")).toContain("không phải giao dịch thật")
+    expect(ambiguousReasonLabel("event_dismissed")).not.toContain("chưa xử lý được ở đây")
     expect(ambiguousReasonLabel("something_new")).toBe("something_new")
     expect(rowStatusLabel("ambiguous")).toBe("Chờ nhân viên tài chính")
+    expect(rowStatusLabel("not_a_transaction")).toBe("Không phải giao dịch, đã bỏ qua")
+    expect(resolutionLabel("not_a_transaction")).toBe("Không phải giao dịch thật")
+    expect(resolutionLabel(null)).toBe("—")
+  })
+
+  it("allows not_a_transaction only for event_dismissed rows (DOS/Give#78)", () => {
+    const reasons = Object.keys(AMBIGUOUS_REASON_LABELS) as AmbiguousReason[]
+    expect(reasons.filter((reason) => allowsNotATransaction(reason))).toEqual(["event_dismissed"])
+    expect(allowsNotATransaction(null)).toBe(false)
+    expect(allowsNotATransaction(undefined)).toBe(false)
+    expect(allowsNotATransaction("something_new")).toBe(false)
   })
 
   it("words upload refusals, with the row when one is at fault", () => {
@@ -247,5 +265,47 @@ describe("listReconciliationAudit", () => {
       ["statement_import_row.resolve", "bank_transaction.manual_match", "bank_transaction.explain_inbound"],
     ])
     expect(AUDIT_ACTION_LABELS["bank_transaction.explain_inbound"]).toBe("Giải trình tiền vào không phải tiền ủng hộ")
+  })
+
+  it("formats audit entries including not_a_transaction resolutions (DOS/Give#78)", () => {
+    const entry = (action: string, after: Record<string, unknown>): AuditEntry => ({
+      id: 1,
+      actor_id: USER,
+      action,
+      entity: "statement_import_rows",
+      entity_id: "r1",
+      before: null,
+      after,
+      created_at: "2026-11-14T08:05:00Z",
+    })
+
+    expect(
+      reconciliationAuditSummary(
+        entry("statement_import_row.resolve", {
+          resolution: "not_a_transaction",
+          bank_transaction_id: null,
+          note: "File thử, không có trên VCB",
+        })
+      )
+    ).toBe("Không phải giao dịch thật: File thử, không có trên VCB")
+
+    expect(
+      reconciliationAuditSummary(
+        entry("statement_import_row.resolve", {
+          resolution: "import",
+          override_candidate: true,
+          note: "Đã đối chiếu VCB",
+        })
+      )
+    ).toBe("Nhập thành giao dịch mới (xác nhận khác dòng trước): Đã đối chiếu VCB")
+
+    expect(
+      reconciliationAuditSummary(
+        entry("statement_import_row.resolve", {
+          resolution: "duplicate",
+          note: "Trùng FT9",
+        })
+      )
+    ).toBe("Là giao dịch đã ghi: Trùng FT9")
   })
 })

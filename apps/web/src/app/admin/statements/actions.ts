@@ -39,7 +39,9 @@ export async function resolveStatementRow(rowId: string, _state: ActionResult, f
   if (!session) return fail(SIGNED_OUT)
   if (!isUuid(rowId)) return fail(RESOLVE_MESSAGES.GIVE_IMPORT_ROW_NOT_FOUND)
   const resolution = String(form.get("resolution") ?? "")
-  if (resolution !== "import" && resolution !== "duplicate") return fail(RESOLVE_MESSAGES.GIVE_RESOLUTION_INVALID)
+  if (resolution !== "import" && resolution !== "duplicate" && resolution !== "not_a_transaction") {
+    return fail(RESOLVE_MESSAGES.GIVE_RESOLUTION_INVALID)
+  }
   const note = String(form.get("note") ?? "").trim()
   if (!note) return fail(RESOLVE_MESSAGES.GIVE_RESOLUTION_NOTE_REQUIRED)
   if (note.length > 1000) return fail("Ghi chú tối đa 1.000 ký tự.")
@@ -76,6 +78,9 @@ export async function resolveStatementRow(rowId: string, _state: ActionResult, f
     )
   }
   const status = result?.status
+  if (resolution === "not_a_transaction") {
+    return done("Đã đánh dấu dòng là không phải giao dịch thật; không có giao dịch nào được ghi vào sổ.")
+  }
   if (resolution === "duplicate")
     return done("Đã đánh dấu dòng là giao dịch đã ghi; không có giao dịch mới nào được tạo.")
   if (status === "duplicate") {

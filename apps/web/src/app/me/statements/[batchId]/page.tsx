@@ -16,7 +16,7 @@ import {
   ambiguousReasonLabel,
   getBatch,
   listBatchRows,
-  RESOLUTION_LABELS,
+  resolutionLabel,
   rowStatusLabel,
   signedAmount,
 } from "@/lib/statement-import"
@@ -76,7 +76,7 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
         <div className="sm:col-span-2 lg:col-span-4">
           <dt className="text-sm text-muted">Kết quả</dt>
           <dd className="mt-1 font-medium break-words text-fg">
-            {(["imported", "duplicate", "ambiguous", "ready"] as const)
+            {(["imported", "duplicate", "not_a_transaction", "ambiguous", "ready"] as const)
               .filter((status) => counts.has(status))
               .map((status) => `${counts.get(status)} ${rowStatusLabel(status).toLowerCase()}`)
               .join(" · ") || "—"}
@@ -166,7 +166,7 @@ export default async function BatchPage({ params }: { params: Promise<{ batchId:
                       )}
                       {row.resolution && (
                         <div className="mt-1 text-sm text-fg">
-                          {RESOLUTION_LABELS[row.resolution]}, {formatDateTime(row.resolved_at)}: {row.resolution_note}
+                          {resolutionLabel(row.resolution)}, {formatDateTime(row.resolved_at)}: {row.resolution_note}
                         </div>
                       )}
                     </td>
