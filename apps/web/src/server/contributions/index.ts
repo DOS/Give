@@ -176,10 +176,14 @@ export const MAX_DONATION_COOKIES = 20
 /**
  * Names of guest donation cookies to drop before adding one more, oldest
  * first (browsers send cookies in creation order), so the request header
- * stays small.
+ * stays small. When `hostname` is given, only cookies matching that host's
+ * prefix (`__Host-` on deployed hosts, unprefixed on localhost) are counted,
+ * so unprefixed sibling-subdomain cookies cannot evict `__Host-` ones.
  */
-export function donationCookiesToDrop(names: readonly string[]): string[] {
-  const own = names.filter((name) => /^(__Host-)?give_dn_GV[0-9A-Z]{6,7}$/.test(name))
+export function donationCookiesToDrop(names: readonly string[], hostname?: string): string[] {
+  const prefix = hostname === undefined ? "(__Host-)?" : isLocalhost(hostname) ? "" : "__Host-"
+  const pattern = new RegExp(`^${prefix}give_dn_GV[0-9A-Z]{6,7}$`)
+  const own = names.filter((name) => pattern.test(name))
   return own.slice(0, Math.max(0, own.length - (MAX_DONATION_COOKIES - 1)))
 }
 

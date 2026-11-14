@@ -111,6 +111,14 @@ describe("donationCookiesToDrop", () => {
     expect(donationCookiesToDrop(["__Host-give_at", ...names])).toEqual(names.slice(0, 3))
     expect(donationCookiesToDrop(names.slice(0, 19))).toEqual([])
   })
+
+  it("ignores unprefixed sibling-subdomain cookies on deployed hosts", () => {
+    const alphabet = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"
+    const hostCookies = Array.from({ length: 19 }, (_, i) => `__Host-give_dn_GVAAAAA${alphabet[i]}`)
+    const tossed = Array.from({ length: 5 }, (_, i) => `give_dn_GVBBBBB${alphabet[i]}`)
+    expect(donationCookiesToDrop([...tossed, ...hostCookies], "give.dos.me")).toEqual([])
+    expect(donationCookiesToDrop([...hostCookies, ...tossed], "localhost")).toEqual([])
+  })
 })
 
 describe("guestContribution", () => {

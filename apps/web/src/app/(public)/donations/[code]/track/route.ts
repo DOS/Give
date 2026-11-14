@@ -68,12 +68,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     .getAll()
     .map((c) => c.name)
     .filter((name) => name !== cookie.name)
-  for (const name of donationCookiesToDrop(otherCookies)) {
-    response.cookies.set(name, "", {
-      ...cookie.options,
-      secure: cookie.options.secure || name.startsWith("__Host-"),
-      maxAge: 0,
-    })
+  for (const name of donationCookiesToDrop(otherCookies, hostname)) {
+    response.cookies.set(name, "", { ...cookie.options, maxAge: 0 })
   }
   response.cookies.set(cookie.name, token, { ...cookie.options, expires: access.expiresAt })
   return response
