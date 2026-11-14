@@ -6,6 +6,7 @@ import { isIP } from "node:net"
 import { cookieName, isLocalhost } from "@/lib/auth/cookies"
 import type { Db } from "@/lib/campaigns"
 import { isStatusToken, type ContributionStatus } from "@/lib/contributions"
+import { isDonationCode } from "@/server/vietqr"
 
 /**
  * Server side of the donate flow. Money tables are never selected with `*`
@@ -45,9 +46,10 @@ export function statusTokenHash(token: string): string {
 
 /**
  * The cookie that keeps a guest's status token for one donation, so its
- * payment page survives a reload and can poll its status without the token
- * ever reaching page script. `__Host-` on deployed hosts stops a sibling
- * subdomain from planting one (it requires Path=/).
+ * payment page survives a reload and can poll its status without putting the
+ * token in the page URL (a saved tracking link exchanges its token back into
+ * this cookie and redirects cleanly, DOS/Give#50). `__Host-` on deployed
+ * hosts stops a sibling subdomain from planting one (it requires Path=/).
  */
 export function donationCookie(code: string, hostname: string) {
   return {
@@ -199,14 +201,24 @@ interface GuestRow extends PaymentContribution {
 // PostgREST returns bytea as a backslash, "x" and the hex digits.
 const BYTEA_SHA256 = /^\\x([0-9a-f]{64})$/
 
-/** A guest's donation by reference code, if the status token belongs to it and has not expired. */
-export async function guestContribution(
+export interface GuestContributionAccess {
+  donation: PaymentContribution
+  expiresAt: Date
+}
+
+/**
+ * A guest's donation and token expiry by reference code, if the status token
+ * belongs to it and has not expired. Selects payment-status columns only
+ * (never donor name, email or message) and compares the token hash in
+ * constant time.
+ */
+export async function guestContributionAccess(
   service: Db,
   code: string,
   token: string | null | undefined,
   now = new Date()
-): Promise<PaymentContribution | null> {
-  if (!isStatusToken(token)) return null
+): Promise<GuestContributionAccess | null> {
+  if (!isDonationCode(code) || !isStatusToken(token)) return null
   const { data, error } = await service
     .from("contributions")
     .select(`${PAYMENT_COLUMNS}, status_token_hash, status_token_expires_at`)
@@ -217,17 +229,31 @@ export async function guestContribution(
   if (error) throw error
   const row = data as GuestRow | null
   const stored = BYTEA_SHA256.exec(row?.status_token_hash ?? "")?.[1]
-  if (!row || !stored || !row.status_token_expires_at || new Date(row.status_token_expires_at) <= now) return null
+  const expiresAt = row?.status_token_expires_at ? new Date(row.status_token_expires_at) : null
+  if (!row || !stored || !expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt <= now) return null
   if (!timingSafeEqual(Buffer.from(stored, "hex"), Buffer.from(statusTokenHash(token), "hex"))) return null
   return {
-    id: row.id,
-    campaign_id: row.campaign_id,
-    intended_amount: row.intended_amount,
-    received_amount: row.received_amount,
-    reference_code: row.reference_code,
-    status: row.status,
-    created_at: row.created_at,
+    donation: {
+      id: row.id,
+      campaign_id: row.campaign_id,
+      intended_amount: row.intended_amount,
+      received_amount: row.received_amount,
+      reference_code: row.reference_code,
+      status: row.status,
+      created_at: row.created_at,
+    },
+    expiresAt,
   }
+}
+
+/** A guest's donation by reference code, if the status token belongs to it and has not expired. */
+export async function guestContribution(
+  service: Db,
+  code: string,
+  token: string | null | undefined,
+  now = new Date()
+): Promise<PaymentContribution | null> {
+  return (await guestContributionAccess(service, code, token, now))?.donation ?? null
 }
 
 /** A signed-in donor's own donation by reference code (RLS also lets organizers read, so match the user). */

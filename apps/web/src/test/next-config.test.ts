@@ -28,3 +28,19 @@ describe("image optimizer allow-list", () => {
     expect(optimizable(`/media/private/campaigns/${uuid}/${uuid}.webp`)).toBe(false)
   })
 })
+
+describe("response headers", () => {
+  it("strips Referer and disables caching on /donations/* after the site-wide defaults (DOS/Give#50)", async () => {
+    const rules = (await nextConfig.headers?.()) ?? []
+    const globalIdx = rules.findIndex((r) => r.source === "/:path*")
+    const donationsIdx = rules.findIndex((r) => r.source === "/donations/:path*")
+    expect(globalIdx).toBeGreaterThanOrEqual(0)
+    expect(donationsIdx).toBeGreaterThan(globalIdx)
+    expect(rules[donationsIdx]?.headers).toEqual(
+      expect.arrayContaining([
+        { key: "Referrer-Policy", value: "no-referrer" },
+        { key: "Cache-Control", value: "private, no-store" },
+      ])
+    )
+  })
+})

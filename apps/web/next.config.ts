@@ -28,6 +28,16 @@ const nextConfig: NextConfig = {
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         ],
       },
+      {
+        // Guest donation and tracking URLs carry reference codes or status
+        // tokens: never send a Referer from them and never store them in
+        // shared or browser caches (DOS/Give#50).
+        source: "/donations/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "private, no-store" },
+        ],
+      },
     ]
   },
 }
