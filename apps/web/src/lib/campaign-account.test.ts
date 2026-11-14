@@ -204,16 +204,33 @@ describe("loadEditorAccounts", () => {
     ).toEqual(["campaign_id", CAMPAIGN])
   })
 
-  it("skips the swap reads where no swap can happen", async () => {
+  it("skips swap and transaction reads where neither early release nor swap applies", async () => {
     const calls: Call[] = []
     const db = fakeDb((call) => {
       if (call.target === "receiving_accounts") return { data: [account("here", { bindings: bound(CAMPAIGN) })] }
       if (call.target === "organizers") return { data: organizer }
       return undefined
     }, calls)
-    await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft", "give")
+    await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "in_review", "give")
     expect(calls.map((c) => c.target)).not.toContain("bank_transactions")
     expect(calls.map((c) => c.target)).not.toContain("account_swap_requests")
+  })
+
+  it("reads draft money history without reading swap requests, and blocks without offering a swap (DOS/Give#77)", async () => {
+    const calls: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "receiving_accounts")
+        return { data: [account("here", { verification_status: "disabled", bindings: bound(CAMPAIGN) })] }
+      if (call.target === "organizers") return { data: organizer }
+      if (call.target === "bank_transactions") return { data: [{ id: "t" }] }
+      return undefined
+    }, calls)
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft", "give")
+    expect(view.boundHasTransactions).toBe(true)
+    expect(view.swaps).toEqual([])
+    expect(calls.map((c) => c.target)).toContain("bank_transactions")
+    expect(calls.map((c) => c.target)).not.toContain("account_swap_requests")
+    expect(view.submitBlocked).toBe(submitUnusableAccount("Tài khoản chưa được xác minh.", true, false))
   })
 
   it("keeps the account section when the swap reads fail", async () => {
@@ -224,10 +241,13 @@ describe("loadEditorAccounts", () => {
         return { error: { code: "42P01", message: "relation does not exist" } }
       return undefined
     })
-    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "changes_requested", "give")
-    expect(view.bound?.id).toBe("here")
-    expect(view.boundHasTransactions).toBe(true) // unknown history: offer the swap, not a release
-    expect(view.swaps).toEqual([])
+    const sentBack = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "changes_requested", "give")
+    expect(sentBack.bound?.id).toBe("here")
+    expect(sentBack.boundHasTransactions).toBe(true) // unknown history where swap exists: offer the swap, not a release
+    expect(sentBack.swaps).toEqual([])
+
+    const draft = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft", "give")
+    expect(draft.boundHasTransactions).toBe(false) // no swap exists on draft: leave release visible
   })
 
   it("shows a back campaign's account and blocks its submission without one (DOS/Give#85)", async () => {

@@ -35,7 +35,12 @@ export async function approveCampaign(
   if (!isUuid(campaignId)) return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_NOT_FOUND" }))
   const db = dbAs(session.accessToken)
 
-  const { data } = await db.from("campaigns").select("slug, starts_at, ends_at").eq("id", campaignId).maybeSingle()
+  const { data, error: readError } = await db
+    .from("campaigns")
+    .select("slug, starts_at, ends_at")
+    .eq("id", campaignId)
+    .maybeSingle()
+  if (readError) return fail(dbErrorMessage(readError))
   const campaign = data as { slug: string; starts_at: string | null; ends_at: string | null } | null
   if (!campaign) return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_NOT_FOUND" }))
   // transition_campaign does not check dates on approval, and an approved

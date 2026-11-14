@@ -73,6 +73,24 @@ describe("approveCampaign", () => {
       message: "Không thể chuyển chiến dịch sang trạng thái này lúc này.",
     })
   })
+
+  it("surfaces a failed campaign read instead of claiming the campaign was not found (DOS/Give#77)", async () => {
+    state.handler = (call) => (op(call, "maybeSingle") ? { data: null } : undefined)
+    expect(await approveCampaign(CAMPAIGN, null, new FormData())).toEqual({
+      ok: false,
+      message: "Không tìm thấy chiến dịch, hoặc bạn không có quyền với chiến dịch này.",
+    })
+    expect(transitions()).toEqual([])
+
+    state.calls.length = 0
+    state.handler = (call) =>
+      op(call, "maybeSingle") ? { error: { code: "PGRST303", message: "JWT expired" } } : undefined
+    expect(await approveCampaign(CAMPAIGN, null, new FormData())).toEqual({
+      ok: false,
+      message: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+    })
+    expect(transitions()).toEqual([])
+  })
 })
 
 describe("approveCampaign without a usable receiving account (DOS/Give#38)", () => {

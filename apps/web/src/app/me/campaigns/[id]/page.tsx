@@ -751,8 +751,8 @@ function ReceivingAccountSection({
   accounts: EditorAccounts
 }) {
   const { bound, boundUnusable, boundHasTransactions, choices, swaps } = accounts
-  // A binding that recorded money is never released early; it is swapped instead (DOS/Give#55).
-  const releasable = canAskRelease(status, type) && !(status === "changes_requested" && boundHasTransactions)
+  // A binding that recorded money is never released early; where eligible it is swapped instead (DOS/Give#55, #77).
+  const releasable = canAskRelease(status, type) && !(isEditableStatus(status) && boundHasTransactions)
   return (
     <Panel
       id="receiving-account"
@@ -795,8 +795,8 @@ function ReceivingAccountSection({
             </ActionForm>
           ) : (
             <p className="text-sm text-muted">
-              {boundHasTransactions && status === "changes_requested"
-                ? type === "give"
+              {boundHasTransactions && isEditableStatus(status)
+                ? canAskSwap(status, type, boundHasTransactions)
                   ? "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy đề nghị đổi tài khoản bên dưới."
                   : "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give."
                 : "Khi chiến dịch đang chờ duyệt, đã duyệt hoặc đang chạy, tài khoản không nhả được; tài khoản được nhả khi chiến dịch đã xong hẳn phần tiền."}
