@@ -13,6 +13,10 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Campaign page: the "Ủng hộ chiến dịch" and "Sao kê" sections keep 24px
+  between their subtitle and section content, up from 16px, matching section
+  rhythm while keeping 8px from the heading to the subtitle. `DESIGN.md` 2.4
+  states the rule for a section heading with a one-line subtitle (#142 / #191).
 - Home on phones (below 640px): the organizer band ("Bạn có một việc cần
   gây quỹ?") has 64px vertical padding, up from 48px, the gap between
   page sections of `DESIGN.md` 2.4, as it already had from 640px. On the
