@@ -137,6 +137,12 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   and submit guard (#85 / #90).
 - Stop on payment requests; refunds counted net of partial refunds
   (#89 / #91).
+- Manual-match candidate hint uses the net amount due after partial refunds
+  for waiting pledges (read from `give.ledger_entries` under RLS, with no
+  gross fallback, and never suggesting refunded donations); while a
+  campaign's payment requests are stopped, older payment notices on
+  `/me/notices` show neutral stop wording and a "Xem cam kết" link
+  (#93 / #185).
 
 ### Money (M1)
 

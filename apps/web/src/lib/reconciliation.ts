@@ -284,6 +284,8 @@ export interface MatchCandidate {
   reference_code: string
   intended_amount: number
   received_amount: number
+  /** Sum of the contribution's 'refunded' ledger entries (posts and reversals). */
+  refunded_amount: number
   status: string
   public_name: string | null
   guest_name: string | null
@@ -291,31 +293,77 @@ export interface MatchCandidate {
   created_at: string
 }
 
+export interface ContributionTarget {
+  id: string
+  reference_code: string
+  status: string
+}
+
 const CANDIDATE_COLUMNS =
   "id, kind, reference_code, intended_amount, received_amount, status, public_name, guest_name, is_anonymous, created_at"
 
+function toAmount(value: unknown): number {
+  if (typeof value !== "number" && (typeof value !== "string" || value.trim() === "")) {
+    throw new Error("Invalid money amount")
+  }
+  const n = Number(value)
+  if (!Number.isFinite(n)) throw new Error("Invalid money amount")
+  return n
+}
+
 /**
- * Contributions of the campaign that can take money, newest first. The match
- * form puts those still waiting for exactly the transaction's amount first.
+ * Contributions of the campaign that can take money, newest first, with their
+ * ledger refunds read under the caller's RLS (ledger_entries_read: the
+ * campaign's organizer and finance/admin staff). Never falls back to gross if
+ * refunds are missing. The match form puts those still waiting for the
+ * transaction's net amount due first (DOS/Give#93).
  */
 export async function listMatchCandidates(db: Db, campaignId: string): Promise<MatchCandidate[]> {
   const { data, error } = await db
     .from("contributions")
-    .select(CANDIDATE_COLUMNS)
+    .select(`${CANDIDATE_COLUMNS}, refunds:ledger_entries!contribution_id(amount)`)
     .eq("campaign_id", campaignId)
     .in("status", [...MATCHABLE_STATUSES])
+    .eq("refunds.bucket", "refunded")
     .order("created_at", { ascending: false })
     .limit(200)
   if (error) throw error
-  return ((data ?? []) as MatchCandidate[]).map((c) => ({
-    ...c,
-    intended_amount: Number(c.intended_amount),
-    received_amount: Number(c.received_amount),
-  }))
+  return (
+    (data ?? []) as unknown as (Omit<MatchCandidate, "refunded_amount"> & {
+      refunds?: { amount: unknown }[] | null
+    })[]
+  ).map(({ refunds, ...c }) => {
+    if (!Array.isArray(refunds)) {
+      throw new Error("Match candidate query did not return ledger refunds")
+    }
+    return {
+      ...c,
+      intended_amount: toAmount(c.intended_amount),
+      received_amount: toAmount(c.received_amount),
+      refunded_amount: refunds.reduce((sum, r) => sum + toAmount(r.amount), 0),
+    }
+  })
 }
 
-/** True when the contribution still waits for exactly this amount. */
-export function waitsFor(c: Pick<MatchCandidate, "intended_amount" | "received_amount">, amount: number): boolean {
+/**
+ * True when the contribution still waits for this exact amount:
+ * - pledges ('payment_due', 'partially_paid'): net amount due
+ *   intended - (received - refunded), matching give.pledge_payment and
+ *   give.pledge_balances (DOS/Give#89, DOS/Give#93); a 'paid' pledge is
+ *   already settled (a later partial refund is compensation, not due again);
+ * - donations: intended - received while nothing has been refunded (a refunded
+ *   gift is never owed back by the donor, even though status stays 'received').
+ */
+export function waitsFor(
+  c: Pick<MatchCandidate, "kind" | "status" | "intended_amount" | "received_amount" | "refunded_amount">,
+  amount: number
+): boolean {
+  if (!(amount > 0)) return false
+  if (c.kind === "pledge") {
+    if (c.status !== "payment_due" && c.status !== "partially_paid") return false
+    return c.intended_amount - (c.received_amount - c.refunded_amount) === amount
+  }
+  if (c.refunded_amount > 0) return false
   return c.intended_amount - c.received_amount === amount
 }
 
@@ -324,22 +372,23 @@ export async function findContribution(
   db: Db,
   campaignId: string,
   by: { id: string } | { referenceCode: string }
-): Promise<MatchCandidate | null> {
-  let query = db.from("contributions").select(CANDIDATE_COLUMNS).eq("campaign_id", campaignId)
+): Promise<ContributionTarget | null> {
+  let query = db.from("contributions").select("id, reference_code, status").eq("campaign_id", campaignId)
   query = "id" in by ? query.eq("id", by.id) : query.eq("reference_code", by.referenceCode)
   const { data, error } = await query.maybeSingle()
   if (error) throw error
-  return data as MatchCandidate | null
+  return data as ContributionTarget | null
 }
 
 /** "GV7K2M9QX · 200.000 ₫ · Nguyễn Văn A · chờ chuyển khoản" */
 export function candidateLabel(c: MatchCandidate): string {
   const name = c.public_name ?? c.guest_name ?? (c.is_anonymous ? "Ẩn danh" : null)
   const status = CONTRIBUTION_STATUS_LABELS[c.status] ?? c.status
-  const amount =
-    c.received_amount > 0
-      ? `${formatVnd(c.intended_amount)} (đã nhận ${formatVnd(c.received_amount)})`
-      : formatVnd(c.intended_amount)
+  const progress =
+    c.received_amount > 0 || c.refunded_amount > 0
+      ? `đã nhận ${formatVnd(c.received_amount)}${c.refunded_amount > 0 ? `, đã hoàn ${formatVnd(c.refunded_amount)}` : ""}`
+      : null
+  const amount = progress ? `${formatVnd(c.intended_amount)} (${progress})` : formatVnd(c.intended_amount)
   return [c.reference_code, amount, name, status].filter(Boolean).join(" · ")
 }
 
