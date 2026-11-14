@@ -8,6 +8,7 @@ import {
   getIncoming,
   listInboundExplanations,
   listManualMatches,
+  listMatchCandidates,
   listUnmatched,
   accountOwnerMismatch,
   campaignOrganizers,
@@ -355,6 +356,7 @@ describe("reference codes and candidates", () => {
     reference_code: "GV7K2M9QX",
     intended_amount: 200000,
     received_amount: 0,
+    refunded_amount: 0,
     status: "awaiting_transfer",
     public_name: null,
     guest_name: "Nguyễn Văn A",
@@ -370,5 +372,71 @@ describe("reference codes and candidates", () => {
     expect(candidateLabel({ ...candidate, status: "partially_paid", received_amount: 50000 })).toBe(
       vnd("GV7K2M9QX · 200.000 ₫ (đã nhận 50.000 ₫) · Nguyễn Văn A · đã trả một phần")
     )
+  })
+
+  it("suggests a partially refunded pledge for its net amount due, not its gross remainder (DOS/Give#93)", () => {
+    const pledge: MatchCandidate = {
+      ...candidate,
+      kind: "pledge",
+      status: "partially_paid",
+      intended_amount: 500_000,
+      received_amount: 200_000,
+      refunded_amount: 50_000,
+    }
+    // Net received is 150k, so 350k is really due (as give.pledge_payment computes).
+    expect(waitsFor(pledge, 350_000)).toBe(true)
+    expect(waitsFor(pledge, 300_000)).toBe(false)
+    expect(waitsFor(pledge, 0)).toBe(false)
+    expect(candidateLabel(pledge)).toBe(
+      vnd("GV7K2M9QX · 500.000 ₫ (đã nhận 200.000 ₫, đã hoàn 50.000 ₫) · Nguyễn Văn A · đã trả một phần")
+    )
+
+    // A paid pledge that later received a partial compensation refund is already settled.
+    expect(waitsFor({ ...pledge, status: "paid", received_amount: 500_000, refunded_amount: 50_000 }, 50_000)).toBe(
+      false
+    )
+  })
+
+  it("reads ledger refunds with match candidates and never falls back to gross (DOS/Give#93)", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: [
+          {
+            ...candidate,
+            id: "p1",
+            kind: "pledge",
+            status: "partially_paid",
+            intended_amount: "500000",
+            received_amount: "200000",
+            refunds: [{ amount: "80000" }, { amount: -30000 }],
+          },
+          { ...candidate, id: "d1", refunds: [] },
+        ],
+      }),
+      calls
+    ) as unknown as Db
+    const candidates = await listMatchCandidates(db, CAMPAIGN)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].target).toBe("contributions")
+    expect(String(op(calls[0], "select")?.[0])).toContain("refunds:ledger_entries!contribution_id(amount)")
+    expect(calls[0].ops).toEqual(
+      expect.arrayContaining([
+        ["eq", "campaign_id", CAMPAIGN],
+        ["eq", "refunds.bucket", "refunded"],
+      ])
+    )
+    expect(candidates[0]).not.toHaveProperty("refunds")
+    expect(candidates.map((c) => [c.id, c.intended_amount, c.received_amount, c.refunded_amount])).toEqual([
+      ["p1", 500_000, 200_000, 50_000],
+      ["d1", 200_000, 0, 0],
+    ])
+    expect(waitsFor(candidates[0], 350_000)).toBe(true)
+
+    const missingRefunds = fakeDb(() => ({ data: [{ ...candidate, refunds: null }] })) as unknown as Db
+    await expect(listMatchCandidates(missingRefunds, CAMPAIGN)).rejects.toThrow(/ledger refunds/)
+
+    const denied = fakeDb(() => ({ error: { code: "42501", message: "denied" } })) as unknown as Db
+    await expect(listMatchCandidates(denied, CAMPAIGN)).rejects.toMatchObject({ code: "42501" })
   })
 })

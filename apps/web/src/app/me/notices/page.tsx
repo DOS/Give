@@ -9,7 +9,13 @@ import { PageHeader } from "@/components/ui/PageHeader"
 import { SkeletonList } from "@/components/ui/Skeleton"
 import { requireSession, type Session } from "@/lib/auth/session"
 import { formatDateTime } from "@/lib/format"
-import { countUnreadNotices, describeNotice, listNotices, NOTICE_PAGE_SIZE } from "@/lib/notices"
+import {
+  countUnreadNotices,
+  describeNotice,
+  listNotices,
+  NOTICE_PAGE_SIZE,
+  stoppedNoticeCampaigns,
+} from "@/lib/notices"
 import { dbAs } from "@/lib/supabase"
 
 import { MePage } from "../_components/MePage"
@@ -46,6 +52,7 @@ async function NoticeList({ session }: { session: Session }) {
     listNotices(db, session.user.id),
     countUnreadNotices(db, session.user.id),
   ])
+  const stoppedCampaigns = await stoppedNoticeCampaigns(db, notices)
   // The count is 0 on an error; never show fewer than the list itself holds.
   const unread = Math.max(unreadCount, notices.filter((n) => !n.read_at).length)
 
@@ -75,7 +82,9 @@ async function NoticeList({ session }: { session: Session }) {
       ) : (
         <ul className="divide-y divide-border overflow-hidden card">
           {notices.map((notice) => {
-            const view = describeNotice(notice)
+            const view = describeNotice(notice, {
+              paymentRequestsStopped: notice.campaign_id !== null && stoppedCampaigns.has(notice.campaign_id),
+            })
             return (
               <li
                 key={notice.id}

@@ -1,5 +1,7 @@
 import type { Db } from "@/lib/campaigns"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
+import { isUuid } from "@/lib/ids"
+import { paymentRequestsStopped } from "@/lib/payment-requests"
 import { SLUG_PATTERN } from "@/lib/slug"
 
 /**
@@ -30,6 +32,11 @@ export interface NoticeView {
   linkLabel: string | null
 }
 
+export interface NoticeRenderOptions {
+  /** True while a moderator has stopped the campaign's payment requests (DOS/Give#93). */
+  paymentRequestsStopped?: boolean
+}
+
 function text(payload: Notice["payload"], key: string): string | null {
   const value = payload?.[key]
   return typeof value === "string" && value.trim() !== "" ? value : null
@@ -57,8 +64,13 @@ function pledgeLink(payload: Notice["payload"], label: string): Pick<NoticeView,
     : { href: null, linkLabel: null }
 }
 
+function asksForPayment(notice: Pick<Notice, "kind" | "payload">): boolean {
+  if (notice.kind === "payment_due" || notice.kind === "payment_reminder") return true
+  return notice.kind === "payment_requests_resumed" && text(notice.payload, "reference_code") !== null
+}
+
 /** Vietnamese title, body and link of a notice, from its kind and payload. */
-export function describeNotice(notice: Notice): NoticeView {
+export function describeNotice(notice: Notice, options?: NoticeRenderOptions): NoticeView {
   const p = notice.payload
   switch (notice.kind) {
     case "explain_spending": {
@@ -78,6 +90,14 @@ export function describeNotice(notice: Notice): NoticeView {
     }
     case "payment_due":
     case "payment_reminder": {
+      if (options?.paymentRequestsStopped) {
+        const which = notice.kind === "payment_due" ? "đến hạn thanh toán" : "nhắc thanh toán"
+        return {
+          title: "Yêu cầu thanh toán đang tạm dừng",
+          body: `Give đang tạm dừng yêu cầu thanh toán của ${campaignName(p, "dự án")}. Thông báo ${which} này được gửi trước khi tạm dừng; đừng chuyển tiền cho cam kết của bạn trong lúc tạm dừng.`,
+          ...pledgeLink(p, "Xem cam kết"),
+        }
+      }
       // Payload of give.pledge_notice_payload (DOS/Give#30); reminders add amount_due and day.
       // Net of refunds (DOS/Give#89): older payloads have no refunded_amount.
       const intended = count(p, "intended_amount")
@@ -194,6 +214,13 @@ export function describeNotice(notice: Notice): NoticeView {
             : { href: null, linkLabel: null }),
         }
       }
+      if (options?.paymentRequestsStopped) {
+        return {
+          title: "Yêu cầu thanh toán đang tạm dừng",
+          body: `Give đang tạm dừng yêu cầu thanh toán của ${campaignName(p, "dự án")}. Thông báo mở lại thanh toán này được gửi trước đợt tạm dừng hiện tại; đừng chuyển tiền cho cam kết của bạn trong lúc tạm dừng.`,
+          ...pledgeLink(p, "Xem cam kết"),
+        }
+      }
       let body = `Give đã mở lại yêu cầu thanh toán của ${campaignName(p, "dự án")}. Hãy thanh toán cam kết của bạn`
       body += dueAt ? ` trước ${formatDateTime(dueAt)} (hạn đã được lùi thêm đúng thời gian tạm dừng).` : "."
       body += " Quá hạn mà chưa trả đủ, cam kết hết hiệu lực."
@@ -232,6 +259,45 @@ export async function listNotices(db: Db, userId: string): Promise<Notice[]> {
     .limit(NOTICE_PAGE_SIZE)
   if (error) throw error
   return (data ?? []) as Notice[]
+}
+
+const CAMPAIGNS_PER_REQUEST = 100
+
+/**
+ * Campaign ids among the user's payment notices whose payment requests a
+ * moderator currently has stopped (campaigns.payments_stopped_at non-null,
+ * public on give.campaigns since DOS/Give#89). Skips the query when no notice
+ * asks the user to pay; throws on a database error so an older payment notice
+ * never falls back to "Hãy thanh toán" when the check fails (DOS/Give#93).
+ */
+export async function stoppedNoticeCampaigns(
+  db: Db,
+  notices: readonly Pick<Notice, "kind" | "campaign_id" | "payload">[]
+): Promise<Set<string>> {
+  const ids = [
+    ...new Set(
+      notices
+        .filter(
+          (n): n is Pick<Notice, "kind" | "payload"> & { campaign_id: string } =>
+            Boolean(n.campaign_id && isUuid(n.campaign_id)) && asksForPayment(n)
+        )
+        .map((n) => n.campaign_id)
+    ),
+  ]
+  if (ids.length === 0) return new Set()
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += CAMPAIGNS_PER_REQUEST) chunks.push(ids.slice(i, i + CAMPAIGNS_PER_REQUEST))
+  const reads = await Promise.all(
+    chunks.map((chunk) => db.from("campaigns").select("id, payments_stopped_at").in("id", chunk))
+  )
+  const stopped = new Set<string>()
+  for (const { data, error } of reads) {
+    if (error) throw error
+    for (const row of (data ?? []) as { id: string; payments_stopped_at: string | null }[]) {
+      if (paymentRequestsStopped(row)) stopped.add(row.id)
+    }
+  }
+  return stopped
 }
 
 /**

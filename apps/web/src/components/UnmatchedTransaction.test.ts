@@ -2,7 +2,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
-import { OWNER_MISMATCH_FOR_STAFF, type UnmatchedTransaction } from "@/lib/reconciliation"
+import { OWNER_MISMATCH_FOR_STAFF, type MatchCandidate, type UnmatchedTransaction } from "@/lib/reconciliation"
 
 import { UnmatchedTransactionCard } from "./UnmatchedTransaction"
 
@@ -42,5 +42,34 @@ describe("UnmatchedTransactionCard (DOS/Give#148)", () => {
     // The explanation form stays: whether it should refuse too is DOS/Give#137.
     expect(html).toContain("Không phải tiền ủng hộ? Giải trình khoản này")
     expect(html).toContain('name="kind"')
+  })
+
+  it("groups candidates by net amount due after partial refunds (DOS/Give#93)", () => {
+    const base: MatchCandidate = {
+      id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      kind: "pledge",
+      reference_code: "GVNET2345",
+      intended_amount: 500_000,
+      received_amount: 400_000,
+      refunded_amount: 50_000,
+      status: "partially_paid",
+      public_name: "Lê Thị B",
+      guest_name: null,
+      is_anonymous: false,
+      created_at: "2026-11-09T00:00:00Z",
+    }
+    const grossOnly: MatchCandidate = {
+      ...base,
+      id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      reference_code: "GVGRS2345",
+      received_amount: 350_000,
+      refunded_amount: 50_000,
+    }
+    const html = render({ candidates: [grossOnly, base] })
+    const exactGroup = /<optgroup label="Đang chờ đúng số tiền này">([\s\S]*?)<\/optgroup>/.exec(html)?.[1] ?? ""
+    const otherGroup = /<optgroup label="Lượt ủng hộ khác">([\s\S]*?)<\/optgroup>/.exec(html)?.[1] ?? ""
+    expect(exactGroup).toContain("GVNET2345")
+    expect(exactGroup).not.toContain("GVGRS2345")
+    expect(otherGroup).toContain("GVGRS2345")
   })
 })

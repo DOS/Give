@@ -3,7 +3,15 @@ import { describe, expect, it } from "vitest"
 import { formatVnd } from "@/lib/format"
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
-import { countUnreadNotices, describeNotice, listNotices, NOTICE_PAGE_SIZE, unreadBadge, type Notice } from "./notices"
+import {
+  countUnreadNotices,
+  describeNotice,
+  listNotices,
+  NOTICE_PAGE_SIZE,
+  stoppedNoticeCampaigns,
+  unreadBadge,
+  type Notice,
+} from "./notices"
 
 const USER = "11111111-1111-4111-8111-111111111111"
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
@@ -39,6 +47,53 @@ describe("listNotices", () => {
   it("throws a database error to the error page", async () => {
     const db = fakeDb(() => ({ error: { code: "PGRST301", message: "JWT expired" } }))
     await expect(listNotices(asDb(db), USER)).rejects.toMatchObject({ code: "PGRST301" })
+  })
+})
+
+describe("stoppedNoticeCampaigns (DOS/Give#93)", () => {
+  const OTHER = "55555555-5555-4555-8555-555555555555"
+
+  it("does not query campaigns when no notice asks the user to pay", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(() => ({ data: [] }), calls)
+    const stopped = await stoppedNoticeCampaigns(asDb(db), [
+      notice({ kind: "explain_spending" }),
+      notice({ kind: "payment_requests_stopped", payload: { reference_code: "GVAB12CD" } }),
+      notice({ kind: "payment_requests_resumed", payload: { campaign_slug: "den-ngu" } }),
+      notice({ kind: "payment_due", campaign_id: null }),
+    ])
+    expect(stopped.size).toBe(0)
+    expect(calls).toHaveLength(0)
+  })
+
+  it("looks up unique campaigns of payment notices with public columns only and returns stopped ones", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: [
+          { id: CAMPAIGN, payments_stopped_at: "2026-11-05T00:00:00Z" },
+          { id: OTHER, payments_stopped_at: null },
+        ],
+      }),
+      calls
+    )
+    const stopped = await stoppedNoticeCampaigns(asDb(db), [
+      notice({ kind: "payment_due", campaign_id: CAMPAIGN }),
+      notice({ kind: "payment_reminder", campaign_id: CAMPAIGN }),
+      notice({ kind: "payment_requests_resumed", campaign_id: OTHER, payload: { reference_code: "GVAB12CD" } }),
+    ])
+    expect([...stopped]).toEqual([CAMPAIGN])
+    expect(calls).toHaveLength(1)
+    expect(calls[0].target).toBe("campaigns")
+    expect(op(calls[0], "select")).toEqual(["id, payments_stopped_at"])
+    expect(op(calls[0], "in")).toEqual(["id", [CAMPAIGN, OTHER]])
+  })
+
+  it("propagates database errors so stopped campaigns never fall back to 'pay'", async () => {
+    const db = fakeDb(() => ({ error: { code: "42501", message: "denied" } }))
+    await expect(stoppedNoticeCampaigns(asDb(db), [notice({ kind: "payment_due" })])).rejects.toMatchObject({
+      code: "42501",
+    })
   })
 })
 
@@ -219,6 +274,56 @@ describe("describeNotice", () => {
     expect(creatorResumed.body).toContain("thấy lại thông tin chuyển khoản")
     expect(creatorResumed.href).toBe("/campaigns/den-ngu")
     expect(creatorResumed.linkLabel).toBe("Xem dự án")
+  })
+
+  it("renders older payment notices neutrally while payment requests are stopped (DOS/Give#93)", () => {
+    const payload = {
+      campaign_title: "Đèn ngủ gỗ",
+      reference_code: "GVAB12CD",
+      intended_amount: 500_000,
+      received_amount: 200_000,
+      amount_due: 300_000,
+      payment_due_at: "2026-11-09T03:00:00Z",
+    }
+
+    const due = describeNotice(notice({ kind: "payment_due", payload }), { paymentRequestsStopped: true })
+    expect(due.title).toBe("Yêu cầu thanh toán đang tạm dừng")
+    expect(due.body).toContain("Give đang tạm dừng yêu cầu thanh toán của dự án “Đèn ngủ gỗ”.")
+    expect(due.body).toContain("đến hạn thanh toán")
+    expect(due.body).not.toContain("Hãy thanh toán")
+    expect(due.body).not.toContain(formatVnd(300_000))
+    expect(due.body).not.toContain("09/11/2026")
+    expect(due.href).toBe("/me/pledges/GVAB12CD")
+    expect(due.linkLabel).toBe("Xem cam kết")
+
+    const reminder = describeNotice(notice({ kind: "payment_reminder", payload }), { paymentRequestsStopped: true })
+    expect(reminder.title).toBe("Yêu cầu thanh toán đang tạm dừng")
+    expect(reminder.body).toContain("Give đang tạm dừng yêu cầu thanh toán của dự án “Đèn ngủ gỗ”.")
+    expect(reminder.body).toContain("nhắc thanh toán")
+    expect(reminder.body).not.toContain("Hãy thanh toán")
+    expect(reminder.href).toBe("/me/pledges/GVAB12CD")
+    expect(reminder.linkLabel).toBe("Xem cam kết")
+
+    const resumedBeforeSecondStop = describeNotice(notice({ kind: "payment_requests_resumed", payload }), {
+      paymentRequestsStopped: true,
+    })
+    expect(resumedBeforeSecondStop.title).toBe("Yêu cầu thanh toán đang tạm dừng")
+    expect(resumedBeforeSecondStop.body).toContain("Give đang tạm dừng yêu cầu thanh toán")
+    expect(resumedBeforeSecondStop.body).not.toContain("Hãy thanh toán")
+    expect(resumedBeforeSecondStop.linkLabel).toBe("Xem cam kết")
+
+    // Without a valid pledge code, no link is offered even while stopped.
+    expect(
+      describeNotice(notice({ kind: "payment_reminder", payload: {} }), { paymentRequestsStopped: true })
+    ).toMatchObject({
+      href: null,
+      linkLabel: null,
+    })
+
+    // Once resumed (paymentRequestsStopped: false), the original payment wording returns.
+    const active = describeNotice(notice({ kind: "payment_reminder", payload }), { paymentRequestsStopped: false })
+    expect(active.body).toContain("Hãy thanh toán")
+    expect(active.linkLabel).toBe("Thanh toán ngay")
   })
 
   it("covers account review results", () => {
