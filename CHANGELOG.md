@@ -13,6 +13,20 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Home with no live campaign: the hero's one action is the primary button
+  "Tạo chiến dịch của bạn"; "Khám phá chiến dịch", which led to an empty
+  list, is not shown, and the empty state drops its own "Tạo chiến dịch
+  đầu tiên" button. The home with campaigns is unchanged. `DESIGN.md` 8
+  says so (#176 / #177).
+- The organizer's "Give đã ẩn khỏi sao kê" note on the disbursements page
+  takes the 6px radius of a filled notice (was 4px). `DESIGN.md` 8 states
+  the home hero's split from 1024px: the text spans 8 columns and the
+  receipt card the last 4. `DESIGN.md` 5 says that icon tiles and the
+  hover or selected fill of a list row are not panels and keep 4px, and 9
+  names every icon tile (no screen change). A campaign card or reward
+  tier placed inside a row that scrolls sideways would be scrolled clear
+  of the row's edge fade as a whole box (no screen has one today)
+  (#175 / #177).
 - Focus rings outside the shared components are whole: a control focused
   from the keyboard is scrolled clear of the sticky header, the bottom of
   the screen and, on a campaign page below 1024px, the support bar (a

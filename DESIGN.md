@@ -131,6 +131,7 @@ Contrast: body text >= 4.5:1, large text and icons >= 3:1, in both themes.
 ## 5. Shape, borders, elevation
 
 - Radius: 4px for buttons, inputs, chips, images and badges; 6px for cards, dialogs and panels with a fill and no border (`surface` or a soft color, such as the "Hai cách" panels and notices). Nothing larger, and no pills.
+- These fills are not panels and keep 4px: icon tiles (9), and the hover (`surface`) or selected (soft color) fill of a row in a list.
 - Borders are 1px `border`. A screen has at most two levels: page and card.
 - Shadow appears only on floating things (menus, dialogs, the sticky funding box on scroll): `0 8px 24px rgb(0 0 0 / 0.08)`. Cards in a grid have a border and no shadow.
 
@@ -257,7 +258,7 @@ A tag is **not** a button-sized box.
 | Donate / pledge    | Form template (2.2), with a campaign summary strip on top                                                                                                                                                                                                                                                                                                 |
 | /me, /admin        | Same container. Page header (H1 + one action), then content tables or forms. Side navigation from 1024px, top tabs below.                                                                                                                                                                                                                                 |
 
-- **Home hero:** with no live campaign the hero has no statement card; the right columns stay empty.
+- **Home hero:** from 1024px the text spans 8 columns and the statement receipt card 4 (columns 9 to 12). With no live campaign the hero has no receipt card and the right columns stay empty; its one action is "Tạo chiến dịch của bạn", a primary button, in place of the primary button and text link, and the empty state under the hero has no button of its own.
 - **"Hai cách gây quỹ" panels:** the two panels are not cards: no border, radius 6px, 24px padding, 32px from 1024px.
 
 ## 9. Imagery and icons
@@ -266,7 +267,8 @@ A tag is **not** a button-sized box.
 - Placeholders are a flat `surface` fill with the type icon, never illustrations that look like content.
 - Icons come from lucide (outline, 1.5px stroke): 16px inside a line of text (meta lines, links, labels), 20px in buttons (6.Button), 24px in navigation, 40px in empty states and on a cover placeholder.
 - The stroke is 1.5px at 24px; icons drawn larger keep a 1.5px rendered stroke, and smaller icons scale it down (1px at 16px).
-- 24px also for the home's feature icons (trust strip, "Hai cách"); the "Hai cách" icon sits in a 44px tile, radius 4px, filled `primary-soft` or `accent-soft` with the matching icon color.
+- 24px also for the home's feature icons (trust strip, "Hai cách").
+- An icon tile is a soft fill behind one icon: radius 4px, filled `primary-soft` or `accent-soft` with the icon in the matching color. It is 44px with a 24px icon on the "Hai cách" panels, 44px with a 20px icon on a `/me/contributions` row (from 640px), and 40px with a 20px icon on the statement totals ("Minh bạch tài chính").
 
 ## 10. Motion
 
