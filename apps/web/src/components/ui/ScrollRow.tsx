@@ -91,14 +91,19 @@ export function ScrollRow({
     // both. Keyboard focus only: moving the row under a pointer would lose
     // the click.
     const reveal = (event: FocusEvent) => {
-      const item = event.target
+      const focused = event.target
       // The row itself can take focus (Firefox puts a scroller in the tab order).
-      if (!(item instanceof HTMLElement) || item === el || !item.matches(":focus-visible")) return
+      if (!(focused instanceof HTMLElement) || focused === el || !focused.matches(":focus-visible")) return
       // A menu sheet opened from the row is a descendant, but it is fixed to the
       // screen: scrolling the row does not move it, so it is not ours to reveal.
-      for (let node: HTMLElement | null = item; node && node !== el; node = node.parentElement) {
+      for (let node: HTMLElement | null = focused; node && node !== el; node = node.parentElement) {
         if (getComputedStyle(node).position === "fixed") return
       }
+      // A whole-box link draws its ring on its box (`data-ring-box`, DESIGN.md 6),
+      // so the box is what has to clear the fade; RingBoxScroll then leaves the
+      // row where this put it.
+      const ringBox = focused.closest<HTMLElement>("[data-ring-box]")
+      const item = ringBox && el.contains(ringBox) ? ringBox : focused
       const box = el.getBoundingClientRect()
       const rect = item.getBoundingClientRect()
       // The fades cover FADE inside the row's edge as it is without ring room.
