@@ -1,0 +1,29 @@
+organizer-unmatched-375-light.png	status=200	horizontal_scroll=false
+organizer-unmatched-768-light.png	status=200	horizontal_scroll=false
+organizer-unmatched-1280-light.png	status=200	horizontal_scroll=false
+  contribution_id: Chọn lượt ủng hộ… | GVKUKWQ4F · 200.000 ₫ · Tài chính (khách) · chờ chuyển khoản | GVFQGAHW3 · 300.000 ₫ · Anh Hòa · chờ chuyển khoản | GVZZBMZRC · 200.000 ₫ (đã nhận 200.000 ₫, đã hoàn 200.000 ₫) · Chị Lan · đã nhận | GVE2TFGMA · 150.000 ₫ (đã nhận 150.000 ₫) · Minh · đã nhận | GVGZT4EGB · 200.000 ₫ (đã nhận 200.000 ₫, đã hoàn 200.000 ₫) · Quản trị (khách) · đã nhận
+organizer-unmatched-1440-light.png	status=200	horizontal_scroll=false
+organizer-unmatched-375-dark.png	status=200	horizontal_scroll=false
+organizer-unmatched-768-dark.png	status=200	horizontal_scroll=false
+organizer-unmatched-1280-dark.png	status=200	horizontal_scroll=false
+organizer-unmatched-1440-dark.png	status=200	horizontal_scroll=false
+organizer-disbursements-375-light.png	status=200	horizontal_scroll=false
+organizer-disbursements-768-light.png	status=200	horizontal_scroll=false
+organizer-disbursements-1280-light.png	status=200	horizontal_scroll=false
+  refund_contribution_id: Không phải hoàn tiền | GVE2TFGMA · Minh · đã nhận 150.000 ₫
+organizer-disbursements-1440-light.png	status=200	horizontal_scroll=false
+organizer-disbursements-375-dark.png	status=200	horizontal_scroll=false
+organizer-disbursements-768-dark.png	status=200	horizontal_scroll=false
+organizer-disbursements-1280-dark.png	status=200	horizontal_scroll=false
+organizer-disbursements-1440-dark.png	status=200	horizontal_scroll=false
+admin-unmatched-375-light.png	status=200	horizontal_scroll=false
+admin-unmatched-768-light.png	status=200	horizontal_scroll=false
+admin-unmatched-1280-light.png	status=200	horizontal_scroll=false
+  contribution_id: Chọn lượt ủng hộ… | GVKUKWQ4F · 200.000 ₫ · Tài chính (khách) · chờ chuyển khoản | GVFQGAHW3 · 300.000 ₫ · Anh Hòa · chờ chuyển khoản | GVZZBMZRC · 200.000 ₫ (đã nhận 200.000 ₫, đã hoàn 200.000 ₫) · Chị Lan · đã nhận | GVE2TFGMA · 150.000 ₫ (đã nhận 150.000 ₫) · Minh · đã nhận | GVEU5Q8JA · 200.000 ₫ (đã nhận 200.000 ₫) · Tự (khách) · đã nhận | GVHE7XYV9 · 100.000 ₫ (đã nhận 100.000 ₫) · Tự · đã nhận
+  original_transaction_id: Chọn khoản chi hoặc hoàn tiền… | −200.000 ₫ · 10/11/2026 · Hoàn tiền GVZZBMZRC · Hoàn tiền cho chị Lan
+  contribution_id: Chọn lượt ủng hộ… | GVFQGAHW3 · 300.000 ₫ · Anh Hòa · chờ chuyển khoản | GVKUKWQ4F · 200.000 ₫ · Tài chính (khách) · chờ chuyển khoản | GVZZBMZRC · 200.000 ₫ (đã nhận 200.000 ₫, đã hoàn 200.000 ₫) · Chị Lan · đã nhận | GVE2TFGMA · 150.000 ₫ (đã nhận 150.000 ₫) · Minh · đã nhận | GVEU5Q8JA · 200.000 ₫ (đã nhận 200.000 ₫) · Tự (khách) · đã nhận | GVHE7XYV9 · 100.000 ₫ (đã nhận 100.000 ₫) · Tự · đã nhận
+admin-unmatched-1440-light.png	status=200	horizontal_scroll=false
+admin-unmatched-375-dark.png	status=200	horizontal_scroll=false
+admin-unmatched-768-dark.png	status=200	horizontal_scroll=false
+admin-unmatched-1280-dark.png	status=200	horizontal_scroll=false
+admin-unmatched-1440-dark.png	status=200	horizontal_scroll=false
