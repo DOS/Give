@@ -1,0 +1,27 @@
+admin-refunds-375-light.png	status=200	horizontal_scroll=false
+admin-refunds-768-light.png	status=200	horizontal_scroll=false
+admin-refunds-1280-light.png	status=200	horizontal_scroll=false
+admin-refunds-1440-light.png	status=200	horizontal_scroll=false
+admin-refunds-375-dark.png	status=200	horizontal_scroll=false
+admin-refunds-768-dark.png	status=200	horizontal_scroll=false
+admin-refunds-1280-dark.png	status=200	horizontal_scroll=false
+admin-refunds-1440-dark.png	status=200	horizontal_scroll=false
+admin-refunds-campaign-375-light.png	status=200	horizontal_scroll=false
+admin-refunds-campaign-768-light.png	status=200	horizontal_scroll=false
+admin-refunds-campaign-1280-light.png	status=200	horizontal_scroll=false
+  refund_contribution_id: Chọn lượt ủng hộ | GVQ45NYC6 · Anh Hòa · đã nhận 500.000 ₫ | GVEMF7ZG3 · Tự · đã nhận 300.000 ₫
+admin-refunds-campaign-1440-light.png	status=200	horizontal_scroll=false
+admin-refunds-campaign-375-dark.png	status=200	horizontal_scroll=false
+admin-refunds-campaign-768-dark.png	status=200	horizontal_scroll=false
+admin-refunds-campaign-1280-dark.png	status=200	horizontal_scroll=false
+admin-refunds-campaign-1440-dark.png	status=200	horizontal_scroll=false
+organizer-disbursements-375-light.png	status=200	horizontal_scroll=false
+organizer-disbursements-768-light.png	status=200	horizontal_scroll=false
+organizer-disbursements-1280-light.png	status=200	horizontal_scroll=false
+  refund_contribution_id: Không phải hoàn tiền | GVQ45NYC6 · Anh Hòa · đã nhận 500.000 ₫ | GVKW6VH7K · Minh · đã nhận 150.000 ₫ | GV6662624 · Tài chính (khách) · đã nhận 400.000 ₫
+  refund_contribution_id: Không phải hoàn tiền | GVQ45NYC6 · Anh Hòa · đã nhận 500.000 ₫ | GVKW6VH7K · Minh · đã nhận 150.000 ₫ | GV6662624 · Tài chính (khách) · đã nhận 400.000 ₫
+organizer-disbursements-1440-light.png	status=200	horizontal_scroll=false
+organizer-disbursements-375-dark.png	status=200	horizontal_scroll=false
+organizer-disbursements-768-dark.png	status=200	horizontal_scroll=false
+organizer-disbursements-1280-dark.png	status=200	horizontal_scroll=false
+organizer-disbursements-1440-dark.png	status=200	horizontal_scroll=false
