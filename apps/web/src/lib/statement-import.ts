@@ -9,7 +9,7 @@ import { inboundExplanationLabel } from "./statement"
  * Statement uploads and the staff queue of ambiguous rows (design sections
  * 2.4 and 5.2; DDL in DOS-Me
  * `supabase/migrations/20261101170000_give_statement_import.sql` and
- * `20261114080500_give_statement_row_not_a_transaction.sql`).
+ * `20261116120000_give_statement_row_not_a_transaction.sql`).
  *
  * Reads run with the caller's token: RLS shows a batch and its rows to the
  * account's owner and to finance/admin staff, and the column grants leave
@@ -523,4 +523,131 @@ export function reconciliationAuditSummary(entry: AuditEntry): string {
     return `${formatVnd(Number(after.amount ?? 0))} chuyển từ "chưa khớp" sang "không phải tiền ủng hộ" (${kind}): ${reason}. Bằng chứng: ${evidence}`
   }
   return ""
+}
+
+// ---------------------------------------------------------------------------
+// Void rows and candidates (DOS/Give#78)
+// ---------------------------------------------------------------------------
+
+/**
+ * A row that stands for no transaction of the account: resolved as
+ * not_a_transaction, or a staged duplicate of such a row (links are one hop).
+ * `rows` must hold the row a duplicate points at; one missing from it is not
+ * known to be void.
+ */
+export function isVoidRow(
+  row: Pick<StatementRowView, "status" | "duplicate_of_row_id">,
+  rows: ReadonlyMap<string, Pick<StatementRowView, "status">>
+): boolean {
+  if (row.status === "not_a_transaction") return true
+  return row.duplicate_of_row_id !== null && rows.get(row.duplicate_of_row_id)?.status === "not_a_transaction"
+}
+
+/**
+ * The candidates a queued row may be offered: every candidate that is not a
+ * void row. Staging sets a candidate once and never changes it, so a row
+ * queued before its candidate was voided still names it; the database never
+ * pairs new rows with a void row, and neither does the queue.
+ */
+export function withoutVoidCandidates(
+  candidates: ReadonlyMap<string, StatementRowView>,
+  duplicateTargets: ReadonlyMap<string, Pick<StatementRowView, "status">>
+): Map<string, StatementRowView> {
+  return new Map([...candidates].filter(([, row]) => !isVoidRow(row, duplicateTargets)))
+}
+
+/**
+ * The earlier rows that queued rows line up with: the ones the queue may
+ * show, by id, and the ids of candidates that are void rows (offered to no
+ * one; an import of such a row confirms "a different transaction" by itself,
+ * since there is nothing it could repeat).
+ */
+export async function getCandidateRows(
+  db: Db,
+  ids: readonly string[]
+): Promise<{ rows: Map<string, StatementRowView>; voidIds: Set<string> }> {
+  const candidates = await getRows(db, ids)
+  const targets = await getRows(
+    db,
+    [...candidates.values()].map((row) => row.duplicate_of_row_id).filter((id): id is string => Boolean(id))
+  )
+  const rows = withoutVoidCandidates(candidates, targets)
+  return { rows, voidIds: new Set([...candidates.keys()].filter((id) => !rows.has(id))) }
+}
+
+// ---------------------------------------------------------------------------
+// Self-review (DOS/Give#78, DOS/DOS.Me 20261116120000)
+// ---------------------------------------------------------------------------
+
+export interface AccountBindingView {
+  receiving_account_id: string
+  bound_at: string
+  released_at: string | null
+  /** The bound campaign's organizer; null when the campaign cannot be read. */
+  organizer_id: string | null
+}
+
+/** Every binding (current and past) of the accounts, with its campaign's organizer (finance/admin read all). */
+export async function listAccountBindings(db: Db, accountIds: readonly string[]): Promise<AccountBindingView[]> {
+  const unique = [...new Set(accountIds)]
+  if (unique.length === 0) return []
+  const { data, error } = await db
+    .from("account_bindings")
+    .select("receiving_account_id, bound_at, released_at, campaign:campaigns(organizer_id)")
+    .in("receiving_account_id", unique)
+  if (error) throw error
+  type Raw = Omit<AccountBindingView, "organizer_id"> & {
+    campaign: { organizer_id: string } | { organizer_id: string }[] | null
+  }
+  return ((data ?? []) as unknown as Raw[]).map(({ campaign, ...binding }) => ({
+    ...binding,
+    organizer_id: (Array.isArray(campaign) ? campaign[0] : campaign)?.organizer_id ?? null,
+  }))
+}
+
+/** The owner of each account, by account id. */
+export async function accountOwners(db: Db, accountIds: readonly string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(accountIds)]
+  if (unique.length === 0) return new Map()
+  const { data, error } = await db.from("receiving_accounts").select("id, owner_user_id").in("id", unique)
+  if (error) throw error
+  return new Map(((data ?? []) as { id: string; owner_user_id: string }[]).map((a) => [a.id, a.owner_user_id]))
+}
+
+const DAY_MS = 86_400_000
+
+/**
+ * Whether a statement row is the viewer's own money, which
+ * give.resolve_statement_import_row refuses to let them resolve
+ * (GIVE_SELF_REVIEW): they own the account, or organize a campaign the
+ * account is bound to now, or was bound to when the row was booked (a
+ * date-only row of the binding day counts), or, for an outgoing row, whose
+ * binding ended before it with no later binding started by then (a refund or
+ * payout after a swap). The same rule as the database, which checks it again.
+ */
+export function isOwnStatementRow(
+  row: Pick<StatementRowView, "booked_at" | "booked_date_only" | "direction">,
+  accountId: string,
+  userId: string,
+  owners: ReadonlyMap<string, string>,
+  bindings: readonly AccountBindingView[]
+): boolean {
+  if (owners.get(accountId) === userId) return true
+  const booked = new Date(row.booked_at).getTime()
+  const ofAccount = bindings.filter((b) => b.receiving_account_id === accountId)
+  return ofAccount.some((b) => {
+    if (b.organizer_id !== userId) return false
+    if (b.released_at === null) return true
+    const bound = new Date(b.bound_at).getTime()
+    const started = bound <= booked || (row.booked_date_only && bound < booked + DAY_MS)
+    if (!started) return false
+    if (new Date(b.released_at).getTime() > booked) return true
+    return (
+      row.direction === "out" &&
+      !ofAccount.some((o) => {
+        const at = new Date(o.bound_at).getTime()
+        return at > bound && at <= booked
+      })
+    )
+  })
 }

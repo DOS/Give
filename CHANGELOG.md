@@ -225,11 +225,16 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   explained, and the public statement shows it as a donation only
   (#71 / #198).
 - Statement reconciliation (`/admin/statements`): finance staff can resolve
-  an `event_dismissed` statement row (such as a test file or a statement
-  uploaded to the wrong account) as `not_a_transaction` with a mandatory
-  note, recording no bank transaction; `/me/statements/[batchId]` counts
-  and badges those rows (#78). Needs DOS.Me migration
-  `20261114080500_give_statement_row_not_a_transaction`.
+  a statement row of a dismissed upload (`event_dismissed`: a test file, a
+  statement uploaded to the wrong account) as "Không phải giao dịch thật"
+  with a required note, recording no bank transaction;
+  `/me/statements/[batchId]` counts and badges those rows. A queued row whose
+  earlier look-alike was resolved that way no longer shows or preselects it,
+  and imports without the "different transaction" confirmation. Staff who
+  own the account, or organize a campaign it is or was bound to for the
+  row's date, see a notice instead of the forms (the database refuses them
+  with `GIVE_SELF_REVIEW`, for every resolution). Every refusal of the
+  resolution is worded in Vietnamese (#78 / #PR_NUMBER, takes over #189).
 
 ### Platform
 
@@ -270,11 +275,17 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   `20261116090000_give_correct_inbound_explanation`. The Give app's #71
   change reads the new table, so it needs this migration on Production
   before it is released.
-- Statement-row `not_a_transaction` resolution: `give.resolve_statement_import_row`
-  accepts `not_a_transaction` for `event_dismissed` rows that have no active
-  duplicate pointing to them, writes the audit row without creating a bank
-  transaction, and unblocks `give.release_account_binding` (#78). Migration
-  `20261114080500_give_statement_row_not_a_transaction`.
+- Statement-row `not_a_transaction` resolution:
+  `give.resolve_statement_import_row` accepts `not_a_transaction` for
+  `event_dismissed` rows that no active duplicate stands for, writes the
+  audit row without a bank transaction, and refuses every resolution by
+  the account's owner or the organizer of a campaign bound to it for the
+  row's date (`GIVE_SELF_REVIEW`); staging never pairs a new row with a
+  voided one, and a voided row no longer keeps `give.release_account_binding`
+  waiting (#78 / DOS/DOS.Me#1684, on Beta). Migration
+  `20261116120000_give_statement_row_not_a_transaction`. The Give app's #78
+  change calls it, so it needs this migration on Production before it is
+  released.
 
 ### On Production (database only)
 
@@ -294,9 +305,9 @@ has no Production deploy. Behaviour to know:
 
 ### Waiting for Production
 
-- Migration `20261114080500_give_statement_row_not_a_transaction.sql` (#78)
-  must reach DOS.Me `main` before deploying the `not_a_transaction` staff
-  resolution in `apps/web`.
+- Migration `20261116120000_give_statement_row_not_a_transaction.sql` (#78)
+  must reach DOS.Me `main` (Production) before Give `main` ships the
+  `not_a_transaction` staff resolution in `apps/web`.
 - The test-only changes #135 / DOS/DOS.Me#1663 and #144 / DOS/DOS.Me#1664 are
   on DOS.Me `dev` and are to be promoted together (#155). Until then DOS.Me
   `main` carries `give_staff_role_revoke_lock.test.sql` with the known test

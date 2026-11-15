@@ -13,11 +13,14 @@ import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import { listStaff } from "@/lib/staff"
 import {
   accountLabels,
+  accountOwners,
   allowsNotATransaction,
   ambiguousReasonLabel,
   AUDIT_ACTION_LABELS,
   DUPLICATE_WINDOW_DAYS,
-  getRows,
+  getCandidateRows,
+  isOwnStatementRow,
+  listAccountBindings,
   listAmbiguousRows,
   listDuplicateTargets,
   listReconciliationAudit,
@@ -55,10 +58,16 @@ export default async function AdminStatementsPage() {
     listResolvedRows(db),
     isStaff(db, ["admin"]),
   ])
-  const candidates = await getRows(
-    db,
-    queue.map((row) => row.candidate_row_id).filter((id): id is string => Boolean(id))
-  )
+  const accountIds = queue.map((row) => row.batch.receiving_account_id)
+  // Void candidates (not_a_transaction rows) are never offered (DOS/Give#78).
+  const [{ rows: candidates, voidIds }, owners, bindings] = await Promise.all([
+    getCandidateRows(
+      db,
+      queue.map((row) => row.candidate_row_id).filter((id): id is string => Boolean(id))
+    ),
+    accountOwners(db, accountIds),
+    listAccountBindings(db, accountIds),
+  ])
   const [targets, labels, audit, staff] = await Promise.all([
     Promise.all(
       queue.map((row) =>
@@ -113,6 +122,8 @@ export default async function AdminStatementsPage() {
                 row={row}
                 account={labels.get(row.batch.receiving_account_id)}
                 candidate={row.candidate_row_id ? candidates.get(row.candidate_row_id) : undefined}
+                voidCandidate={row.candidate_row_id !== null && voidIds.has(row.candidate_row_id)}
+                own={isOwnStatementRow(row, row.batch.receiving_account_id, session.user.id, owners, bindings)}
                 targets={targets[i]}
               />
             ))}
@@ -176,11 +187,17 @@ function QueueCard({
   row,
   account,
   candidate,
+  voidCandidate,
+  own,
   targets,
 }: {
   row: QueueRow
   account: string | undefined
   candidate: StatementRowView | undefined
+  /** The row's candidate was resolved as not a transaction: nothing to line up with. */
+  voidCandidate: boolean
+  /** The viewer owns the account or organizes its campaign (GIVE_SELF_REVIEW). */
+  own: boolean
   targets: DuplicateTargets
 }) {
   const candidateTx = candidate?.bank_transaction_id ?? null
@@ -206,104 +223,115 @@ function QueueCard({
         )}
       </div>
 
-      <ItemActions>
-        <ActionForm
-          action={resolveStatementRow.bind(null, row.id)}
-          confirm="Đánh dấu dòng này là giao dịch đã ghi? Dòng sẽ không được ghi thêm lần nữa."
-          className="space-y-4"
-        >
-          <input type="hidden" name="resolution" value="duplicate" />
-          <p className="label">{RESOLUTION_LABELS.duplicate}</p>
-          {targets.shown.length === 0 ? (
-            <p className="text-sm text-muted">
-              Không có giao dịch đã ghi nào cùng chiều, cùng số tiền trong vòng {DUPLICATE_WINDOW_DAYS} ngày.
-            </p>
-          ) : (
-            <>
-              <fieldset className="space-y-1 text-sm">
-                <legend className="sr-only">Giao dịch mà dòng này lặp lại</legend>
-                {targets.shown.map((tx) => (
-                  <label
-                    key={tx.id}
-                    className="flex min-w-0 cursor-pointer items-start gap-3 rounded p-3 transition-colors duration-150 hover:bg-surface has-[:checked]:bg-primary-soft"
-                  >
-                    <input
-                      type="radio"
-                      name="bank_transaction_id"
-                      value={tx.id}
-                      required
-                      defaultChecked={tx.id === candidateTx}
-                      className="mt-1 size-4 shrink-0 accent-primary"
-                    />
-                    <span className="min-w-0 break-words">
-                      {bookedLabel(tx)} · <span className="tabular-nums">{formatVnd(tx.amount)}</span> ·{" "}
-                      {tx.description ?? "—"}
-                      {tx.counterparty_name ? ` · ${tx.counterparty_name}` : ""}{" "}
-                      <MachineId className="text-muted">{tx.provider_tx_id}</MachineId>
-                      {tx.id === candidateTx && <span className="text-muted"> (dòng trước ứng với giao dịch này)</span>}
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
-              {targets.total > targets.shown.length && (
-                <Callout tone="warning">
-                  Còn {targets.total - targets.shown.length} giao dịch khác cùng số tiền xa ngày hơn không hiện ở đây.
-                  Nếu không thấy đúng giao dịch, đừng chọn đại một giao dịch.
-                </Callout>
-              )}
-              <NoteField id={`dup-note-${row.id}`} />
-              <SubmitButton className="btn-secondary">Là giao dịch đã ghi</SubmitButton>
-            </>
-          )}
-        </ActionForm>
-
-        <ActionForm
-          action={resolveStatementRow.bind(null, row.id)}
-          confirm="Nhập dòng này thành một giao dịch mới? Số tiền sẽ được tính vào sao kê của chiến dịch và không xóa được."
-          className="space-y-4"
-        >
-          <input type="hidden" name="resolution" value="import" />
-          <p className="label">{RESOLUTION_LABELS.import}</p>
-          <p className="text-sm text-muted">
-            Chỉ chọn khi bạn đã thấy giao dịch này trên sao kê của ngân hàng và nó chưa được ghi.
-          </p>
-          {row.candidate_row_id && (
-            <label className="flex cursor-pointer items-start gap-3 text-sm">
-              <input
-                type="checkbox"
-                name="override_candidate"
-                required
-                className="mt-1 size-4 shrink-0 accent-primary"
-              />
-              <span className="min-w-0">
-                Tôi đã đối chiếu: đây là giao dịch khác với dòng {candidate ? `${candidate.row_no} ` : ""}của lần tải
-                trước.
-              </span>
-            </label>
-          )}
-          <NoteField id={`import-note-${row.id}`} />
-          <SubmitButton>Nhập thành giao dịch mới</SubmitButton>
-        </ActionForm>
-
-        {allowsNotATransaction(row.ambiguous_reason) && (
+      {own ? (
+        <Callout tone="warning">
+          Tài khoản nhận này là của bạn, hoặc dòng thuộc thời gian tài khoản gắn với chiến dịch do bạn tổ chức. Một nhân
+          viên tài chính khác cần xử lý dòng này.
+        </Callout>
+      ) : (
+        <ItemActions>
           <ActionForm
             action={resolveStatementRow.bind(null, row.id)}
-            confirm="Đánh dấu dòng này không phải giao dịch thật? Dòng sẽ được bỏ qua, không ghi vào sổ và không đổi lại được."
+            confirm="Đánh dấu dòng này là giao dịch đã ghi? Dòng sẽ không được ghi thêm lần nữa."
             className="space-y-4"
           >
-            <input type="hidden" name="resolution" value="not_a_transaction" />
-            <p className="label">{RESOLUTION_LABELS.not_a_transaction}</p>
-            <p className="text-sm text-muted">
-              Chỉ chọn khi dòng này không có trên sao kê thật của tài khoản (ví dụ file thử, tải nhầm tài khoản).
-            </p>
-            <NoteField
-              id={`not-tx-note-${row.id}`}
-              placeholder="Ghi chú bắt buộc: vì sao không phải giao dịch thật và đã đối chiếu với nguồn nào (ví dụ: file thử, tải nhầm tài khoản)"
-            />
-            <SubmitButton className="btn-secondary">Không phải giao dịch thật</SubmitButton>
+            <input type="hidden" name="resolution" value="duplicate" />
+            <p className="label">{RESOLUTION_LABELS.duplicate}</p>
+            {targets.shown.length === 0 ? (
+              <p className="text-sm text-muted">
+                Không có giao dịch đã ghi nào cùng chiều, cùng số tiền trong vòng {DUPLICATE_WINDOW_DAYS} ngày.
+              </p>
+            ) : (
+              <>
+                <fieldset className="space-y-1 text-sm">
+                  <legend className="sr-only">Giao dịch mà dòng này lặp lại</legend>
+                  {targets.shown.map((tx) => (
+                    <label
+                      key={tx.id}
+                      className="flex min-w-0 cursor-pointer items-start gap-3 rounded p-3 transition-colors duration-150 hover:bg-surface has-[:checked]:bg-primary-soft"
+                    >
+                      <input
+                        type="radio"
+                        name="bank_transaction_id"
+                        value={tx.id}
+                        required
+                        defaultChecked={tx.id === candidateTx}
+                        className="mt-1 size-4 shrink-0 accent-primary"
+                      />
+                      <span className="min-w-0 break-words">
+                        {bookedLabel(tx)} · <span className="tabular-nums">{formatVnd(tx.amount)}</span> ·{" "}
+                        {tx.description ?? "—"}
+                        {tx.counterparty_name ? ` · ${tx.counterparty_name}` : ""}{" "}
+                        <MachineId className="text-muted">{tx.provider_tx_id}</MachineId>
+                        {tx.id === candidateTx && (
+                          <span className="text-muted"> (dòng trước ứng với giao dịch này)</span>
+                        )}
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
+                {targets.total > targets.shown.length && (
+                  <Callout tone="warning">
+                    Còn {targets.total - targets.shown.length} giao dịch khác cùng số tiền xa ngày hơn không hiện ở đây.
+                    Nếu không thấy đúng giao dịch, đừng chọn đại một giao dịch.
+                  </Callout>
+                )}
+                <NoteField id={`dup-note-${row.id}`} />
+                <SubmitButton className="btn-secondary">Là giao dịch đã ghi</SubmitButton>
+              </>
+            )}
           </ActionForm>
-        )}
-      </ItemActions>
+
+          <ActionForm
+            action={resolveStatementRow.bind(null, row.id)}
+            confirm="Nhập dòng này thành một giao dịch mới? Số tiền sẽ được tính vào sao kê của chiến dịch và không xóa được."
+            className="space-y-4"
+          >
+            <input type="hidden" name="resolution" value="import" />
+            <p className="label">{RESOLUTION_LABELS.import}</p>
+            <p className="text-sm text-muted">
+              Chỉ chọn khi bạn đã thấy giao dịch này trên sao kê của ngân hàng và nó chưa được ghi.
+            </p>
+            {/* A void candidate is no earlier transaction: the import says so by itself. */}
+            {voidCandidate && <input type="hidden" name="override_candidate" value="on" />}
+            {row.candidate_row_id && !voidCandidate && (
+              <label className="flex cursor-pointer items-start gap-3 text-sm">
+                <input
+                  type="checkbox"
+                  name="override_candidate"
+                  required
+                  className="mt-1 size-4 shrink-0 accent-primary"
+                />
+                <span className="min-w-0">
+                  Tôi đã đối chiếu: đây là giao dịch khác với dòng {candidate ? `${candidate.row_no} ` : ""}của lần tải
+                  trước.
+                </span>
+              </label>
+            )}
+            <NoteField id={`import-note-${row.id}`} />
+            <SubmitButton>Nhập thành giao dịch mới</SubmitButton>
+          </ActionForm>
+
+          {allowsNotATransaction(row.ambiguous_reason) && (
+            <ActionForm
+              action={resolveStatementRow.bind(null, row.id)}
+              confirm="Đánh dấu dòng này không phải giao dịch thật? Dòng sẽ được bỏ qua, không ghi vào sổ và không đổi lại được."
+              className="space-y-4"
+            >
+              <input type="hidden" name="resolution" value="not_a_transaction" />
+              <p className="label">{RESOLUTION_LABELS.not_a_transaction}</p>
+              <p className="text-sm text-muted">
+                Chỉ chọn khi dòng này không có trên sao kê thật của tài khoản (ví dụ file thử, tải nhầm tài khoản).
+              </p>
+              <NoteField
+                id={`not-tx-note-${row.id}`}
+                placeholder="Ghi chú bắt buộc: vì sao không phải giao dịch thật và đã đối chiếu với nguồn nào (ví dụ: file thử, tải nhầm tài khoản)"
+              />
+              <SubmitButton className="btn-secondary">Không phải giao dịch thật</SubmitButton>
+            </ActionForm>
+          )}
+        </ItemActions>
+      )}
     </ItemCard>
   )
 }

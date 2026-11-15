@@ -197,4 +197,27 @@ describe("resolveStatementRow", () => {
       (await resolveStatementRow(ROW, null, form({ resolution: "not_a_transaction", note: "x" })))?.message
     ).toContain("Một lần tải sao kê khác có dòng đã được bỏ qua vì trùng với dòng này")
   })
+
+  it("refuses staff's own account or campaign for every resolution (GIVE_SELF_REVIEW)", async () => {
+    state.serviceHandler = () => ({ error: { code: "42501", message: "GIVE_SELF_REVIEW" } })
+    const cases: Record<string, string>[] = [
+      { resolution: "import", note: "x" },
+      { resolution: "duplicate", note: "x", bank_transaction_id: TX },
+      { resolution: "not_a_transaction", note: "x" },
+    ]
+    for (const values of cases) {
+      const result = await resolveStatementRow(ROW, null, form(values))
+      expect(result, values.resolution).toEqual({
+        ok: false,
+        message:
+          "Bạn không xử lý được dòng này: tài khoản nhận là của bạn, hoặc dòng thuộc thời gian tài khoản gắn với chiến dịch do bạn tổ chức. Một nhân viên tài chính khác cần xử lý.",
+      })
+    }
+  })
+
+  it("passes the override sent for a row whose candidate is void (DOS/Give#78)", async () => {
+    // The queue sends it as a hidden field: a void candidate is no earlier transaction.
+    await resolveStatementRow(ROW, null, form({ resolution: "import", note: "thật", override_candidate: "on" }))
+    expect(rpcArgs()).toMatchObject({ p_resolution: "import", p_override_candidate: true })
+  })
 })
