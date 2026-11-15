@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import type { ReactNode } from "react"
 import { notFound } from "next/navigation"
 
 import { ActionForm, SubmitButton } from "@/components/forms"
@@ -21,13 +22,14 @@ import {
   EXPLAINED_PAGE_LIMIT,
   explanationOverdue,
   listExplainedOutgoing,
-  listPendingOutgoing,
+  listUnexplainedOutgoing,
   listReferenceCodes,
   listRefundable,
   MAX_EVIDENCE_FILES,
   MAX_EVIDENCE_PER_TRANSACTION,
   refundOptionLabel,
   returnedOutgoingText,
+  returnedUnexplainedText,
   statementHref,
   type Disbursement,
   type OutgoingTransaction,
@@ -57,8 +59,10 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
   const campaign = await getCampaignById(db, id)
   if (!campaign || campaign.organizer_id !== session.user.id) notFound()
 
-  const [pending, done, refundable] = await Promise.all([
-    listPendingOutgoing(db, campaign.id),
+  // A transfer the bank returned is not spending to explain (DOS/Give#194):
+  // it is listed apart and never counts as "chưa giải trình".
+  const [{ pending, returned }, done, refundable] = await Promise.all([
+    listUnexplainedOutgoing(db, campaign.id),
     listExplainedOutgoing(db, campaign.id),
     listRefundable(db, campaign.id),
   ])
@@ -75,9 +79,10 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
     <MeDetail>
       <PageHeader back={{ href: `/me/campaigns/${campaign.id}`, label: campaign.title }} title="Giải trình khoản chi">
         <p>
-          Mỗi khoản tiền ra khỏi tài khoản nhận cần được giải trình trong {EXPLAIN_WITHIN_DAYS} ngày. Mục đích, loại
-          khoản chi, người nhận và ảnh chứng từ sẽ hiện công khai trên sao kê; số khoản chưa giải trình cũng được công
-          khai. Giải trình đã gửi thì không sửa được, nhưng có thể thêm chứng từ.
+          Mỗi khoản tiền ra khỏi tài khoản nhận (trừ khoản bị ngân hàng trả lại) cần được giải trình trong{" "}
+          {EXPLAIN_WITHIN_DAYS} ngày. Mục đích, loại khoản chi, người nhận và ảnh chứng từ sẽ hiện công khai trên sao
+          kê; số khoản chưa giải trình cũng được công khai. Giải trình đã gửi thì không sửa được, nhưng có thể thêm
+          chứng từ.
         </p>
         {isPublicStatus(campaign.status) && (
           <Link href={statementHref(campaign.slug, "all")} className="inline-flex min-h-11 items-center link">
@@ -113,6 +118,25 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
             )}
           </section>
 
+          {returned.length > 0 && (
+            <section aria-labelledby="returned-heading">
+              <h2 id="returned-heading" className="mb-6 flex flex-wrap items-center gap-3 text-h2">
+                Bị ngân hàng trả lại
+                <Badge>{returned.length}</Badge>
+              </h2>
+              <ol className="space-y-6">
+                {returned.map((tx) => (
+                  <li key={tx.id} className="min-w-0 card p-4 sm:p-6">
+                    <TransactionHeader tx={tx} />
+                    <ReturnedNotice title="Give sẽ xử lý khoản này">
+                      {returnedUnexplainedText(tx, tx.returned, tx.linked_at)}
+                    </ReturnedNotice>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+
           <section aria-labelledby="done-heading">
             <h2 id="done-heading" className="mb-6 flex flex-wrap items-center gap-3 text-h2">
               Đã giải trình
@@ -132,16 +156,14 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
                     <TransactionHeader tx={tx} />
                     {tx.returned && (
                       // A transfer a bank sent back (DOS/Give#72), with the fee it kept (DOS/Give#195).
-                      <div data-notice="returned" role="note" className="mt-4">
-                        <Callout
-                          tone={tx.disbursement.is_refund ? "danger" : "info"}
-                          title={
-                            tx.disbursement.is_refund ? "Khoản hoàn tiền bị ngân hàng trả lại" : "Bị ngân hàng trả lại"
-                          }
-                        >
-                          <p>{returnedOutgoingText(tx, tx.disbursement, tx.returned)}</p>
-                        </Callout>
-                      </div>
+                      <ReturnedNotice
+                        tone={tx.disbursement.is_refund ? "danger" : "info"}
+                        title={
+                          tx.disbursement.is_refund ? "Khoản hoàn tiền bị ngân hàng trả lại" : "Bị ngân hàng trả lại"
+                        }
+                      >
+                        {returnedOutgoingText(tx, tx.disbursement, tx.returned)}
+                      </ReturnedNotice>
                     )}
                     <Explanation
                       disbursement={tx.disbursement}
@@ -174,6 +196,25 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
         </div>
       </div>
     </MeDetail>
+  )
+}
+
+/** The marker on a transfer out that a bank sent back, explained or not. */
+function ReturnedNotice({
+  tone = "info",
+  title,
+  children,
+}: {
+  tone?: "info" | "danger"
+  title: string
+  children: ReactNode
+}) {
+  return (
+    <div data-notice="returned" role="note" className="mt-4">
+      <Callout tone={tone} title={title}>
+        <p>{children}</p>
+      </Callout>
+    </div>
   )
 }
 

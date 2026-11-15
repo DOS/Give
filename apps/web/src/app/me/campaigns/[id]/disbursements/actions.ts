@@ -38,8 +38,18 @@ import { firstError, formFields } from "@/lib/validation"
 
 const SIGNED_OUT = "Phiên đăng nhập đã hết. Hãy đăng nhập lại."
 const TX_NOT_FOUND = dbErrorMessage({ message: "GIVE_TRANSACTION_NOT_FOUND" })
+/** A transfer the bank sent back never left the campaign (DOS/Give#194). */
+const RETURNED_NOT_EXPLAINABLE =
+  "Giao dịch này đã được ghi nhận là bị ngân hàng trả lại. Bộ phận tài chính của Give sẽ xử lý, bạn không giải trình nó như một khoản chi. Hãy tải lại trang."
 
-type Loaded = { campaign: CampaignWithRefs; tx: OutgoingTransaction; explained: boolean; evidenceCount: number }
+type Loaded = {
+  campaign: CampaignWithRefs
+  tx: OutgoingTransaction
+  explained: boolean
+  /** Finance linked money the bank returned to this transfer (give.returned_transfers). */
+  returned: boolean
+  evidenceCount: number
+}
 
 /** The organizer's own campaign and one of its outgoing transactions, read under RLS. */
 async function load(session: Session, campaignId: string, transactionId: string): Promise<Loaded | string> {
@@ -56,7 +66,7 @@ async function load(session: Session, campaignId: string, transactionId: string)
       return dbErrorMessage({ message: "GIVE_CAMPAIGN_NOT_FOUND" })
     }
     if (!tx) return TX_NOT_FOUND
-    const { disbursement, ...rest } = tx
+    const { disbursement, returned, ...rest } = tx
     // Images staff hid do not count towards the cap, so the organizer can
     // always upload the redacted copy staff asked for.
     const evidence = disbursement?.evidence ?? []
@@ -65,7 +75,7 @@ async function load(session: Session, campaignId: string, transactionId: string)
       evidence.map((e) => e.id)
     )
     const evidenceCount = evidence.filter((e) => !states.get(e.id)?.hidden).length
-    return { campaign, tx: rest, explained: disbursement !== null, evidenceCount }
+    return { campaign, tx: rest, explained: disbursement !== null, returned, evidenceCount }
   } catch (error) {
     return dbErrorMessage(error as DbErrorLike)
   }
@@ -152,6 +162,9 @@ export async function explainDisbursement(
   if (typeof loaded === "string") return fail(loaded)
   const { campaign, tx } = loaded
   if (loaded.explained) return fail(dbErrorMessage({ message: "GIVE_DISBURSEMENT_ALREADY_EXPLAINED" }))
+  // give.link_returned_transfer only links an explained original, so this
+  // cannot happen today; the app still never records one as spending.
+  if (loaded.returned) return fail(RETURNED_NOT_EXPLAINABLE)
 
   if (input.refund_contribution_id) {
     let contribution

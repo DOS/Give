@@ -13,13 +13,14 @@ import {
   explainSchema,
   explanationOverdue,
   getMoneyTotals,
+  getOutgoing,
   listMoneyTotals,
   listExplainedOutgoing,
   listPublicEvidence,
-  listPendingOutgoing,
   listRefundable,
   listStatement,
   listStatementPairs,
+  listUnexplainedOutgoing,
   parseEvidencePath,
   parseStatementParams,
   publicEvidenceUrl,
@@ -31,6 +32,7 @@ import {
   returnBankFee,
   returnedOutgoingText,
   returnedTransferText,
+  returnedUnexplainedText,
   STATEMENT_PAGE_SIZE,
   statementHref,
   type MoneyTotals,
@@ -593,7 +595,7 @@ describe("organizer reads", () => {
   it("lists every unexplained outgoing transaction of the campaign, without a limit", async () => {
     const calls: Call[] = []
     const db = fakeDb(() => ({ data: [{ id: TX, amount: "250000", disbursements: null }] }), calls)
-    const rows = await listPendingOutgoing(db as never, CAMPAIGN)
+    const { pending: rows, returned } = await listUnexplainedOutgoing(db as never, CAMPAIGN)
     expect(calls[0].target).toBe("bank_transactions")
     expect(selected(calls[0])).not.toContain("raw")
     expect(calls[0].ops.filter(([n]) => n === "eq").map((o) => o.slice(1))).toEqual([
@@ -608,6 +610,77 @@ describe("organizer reads", () => {
     expect(selected(calls[0])).toContain("own_out:own_account_transfers!out_transaction_id(id)")
     expect(op(calls[0], "limit")).toBeUndefined()
     expect(rows).toEqual([{ id: TX, amount: 250_000 }])
+    expect(returned).toEqual([])
+  })
+
+  it("splits off a transfer the bank returned: it is not spending to explain (DOS/Give#194)", async () => {
+    const calls: Call[] = []
+    const link = { linked_at: "2026-11-12T03:00:00Z", back: { amount: "289000", booked_at: "2026-11-10T03:00:00Z" } }
+    const db = fakeDb(
+      () => ({
+        data: [
+          { id: "p1", amount: 100_000, disbursements: null, returned: null },
+          { id: "r1", amount: "300000", disbursements: null, returned: link },
+          { id: "p2", amount: 200_000, disbursements: null, returned: [] },
+          { id: "r2", amount: 50_000, disbursements: null, returned: [{ ...link, back: null }] },
+        ],
+      }),
+      calls
+    )
+    const { pending, returned } = await listUnexplainedOutgoing(db as never, CAMPAIGN)
+    // The link is read under RLS in the same query, never its private reason or evidence.
+    expect(calls).toHaveLength(1)
+    expect(selected(calls[0])).toContain(
+      "returned:returned_transfers!original_transaction_id(linked_at, back:bank_transactions!bank_transaction_id(amount, booked_at))"
+    )
+    expect(selected(calls[0])?.split("returned:")[1]).not.toMatch(/reason|evidence|linked_by/)
+    // Only what is still to explain counts; the order (oldest first) is kept.
+    expect(pending).toEqual([
+      { id: "p1", amount: 100_000 },
+      { id: "p2", amount: 200_000 },
+    ])
+    expect(returned).toEqual([
+      {
+        id: "r1",
+        amount: 300_000,
+        returned: { amount: 289_000, booked_at: "2026-11-10T03:00:00Z", linked_at: "2026-11-12T03:00:00Z" },
+        linked_at: "2026-11-12T03:00:00Z",
+      },
+      // Linked, but the money that came back could not be read: still not offered to explain.
+      { id: "r2", amount: 50_000, returned: null, linked_at: "2026-11-12T03:00:00Z" },
+    ])
+  })
+
+  it("words a returned, unexplained transfer with the return day and any fee, promising no total", () => {
+    const vnd = (text: string) => text.replace(/\u00a0/g, " ")
+    const back = { amount: 289_000, booked_at: "2026-11-10T03:00:00Z", linked_at: "2026-11-12T03:00:00Z" }
+    const fee = vnd(returnedUnexplainedText({ amount: 300_000 }, back, back.linked_at))
+    expect(fee).toBe(
+      "Ngân hàng đã trả lại +289.000 ₫ ngày 10/11/2026 và giữ 11.000 ₫ phí ngân hàng. Bộ phận tài chính của Give đã ghi nhận và sẽ xử lý khoản này trên sao kê công khai, nên bạn không giải trình nó như một khoản chi. Nếu sao kê vẫn tính khoản này là chưa giải trình, hãy liên hệ Give."
+    )
+    // The public totals still count it until finance settles it: no "not spent" claim.
+    expect(fee).not.toMatch(/không (còn )?tính vào tổng|không phải khoản chi/)
+    expect(
+      vnd(returnedUnexplainedText({ amount: 300_000 }, { ...back, amount: 300_000 }, back.linked_at))
+    ).not.toContain("phí")
+    // Without the money that came back, the day finance linked it.
+    expect(returnedUnexplainedText({ amount: 300_000 }, null, "2026-11-12T03:00:00Z")).toMatch(
+      /^Ngày 12\/11\/2026, bộ phận tài chính của Give đã ghi nhận khoản chuyển này bị ngân hàng trả lại/
+    )
+  })
+
+  it("reads whether a bank return is linked to the transaction being explained", async () => {
+    const calls: Call[] = []
+    const row = { id: TX, amount: "300000", disbursement: null }
+    const linked = await getOutgoing(
+      fakeDb(() => ({ data: { ...row, returned: { linked_at: "t", back: null } } }), calls) as never,
+      CAMPAIGN,
+      TX
+    )
+    expect(selected(calls[0])).toContain("returned:returned_transfers!original_transaction_id(")
+    expect(linked).toEqual({ id: TX, amount: 300_000, disbursement: null, returned: true })
+    const open = await getOutgoing(fakeDb(() => ({ data: { ...row, returned: [] } })) as never, CAMPAIGN, TX)
+    expect(open?.returned).toBe(false)
   })
 
   it("lists explained transactions with their explanation and evidence in one query", async () => {

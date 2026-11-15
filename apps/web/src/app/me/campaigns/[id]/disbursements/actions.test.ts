@@ -45,6 +45,7 @@ function reads({
   camp = campaign as unknown,
   outgoing = tx as unknown,
   disbursement = null as unknown,
+  returned = null as unknown,
   contribution = null as unknown,
   refunds = [] as unknown[],
   error = null as { code?: string; message?: string } | null,
@@ -53,7 +54,7 @@ function reads({
     if (error) return { error }
     if (call.target === "rpc:managed_campaigns") return { data: camp }
     if (call.target === "bank_transactions")
-      return { data: outgoing ? { ...(outgoing as object), disbursement } : null }
+      return { data: outgoing ? { ...(outgoing as object), disbursement, returned } : null }
     if (call.target === "contributions") return { data: contribution }
     if (call.target === "ledger_entries") return { data: refunds }
     return undefined
@@ -227,6 +228,38 @@ describe("explainDisbursement", () => {
     const result = await explainDisbursement(CAMPAIGN, TX, null, form())
     expect(result?.message).toContain("đã được giải trình")
     expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("refuses a transfer the bank returned, before any upload or service-role call (DOS/Give#194)", async () => {
+    state.userHandler = reads({
+      returned: { linked_at: "2026-11-12T03:00:00Z", back: { amount: 300_000, booked_at: "2026-11-10T03:00:00Z" } },
+    })
+    const result = await explainDisbursement(CAMPAIGN, TX, null, form({}, [png()]))
+    expect(result).toEqual({
+      ok: false,
+      message:
+        "Giao dịch này đã được ghi nhận là bị ngân hàng trả lại. Bộ phận tài chính của Give sẽ xử lý, bạn không giải trình nó như một khoản chi. Hãy tải lại trang.",
+    })
+    // The link was read with the organizer's token, in the same read as the transaction.
+    const read = state.userCalls.find((c) => c.target === "bank_transactions")
+    expect(String(op(read, "select")?.[0])).toContain("returned:returned_transfers!original_transaction_id(")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("refuses a returned transfer even when the money that came back cannot be read", async () => {
+    state.userHandler = reads({ returned: [{ linked_at: "2026-11-12T03:00:00Z", back: null }] })
+    const result = await explainDisbursement(CAMPAIGN, TX, null, form())
+    expect(result?.message).toContain("bị ngân hàng trả lại")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("still adds evidence to an explained transfer the bank returned", async () => {
+    state.userHandler = reads({
+      disbursement: explained(1),
+      returned: { linked_at: "2026-11-12T03:00:00Z", back: { amount: 300_000, booked_at: "2026-11-10T03:00:00Z" } },
+    })
+    const result = await addEvidence(CAMPAIGN, TX, null, form({ evidence_kind: "photo" }, [png()]))
+    expect(result?.ok).toBe(true)
   })
 
   it("rejects tampered ids, a signed-out user and invalid input", async () => {
