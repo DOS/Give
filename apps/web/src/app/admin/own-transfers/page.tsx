@@ -6,6 +6,7 @@ import { ActionForm, SubmitButton } from "@/components/forms"
 import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { Field } from "@/components/ui/Field"
+import { MachineId } from "@/components/ui/RefCode"
 import { requireSession } from "@/lib/auth/session"
 import { bankLabel } from "@/lib/banks"
 import { isStaff } from "@/lib/campaigns"
@@ -50,19 +51,12 @@ export default async function AdminOwnTransfersPage() {
     <AdminPage
       title="Chuyển sang tài khoản mới"
       intro={
-        <>
-          <p>
-            Sau khi đổi tài khoản nhận, người tổ chức thường chuyển số dư còn ở tài khoản cũ sang tài khoản mới. Sao kê
-            ghi hai giao dịch: tiền ra ở tài khoản cũ (như một khoản chi chờ giải trình) và tiền vào ở tài khoản mới
-            (như tiền chưa khớp), nên cùng một khoản tiền bị tính hai lần vào tổng đã nhận và một lần vào đã chi.
-          </p>
-          <p>
-            Đối chiếu sao kê của cả hai tài khoản (cùng số tiền, người chuyển và người nhận là hai tài khoản của chiến
-            dịch), rồi đánh dấu cặp giao dịch. Cặp đã đánh dấu không còn tính vào đã nhận hay đã chi, và sao kê công
-            khai ghi “{OWN_TRANSFER_LABEL}”. Căn cứ bạn ghi không công khai, nhưng người tổ chức chiến dịch xem được.
-            Không hoàn tác được. Khoản tiền ra nào là chi tiêu thật thì để người tổ chức giải trình như thường.
-          </p>
-        </>
+        <p>
+          Khi người tổ chức chuyển số dư từ tài khoản cũ sang tài khoản mới sau khi đổi tài khoản, cùng một khoản tiền
+          bị tính hai lần vào đã nhận và một lần vào đã chi. Đối chiếu sao kê hai tài khoản rồi đánh dấu cặp giao dịch:
+          cặp đó không còn tính vào đã nhận hay đã chi, và sao kê công khai ghi “{OWN_TRANSFER_LABEL}”. Khoản chi tiêu
+          thật thì để người tổ chức giải trình như thường.
+        </p>
       }
     >
       <AdminSection
@@ -127,8 +121,12 @@ function SwapCard({ swap, selfId }: { swap: SwapTransfers; selfId: string }) {
         )}
       </h3>
       <Facts columns={2}>
-        <Fact label="Tài khoản cũ">{accountText(swap.old_account)}</Fact>
-        <Fact label="Tài khoản mới">{accountText(swap.new_account)}</Fact>
+        <Fact label="Tài khoản cũ">
+          <span className="tabular-nums">{accountText(swap.old_account)}</span>
+        </Fact>
+        <Fact label="Tài khoản mới">
+          <span className="tabular-nums">{accountText(swap.new_account)}</span>
+        </Fact>
         <Fact label="Đổi tài khoản lúc">{formatDateTime(swap.decided_at)}</Fact>
         <Fact label="Tiền vào chưa khớp ở tài khoản mới">{swap.ins.length} giao dịch</Fact>
       </Facts>
@@ -171,10 +169,14 @@ function OutLeg({
           <p className="break-words text-fg">
             {out.counterparty_name ?? "Không rõ người nhận"}
             {out.counterparty_account_masked && (
-              <span className="ml-2 text-sm text-muted">TK {out.counterparty_account_masked}</span>
+              <span className="ml-2 text-sm text-muted tabular-nums">TK {out.counterparty_account_masked}</span>
             )}
           </p>
-          {out.description && <p className="text-sm break-words text-muted">{out.description}</p>}
+          {out.description && (
+            <p className="break-words">
+              <MachineId className="text-muted">{out.description}</MachineId>
+            </p>
+          )}
         </div>
         <p className="shrink-0 font-semibold text-fg tabular-nums">−{formatVnd(out.amount)}</p>
       </div>
@@ -194,7 +196,7 @@ function OutLeg({
         <ActionForm
           action={markOwnTransfer.bind(null, out.id)}
           confirm={`Đánh dấu khoản ${formatVnd(out.amount)} này và khoản tiền vào đã chọn là tiền chuyển sang tài khoản mới của chiến dịch? Không hoàn tác được.`}
-          className="space-y-4"
+          className="max-w-[640px] space-y-6"
         >
           <Field
             htmlFor={selectId}
@@ -223,7 +225,7 @@ function OutLeg({
               placeholder="Ví dụ: sao kê hai tài khoản cùng ngày, người tổ chức báo chuyển số dư"
             />
           </Field>
-          <SubmitButton>Đánh dấu là chuyển sang tài khoản mới</SubmitButton>
+          <SubmitButton>Đánh dấu cặp này</SubmitButton>
         </ActionForm>
       )}
     </li>
@@ -251,10 +253,10 @@ function MarkedPairs({ pairs }: { pairs: OwnTransfer[] }) {
               <td className="px-4 py-3 whitespace-nowrap tabular-nums">
                 {pair.out_tx ? formatVnd(pair.out_tx.amount) : "—"}
               </td>
-              <td className="px-4 py-3 text-muted">
-                {pair.out_tx ? bookedText(pair.out_tx) : "—"}
+              <td className="px-4 py-3 whitespace-nowrap text-muted">
+                Ra: {pair.out_tx ? bookedText(pair.out_tx) : "—"}
                 <br />
-                {pair.in_tx ? bookedText(pair.in_tx) : "—"}
+                Vào: {pair.in_tx ? bookedText(pair.in_tx) : "—"}
               </td>
               <td className="max-w-md px-4 py-3 break-words whitespace-pre-line">{pair.reason}</td>
               <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDateTime(pair.marked_at)}</td>

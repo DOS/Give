@@ -8,7 +8,7 @@ import { formatVnd } from "@/lib/format"
  */
 export function OwnTransferNote({ amount }: { amount: number }) {
   return (
-    <p className="text-sm text-muted">
+    <p className="max-w-[68ch] text-sm text-muted">
       Không tính <span data-figure="own_transfer">{formatVnd(amount)}</span> chuyển từ tài khoản cũ sang tài khoản mới
       của chiến dịch sau khi đổi tài khoản: đó là cùng một khoản tiền, không phải tiền ủng hộ mới hay khoản chi.
     </p>

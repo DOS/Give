@@ -226,7 +226,7 @@ function StatementItem({
         {ownTransfer && (
           <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
             <Badge tone="info">Chuyển tài khoản</Badge>
-            <span>
+            <span className="text-fg">
               {incoming
                 ? "Tiền từ tài khoản cũ của chiến dịch, không tính là tiền ủng hộ mới."
                 : "Chuyển sang tài khoản mới của chiến dịch, không tính là khoản chi."}
