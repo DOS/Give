@@ -31,9 +31,10 @@ admin page facts:
 organizer page facts:
   returned note: true
   return form offered: false
+  admin's private return reason shown: false
   match forms: 2
 
-End-to-end flow (production build): admin returned the interest explanation through the form; organizer matched the returned 300,000 by reference code.
+End-to-end flow (production build, after the review follow-ups): admin returned the interest explanation through the form; organizer matched the returned 300,000 by reference code.
 Ledger before: other_in 1548500, received 150000, unmatched_in 420000 (paid 2118500).
 Ledger after:  other_in 1500000, received 450000, unmatched_in 168500 (paid 2118500).
 Audit rows: bank_transaction.return_explanation 2 (seed + form), bank_transaction.manual_match 1.
