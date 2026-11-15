@@ -87,7 +87,9 @@ export interface UnmatchedRow extends UnmatchedTransaction {
 /**
  * Incoming, attributed transactions with neither a match nor an explanation,
  * newest first. Every such transaction is posted to 'unmatched_in' when it is
- * recorded (give.record_bank_transaction -> give.match_transaction).
+ * recorded (give.record_bank_transaction -> give.match_transaction). The
+ * incoming leg of a transfer between the campaign's own accounts (DOS/Give#84)
+ * is settled and cannot be matched, so it is left out.
  */
 export async function listUnmatched(
   db: Db,
@@ -97,6 +99,7 @@ export async function listUnmatched(
     .from("bank_transactions")
     .select(
       `${TX_COLUMNS}, transaction_matches(bank_transaction_id), inbound_explanations(bank_transaction_id), ` +
+        "own_in:own_account_transfers!in_transaction_id(id), " +
         "account:receiving_accounts!receiving_account_id(owner_user_id), " +
         "binding:account_bindings!binding_id(receiving_account_id)",
       { count: "exact" }
@@ -105,6 +108,7 @@ export async function listUnmatched(
     .not("campaign_id", "is", null)
     .is("transaction_matches", null)
     .is("inbound_explanations", null)
+    .is("own_in", null)
   if (campaignId) query = query.eq("campaign_id", campaignId)
   const { data, error, count } = await query.order("booked_at", { ascending: false }).limit(limit)
   if (error) throw error
@@ -112,15 +116,18 @@ export async function listUnmatched(
     (data ?? []) as unknown as (UnmatchedTransaction & {
       transaction_matches?: unknown
       inbound_explanations?: unknown
+      own_in?: unknown
       account?: { owner_user_id: string } | { owner_user_id: string }[] | null
       binding?: { receiving_account_id: string } | { receiving_account_id: string }[] | null
     })[]
-  ).map(({ transaction_matches: _match, inbound_explanations: _explanation, account, binding, ...tx }) => ({
-    ...tx,
-    amount: Number(tx.amount),
-    account_owner_id: one(account)?.owner_user_id ?? null,
-    binding_account_id: one(binding)?.receiving_account_id ?? null,
-  }))
+  ).map(
+    ({ transaction_matches: _match, inbound_explanations: _explanation, own_in: _pair, account, binding, ...tx }) => ({
+      ...tx,
+      amount: Number(tx.amount),
+      account_owner_id: one(account)?.owner_user_id ?? null,
+      binding_account_id: one(binding)?.receiving_account_id ?? null,
+    })
+  )
   return { transactions, total: count ?? transactions.length }
 }
 

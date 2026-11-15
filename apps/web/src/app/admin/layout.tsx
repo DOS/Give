@@ -51,6 +51,7 @@ async function adminLinks(): Promise<AdminNavLink[]> {
       ? [
           { href: "/admin/accounts", label: "Tài khoản nhận" },
           { href: "/admin/account-swaps", label: "Đổi tài khoản" },
+          { href: "/admin/own-transfers", label: "Chuyển tài khoản" },
           { href: "/admin/statements", label: "Sao kê" },
           { href: "/admin/unmatched", label: "Chưa khớp" },
           { href: "/admin/inbound", label: "Tiền vào bị dừng" },

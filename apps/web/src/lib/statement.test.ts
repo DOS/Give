@@ -52,6 +52,7 @@ const viewRow = {
   other_in_amount: "250000",
   refund_owed_amount: "40000",
   backers_count: 2,
+  own_transfer_amount: "3000000",
 }
 
 function selected(call: Call | undefined): string {
@@ -85,7 +86,10 @@ describe("money totals", () => {
       backers_count: 2,
       payments_stopped_at: null,
       payments_stopped_note: null,
+      own_transfer_amount: 3_000_000,
     })
+    // paid/disbursed come from the view as they are: it already leaves an own-account transfer out of both (DOS/Give#84).
+    expect(selected(calls[0])).toContain("own_transfer_amount")
   })
 
   it("returns null for a campaign the view does not show", async () => {
@@ -237,6 +241,27 @@ describe("public statement", () => {
     expect(counterpartyLabel({ ...row, recipient: null, explained: false })).toBe("Chưa rõ người nhận")
   })
 
+  it("labels both legs of a transfer between the campaign's own accounts by the public label only (DOS/Give#84)", () => {
+    const base = { matched: false, donor_name: null, donor_anonymous: null, recipient: null }
+    const label = "Chuyển sang tài khoản mới"
+    // The paired outgoing leg counts as explained but has no recipient: it is not "Không công khai".
+    expect(counterpartyLabel({ ...base, direction: "out", explained: true, own_transfer_label: label })).toBe(label)
+    expect(counterpartyLabel({ ...base, direction: "in", explained: null, own_transfer_label: label })).toBe(label)
+    expect(counterpartyLabel({ ...base, direction: "in", explained: null, own_transfer_label: null })).toBe(
+      "Chưa khớp với lượt ủng hộ nào"
+    )
+  })
+
+  it("reads the own-transfer columns, never finance's reason (DOS/Give#84)", async () => {
+    const calls: Call[] = []
+    await listStatement(fakeDb(() => ({ data: [] }), calls) as never, CAMPAIGN)
+    const columns = selected(calls[0])
+      .split(",")
+      .map((c) => c.trim())
+    expect(columns).toEqual(expect.arrayContaining(["own_transfer_id", "own_transfer_at", "own_transfer_label"]))
+    expect(columns.join(",")).not.toMatch(/reason|marked_by/)
+  })
+
   it("never asks the view for the bank account-holder name", async () => {
     const calls: Call[] = []
     await listStatement(fakeDb(() => ({ data: [] }), calls) as never, CAMPAIGN)
@@ -298,7 +323,12 @@ describe("organizer reads", () => {
       ["campaign_id", CAMPAIGN],
       ["direction", "out"],
     ])
-    expect(op(calls[0], "is")).toEqual(["disbursements", null])
+    // Neither explained nor paired as a transfer to the campaign's new account (DOS/Give#84).
+    expect(calls[0].ops.filter(([n]) => n === "is").map((o) => o.slice(1))).toEqual([
+      ["disbursements", null],
+      ["own_out", null],
+    ])
+    expect(selected(calls[0])).toContain("own_out:own_account_transfers!out_transaction_id(id)")
     expect(op(calls[0], "limit")).toBeUndefined()
     expect(rows).toEqual([{ id: TX, amount: 250_000 }])
   })

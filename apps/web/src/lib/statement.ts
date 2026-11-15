@@ -58,12 +58,18 @@ export interface MoneyTotals {
    */
   payments_stopped_at: string | null
   payments_stopped_note: string | null
+  /**
+   * Money moved from the campaign's old account to its new one after an
+   * account swap, as finance paired it (DOS/Give#84). Counted in neither
+   * paid_amount nor disbursed_amount: both legs' ledger posts are reversed.
+   */
+  own_transfer_amount: number
 }
 
 const TOTALS_COLUMNS =
   "id, type, asset, goal_amount, pledged_amount, paid_amount, disbursable_amount, disbursed_amount, " +
   "refunded_amount, unexplained_out_amount, unexplained_out_count, supporters_count, other_in_amount, " +
-  "refund_owed_amount, backers_count, payments_stopped_at, payments_stopped_note"
+  "refund_owed_amount, backers_count, payments_stopped_at, payments_stopped_note, own_transfer_amount"
 
 type TotalsRow = Omit<MoneyTotals, "campaign_id"> & { id: string }
 
@@ -92,6 +98,7 @@ function toTotals(row: TotalsRow): MoneyTotals {
     backers_count: num(row.backers_count),
     payments_stopped_at: row.payments_stopped_at ?? null,
     payments_stopped_note: row.payments_stopped_note ?? null,
+    own_transfer_amount: num(row.own_transfer_amount),
   }
 }
 
@@ -176,6 +183,15 @@ export interface StatementRow {
   /** For an incoming row explained as not a donation, its kind (INBOUND_EXPLANATION_KINDS); null otherwise. */
   in_explanation: string | null
   in_explained_at: string | null
+  /**
+   * Both legs of a transfer between the campaign's own accounts after a swap
+   * (DOS/Give#84): the pair id, when finance marked it, and the public label
+   * "Chuyển sang tài khoản mới"; null otherwise. A paired outgoing leg counts
+   * as explained.
+   */
+  own_transfer_id: string | null
+  own_transfer_at: string | null
+  own_transfer_label: string | null
 }
 
 // counterparty_name is left out on purpose: the bank's account-holder name is
@@ -183,7 +199,7 @@ export interface StatementRow {
 const STATEMENT_COLUMNS =
   "id, direction, asset, amount, booked_at, booked_date_only, after_close, matched, " +
   "counterparty_account_masked, explained, purpose, category, recipient, is_refund, explained_at, " +
-  "donor_name, donor_anonymous, in_explanation, in_explained_at"
+  "donor_name, donor_anonymous, in_explanation, in_explained_at, own_transfer_id, own_transfer_at, own_transfer_label"
 
 /**
  * Kinds of incoming money that is not a donation, as finance staff explain
@@ -294,12 +310,14 @@ export const ANONYMOUS_LABEL = "Ẩn danh"
  * know (owner decision on DOS/Give#58): for money in, the donor's chosen
  * display name or "Ẩn danh", never the bank account-holder name; an
  * unmatched transfer has no name, and one explained as not a donation shows
- * its kind only.
+ * its kind only. Both legs of a transfer between the campaign's own accounts
+ * show the public label only ("Chuyển sang tài khoản mới", DOS/Give#84).
  */
 export function counterpartyLabel(
   row: Pick<StatementRow, "direction" | "matched" | "donor_name" | "donor_anonymous" | "recipient" | "explained"> &
-    Partial<Pick<StatementRow, "in_explanation">>
+    Partial<Pick<StatementRow, "in_explanation" | "own_transfer_label">>
 ): string {
+  if (row.own_transfer_label) return row.own_transfer_label
   if (row.direction === "out") {
     if (!row.explained) return "Chưa rõ người nhận"
     return row.recipient ?? "Không công khai"
@@ -506,21 +524,28 @@ function toOutgoing<T extends OutgoingTransaction>(tx: T): T {
 
 /**
  * Every unexplained outgoing transaction of a campaign, oldest first, so none
- * can hide behind a page limit while it counts publicly as unexplained.
+ * can hide behind a page limit while it counts publicly as unexplained. A
+ * transfer finance paired as moving the money to the campaign's new account
+ * (DOS/Give#84) is settled and cannot be explained, so it is left out.
  */
 export async function listPendingOutgoing(db: Db, campaignId: string): Promise<OutgoingTransaction[]> {
   const { data, error } = await db
     .from("bank_transactions")
-    .select(`${OUTGOING_COLUMNS}, disbursements(bank_transaction_id)`)
+    .select(
+      `${OUTGOING_COLUMNS}, disbursements(bank_transaction_id), own_out:own_account_transfers!out_transaction_id(id)`
+    )
     .eq("campaign_id", campaignId)
     .eq("direction", "out")
     .is("disbursements", null)
+    .is("own_out", null)
     .order("booked_at", { ascending: true })
   if (error) throw error
-  return ((data ?? []) as unknown as (OutgoingTransaction & { disbursements?: unknown })[]).map((row) => {
-    const { disbursements: _embed, ...tx } = row
-    return toOutgoing(tx)
-  })
+  return ((data ?? []) as unknown as (OutgoingTransaction & { disbursements?: unknown; own_out?: unknown })[]).map(
+    (row) => {
+      const { disbursements: _embed, own_out: _pair, ...tx } = row
+      return toOutgoing(tx)
+    }
+  )
 }
 
 /** Explained outgoing transactions with their explanation and evidence, newest first. */

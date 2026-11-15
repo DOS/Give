@@ -107,6 +107,15 @@ const GIVE_MESSAGES: Record<string, string> = {
     "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch này không xử lý được cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch.",
   GIVE_ACCOUNT_HISTORY_OPEN:
     "Tài khoản này đã được đổi ra khỏi một chiến dịch mà phần tiền chưa xong (chiến dịch chưa kết thúc đủ 30 ngày, hoặc còn giao dịch chưa đối chiếu, chưa giải trình, hoặc còn dòng sao kê chưa ghi nhận), nên chưa dùng cho chiến dịch khác được.",
+  // Transfers between a campaign's own accounts after a swap (DOS/Give#84);
+  // the finance action words them for its context (OWN_TRANSFER_MESSAGES).
+  GIVE_TRANSACTION_OWN_TRANSFER:
+    "Giao dịch này đã được đánh dấu là tiền chuyển từ tài khoản cũ sang tài khoản mới của chính chiến dịch, nên không giải trình, khớp hay hoàn tiền trên nó được nữa.",
+  GIVE_TRANSACTION_ALREADY_TRANSFERRED:
+    "Một trong hai giao dịch đã nằm trong một cặp chuyển tài khoản khác. Hãy tải lại trang.",
+  GIVE_OWN_TRANSFER_CAMPAIGN_MISMATCH: "Hai giao dịch thuộc hai chiến dịch khác nhau.",
+  GIVE_OWN_TRANSFER_AMOUNT_MISMATCH: "Hai giao dịch phải cùng số tiền và cùng loại tiền.",
+  GIVE_OWN_TRANSFER_NOT_SWAPPED: "Hai tài khoản không nối với nhau bằng một lần đổi tài khoản đã duyệt của chiến dịch.",
   // Reward tiers and fulfillment of back campaigns (DOS/Give#30, #83).
   GIVE_REWARD_TIERS_BACK_ONLY: "Chỉ dự án có quà tặng mới có các mức phần thưởng.",
   GIVE_REWARD_TIER_INVALID: "Thông tin phần thưởng không hợp lệ.",
@@ -200,6 +209,36 @@ export const OPEN_MESSAGES: Record<string, string> = {
 export const SEND_BACK_MESSAGES: Record<string, string> = {
   GIVE_TRANSITION_NOT_ALLOWED:
     "Không yêu cầu chỉnh sửa được: chiến dịch vừa đổi trạng thái (có thể đã được mở công khai). Hãy tải lại trang.",
+}
+
+/**
+ * Every refusal of give.mark_own_account_transfer (DOS/Give#84), worded for
+ * finance pairing money out of a campaign's old account with the same money
+ * into its new account after a swap.
+ */
+export const OWN_TRANSFER_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED:
+    "Chỉ nhân viên tài chính hoặc quản trị viên mới đánh dấu được tiền chuyển giữa các tài khoản của chiến dịch.",
+  GIVE_REASON_REQUIRED: "Ghi căn cứ đã kiểm tra (ví dụ: dòng sao kê của cả hai tài khoản, tin nhắn của người tổ chức).",
+  GIVE_REASON_TOO_LONG: "Căn cứ tối đa 1000 ký tự.",
+  GIVE_TRANSACTION_NOT_FOUND: "Không tìm thấy một trong hai giao dịch. Hãy tải lại trang.",
+  GIVE_TRANSACTION_NOT_OUTBOUND: "Khoản ở tài khoản cũ phải là tiền ra.",
+  GIVE_TRANSACTION_NOT_INBOUND: "Khoản ở tài khoản mới phải là tiền vào.",
+  GIVE_TRANSACTION_UNATTRIBUTED: "Một trong hai giao dịch không thuộc chiến dịch nào, nên không đánh dấu được.",
+  GIVE_OWN_TRANSFER_CAMPAIGN_MISMATCH:
+    "Hai giao dịch thuộc hai chiến dịch khác nhau, nên không phải tiền chuyển nội bộ.",
+  GIVE_SELF_REVIEW: "Không thể đánh dấu tiền của chiến dịch do chính bạn tổ chức; một nhân viên khác cần xử lý.",
+  GIVE_TRANSACTION_ALREADY_TRANSFERRED:
+    "Một trong hai giao dịch đã nằm trong một cặp chuyển tài khoản khác. Hãy tải lại trang.",
+  GIVE_OWN_TRANSFER_AMOUNT_MISMATCH: "Hai giao dịch phải cùng số tiền và cùng loại tiền.",
+  GIVE_OWN_TRANSFER_NOT_SWAPPED:
+    "Hai tài khoản không nối với nhau bằng một lần đổi tài khoản đã duyệt của chiến dịch: khoản tiền ra phải ở tài khoản cũ đã được đổi đi, khoản tiền vào phải ở tài khoản mới được gắn từ lúc đổi trở đi.",
+  GIVE_DISBURSEMENT_ALREADY_EXPLAINED:
+    "Người tổ chức đã giải trình khoản tiền ra này là một khoản chi. Giải trình đã công khai thì không đổi được.",
+  GIVE_TRANSACTION_ALREADY_MATCHED: "Khoản tiền vào này đã được khớp với một lượt ủng hộ.",
+  GIVE_TRANSACTION_ALREADY_EXPLAINED: "Khoản tiền vào này đã được giải trình là tiền không phải ủng hộ.",
+  GIVE_LEDGER_POST_MISSING:
+    "Một trong hai giao dịch không còn chờ xử lý trong sổ: chưa được ghi sổ, hoặc đã được xử lý theo cách khác (ví dụ đã ghi là tiền bị trả lại). Hãy tải lại trang; nếu vẫn lỗi, báo đội ngũ kỹ thuật.",
 }
 
 /** Result shape that form actions return to useActionState. */

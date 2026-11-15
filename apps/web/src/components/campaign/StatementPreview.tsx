@@ -1,6 +1,7 @@
 import Link from "next/link"
 
 import { SummaryCells } from "@/components/campaign/SummaryCells"
+import { OwnTransferNote } from "@/components/OwnTransferNote"
 import { PledgeTotals } from "@/components/PledgeTotals"
 import { Badge } from "@/components/ui/Badge"
 import { Callout } from "@/components/ui/Callout"
@@ -16,6 +17,8 @@ function rowText(row: StatementRow): string {
 }
 
 function RowNote({ row }: { row: StatementRow }) {
+  // A transfer between the campaign's own accounts after a swap (DOS/Give#84).
+  if (row.own_transfer_label) return <Badge tone="info">Chuyển tài khoản</Badge>
   if (row.direction === "in") return row.in_explanation ? <Badge>Không phải tiền ủng hộ</Badge> : null
   if (row.is_refund) return <Badge>Hoàn tiền</Badge>
   return row.explained ? <Badge tone="brand">Đã giải trình</Badge> : <Badge tone="warning">Chưa giải trình</Badge>
@@ -24,7 +27,9 @@ function RowNote({ row }: { row: StatementRow }) {
 function Amount({ row }: { row: StatementRow }) {
   const incoming = row.direction === "in"
   return (
-    <span className={`font-semibold whitespace-nowrap tabular-nums ${incoming ? "text-primary" : "text-fg"}`}>
+    <span
+      className={`font-semibold whitespace-nowrap tabular-nums ${incoming && !row.own_transfer_label ? "text-primary" : "text-fg"}`}
+    >
       {incoming ? "+" : "−"}
       {formatVnd(row.amount)}
     </span>
@@ -82,6 +87,7 @@ export function StatementPreview({
             phí hoặc trả lãi), đã được Give giải trình trên sao kê.
           </p>
         )}
+        {totals.own_transfer_amount > 0 && <OwnTransferNote amount={totals.own_transfer_amount} />}
         {totals.unexplained_out_count > 0 && (
           <Callout tone="warning">
             <p>

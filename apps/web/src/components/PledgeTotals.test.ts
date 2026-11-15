@@ -25,6 +25,7 @@ const totals: MoneyTotals = {
   backers_count: 1,
   payments_stopped_at: null,
   payments_stopped_note: null,
+  own_transfer_amount: 0,
 }
 
 function figure(html: string, name: string): string | undefined {

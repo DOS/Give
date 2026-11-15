@@ -205,6 +205,9 @@ function StatementItem({
 }) {
   const incoming = row.direction === "in"
   const category = categoryLabel(row.category)
+  // A transfer between the campaign's own accounts after a swap (DOS/Give#84):
+  // neither a donation nor spending, so neither green nor an explanation block.
+  const ownTransfer = Boolean(row.own_transfer_label)
 
   return (
     <li className="flex flex-wrap items-start justify-between gap-3 p-4">
@@ -220,7 +223,18 @@ function StatementItem({
             <span className="ml-2 text-sm font-normal text-muted">TK {row.counterparty_account_masked}</span>
           )}
         </p>
-        {!incoming && row.explained && (
+        {ownTransfer && (
+          <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
+            <Badge tone="info">Chuyển tài khoản</Badge>
+            <span className="text-fg">
+              {incoming
+                ? "Tiền từ tài khoản cũ của chiến dịch, không tính là tiền ủng hộ mới."
+                : "Chuyển sang tài khoản mới của chiến dịch, không tính là khoản chi."}
+            </span>
+            {row.own_transfer_at && <span>Give xác nhận ngày {formatDate(row.own_transfer_at)}</span>}
+          </p>
+        )}
+        {!ownTransfer && !incoming && row.explained && (
           <div className="text-fg">
             <p className="break-words">{row.purpose}</p>
             <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
@@ -231,16 +245,20 @@ function StatementItem({
             <PublicEvidenceList evidence={evidence} report={report} loginHref={loginHref} />
           </div>
         )}
-        {!incoming && !row.explained && <p className="text-warning">Người tổ chức chưa giải trình khoản chi này.</p>}
-        {incoming && row.in_explanation && (
+        {!ownTransfer && !incoming && !row.explained && (
+          <p className="text-warning">Người tổ chức chưa giải trình khoản chi này.</p>
+        )}
+        {!ownTransfer && incoming && row.in_explanation && (
           <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
             <Badge>Không phải tiền ủng hộ</Badge>
             {row.in_explained_at && <span>Give giải trình ngày {formatDate(row.in_explained_at)}</span>}
           </p>
         )}
-        {incoming && row.after_close && <p className="text-sm text-warning">Tiền về sau khi chiến dịch đã kết thúc.</p>}
+        {incoming && !ownTransfer && row.after_close && (
+          <p className="text-sm text-warning">Tiền về sau khi chiến dịch đã kết thúc.</p>
+        )}
       </div>
-      <p className={`shrink-0 font-semibold tabular-nums ${incoming ? "text-primary" : "text-fg"}`}>
+      <p className={`shrink-0 font-semibold tabular-nums ${incoming && !ownTransfer ? "text-primary" : "text-fg"}`}>
         {incoming ? "+" : "−"}
         {formatVnd(row.amount)}
       </p>
