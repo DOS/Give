@@ -3,6 +3,7 @@ import type { Db } from "./campaigns"
 import { dbErrorMessage } from "./errors"
 import { formatVnd } from "./format"
 import { isUuid } from "./ids"
+import { campaignOrganizers } from "./reconciliation"
 import { inboundExplanationLabel } from "./statement"
 
 /**
@@ -587,21 +588,28 @@ export interface AccountBindingView {
   organizer_id: string | null
 }
 
-/** Every binding (current and past) of the accounts, with its campaign's organizer (finance/admin read all). */
+/**
+ * Every binding (current and past) of the accounts, with its campaign's
+ * organizer. Finance/admin read every binding; campaigns.organizer_id is not
+ * readable by authenticated, so it comes through give.managed_campaigns
+ * (campaignOrganizers), which returns every campaign to staff.
+ */
 export async function listAccountBindings(db: Db, accountIds: readonly string[]): Promise<AccountBindingView[]> {
   const unique = [...new Set(accountIds)]
   if (unique.length === 0) return []
   const { data, error } = await db
     .from("account_bindings")
-    .select("receiving_account_id, bound_at, released_at, campaign:campaigns(organizer_id)")
+    .select("receiving_account_id, campaign_id, bound_at, released_at")
     .in("receiving_account_id", unique)
   if (error) throw error
-  type Raw = Omit<AccountBindingView, "organizer_id"> & {
-    campaign: { organizer_id: string } | { organizer_id: string }[] | null
-  }
-  return ((data ?? []) as unknown as Raw[]).map(({ campaign, ...binding }) => ({
+  const bindings = (data ?? []) as (Omit<AccountBindingView, "organizer_id"> & { campaign_id: string })[]
+  const organizers = await campaignOrganizers(
+    db,
+    bindings.map((b) => b.campaign_id)
+  )
+  return bindings.map(({ campaign_id, ...binding }) => ({
     ...binding,
-    organizer_id: (Array.isArray(campaign) ? campaign[0] : campaign)?.organizer_id ?? null,
+    organizer_id: organizers.get(campaign_id) ?? null,
   }))
 }
 

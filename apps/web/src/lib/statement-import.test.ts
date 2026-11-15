@@ -471,24 +471,29 @@ describe("account owners and bindings", () => {
     expect(op(calls[0], "in")).toEqual(["id", [ACCOUNT]])
   })
 
-  it("reads every binding of the accounts with its campaign's organizer", async () => {
+  it("reads every binding of the accounts, and the organizers through managed_campaigns", async () => {
     const calls: Call[] = []
-    const db = fakeDb(
-      () => ({
-        data: [
-          { receiving_account_id: ACCOUNT, bound_at: "a", released_at: null, campaign: { organizer_id: USER } },
-          { receiving_account_id: ACCOUNT, bound_at: "b", released_at: "c", campaign: null },
-        ],
-      }),
-      calls
-    ) as unknown as Db
+    const db = fakeDb((call) => {
+      if (call.target === "account_bindings") {
+        return {
+          data: [
+            { receiving_account_id: ACCOUNT, campaign_id: "c1", bound_at: "a", released_at: null },
+            { receiving_account_id: ACCOUNT, campaign_id: "c2", bound_at: "b", released_at: "c" },
+          ],
+        }
+      }
+      return { data: [{ id: "c1", organizer_id: USER }] }
+    }, calls) as unknown as Db
     expect(await listAccountBindings(db, [ACCOUNT])).toEqual([
       { receiving_account_id: ACCOUNT, bound_at: "a", released_at: null, organizer_id: USER },
       { receiving_account_id: ACCOUNT, bound_at: "b", released_at: "c", organizer_id: null },
     ])
-    expect(String(op(calls[0], "select")?.[0])).toContain("campaign:campaigns(organizer_id)")
+    // authenticated may not read campaigns.organizer_id: never embed it.
+    expect(String(op(calls[0], "select")?.[0])).not.toContain("campaigns")
     expect(calls[0].ops).not.toEqual(expect.arrayContaining([["is", "released_at", null]]))
+    expect(calls[1].target).toBe("rpc:managed_campaigns")
+    expect(op(calls[1], "in")).toEqual(["id", ["c1", "c2"]])
     expect(await listAccountBindings(db, [])).toEqual([])
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(2)
   })
 })
