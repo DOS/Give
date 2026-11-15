@@ -50,7 +50,10 @@ describe("own contributions (DOS/Give#199)", () => {
     expect(OWN_CONTRIBUTION_MESSAGES.matchAsOrganizer).toContain("nhân viên tài chính của Give")
     expect(OWN_CONTRIBUTION_MESSAGES.matchAsStaff).toContain("Nhờ một nhân viên tài chính khác")
     expect(OWN_CONTRIBUTION_MESSAGES.correction).toContain("Nhờ một quản trị viên khác")
-    expect(OWN_CONTRIBUTION_MESSAGES.refund).toContain("đội ngũ Give")
+    // The organizer is sent to finance, who records the refund on /admin/refunds (DOS/Give#203).
+    expect(OWN_CONTRIBUTION_MESSAGES.refund).toContain("báo bộ phận tài chính của Give")
+    expect(OWN_CONTRIBUTION_MESSAGES.refund).toContain("ghi nó là hoàn tiền cho lượt của bạn")
+    expect(OWN_CONTRIBUTION_MESSAGES.refundAsStaff).toContain("Nhờ một nhân viên tài chính khác")
     expect(OWN_CONTRIBUTION_MESSAGES.returnedRefund).toContain("lại nợ khoản hoàn đó cho bạn")
   })
 })

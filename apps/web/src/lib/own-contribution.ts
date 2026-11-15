@@ -51,8 +51,13 @@ export const OWN_CONTRIBUTION_MESSAGES = {
   matchAsStaff: `Bạn không khớp được tiền với lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Nhờ một nhân viên tài chính khác khớp khoản này.`,
   /** An admin correcting an explanation on /admin/unmatched, when the chosen contribution is theirs. */
   correction: `Lượt ủng hộ đã chọn là của chính bạn (${OWN_CONTRIBUTION_SCOPE}), nên bạn không chuyển khoản tiền này sang lượt đó được. Nhờ một quản trị viên khác sửa giải trình.`,
-  /** The organizer explaining a refund on /me/campaigns/[id]/disbursements. */
-  refund: `Bạn không ghi được khoản hoàn tiền cho lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Nếu cần hoàn tiền cho lượt đó, hãy liên hệ đội ngũ Give.`,
+  /**
+   * The organizer explaining a refund on /me/campaigns/[id]/disbursements.
+   * Finance records it on /admin/refunds (DOS/Give#203).
+   */
+  refund: `Bạn không ghi được khoản hoàn tiền cho lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Đừng giải trình khoản chuyển này ở đây: hãy báo bộ phận tài chính của Give, họ sẽ ghi nó là hoàn tiền cho lượt của bạn. Đến lúc đó khoản chuyển vẫn ở mục “Chưa giải trình”.`,
+  /** Finance/admin staff recording a refund on /admin/refunds/[id] (DOS/Give#203). */
+  refundAsStaff: `Bạn không ghi được khoản hoàn tiền cho lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Nhờ một nhân viên tài chính khác ghi khoản này.`,
   /** Finance/admin staff linking a returned refund on /admin/unmatched. */
   returnedRefund: `Khoản chuyển đi đã chọn là khoản hoàn tiền cho lượt ủng hộ của chính bạn (${OWN_CONTRIBUTION_SCOPE}). Ghi nhận tiền bị trả lại sẽ làm chiến dịch lại nợ khoản hoàn đó cho bạn, nên bạn không làm được. Nhờ một nhân viên tài chính khác.`,
 } as const

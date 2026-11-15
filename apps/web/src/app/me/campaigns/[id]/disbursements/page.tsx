@@ -325,8 +325,9 @@ function ExplainForm({
         </select>
         <p id={`${p}-refund-hint`} className="hint">
           Chỉ chọn khi loại khoản chi là “Hoàn tiền cho người ủng hộ”. Khoản đó được tính vào “đã hoàn lại” thay vì “đã
-          chi”. Lượt ủng hộ của chính bạn ({OWN_CONTRIBUTION_SCOPE}) không có trong danh sách. Nếu cần hoàn tiền cho
-          lượt đó, hãy liên hệ đội ngũ Give.
+          chi”. Lượt ủng hộ của chính bạn ({OWN_CONTRIBUTION_SCOPE}) không có trong danh sách. Nếu khoản chuyển này là
+          hoàn tiền cho lượt đó, đừng giải trình ở đây: hãy báo bộ phận tài chính của Give, họ sẽ ghi nó là hoàn tiền
+          cho lượt của bạn.
         </p>
       </div>
       <EvidenceFields idPrefix={p} label="Ảnh chứng từ (hóa đơn, biên nhận, ảnh trao tặng)" />

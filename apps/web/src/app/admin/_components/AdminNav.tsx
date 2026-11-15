@@ -25,7 +25,15 @@ export function AdminNav({ links }: { links: readonly AdminNavLink[] }) {
           Quản trị Give
         </>
       }
-      items={links.map((link) => ({ ...link, current: pathname === link.href }))}
+      items={links.map((link) => ({ ...link, current: isCurrent(pathname, link.href) }))}
     />
   )
+}
+
+/**
+ * The tab of the page, or of the page a sub-page belongs to (/admin/refunds/[id]
+ * under "Hoàn tiền"). "/admin" itself matches only exactly.
+ */
+export function isCurrent(pathname: string, href: string): boolean {
+  return pathname === href || (href !== "/admin" && pathname.startsWith(`${href}/`))
 }
