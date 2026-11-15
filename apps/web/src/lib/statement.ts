@@ -234,6 +234,16 @@ export function isInboundExplanationKind(value: unknown): value is InboundExplan
   return typeof value === "string" && Object.hasOwn(INBOUND_EXPLANATION_KINDS, value)
 }
 
+/**
+ * An incoming row explained as not a donation. A corrected explanation
+ * (DOS/Give#71) is superseded by its match: give.public_statement then
+ * returns the row as matched with no in_explanation, and a matched row is
+ * never shown as "not a donation", so the money reads once, as a donation.
+ */
+export function explainedNotDonation(row: Pick<StatementRow, "direction" | "matched" | "in_explanation">): boolean {
+  return row.direction === "in" && !row.matched && !!row.in_explanation
+}
+
 /** Label of a stored kind; a kind this app does not know yet still reads as "not a donation". */
 export function inboundExplanationLabel(kind: string): string {
   return isInboundExplanationKind(kind) ? INBOUND_EXPLANATION_KINDS[kind] : INBOUND_EXPLANATION_KINDS.other

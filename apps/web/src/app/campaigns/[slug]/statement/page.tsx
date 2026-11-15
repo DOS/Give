@@ -17,6 +17,7 @@ import { SLUG_PATTERN } from "@/lib/slug"
 import {
   categoryLabel,
   counterpartyLabel,
+  explainedNotDonation,
   getMoneyTotals,
   listPublicEvidence,
   listStatement,
@@ -262,7 +263,7 @@ function StatementItem({
         {!ownTransfer && !incoming && !row.explained && (
           <p className="text-warning">Người tổ chức chưa giải trình khoản chi này.</p>
         )}
-        {!ownTransfer && incoming && row.in_explanation && (
+        {!ownTransfer && explainedNotDonation(row) && (
           <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
             <Badge>Không phải tiền ủng hộ</Badge>
             {row.in_explained_at && <span>Give giải trình ngày {formatDate(row.in_explained_at)}</span>}

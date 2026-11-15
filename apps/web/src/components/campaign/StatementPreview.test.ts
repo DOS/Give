@@ -161,3 +161,40 @@ describe("StatementPreview: a bank fee on a returned refund (DOS/Give#195)", () 
     expect(html).not.toContain("phí")
   })
 })
+
+describe("StatementPreview: a corrected explanation (DOS/Give#71)", () => {
+  it("shows the money once, as a donation, never also as not a donation", () => {
+    // give.public_statement after a correction: matched, the donor's name, no explanation kind.
+    const corrected = row({ id: "in", direction: "in", amount: 300_000, matched: true, donor_name: "Cô Ba" })
+    const html = renderToStaticMarkup(createElement(StatementPreview, { slug: "a", totals, rows: [corrected] }))
+    expect(html).toContain("Cô Ba")
+    expect(html).not.toContain("Không phải tiền ủng hộ")
+    // Exactly what any matched donation of the same amount shows: one row, counted once.
+    const donation = row({ id: "in", direction: "in", amount: 300_000, matched: true, donor_name: "Cô Ba" })
+    expect(html).toBe(renderToStaticMarkup(createElement(StatementPreview, { slug: "a", totals, rows: [donation] })))
+    // Even if a row still carried the superseded kind, a matched row reads as a donation only.
+    const stale = renderToStaticMarkup(
+      createElement(StatementPreview, {
+        slug: "a",
+        totals,
+        rows: [{ ...corrected, in_explanation: "organizer_top_up", in_explained_at: "2026-11-02T00:00:00Z" }],
+      })
+    )
+    expect(stale).toContain("Cô Ba")
+    expect(stale).not.toContain("Không phải tiền ủng hộ")
+    expect(stale).not.toContain("Người tổ chức nạp thêm tiền")
+    expect(stale).toBe(html)
+  })
+
+  it("still labels an uncorrected explanation as not a donation", () => {
+    const html = renderToStaticMarkup(
+      createElement(StatementPreview, {
+        slug: "a",
+        totals,
+        rows: [row({ id: "in", direction: "in", in_explanation: "organizer_top_up" })],
+      })
+    )
+    expect(html).toContain("Không phải tiền ủng hộ")
+    expect(html).toContain("Người tổ chức nạp thêm tiền")
+  })
+})

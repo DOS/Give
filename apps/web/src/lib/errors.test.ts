@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  CORRECT_EXPLANATION_MESSAGES,
   dbErrorMessage,
   giveErrorCode,
   OPEN_MESSAGES,
@@ -113,5 +114,45 @@ describe("own-account transfer refusals (DOS/Give#84)", () => {
     }
     // An organizer explaining a paired outgoing leg learns why it is refused.
     expect(dbErrorMessage({ code: "23514", message: "GIVE_TRANSACTION_OWN_TRANSFER" })).toContain("tài khoản mới")
+  })
+})
+
+describe("explanation correction refusals (DOS/Give#71)", () => {
+  // Every code give.correct_inbound_explanation raises (DOS-Me 20261116090000).
+  const CODES = [
+    "GIVE_NOT_ALLOWED",
+    "GIVE_CONTRIBUTION_REQUIRED",
+    "GIVE_REASON_REQUIRED",
+    "GIVE_REASON_TOO_LONG",
+    "GIVE_TRANSACTION_NOT_FOUND",
+    "GIVE_TRANSACTION_NOT_INBOUND",
+    "GIVE_TRANSACTION_UNATTRIBUTED",
+    "GIVE_SELF_REVIEW",
+    "GIVE_EXPLANATION_ALREADY_CORRECTED",
+    "GIVE_TRANSACTION_NOT_EXPLAINED",
+    "GIVE_TRANSACTION_ALREADY_MATCHED",
+    "GIVE_LEDGER_POST_MISSING",
+    "GIVE_ACCOUNT_OWNER_MISMATCH",
+    "GIVE_CONTRIBUTION_CAMPAIGN_MISMATCH",
+    "GIVE_CONTRIBUTION_NOT_MATCHABLE",
+  ]
+  const generic = dbErrorMessage(null)
+
+  it("words every code for the admin, never the generic message", () => {
+    for (const code of CODES) {
+      const message = dbErrorMessage({ code: "23514", message: `${code}: detail` }, CORRECT_EXPLANATION_MESSAGES)
+      expect(message, code).not.toBe(generic)
+      expect(message, code).toBe(CORRECT_EXPLANATION_MESSAGES[code])
+    }
+    expect(Object.keys(CORRECT_EXPLANATION_MESSAGES).sort()).toEqual([...CODES].sort())
+  })
+
+  it("words self-review and the reason limit for this action, not for account verification", () => {
+    expect(dbErrorMessage({ message: "GIVE_SELF_REVIEW" }, CORRECT_EXPLANATION_MESSAGES)).toContain(
+      "Nhờ một quản trị viên khác"
+    )
+    expect(dbErrorMessage({ message: "GIVE_REASON_TOO_LONG" }, CORRECT_EXPLANATION_MESSAGES)).toBe(
+      "Lý do tối đa 1000 ký tự."
+    )
   })
 })

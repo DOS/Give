@@ -3,17 +3,30 @@
 import { revalidatePath } from "next/cache"
 
 import { getSession } from "@/lib/auth/session"
-import { getCampaignById, isStaff } from "@/lib/campaigns"
-import { dbErrorMessage, done, fail, type ActionResult, type DbErrorLike } from "@/lib/errors"
+import { getCampaignById, isPublicStatus, isStaff } from "@/lib/campaigns"
+import {
+  CORRECT_EXPLANATION_MESSAGES,
+  dbErrorMessage,
+  done,
+  fail,
+  type ActionResult,
+  type DbErrorLike,
+} from "@/lib/errors"
 import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import {
+  explainersOf,
+  findContribution,
   getIncoming,
+  MAX_CORRECTION_REASON_LENGTH,
   MAX_EXPLANATION_LENGTH,
+  normalizeReferenceCode,
+  paidAfterCorrect,
   paidAfterExplain,
   paidAfterReturn,
   paidBreakdown,
+  REFERENCE_CODE,
   UNATTRIBUTED_CAUSES,
   type ReturnOutcome,
 } from "@/lib/reconciliation"
@@ -284,4 +297,110 @@ function returnedMessage(outcome: ReturnOutcome | null, amount: number, original
     return `${head} của một khoản chi. Tổng đã chi của chiến dịch giảm ${formatVnd(amount)}.` + statement
   }
   return `${head}.` + statement
+}
+
+// ---------------------------------------------------------------------------
+// Correcting a mistaken explanation (DOS/Give#71)
+// ---------------------------------------------------------------------------
+
+const ADMIN_ONLY = ["admin"] as const
+const CORRECTION_SELF_REVIEW = CORRECT_EXPLANATION_MESSAGES.GIVE_SELF_REVIEW
+
+/**
+ * Corrects an explanation of incoming money as "not a donation" that was a
+ * donation after all: the money is credited to a contribution of the same
+ * campaign, with a required reason, by an admin only (not finance: the
+ * correction undoes a finance decision), and never by the campaign's
+ * organizer, the person who explained it or the contributor
+ * (GIVE_SELF_REVIEW). give.correct_inbound_explanation runs as the service
+ * role with the actor's id and checks all of it under its locks; as for an
+ * explanation, the role, the transaction, the campaign, the contribution and
+ * the explainer are first read with the actor's own token, so a forged
+ * session cookie fails here. One correction per transaction; a retry with
+ * the same contribution and reason is answered as a replay.
+ */
+export async function correctExplanation(
+  transactionId: string,
+  _state: ActionResult,
+  form: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  if (!isUuid(transactionId)) return fail(TX_NOT_FOUND)
+  // A pick from the list, or a typed reference code for a contribution the list leaves out.
+  const picked = String(form.get("contribution_id") ?? "")
+  const typed = normalizeReferenceCode(String(form.get("reference_code") ?? ""))
+  // Browsers submit line breaks as CRLF; count and store them as one character.
+  const reason = String(form.get("reason") ?? "")
+    .replace(/\r\n/g, "\n")
+    .trim()
+  if (picked && typed) return fail("Chọn lượt ủng hộ trong danh sách hoặc nhập mã ủng hộ, không cả hai.")
+  if (!picked && !typed) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_CONTRIBUTION_REQUIRED)
+  if (picked && !isUuid(picked)) return fail("Lượt ủng hộ không hợp lệ.")
+  if (typed && !REFERENCE_CODE.test(typed)) return fail(`"${typed}" không phải mã ủng hộ hợp lệ (dạng GV và 7 ký tự).`)
+  if (!reason) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_REASON_REQUIRED)
+  // Counted in characters (code points), as the database's char_length does.
+  if ([...reason].length > MAX_CORRECTION_REASON_LENGTH) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_REASON_TOO_LONG)
+
+  const userId = session.user.id
+  const db = dbAs(session.accessToken)
+  let tx, campaign, contribution, before
+  try {
+    if (!(await isStaff(db, ADMIN_ONLY))) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_NOT_ALLOWED)
+    tx = await getIncoming(db, transactionId)
+    if (!tx) return fail(TX_NOT_FOUND)
+    if (tx.direction !== "in") return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_TRANSACTION_NOT_INBOUND)
+    if (!tx.campaign_id) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_TRANSACTION_UNATTRIBUTED)
+    if (!tx.corrected_to) {
+      if (tx.matched_to) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_TRANSACTION_ALREADY_MATCHED)
+      if (!tx.explained_as) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_TRANSACTION_NOT_EXPLAINED)
+    }
+    campaign = await getCampaignById(db, tx.campaign_id)
+    if (!campaign) return fail(TX_NOT_FOUND)
+    if (campaign.organizer_id === userId) return fail(CORRECTION_SELF_REVIEW)
+    contribution = await findContribution(db, campaign.id, picked ? { id: picked } : { referenceCode: typed })
+    if (!contribution) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_CONTRIBUTION_CAMPAIGN_MISMATCH)
+    // Corrected already: only the exact same correction is a replay, and the database decides that.
+    if (tx.corrected_to && tx.corrected_to !== contribution.id) {
+      return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_EXPLANATION_ALREADY_CORRECTED)
+    }
+    if (contribution.contributor_user_id === userId) return fail(CORRECTION_SELF_REVIEW)
+    if ((await explainersOf(db, [tx.id])).get(tx.id) === userId) return fail(CORRECTION_SELF_REVIEW)
+    before = await paidBreakdown(db, campaign.id)
+  } catch (error) {
+    return fail(dbErrorMessage(error as DbErrorLike, CORRECT_EXPLANATION_MESSAGES))
+  }
+
+  const { data, error } = await dbService()
+    .rpc("correct_inbound_explanation", {
+      p_bank_transaction_id: tx.id,
+      p_actor_id: userId,
+      p_contribution_id: contribution.id,
+      p_reason: reason,
+    })
+    .maybeSingle()
+  if (error) return fail(dbErrorMessage(error, CORRECT_EXPLANATION_MESSAGES))
+  const result = data as { outcome: string; contribution_id: string; replayed: boolean } | null
+
+  revalidatePath("/admin/unmatched")
+  revalidatePath(`/me/campaigns/${campaign.id}/unmatched`)
+  revalidatePath(`/me/campaigns/${campaign.id}`)
+  revalidatePath(`/campaigns/${campaign.slug}`)
+  revalidatePath(`/campaigns/${campaign.slug}/statement`)
+
+  if (result?.replayed) {
+    return done(
+      `Giải trình này đã được sửa từ trước, với cùng lượt ủng hộ ${contribution.reference_code} và cùng lý do. Không có gì thay đổi.`
+    )
+  }
+
+  let after = null
+  try {
+    after = await paidBreakdown(db, campaign.id)
+  } catch {
+    // The correction is recorded; only the totals line is left out.
+  }
+  return done(
+    `Đã sửa giải trình: ${formatVnd(tx.amount)} nay là tiền của lượt ủng hộ ${contribution.reference_code}, không còn tính là "không phải tiền ủng hộ".${isPublicStatus(campaign.status) ? " Sao kê công khai hiện giao dịch này là tiền ủng hộ." : ""}${paidAfterCorrect(before, after)}`
+  )
 }

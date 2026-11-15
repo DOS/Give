@@ -257,6 +257,37 @@ export const OWN_TRANSFER_MESSAGES: Record<string, string> = {
     "Một trong hai giao dịch không còn chờ xử lý trong sổ: chưa được ghi sổ, hoặc đã được xử lý theo cách khác (ví dụ đã ghi là tiền bị trả lại). Hãy tải lại trang; nếu vẫn lỗi, báo đội ngũ kỹ thuật.",
 }
 
+/**
+ * Every refusal of give.correct_inbound_explanation (DOS/Give#71), worded for
+ * an admin correcting an explanation of incoming money "not a donation" that
+ * was a donation after all. Codes shared with other actions are worded for
+ * this one here.
+ */
+export const CORRECT_EXPLANATION_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Chỉ quản trị viên mới sửa được giải trình tiền vào.",
+  GIVE_CONTRIBUTION_REQUIRED: "Chọn lượt ủng hộ mà khoản tiền này thực ra thuộc về.",
+  GIVE_REASON_REQUIRED: "Ghi lý do vì sao giải trình trước là nhầm và bạn đã kiểm tra những gì.",
+  GIVE_REASON_TOO_LONG: "Lý do tối đa 1000 ký tự.",
+  GIVE_TRANSACTION_NOT_FOUND: "Không tìm thấy giao dịch. Hãy tải lại trang.",
+  GIVE_TRANSACTION_NOT_INBOUND: "Chỉ sửa được giải trình của khoản tiền vào.",
+  GIVE_TRANSACTION_UNATTRIBUTED: "Giao dịch này không thuộc chiến dịch nào, nên không có lượt ủng hộ nào để ghi nhận.",
+  GIVE_SELF_REVIEW:
+    "Bạn không sửa được giải trình này: bạn là người tổ chức chiến dịch, người đã giải trình khoản này, hoặc người ủng hộ của lượt đã chọn. Nhờ một quản trị viên khác.",
+  GIVE_EXPLANATION_ALREADY_CORRECTED:
+    "Giải trình này đã được sửa rồi (với lượt ủng hộ hoặc lý do khác). Mỗi giải trình chỉ sửa được một lần. Hãy tải lại trang.",
+  GIVE_TRANSACTION_NOT_EXPLAINED:
+    "Giao dịch này chưa được giải trình là không phải tiền ủng hộ, nên không có gì để sửa.",
+  GIVE_TRANSACTION_ALREADY_MATCHED: "Giao dịch này đã được khớp với một lượt ủng hộ.",
+  GIVE_LEDGER_POST_MISSING:
+    "Sổ của giao dịch không còn ở trạng thái đã giải trình (có thể vừa được xử lý ở nơi khác). Hãy tải lại trang; nếu vẫn lỗi, báo đội ngũ kỹ thuật.",
+  GIVE_ACCOUNT_OWNER_MISMATCH:
+    "Tài khoản nhận không thuộc về người tổ chức của chiến dịch, nên tiền không ghi nhận được cho lượt ủng hộ nào của chiến dịch đó. Cần sửa dữ liệu tài khoản nhận trước.",
+  GIVE_CONTRIBUTION_CAMPAIGN_MISMATCH:
+    "Lượt ủng hộ đã chọn thuộc chiến dịch khác. Chỉ chọn được lượt ủng hộ của cùng chiến dịch.",
+  GIVE_CONTRIBUTION_NOT_MATCHABLE:
+    "Lượt ủng hộ này không nhận thêm tiền được (đã hủy, đã hoàn tiền, hoặc khác loại tiền). Hãy chọn lượt khác.",
+}
+
 /** Result shape that form actions return to useActionState. */
 export type ActionResult = { ok: boolean; message: string } | null
 

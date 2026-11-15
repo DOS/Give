@@ -214,6 +214,16 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   as a bank fee in "đã chi" on the returned pair, once per pair, never as
   money that reached the backer; `/admin/unmatched` shows it on each
   returned transfer and in the link message (#195).
+- Correcting a mistaken explanation of incoming money: on `/admin/unmatched`,
+  an admin (not finance, and never the campaign's organizer, the person who
+  explained it or the contributor) can correct an item of "Đã giải trình gần
+  đây" with "Sửa giải trình": pick a contribution of the same campaign and
+  give a required reason (`give.correct_inbound_explanation`). The money moves
+  from "không phải tiền ủng hộ" to that contribution once; "đã thanh toán"
+  does not move. A corrected item shows its correction and cannot be
+  corrected again. The app reads a corrected transaction as matched, not
+  explained, and the public statement shows it as a donation only
+  (#71 / #198).
 
 ### Platform
 
@@ -248,6 +258,12 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   `20261115170000_give_returned_refund_bank_fee`. The Give app's #195 change
   reads the column, so it needs this migration on Production before it is
   released.
+- Corrections of explanations: `give.inbound_explanation_corrections`,
+  `give.correct_inbound_explanation`, and `give.public_statement` hides the
+  kind of a corrected explanation (#71 / DOS/DOS.Me#1682, on Beta). Migration
+  `20261116090000_give_correct_inbound_explanation`. The Give app's #71
+  change reads the new table, so it needs this migration on Production
+  before it is released.
 
 ### On Production (database only)
 
