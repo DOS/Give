@@ -33,7 +33,7 @@ vi.mock("@/lib/supabase", () => ({
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
 }))
 
-const { correctExplanation, explainTransaction, linkReturnedTransfer } = await import("./actions")
+const { correctExplanation, explainTransaction, linkReturnedTransfer, returnToUnmatched } = await import("./actions")
 
 /** formatVnd puts a no-break space before the đồng sign. */
 const vnd = (text: string) => text.replace(/ ₫/g, " ₫")
@@ -201,6 +201,28 @@ describe("explainTransaction", () => {
   })
 })
 
+describe("explainTransaction on a returned explanation (DOS/Give#196)", () => {
+  it("refuses it before the database: the money is matched, never explained again", async () => {
+    state.responses.bank_transactions = tx({
+      inbound_explanations: {
+        kind: "organizer_top_up",
+        inbound_explanation_corrections: null,
+        inbound_explanation_returns: [{ returned_at: "2026-11-15T00:00:00Z" }],
+      },
+    })
+    const result = await explainTransaction(TX, null, form(VALID))
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toContain('không giải trình lại được là "không phải tiền ủng hộ"')
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("words the database's refusal when the return raced the explanation", async () => {
+    state.serviceHandler = () => ({ error: { code: "23514", message: "GIVE_EXPLANATION_RETURNED" } })
+    const result = await explainTransaction(TX, null, form(VALID))
+    expect(result?.message).toContain("đã được đưa về chưa khớp")
+  })
+})
+
 describe("explainTransaction replay and correction (DOS/Give#71)", () => {
   it("still answers an already-explained transaction's same-value retry as done", async () => {
     // Explained before, not corrected: the database answers the identical retry with 'explained' again.
@@ -282,7 +304,7 @@ describe("correctExplanation (DOS/Give#71)", () => {
       "rpc:campaign_paid",
     ])
     expect(String(op(state.userCalls[1], "select")?.[0])).toContain(
-      "inbound_explanations(kind, inbound_explanation_corrections(contribution_id))"
+      "inbound_explanations(kind, inbound_explanation_corrections(contribution_id), inbound_explanation_returns(returned_at))"
     )
     expect(op(state.userCalls[3], "eq")).toEqual(["campaign_id", CAMPAIGN])
     expect(revalidatePath).toHaveBeenCalledWith("/admin/unmatched")
@@ -453,7 +475,24 @@ describe("correctExplanation (DOS/Give#71)", () => {
     ["23514", "GIVE_CONTRIBUTION_CAMPAIGN_MISMATCH", "thuộc chiến dịch khác"],
     ["23514", "GIVE_CONTRIBUTION_NOT_MATCHABLE", "không nhận thêm tiền được"],
     ["23505", "GIVE_EXPLANATION_ALREADY_CORRECTED", "đã được sửa rồi"],
+    // A return to unmatched raced the correction (DOS/Give#196).
+    ["23514", "GIVE_EXPLANATION_RETURNED", "đã được đưa về chưa khớp"],
   ]
+
+  it("refuses a returned explanation without calling the database: the money is matched (DOS/Give#196)", async () => {
+    for (const matches of [null, { contribution_id: CONTRIBUTION }]) {
+      state.responses.bank_transactions = tx({
+        transaction_matches: matches,
+        inbound_explanations: {
+          kind: "organizer_top_up",
+          inbound_explanation_corrections: null,
+          inbound_explanation_returns: { returned_at: "2026-11-15T00:00:00Z" },
+        },
+      })
+      expect((await correctExplanation(TX, null, form(CORRECT)))?.message).toContain('mục "Chờ khớp"')
+    }
+    expect(state.serviceCalls).toHaveLength(0)
+  })
 
   it.each(RPC_ERRORS)("words %s %s", async (code, giveCode, text) => {
     state.ledger = [{ data: EXPLAINED }]
@@ -466,7 +505,7 @@ describe("correctExplanation (DOS/Give#71)", () => {
   })
 
   it("covers every code the database raises", () => {
-    expect(new Set(RPC_ERRORS.map(([, code]) => code)).size).toBe(15)
+    expect(new Set(RPC_ERRORS.map(([, code]) => code)).size).toBe(16)
   })
 })
 
@@ -642,6 +681,11 @@ describe("linkReturnedTransfer (DOS/Give#72)", () => {
     expect(await message()).toContain("đã được khớp với một lượt ủng hộ")
     state.responses.bank_transactions = tx({ inbound_explanations: [{ kind: "interest" }] })
     expect(await message()).toContain("đã được giải trình là không phải tiền ủng hộ")
+    // Returned to unmatched (DOS/Give#196): still refused, as give.link_returned_transfer does.
+    state.responses.bank_transactions = tx({
+      inbound_explanations: { kind: "interest", inbound_explanation_returns: { returned_at: "x" } },
+    })
+    expect(await message()).toContain("kể cả khi giải trình sau đó được đưa về chưa khớp")
     expect(state.serviceCalls).toHaveLength(0)
   })
 
@@ -707,5 +751,179 @@ describe("linkReturnedTransfer (DOS/Give#72)", () => {
 
   it("covers every code the database raises", () => {
     expect(new Set(RPC_ERRORS.map(([, code]) => code)).size).toBe(21)
+  })
+})
+
+describe("returnToUnmatched (DOS/Give#196)", () => {
+  const ADMIN = "99999999-9999-4999-8999-999999999999"
+  const EXPLAINER = FINANCE
+  const RETURN = { reason: "  Mai says it is her donation; her code is unknown  " }
+  /** The 300k moves from other_in back to unmatched_in; paid does not move. */
+  const EXPLAINED = { received_amount: 500000, unmatched_amount: 0, other_amount: 300000, paid_amount: 800000 }
+  const RETURNED = { received_amount: 500000, unmatched_amount: 300000, other_amount: 0, paid_amount: 800000 }
+  const GENERIC = "Có lỗi xảy ra. Hãy thử lại sau."
+  const explained = (extra: Record<string, unknown> = {}) =>
+    tx({ inbound_explanations: { kind: "organizer_top_up", inbound_explanation_corrections: null, ...extra } })
+
+  beforeEach(() => {
+    state.userId = ADMIN
+    state.responses = {
+      "rpc:is_admin": { data: true },
+      bank_transactions: explained(),
+      "rpc:managed_campaigns": {
+        data: { id: CAMPAIGN, slug: "chau-be-abcde", organizer_id: ORGANIZER, status: "live" },
+      },
+      audit_log: { data: [{ entity_id: TX, actor_id: EXPLAINER }] },
+    }
+    state.ledger = [{ data: EXPLAINED }, { data: RETURNED }]
+    state.serviceHandler = () => ({ data: { outcome: "unmatched", replayed: false } })
+  })
+
+  it("returns as an admin, says it can be matched but not explained again, and that paid did not move", async () => {
+    const result = await returnToUnmatched(TX, null, form(RETURN))
+    expect(result).toEqual({
+      ok: true,
+      message: vnd(
+        'Đã đưa 300.000 ₫ về chưa khớp: khoản này không còn tính là "không phải tiền ủng hộ" và hiện ở mục "Chờ khớp" để khớp với một lượt ủng hộ. Không giải trình lại được là "không phải tiền ủng hộ". Sao kê công khai hiện giao dịch này là chưa khớp. Tổng đã thanh toán không đổi: 800.000 ₫ (không phải tiền ủng hộ 300.000 ₫ → 0 ₫, chưa khớp 0 ₫ → 300.000 ₫).'
+      ),
+    })
+    expect(state.serviceCalls.map((c) => c.target)).toEqual(["rpc:return_inbound_to_unmatched"])
+    expect(op(state.serviceCalls[0], "args")).toEqual([
+      { p_bank_transaction_id: TX, p_actor_id: ADMIN, p_reason: "Mai says it is her donation; her code is unknown" },
+    ])
+    // Admin only, asked with the actor's own token, then everything read with that token before the service role acts.
+    expect(op(state.userCalls[0], "args")?.[0]).toEqual({ p_roles: ["admin"] })
+    expect(state.userCalls.map((c) => c.target)).toEqual([
+      "rpc:is_admin",
+      "bank_transactions",
+      "rpc:managed_campaigns",
+      "audit_log",
+      "rpc:campaign_paid",
+      "rpc:campaign_paid",
+    ])
+    // The service role is used only for the RPC: no table is read or written with it.
+    expect(state.serviceCalls.every((c) => c.target.startsWith("rpc:"))).toBe(true)
+    expect(revalidatePath).toHaveBeenCalledWith("/admin/unmatched")
+    expect(revalidatePath).toHaveBeenCalledWith(`/me/campaigns/${CAMPAIGN}/unmatched`)
+    expect(revalidatePath).toHaveBeenCalledWith("/campaigns/chau-be-abcde/statement")
+  })
+
+  it("does not promise a public statement row for a campaign that is not public", async () => {
+    state.responses["rpc:managed_campaigns"] = {
+      data: { id: CAMPAIGN, slug: "chau-be-abcde", organizer_id: ORGANIZER, status: "cancelled" },
+    }
+    const result = await returnToUnmatched(TX, null, form(RETURN))
+    expect(result?.ok).toBe(true)
+    expect(result?.message).not.toContain("Sao kê công khai")
+  })
+
+  it("refuses finance staff and everyone else who is not an admin, after one read", async () => {
+    state.userId = FINANCE
+    state.responses["rpc:is_admin"] = { data: false }
+    expect(await returnToUnmatched(TX, null, form(RETURN))).toEqual({
+      ok: false,
+      message: "Chỉ quản trị viên mới đưa được giải trình tiền vào về chưa khớp.",
+    })
+    expect(op(state.userCalls[0], "args")?.[0]).toEqual({ p_roles: ["admin"] })
+    expect(state.userCalls).toHaveLength(1)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("refuses the campaign's organizer and the person who explained it (self-review)", async () => {
+    const SELF = "Bạn không đưa được khoản này về chưa khớp"
+    state.userId = ORGANIZER
+    expect((await returnToUnmatched(TX, null, form(RETURN)))?.message).toContain(SELF)
+    state.userId = EXPLAINER
+    expect((await returnToUnmatched(TX, null, form(RETURN)))?.message).toContain(SELF)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("requires a reason of at most 1000 characters and a valid id, before reading anything", async () => {
+    expect((await returnToUnmatched(TX, null, form({ reason: " \n " })))?.message).toBe(
+      "Ghi lý do vì sao giải trình là nhầm và bạn đã kiểm tra những gì."
+    )
+    expect((await returnToUnmatched(TX, null, form({ reason: "x".repeat(1001) })))?.message).toBe(
+      "Lý do tối đa 1000 ký tự."
+    )
+    expect((await returnToUnmatched("not-a-uuid", null, form(RETURN)))?.ok).toBe(false)
+    expect(state.userCalls).toHaveLength(0)
+    // A line break sent as CRLF counts as one character, as in the database.
+    expect((await returnToUnmatched(TX, null, form({ reason: "a\r\n".repeat(500) })))?.ok).toBe(true)
+  })
+
+  it("refuses outgoing, unattributed, unknown, corrected, matched and unexplained transactions without the database", async () => {
+    const message = async () => (await returnToUnmatched(TX, null, form(RETURN)))?.message
+    state.responses.bank_transactions = tx({ direction: "out" })
+    expect(await message()).toBe("Chỉ đưa về chưa khớp được khoản tiền vào.")
+    state.responses.bank_transactions = tx({ campaign_id: null })
+    expect(await message()).toContain("không thuộc chiến dịch nào")
+    state.responses.bank_transactions = { data: null }
+    expect(await message()).toContain("Không tìm thấy giao dịch")
+    state.responses.bank_transactions = tx({
+      transaction_matches: { contribution_id: CONTRIBUTION },
+      inbound_explanations: { kind: "interest", inbound_explanation_corrections: { contribution_id: CONTRIBUTION } },
+    })
+    expect(await message()).toContain("đã được sửa thành tiền của một lượt ủng hộ")
+    state.responses.bank_transactions = tx({ transaction_matches: { contribution_id: CONTRIBUTION } })
+    expect(await message()).toBe("Giao dịch này đã được khớp với một lượt ủng hộ.")
+    state.responses.bank_transactions = tx()
+    expect(await message()).toContain("chưa được giải trình")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("leaves an already returned explanation to the database: a same-reason retry is a replay", async () => {
+    state.responses.bank_transactions = explained({ inbound_explanation_returns: { returned_at: "x" } })
+    state.serviceHandler = () => ({ data: { outcome: "unmatched", replayed: true } })
+    expect((await returnToUnmatched(TX, null, form(RETURN)))?.message).toBe(
+      "Giải trình này đã được đưa về chưa khớp từ trước, với cùng lý do. Không có gì thay đổi."
+    )
+    // Matched since: still the database's call (a replay, or GIVE_EXPLANATION_ALREADY_RETURNED).
+    state.responses.bank_transactions = tx({
+      transaction_matches: { contribution_id: "c" },
+      inbound_explanations: { kind: "organizer_top_up", inbound_explanation_returns: { returned_at: "x" } },
+    })
+    state.serviceHandler = () => ({ error: { code: "23505", message: "GIVE_EXPLANATION_ALREADY_RETURNED" } })
+    expect((await returnToUnmatched(TX, null, form({ reason: "other" })))?.message).toContain(
+      "đã được đưa về chưa khớp từ trước"
+    )
+    expect(state.serviceCalls).toHaveLength(2)
+  })
+
+  it("answers a failed read with the generic message, not a crash", async () => {
+    state.responses.bank_transactions = { error: { code: "57014", message: "timeout" } }
+    expect((await returnToUnmatched(TX, null, form(RETURN)))?.message).toBe(GENERIC)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  // Every code give.return_inbound_to_unmatched raises (DOS-Me 20261117090000).
+  const RPC_ERRORS: [string, string, string][] = [
+    ["42501", "GIVE_NOT_ALLOWED", "Chỉ quản trị viên mới đưa được"],
+    ["42501", "GIVE_SELF_REVIEW", "Nhờ một quản trị viên khác"],
+    ["23514", "GIVE_REASON_REQUIRED", "Ghi lý do"],
+    ["23514", "GIVE_REASON_TOO_LONG", "Lý do tối đa 1000 ký tự."],
+    ["P0002", "GIVE_TRANSACTION_NOT_FOUND", "Không tìm thấy giao dịch"],
+    ["23514", "GIVE_TRANSACTION_NOT_INBOUND", "khoản tiền vào"],
+    ["23514", "GIVE_TRANSACTION_UNATTRIBUTED", "không thuộc chiến dịch nào"],
+    ["23505", "GIVE_EXPLANATION_ALREADY_RETURNED", "chỉ đưa về được một lần"],
+    ["23505", "GIVE_EXPLANATION_ALREADY_CORRECTED", "đã được sửa thành tiền của một lượt ủng hộ"],
+    ["23514", "GIVE_TRANSACTION_NOT_EXPLAINED", "chưa được giải trình"],
+    ["23505", "GIVE_TRANSACTION_ALREADY_MATCHED", "đã được khớp"],
+    ["23514", "GIVE_BINDING_RELEASED", "đã được nhả khỏi chiến dịch"],
+    ["P0002", "GIVE_LEDGER_POST_MISSING", "Hãy tải lại trang"],
+    ["23514", "GIVE_ACCOUNT_OWNER_MISMATCH", "không thuộc về người tổ chức"],
+  ]
+
+  it.each(RPC_ERRORS)("words %s %s", async (code, giveCode, text) => {
+    state.ledger = [{ data: EXPLAINED }]
+    state.serviceHandler = () => ({ error: { code, message: giveCode } })
+    const result = await returnToUnmatched(TX, null, form(RETURN))
+    expect(result?.ok).toBe(false)
+    expect(result?.message).not.toBe(GENERIC)
+    expect(result?.message).toContain(text)
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("covers every code the database raises", () => {
+    expect(new Set(RPC_ERRORS.map(([, code]) => code)).size).toBe(14)
   })
 })

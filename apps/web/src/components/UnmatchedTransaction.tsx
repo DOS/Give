@@ -12,9 +12,10 @@ import {
   waitsFor,
   type MatchCandidate,
   type ReturnCandidate,
+  type ReturnedExplanation,
   type UnmatchedTransaction,
 } from "@/lib/reconciliation"
-import { INBOUND_EXPLANATION_KINDS } from "@/lib/statement"
+import { INBOUND_EXPLANATION_KINDS, inboundExplanationLabel } from "@/lib/statement"
 import { MachineId } from "@/components/ui/RefCode"
 
 /**
@@ -25,7 +26,10 @@ import { MachineId } from "@/components/ui/RefCode"
  * match can succeed takes the match form's place (DOS/Give#148); the
  * explanation form stays (DOS/Give#137). With returnAction (finance/admin
  * page), also the form that links it to the outgoing transaction a bank
- * returned it from (DOS/Give#72), offering returnCandidates.
+ * returned it from (DOS/Give#72), offering returnCandidates. With
+ * returnedExplanation, a note says the money was explained by mistake and
+ * returned to unmatched (DOS/Give#196); only the match form stays, since it is
+ * never explained or linked as a returned transfer again.
  */
 export function UnmatchedTransactionCard({
   tx,
@@ -36,6 +40,8 @@ export function UnmatchedTransactionCard({
   matchBlocked,
   returnAction,
   returnCandidates = [],
+  returnedExplanation = null,
+  showReturnReason = false,
 }: {
   tx: UnmatchedTransaction
   candidates: MatchCandidate[]
@@ -48,6 +54,14 @@ export function UnmatchedTransactionCard({
   returnAction?: (state: ActionResult, form: FormData) => Promise<ActionResult>
   /** Outgoing transactions this one may be the return of (returnCandidatesFor). */
   returnCandidates?: ReturnCandidate[]
+  /** The explanation an admin returned to unmatched, if any (DOS/Give#196). */
+  returnedExplanation?: ReturnedExplanation | null
+  /**
+   * Staff pages only: the admin's reason for the return. It is written as
+   * private ("không công khai"), so the organizer's page leaves it out, as it
+   * leaves out explanation and correction reasons.
+   */
+  showReturnReason?: boolean
 }) {
   const sameAmount = candidates.filter((c) => waitsFor(c, tx.amount))
   const others = candidates.filter((c) => !waitsFor(c, tx.amount))
@@ -86,6 +100,17 @@ export function UnmatchedTransactionCard({
           </div>
         )}
       </dl>
+
+      {returnedExplanation && (
+        <Callout tone="info" title="Khoản này từng được giải trình nhầm và đã được đưa về chưa khớp.">
+          <p className="break-words">
+            Trước đây khoản này được giải trình là &quot;{inboundExplanationLabel(returnedExplanation.kind)}&quot;; quản
+            trị viên đưa về chưa khớp lúc {formatDateTime(returnedExplanation.returned_at)}. Hãy khớp với lượt ủng hộ
+            của khoản tiền. Khoản này không giải trình lại được là &quot;không phải tiền ủng hộ&quot;.
+          </p>
+          {showReturnReason && <p className="break-words">Lý do đưa về: {returnedExplanation.reason}</p>}
+        </Callout>
+      )}
 
       {matchBlocked ? (
         <div className="border-t border-border pt-6">
@@ -139,8 +164,10 @@ export function UnmatchedTransactionCard({
         </ActionForm>
       )}
 
-      {explainAction && <ExplainInboundForm tx={tx} action={explainAction} />}
-      {returnAction && <ReturnedTransferForm tx={tx} candidates={returnCandidates} action={returnAction} />}
+      {explainAction && !returnedExplanation && <ExplainInboundForm tx={tx} action={explainAction} />}
+      {returnAction && !returnedExplanation && (
+        <ReturnedTransferForm tx={tx} candidates={returnCandidates} action={returnAction} />
+      )}
     </li>
   )
 }

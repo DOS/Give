@@ -6,12 +6,18 @@ import {
   InboundExplanationList,
   ManualMatchList,
   ReturnedTransferList,
+  type ReturnToUnmatchedOffer,
   UnattributedList,
 } from "@/components/Reconciliation"
 import { UnmatchedTransactionCard } from "@/components/UnmatchedTransaction"
 import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
-import { correctExplanation, explainTransaction, linkReturnedTransfer } from "@/app/admin/unmatched/actions"
+import {
+  correctExplanation,
+  explainTransaction,
+  linkReturnedTransfer,
+  returnToUnmatched,
+} from "@/app/admin/unmatched/actions"
 import { matchTransaction } from "@/app/me/campaigns/[id]/unmatched/actions"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
@@ -21,6 +27,7 @@ import {
   correctionBlocked,
   correctionCandidates,
   explainersOf,
+  explanationOpen,
   listInboundExplanations,
   listManualMatches,
   listMatchCandidates,
@@ -30,6 +37,7 @@ import {
   listUnmatched,
   ownerMismatchNotice,
   returnCandidatesFor,
+  returnToUnmatchedBlocked,
   UNATTRIBUTED_CAUSES,
   type InboundExplanation,
   type MatchCandidate,
@@ -95,7 +103,7 @@ export default async function AdminUnmatchedPage() {
   ])
   const candidates = new Map(campaignIds.map((id, i) => [id, candidateLists[i]]))
   const titles = new Map([...refs].map(([id, ref]) => [id, ref.title]))
-  const corrections = await correctionOffers(db, session.user, explanations, candidates)
+  const { corrections, returns: returnOffers } = await explanationOffers(db, session.user, explanations, candidates)
 
   return (
     <AdminPage
@@ -122,6 +130,12 @@ export default async function AdminUnmatchedPage() {
             Tiền của khoản chi hay khoản hoàn tiền bị ngân hàng trả lại thì ghi nhận ở từng giao dịch, mục &quot;Tiền
             chuyển đi bị ngân hàng trả lại?&quot;.
           </p>
+          <p>
+            Giải trình nhầm một khoản thực ra là tiền ủng hộ: nếu đã rõ của lượt nào, quản trị viên dùng &quot;Sửa giải
+            trình&quot;; nếu chưa rõ, dùng &quot;Đưa về chưa khớp&quot; ở mục &quot;Đã giải trình gần đây&quot;. Khoản
+            được đưa về hiện lại ở mục &quot;Chờ khớp&quot; để khớp với lượt ủng hộ, và không giải trình lại được là
+            &quot;không phải tiền ủng hộ&quot;.
+          </p>
         </>
       }
     >
@@ -147,6 +161,8 @@ export default async function AdminUnmatchedPage() {
                 matchBlocked={ownerMismatchNotice(tx, organizers.get(tx.campaign_id), session.user.id)}
                 returnAction={linkReturnedTransfer.bind(null, tx.id)}
                 returnCandidates={returnCandidatesFor(tx, returnCandidates)}
+                returnedExplanation={tx.returned_explanation}
+                showReturnReason
               />
             ))}
           </ItemList>
@@ -180,7 +196,12 @@ export default async function AdminUnmatchedPage() {
 
       <ManualMatchList matches={matches} titles={titles} />
 
-      <InboundExplanationList explanations={explanations} titles={titles} corrections={corrections} />
+      <InboundExplanationList
+        explanations={explanations}
+        titles={titles}
+        corrections={corrections}
+        returns={returnOffers}
+      />
 
       <ReturnedTransferList returns={returns} titles={titles} />
     </AdminPage>
@@ -188,20 +209,23 @@ export default async function AdminUnmatchedPage() {
 }
 
 /**
- * "Sửa giải trình" for admins (DOS/Give#71): every uncorrected explanation
- * gets the form, or the reason this admin may not correct it (their own
- * campaign or their own explanation). Finance staff get nothing. A failed
- * read leaves the offer out or keeps it; give.correct_inbound_explanation
- * checks everything again.
+ * "Đưa về chưa khớp" (DOS/Give#196) and "Sửa giải trình" (DOS/Give#71) for
+ * admins: every explanation that is neither corrected nor returned gets each
+ * form, or the reason this admin may not use it (their own campaign or their
+ * own explanation; for a return, also a released binding). Finance staff get
+ * nothing. A failed read leaves an offer out or keeps it;
+ * give.return_inbound_to_unmatched and give.correct_inbound_explanation check
+ * everything again.
  */
-async function correctionOffers(
+async function explanationOffers(
   db: ReturnType<typeof dbAs>,
   viewer: Viewer,
   explanations: InboundExplanation[],
   known: Map<string, MatchCandidate[]>
-): Promise<Map<string, CorrectionOffer>> {
-  const open = explanations.filter((e) => !e.correction)
-  if (open.length === 0 || !(await isStaff(db, ["admin"]))) return new Map()
+): Promise<{ corrections: Map<string, CorrectionOffer>; returns: Map<string, ReturnToUnmatchedOffer> }> {
+  const none = { corrections: new Map<string, CorrectionOffer>(), returns: new Map<string, ReturnToUnmatchedOffer>() }
+  const open = explanations.filter(explanationOpen)
+  if (open.length === 0 || !(await isStaff(db, ["admin"]))) return none
   const campaignIds = [...new Set(open.map((e) => e.tx.campaign_id))]
   const missing = campaignIds.filter((id) => !known.has(id))
   const [organizers, explainers, lists] = await Promise.all([
@@ -224,24 +248,30 @@ async function correctionOffers(
     const list = lists[i]
     if (list) candidates.set(id, list)
   })
-  const offers = new Map<string, CorrectionOffer>()
+  const { corrections, returns } = none
   for (const e of open) {
-    const blocked = correctionBlocked(e, {
+    const who = {
       id: viewer.id,
       isAdmin: true,
       organizerId: organizers.get(e.tx.campaign_id),
       explainerId: explainers.get(e.bank_transaction_id),
-    })
+    }
+    const returnBlocked = returnToUnmatchedBlocked(e, who)
+    returns.set(
+      e.bank_transaction_id,
+      returnBlocked ? { blocked: returnBlocked } : { action: returnToUnmatched.bind(null, e.bank_transaction_id) }
+    )
+    const blocked = correctionBlocked(e, who)
     if (blocked) {
-      offers.set(e.bank_transaction_id, { blocked })
+      corrections.set(e.bank_transaction_id, { blocked })
       continue
     }
     const list = candidates.get(e.tx.campaign_id)
     if (!list) continue
-    offers.set(e.bank_transaction_id, {
+    corrections.set(e.bank_transaction_id, {
       action: correctExplanation.bind(null, e.bank_transaction_id),
       candidates: correctionCandidates(list, viewer.id),
     })
   }
-  return offers
+  return { corrections, returns }
 }

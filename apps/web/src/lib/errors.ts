@@ -132,6 +132,14 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_OWN_TRANSFER_CAMPAIGN_MISMATCH: "Hai giao dịch thuộc hai chiến dịch khác nhau.",
   GIVE_OWN_TRANSFER_AMOUNT_MISMATCH: "Hai giao dịch phải cùng số tiền và cùng loại tiền.",
   GIVE_OWN_TRANSFER_NOT_SWAPPED: "Hai tài khoản không nối với nhau bằng một lần đổi tài khoản đã duyệt của chiến dịch.",
+  // A mistaken explanation returned to unmatched (DOS/Give#196); the admin
+  // action words them for its context (RETURN_TO_UNMATCHED_MESSAGES).
+  GIVE_EXPLANATION_RETURNED:
+    'Giải trình của khoản tiền này đã được đưa về chưa khớp. Khoản tiền chỉ còn khớp được với một lượt ủng hộ; không giải trình lại được là "không phải tiền ủng hộ" và không sửa giải trình được nữa.',
+  GIVE_EXPLANATION_ALREADY_RETURNED:
+    "Giải trình của khoản tiền này đã được đưa về chưa khớp từ trước, với lý do khác. Mỗi giao dịch chỉ đưa về được một lần.",
+  GIVE_BINDING_RELEASED:
+    "Tài khoản nhận của giao dịch này đã được nhả khỏi chiến dịch, nên khoản tiền không đưa về chưa khớp được nữa.",
   // Statement row resolution for non-transactions (DOS/Give#78).
   GIVE_RESOLUTION_NOT_FOR_REASON:
     "Chỉ đánh dấu “không phải giao dịch thật” được cho dòng thuộc lần tải sao kê đã bị đội tài chính bỏ qua.",
@@ -291,6 +299,39 @@ export const CORRECT_EXPLANATION_MESSAGES: Record<string, string> = {
     "Lượt ủng hộ đã chọn thuộc chiến dịch khác. Chỉ chọn được lượt ủng hộ của cùng chiến dịch.",
   GIVE_CONTRIBUTION_NOT_MATCHABLE:
     "Lượt ủng hộ này không nhận thêm tiền được (đã hủy, đã hoàn tiền, hoặc khác loại tiền). Hãy chọn lượt khác.",
+  // The explanation was returned to unmatched (DOS/Give#196): the money is matched, not corrected.
+  GIVE_EXPLANATION_RETURNED:
+    'Giải trình này đã được đưa về chưa khớp, nên không sửa được nữa. Khoản tiền đang ở mục "Chờ khớp": hãy khớp với lượt ủng hộ ở đó.',
+}
+
+/**
+ * Every refusal of give.return_inbound_to_unmatched (DOS/Give#196, DOS-Me
+ * 20261117090000), worded for an admin sending a mistaken explanation of
+ * incoming money back to unmatched. Codes shared with other actions are
+ * worded for this one here.
+ */
+export const RETURN_TO_UNMATCHED_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Chỉ quản trị viên mới đưa được giải trình tiền vào về chưa khớp.",
+  GIVE_REASON_REQUIRED: "Ghi lý do vì sao giải trình là nhầm và bạn đã kiểm tra những gì.",
+  GIVE_REASON_TOO_LONG: "Lý do tối đa 1000 ký tự.",
+  GIVE_TRANSACTION_NOT_FOUND: "Không tìm thấy giao dịch. Hãy tải lại trang.",
+  GIVE_TRANSACTION_NOT_INBOUND: "Chỉ đưa về chưa khớp được khoản tiền vào.",
+  GIVE_TRANSACTION_UNATTRIBUTED: "Giao dịch này không thuộc chiến dịch nào, nên không đưa về chưa khớp được.",
+  GIVE_SELF_REVIEW:
+    "Bạn không đưa được khoản này về chưa khớp: bạn là người tổ chức chiến dịch, hoặc người đã giải trình khoản này. Nhờ một quản trị viên khác.",
+  GIVE_EXPLANATION_ALREADY_RETURNED:
+    "Giải trình này đã được đưa về chưa khớp từ trước, với lý do khác. Mỗi giao dịch chỉ đưa về được một lần. Hãy tải lại trang.",
+  GIVE_EXPLANATION_ALREADY_CORRECTED:
+    "Giải trình này đã được sửa thành tiền của một lượt ủng hộ, nên không đưa về chưa khớp được. Hãy tải lại trang.",
+  GIVE_TRANSACTION_NOT_EXPLAINED:
+    "Giao dịch này chưa được giải trình là không phải tiền ủng hộ, nên không có gì để đưa về.",
+  GIVE_TRANSACTION_ALREADY_MATCHED: "Giao dịch này đã được khớp với một lượt ủng hộ.",
+  GIVE_BINDING_RELEASED:
+    'Tài khoản nhận đã được nhả khỏi chiến dịch, nên khoản này không đưa về chưa khớp được nữa. Nếu đây là tiền ủng hộ của một lượt đã biết, dùng "Sửa giải trình".',
+  GIVE_LEDGER_POST_MISSING:
+    "Sổ của giao dịch không còn ở trạng thái đã giải trình (có thể vừa được xử lý ở nơi khác). Hãy tải lại trang; nếu vẫn lỗi, báo đội ngũ kỹ thuật.",
+  GIVE_ACCOUNT_OWNER_MISMATCH:
+    "Tài khoản nhận không thuộc về người tổ chức của chiến dịch, nên sau khi đưa về sẽ không khớp được với lượt ủng hộ nào. Cần sửa dữ liệu tài khoản nhận trước.",
 }
 
 /**

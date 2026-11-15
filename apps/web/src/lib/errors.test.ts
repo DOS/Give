@@ -6,6 +6,7 @@ import {
   giveErrorCode,
   OPEN_MESSAGES,
   OWN_TRANSFER_MESSAGES,
+  RETURN_TO_UNMATCHED_MESSAGES,
   REVIEW_MESSAGES,
   SUBMIT_MESSAGES,
   STATEMENT_ROW_MESSAGES,
@@ -145,6 +146,8 @@ describe("explanation correction refusals (DOS/Give#71)", () => {
     "GIVE_ACCOUNT_OWNER_MISMATCH",
     "GIVE_CONTRIBUTION_CAMPAIGN_MISMATCH",
     "GIVE_CONTRIBUTION_NOT_MATCHABLE",
+    // Raised since DOS-Me 20261117090000 for a returned explanation (DOS/Give#196).
+    "GIVE_EXPLANATION_RETURNED",
   ]
   const generic = dbErrorMessage(null)
 
@@ -164,6 +167,49 @@ describe("explanation correction refusals (DOS/Give#71)", () => {
     expect(dbErrorMessage({ message: "GIVE_REASON_TOO_LONG" }, CORRECT_EXPLANATION_MESSAGES)).toBe(
       "Lý do tối đa 1000 ký tự."
     )
+  })
+})
+
+describe("returns of an explanation to unmatched (DOS/Give#196)", () => {
+  // Every code give.return_inbound_to_unmatched raises (DOS-Me 20261117090000).
+  const CODES = [
+    "GIVE_NOT_ALLOWED",
+    "GIVE_REASON_REQUIRED",
+    "GIVE_REASON_TOO_LONG",
+    "GIVE_TRANSACTION_NOT_FOUND",
+    "GIVE_TRANSACTION_NOT_INBOUND",
+    "GIVE_TRANSACTION_UNATTRIBUTED",
+    "GIVE_SELF_REVIEW",
+    "GIVE_EXPLANATION_ALREADY_RETURNED",
+    "GIVE_EXPLANATION_ALREADY_CORRECTED",
+    "GIVE_TRANSACTION_NOT_EXPLAINED",
+    "GIVE_TRANSACTION_ALREADY_MATCHED",
+    "GIVE_BINDING_RELEASED",
+    "GIVE_LEDGER_POST_MISSING",
+    "GIVE_ACCOUNT_OWNER_MISMATCH",
+  ]
+  const generic = dbErrorMessage(null)
+
+  it("words every code for the admin, never the generic message", () => {
+    for (const code of CODES) {
+      const message = dbErrorMessage({ code: "23514", message: `${code}: detail` }, RETURN_TO_UNMATCHED_MESSAGES)
+      expect(message, code).not.toBe(generic)
+      expect(message, code).toBe(RETURN_TO_UNMATCHED_MESSAGES[code])
+    }
+    expect(Object.keys(RETURN_TO_UNMATCHED_MESSAGES).sort()).toEqual([...CODES].sort())
+  })
+
+  it("words self-review for the return, not for account verification", () => {
+    const message = dbErrorMessage({ message: "GIVE_SELF_REVIEW" }, RETURN_TO_UNMATCHED_MESSAGES)
+    expect(message).toContain("đưa được khoản này về chưa khớp")
+    expect(message).toContain("Nhờ một quản trị viên khác")
+  })
+
+  it("words the codes the changed functions raise on any other path", () => {
+    for (const code of ["GIVE_EXPLANATION_RETURNED", "GIVE_EXPLANATION_ALREADY_RETURNED", "GIVE_BINDING_RELEASED"]) {
+      expect(dbErrorMessage({ code: "23514", message: code }), code).not.toBe(generic)
+    }
+    expect(dbErrorMessage({ message: "GIVE_EXPLANATION_RETURNED" })).toContain("không phải tiền ủng hộ")
   })
 })
 

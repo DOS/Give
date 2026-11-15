@@ -8,10 +8,13 @@ import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import {
   candidateLabel,
   MAX_CORRECTION_REASON_LENGTH,
+  MAX_RETURN_TO_UNMATCHED_REASON_LENGTH,
+  RETURN_TO_UNMATCHED_EFFECT,
   transactionSourceLabel,
   waitsFor,
   type InboundCorrection,
   type InboundExplanation,
+  type InboundReturn,
   type MatchCandidate,
   type ManualMatch,
   type PaidBreakdown,
@@ -97,19 +100,30 @@ export type CorrectionOffer =
   | { blocked: string }
 
 /**
+ * What an admin may do about returning one explanation to unmatched
+ * (DOS/Give#196): the action, or a sentence saying why they may not.
+ */
+export type ReturnToUnmatchedOffer =
+  { action: (state: ActionResult, form: FormData) => Promise<ActionResult> } | { blocked: string }
+
+/**
  * Recent explanations of incoming money that is not a donation, with their
- * private reason and evidence. A corrected one shows its correction; with
- * corrections (admins only), an uncorrected one offers "Sửa giải trình".
+ * private reason and evidence. A corrected one shows its correction and a
+ * returned one its return (DOS/Give#196); with offers (admins only), one that
+ * is neither offers "Đưa về chưa khớp" and "Sửa giải trình".
  */
 export function InboundExplanationList({
   explanations,
   titles,
   corrections,
+  returns,
 }: {
   explanations: InboundExplanation[]
   titles?: Map<string, string>
   /** By transaction id; an explanation without an entry offers nothing. */
   corrections?: Map<string, CorrectionOffer>
+  /** By transaction id; an explanation without an entry offers nothing. */
+  returns?: Map<string, ReturnToUnmatchedOffer>
 }) {
   return (
     <section aria-labelledby="inbound-explanations-heading">
@@ -121,13 +135,15 @@ export function InboundExplanationList({
       ) : (
         <ul className="divide-y divide-border card">
           {explanations.map((e) => {
-            const offer = e.correction ? undefined : corrections?.get(e.bank_transaction_id)
+            const superseded = Boolean(e.correction || e.returned)
+            const offer = superseded ? undefined : corrections?.get(e.bank_transaction_id)
+            const returnOffer = superseded ? undefined : returns?.get(e.bank_transaction_id)
             return (
               <li key={e.bank_transaction_id} className="space-y-1 p-4 sm:px-6">
                 <p className="flex flex-wrap justify-between gap-x-4 gap-y-1">
                   <span className="min-w-0 break-words">
                     <span
-                      className={`font-semibold tabular-nums ${e.correction ? "text-muted line-through" : "text-fg"}`}
+                      className={`font-semibold tabular-nums ${superseded ? "text-muted line-through" : "text-fg"}`}
                     >
                       +{formatVnd(e.tx.amount)}
                     </span>{" "}
@@ -139,6 +155,17 @@ export function InboundExplanationList({
                 <p className="break-words text-fg">Lý do: {e.reason}</p>
                 <p className="break-words text-muted">Bằng chứng: {e.evidence}</p>
                 {e.correction && <CorrectedNote amount={e.tx.amount} correction={e.correction} />}
+                {e.returned && <ReturnedNote amount={e.tx.amount} returned={e.returned} />}
+                {returnOffer && "blocked" in returnOffer && (
+                  <p className="pt-2 text-sm text-muted">{returnOffer.blocked}</p>
+                )}
+                {returnOffer && "action" in returnOffer && (
+                  <ReturnToUnmatchedForm
+                    txId={e.bank_transaction_id}
+                    amount={e.tx.amount}
+                    action={returnOffer.action}
+                  />
+                )}
                 {offer && "blocked" in offer && <p className="pt-2 text-sm text-muted">{offer.blocked}</p>}
                 {offer && "action" in offer && (
                   <CorrectExplanationForm
@@ -174,6 +201,73 @@ function CorrectedNote({ amount, correction }: { amount: number; correction: Inb
         <p className="break-words">Lý do sửa: {correction.reason}</p>
       </Callout>
     </div>
+  )
+}
+
+/** A return supersedes the explanation: the money is unmatched again (DOS/Give#196). */
+function ReturnedNote({ amount, returned }: { amount: number; returned: InboundReturn }) {
+  return (
+    <div className="pt-2">
+      <Callout tone="info" title="Giải trình này đã được đưa về chưa khớp.">
+        <p className="break-words">
+          {formatVnd(amount)} không còn tính là &quot;không phải tiền ủng hộ&quot;: khoản tiền được đưa về chưa khớp để
+          khớp với một lượt ủng hộ. Đưa về lúc {formatDateTime(returned.returned_at)}.
+        </p>
+        <p className="break-words">Lý do đưa về: {returned.reason}</p>
+      </Callout>
+    </div>
+  )
+}
+
+/**
+ * Admin only (DOS/Give#196): sends the explanation back to unmatched, with a
+ * required reason, for money that is a donation whose contribution is not
+ * known yet. Says plainly that it is never explained again.
+ */
+function ReturnToUnmatchedForm({
+  txId,
+  amount,
+  action,
+}: {
+  txId: string
+  amount: number
+  action: (state: ActionResult, form: FormData) => Promise<ActionResult>
+}) {
+  return (
+    <details className="group pt-2">
+      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 font-medium text-fg hover:text-primary [&::-webkit-details-marker]:hidden">
+        Giải trình nhầm, chưa rõ của lượt nào? Đưa về chưa khớp
+        <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
+      </summary>
+      <ActionForm
+        action={action}
+        confirm={`Đưa ${formatVnd(amount)} về chưa khớp? Tiền chuyển từ "không phải tiền ủng hộ" sang "chưa khớp", tổng đã thanh toán không đổi. Sau đó khoản này chỉ khớp được với một lượt ủng hộ: không giải trình lại được là "không phải tiền ủng hộ". Mỗi giao dịch chỉ đưa về được một lần.`}
+        className="mt-3 grid max-w-160 gap-6"
+      >
+        <p className="text-fg">
+          Dùng khi khoản này thực ra là tiền ủng hộ nhưng chưa rõ của lượt nào (nếu đã rõ, dùng &quot;Sửa giải
+          trình&quot;). {RETURN_TO_UNMATCHED_EFFECT} Giải trình cũ vẫn được giữ trong nhật ký; lần đưa về được ghi vào
+          nhật ký kiểm toán.
+        </p>
+        <div>
+          <label htmlFor={`return-unmatched-reason-${txId}`} className="label">
+            Lý do đưa về (không công khai)
+          </label>
+          <textarea
+            id={`return-unmatched-reason-${txId}`}
+            name="reason"
+            className="field"
+            rows={2}
+            maxLength={MAX_RETURN_TO_UNMATCHED_REASON_LENGTH}
+            required
+            placeholder="Vì sao giải trình trước là nhầm, và bạn đã kiểm tra những gì"
+          />
+        </div>
+        <div>
+          <SubmitButton className={buttonClass({ variant: "secondary" })}>Đưa về chưa khớp</SubmitButton>
+        </div>
+      </ActionForm>
+    </details>
   )
 }
 

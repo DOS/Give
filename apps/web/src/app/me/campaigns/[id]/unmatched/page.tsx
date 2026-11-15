@@ -74,6 +74,7 @@ export default async function UnmatchedPage({ params }: { params: Promise<{ id: 
                     candidates={candidates}
                     action={matchTransaction.bind(null, tx.id)}
                     matchBlocked={ownerMismatchNotice(tx, campaign.organizer_id, session.user.id)}
+                    returnedExplanation={tx.returned_explanation}
                   />
                 ))}
               </ul>
