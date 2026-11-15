@@ -15,12 +15,13 @@ const state = vi.hoisted(() => ({
   userCalls: [] as Call[],
   serviceCalls: [] as Call[],
   signedIn: true,
+  email: null as string | null,
 }))
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/lib/auth/session", () => ({
   getSession: vi.fn(async () =>
-    state.signedIn ? { user: { id: USER, email: null, name: null }, accessToken: "token" } : null
+    state.signedIn ? { user: { id: USER, email: state.email, name: null }, accessToken: "token" } : null
   ),
 }))
 vi.mock("@/lib/supabase", () => ({
@@ -92,6 +93,7 @@ beforeEach(() => {
   state.userCalls.length = 0
   state.serviceCalls.length = 0
   state.signedIn = true
+  state.email = null
   state.userHandler = reads()
   state.serviceHandler = recordsNew
 })
@@ -189,6 +191,76 @@ describe("explainDisbursement", () => {
     expect(result?.message).toContain("GVABCDEF2")
     expect(result?.message).toContain("200.000")
     expect(rpc("record_disbursement")).toBeUndefined()
+  })
+
+  it("refuses a refund to the organizer's own contribution, signed in or by guest email, before any upload (DOS/Give#199)", async () => {
+    const refund = form({ category: "refund", refund_contribution_id: CONTRIBUTION }, [png()])
+    state.email = "To.Chuc@Example.vn"
+    state.userHandler = reads({
+      contribution: {
+        id: CONTRIBUTION,
+        reference_code: "GVABCDEF2",
+        received_amount: 500_000,
+        contributor_user_id: null,
+        guest_email: " to.chuc@EXAMPLE.vn ",
+      },
+    })
+    const guest = await explainDisbursement(CAMPAIGN, TX, null, refund)
+    expect(guest?.ok).toBe(false)
+    expect(guest?.message).toContain("Bạn không ghi được khoản hoàn tiền cho lượt ủng hộ của chính mình")
+    expect(guest?.message).toContain("đội ngũ Give")
+    expect(uploads()).toHaveLength(0)
+    expect(rpc("record_disbursement")).toBeUndefined()
+
+    state.userHandler = reads({
+      contribution: {
+        id: CONTRIBUTION,
+        reference_code: "GVABCDEF2",
+        received_amount: 500_000,
+        contributor_user_id: USER,
+        guest_email: null,
+      },
+    })
+    expect((await explainDisbursement(CAMPAIGN, TX, null, refund))?.message).toContain("của chính mình")
+    expect(rpc("record_disbursement")).toBeUndefined()
+
+    // Another guest's contribution is refunded.
+    state.userHandler = reads({
+      contribution: {
+        id: CONTRIBUTION,
+        reference_code: "GVABCDEF2",
+        received_amount: 500_000,
+        contributor_user_id: null,
+        guest_email: "lan@example.vn",
+      },
+    })
+    expect(
+      (
+        await explainDisbursement(
+          CAMPAIGN,
+          TX,
+          null,
+          form({ category: "refund", refund_contribution_id: CONTRIBUTION })
+        )
+      )?.ok
+    ).toBe(true)
+  })
+
+  it("words the database's GIVE_SELF_REVIEW for a refund and removes the upload", async () => {
+    state.userHandler = reads({
+      contribution: { id: CONTRIBUTION, reference_code: "GVABCDEF2", received_amount: 500_000 },
+    })
+    state.serviceHandler = (call) =>
+      call.target === "rpc:record_disbursement" ? { error: { code: "42501", message: "GIVE_SELF_REVIEW" } } : undefined
+    const result = await explainDisbursement(
+      CAMPAIGN,
+      TX,
+      null,
+      form({ category: "refund", refund_contribution_id: CONTRIBUTION }, [png()])
+    )
+    expect(result?.message).toContain("Bạn không ghi được khoản hoàn tiền cho lượt ủng hộ của chính mình")
+    expect(result?.message).not.toContain("tài khoản nhận")
+    expect(removes()).toHaveLength(1)
   })
 
   it("refuses a refund to a contribution outside the campaign", async () => {

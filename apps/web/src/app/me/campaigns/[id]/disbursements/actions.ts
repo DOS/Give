@@ -11,6 +11,7 @@ import { listEvidenceStates } from "@/lib/evidence-moderation"
 import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { detectImageType, reencodeCover } from "@/lib/media"
+import { OWN_CONTRIBUTION_MESSAGES } from "@/lib/own-contribution"
 import {
   evidencePath,
   explainSchema,
@@ -41,6 +42,9 @@ const TX_NOT_FOUND = dbErrorMessage({ message: "GIVE_TRANSACTION_NOT_FOUND" })
 /** A transfer the bank sent back never left the campaign (DOS/Give#194). */
 const RETURNED_NOT_EXPLAINABLE =
   "Giao dịch này đã được ghi nhận là bị ngân hàng trả lại. Bộ phận tài chính của Give sẽ xử lý, bạn không giải trình nó như một khoản chi. Hãy tải lại trang."
+
+/** give.record_disbursement refuses a refund to the organizer's own contribution (DOS/Give#199). */
+const REFUND_MESSAGES: Record<string, string> = { GIVE_SELF_REVIEW: OWN_CONTRIBUTION_MESSAGES.refund }
 
 type Loaded = {
   campaign: CampaignWithRefs
@@ -169,13 +173,20 @@ export async function explainDisbursement(
   if (input.refund_contribution_id) {
     let contribution
     try {
-      contribution = await getRefundable(dbAs(session.accessToken), campaign.id, input.refund_contribution_id)
+      contribution = await getRefundable(
+        dbAs(session.accessToken),
+        campaign.id,
+        input.refund_contribution_id,
+        session.user
+      )
     } catch (error) {
       return fail(dbErrorMessage(error as DbErrorLike))
     }
     if (!contribution) {
       return fail("Lượt ủng hộ này không thuộc chiến dịch, hoặc đã được hoàn hết số tiền đã chuyển vào.")
     }
+    // The picker leaves the organizer's own contributions out (DOS/Give#199).
+    if (contribution.own) return fail(OWN_CONTRIBUTION_MESSAGES.refund)
     if (tx.amount > contribution.refundable_amount) {
       return fail(
         `Khoản hoàn ${formatVnd(tx.amount)} lớn hơn số còn hoàn được cho lượt ủng hộ ${contribution.reference_code} (${formatVnd(contribution.refundable_amount)}).`
@@ -202,7 +213,7 @@ export async function explainDisbursement(
     .single()
   if (error) {
     if (refusedByDatabase(error)) await stored.cleanup()
-    return fail(dbErrorMessage(error))
+    return fail(dbErrorMessage(error, REFUND_MESSAGES))
   }
 
   refresh(campaign)

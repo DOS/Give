@@ -35,6 +35,7 @@ import {
   type MatchCandidate,
   type ReturnCandidate,
 } from "@/lib/reconciliation"
+import { OWN_CONTRIBUTION_SCOPE, type Viewer } from "@/lib/own-contribution"
 import { accountLabels } from "@/lib/statement-import"
 import { dbAs } from "@/lib/supabase"
 
@@ -71,7 +72,7 @@ export default async function AdminUnmatchedPage() {
       ...explanations.map((e) => e.tx.campaign_id),
       ...returns.map((r) => r.tx.campaign_id),
     ]),
-    Promise.all(campaignIds.map((id) => listMatchCandidates(db, id))),
+    Promise.all(campaignIds.map((id) => listMatchCandidates(db, id, session.user))),
     // Without organizers the match forms stay and the database still refuses.
     campaignOrganizers(db, campaignIds).catch((e: { code?: string; message?: string } | null) => {
       console.error("managed_campaigns organizers failed", e?.code, e?.message)
@@ -85,7 +86,7 @@ export default async function AdminUnmatchedPage() {
       }
     ),
     // Without candidates the return form says none fits; matching and explaining still work.
-    Promise.all(campaignIds.map((id) => listReturnCandidates(db, id)))
+    Promise.all(campaignIds.map((id) => listReturnCandidates(db, id, session.user)))
       .then((lists) => lists.flat())
       .catch((e: { code?: string; message?: string } | null) => {
         console.error("return candidates failed", e?.code, e?.message)
@@ -94,7 +95,7 @@ export default async function AdminUnmatchedPage() {
   ])
   const candidates = new Map(campaignIds.map((id, i) => [id, candidateLists[i]]))
   const titles = new Map([...refs].map(([id, ref]) => [id, ref.title]))
-  const corrections = await correctionOffers(db, session.user.id, explanations, candidates)
+  const corrections = await correctionOffers(db, session.user, explanations, candidates)
 
   return (
     <AdminPage
@@ -106,6 +107,11 @@ export default async function AdminUnmatchedPage() {
             khớp&quot;. Khớp tay khi đã rõ khoản này của lượt ủng hộ nào; người tổ chức cũng khớp được ở trang chiến
             dịch của họ. Khớp tay chỉ chuyển tiền từ &quot;chưa khớp&quot; sang &quot;đã khớp&quot;, tổng đã thanh toán
             của chiến dịch không đổi. Mỗi giao dịch chỉ khớp được một lần, và mỗi lần được ghi vào nhật ký kiểm toán.
+          </p>
+          <p>
+            Không ai khớp tay, sửa giải trình hay ghi nhận tiền bị trả lại cho lượt ủng hộ của chính mình (
+            {OWN_CONTRIBUTION_SCOPE}): các lượt đó và các khoản hoàn tiền cho chúng không có trong danh sách của bạn.
+            Nhờ một nhân viên tài chính hoặc quản trị viên khác xử lý.
           </p>
           <p>
             Khoản không phải tiền ủng hộ (người tổ chức nạp thêm, ngân hàng hoàn phí, lãi) thì giải trình thay vì khớp,
@@ -190,7 +196,7 @@ export default async function AdminUnmatchedPage() {
  */
 async function correctionOffers(
   db: ReturnType<typeof dbAs>,
-  userId: string,
+  viewer: Viewer,
   explanations: InboundExplanation[],
   known: Map<string, MatchCandidate[]>
 ): Promise<Map<string, CorrectionOffer>> {
@@ -211,7 +217,7 @@ async function correctionOffers(
       return new Map<string, string>()
     }),
     // Without candidates the campaign's explanations offer no correction this time.
-    Promise.all(missing.map((id) => listMatchCandidates(db, id).catch(() => null))),
+    Promise.all(missing.map((id) => listMatchCandidates(db, id, viewer).catch(() => null))),
   ])
   const candidates = new Map(known)
   missing.forEach((id, i) => {
@@ -221,7 +227,7 @@ async function correctionOffers(
   const offers = new Map<string, CorrectionOffer>()
   for (const e of open) {
     const blocked = correctionBlocked(e, {
-      id: userId,
+      id: viewer.id,
       isAdmin: true,
       organizerId: organizers.get(e.tx.campaign_id),
       explainerId: explainers.get(e.bank_transaction_id),
@@ -234,7 +240,7 @@ async function correctionOffers(
     if (!list) continue
     offers.set(e.bank_transaction_id, {
       action: correctExplanation.bind(null, e.bank_transaction_id),
-      candidates: correctionCandidates(list, userId),
+      candidates: correctionCandidates(list, viewer.id),
     })
   }
   return offers

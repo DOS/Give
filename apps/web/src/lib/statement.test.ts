@@ -17,6 +17,7 @@ import {
   listMoneyTotals,
   listExplainedOutgoing,
   listPublicEvidence,
+  getRefundable,
   listRefundable,
   listStatement,
   listStatementPairs,
@@ -42,6 +43,9 @@ const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
 const TX = "33333333-3333-4333-8333-333333333333"
 const OBJECT = "44444444-4444-4444-8444-444444444444"
 const CONTRIBUTION = "55555555-5555-4555-8555-555555555555"
+const ORGANIZER = "77777777-7777-4777-8777-777777777777"
+/** The organizer viewing the disbursements page; their auth email differs from their guest email in case and spaces. */
+const ORGANIZER_VIEWER = { id: ORGANIZER, email: "Toc.Chuc@Example.vn" }
 
 /** A give.public_campaigns row as PostgREST returns it (bigint sums may be strings). */
 const viewRow = {
@@ -550,7 +554,7 @@ describe("bank fee on a returned transfer (DOS/Give#195)", () => {
             ],
           }
     )
-    const rows = await listRefundable(db as never, CAMPAIGN)
+    const rows = await listRefundable(db as never, CAMPAIGN, ORGANIZER_VIEWER)
     expect(rows.map((x) => [x.id, x.refundable_amount])).toEqual([["a", 300_000]])
   })
 })
@@ -711,13 +715,98 @@ describe("organizer reads", () => {
         ],
       }
     }, calls)
-    const rows = await listRefundable(db as never, CAMPAIGN)
+    const rows = await listRefundable(db as never, CAMPAIGN, ORGANIZER_VIEWER)
     const contributions = calls.find((c) => c.target === "contributions")
-    expect(selected(contributions)).not.toMatch(/guest|email|contributor_user_id/)
+    // Only the columns the own-contribution rule needs (DOS/Give#199); never the guest's name.
+    expect(selected(contributions)).not.toMatch(/guest_name/)
+    expect(selected(contributions)).toContain("contributor_user_id, guest_email")
     expect(op(contributions, "gt")).toEqual(["received_amount", 0])
     expect(calls.find((c) => c.target === "ledger_entries")?.ops).toContainEqual(["eq", "bucket", "refunded"])
     expect(rows.map((x) => [x.id, x.refundable_amount])).toEqual([["a", 350_000]])
     expect(refundOptionLabel(rows[0], formatVnd)).toContain(`còn hoàn được ${formatVnd(350_000)}`)
+  })
+
+  it("leaves the organizer's own contributions out of the refund picker, signed in or by guest email (DOS/Give#199)", async () => {
+    const db = fakeDb((call) =>
+      call.target === "contributions"
+        ? {
+            data: [
+              {
+                id: "mine",
+                reference_code: "GVM",
+                received_amount: 100_000,
+                contributor_user_id: ORGANIZER,
+                guest_email: null,
+              },
+              {
+                id: "guest-mine",
+                reference_code: "GVG",
+                received_amount: 100_000,
+                contributor_user_id: null,
+                guest_email: " toc.chuc@example.VN ",
+              },
+              {
+                id: "other",
+                reference_code: "GVO",
+                received_amount: 100_000,
+                contributor_user_id: null,
+                guest_email: "lan@example.vn",
+              },
+              {
+                id: "user",
+                reference_code: "GVU",
+                received_amount: 100_000,
+                contributor_user_id: "someone",
+                guest_email: null,
+              },
+            ],
+          }
+        : { data: [] }
+    )
+    const rows = await listRefundable(db as never, CAMPAIGN, ORGANIZER_VIEWER)
+    expect(rows.map((x) => x.id)).toEqual(["other", "user"])
+    for (const row of rows) {
+      expect(row).not.toHaveProperty("guest_email")
+      expect(row).not.toHaveProperty("contributor_user_id")
+    }
+    // Without an email on the session, a guest contribution is never taken for the organizer's.
+    const noEmail = await listRefundable(db as never, CAMPAIGN, { id: ORGANIZER, email: null })
+    expect(noEmail.map((x) => x.id)).toEqual(["guest-mine", "other", "user"])
+  })
+
+  it("flags the organizer's own contribution when the refund action reads it (DOS/Give#199)", async () => {
+    const row = (over: Record<string, unknown>) =>
+      fakeDb((call) =>
+        call.target === "contributions"
+          ? {
+              data: {
+                id: CONTRIBUTION,
+                reference_code: "GVA",
+                received_amount: 100_000,
+                contributor_user_id: null,
+                guest_email: null,
+                ...over,
+              },
+            }
+          : { data: [] }
+      )
+    const guest = await getRefundable(
+      row({ guest_email: "TOC.CHUC@example.vn" }) as never,
+      CAMPAIGN,
+      CONTRIBUTION,
+      ORGANIZER_VIEWER
+    )
+    expect(guest).toMatchObject({ id: CONTRIBUTION, own: true, refundable_amount: 100_000 })
+    expect(guest).not.toHaveProperty("guest_email")
+    expect(
+      await getRefundable(row({ contributor_user_id: ORGANIZER }) as never, CAMPAIGN, CONTRIBUTION, ORGANIZER_VIEWER)
+    ).toMatchObject({ own: true })
+    expect(
+      await getRefundable(row({ guest_email: "lan@example.vn" }) as never, CAMPAIGN, CONTRIBUTION, ORGANIZER_VIEWER)
+    ).toMatchObject({ own: false })
+    expect(
+      await getRefundable(fakeDb(() => ({ data: null })) as never, CAMPAIGN, CONTRIBUTION, ORGANIZER_VIEWER)
+    ).toBeNull()
   })
 
   it("flags explanations older than seven days", () => {

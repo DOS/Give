@@ -41,6 +41,8 @@ const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
 const ORGANIZER = "33333333-3333-4333-8333-333333333333"
 const OTHER = "44444444-4444-4444-8444-444444444444"
 const STAFF = "66666666-6666-4666-8666-666666666666"
+/** A finance staff member viewing /admin/unmatched; their auth email differs from their guest email in case and spaces. */
+const STAFF_VIEWER = { id: STAFF, email: "Tai.Chinh@Give.vn" }
 
 /** formatVnd puts a no-break space before the đồng sign. */
 const vnd = (text: string) => text.replace(/ ₫/g, " ₫")
@@ -604,7 +606,7 @@ describe("reference codes and candidates", () => {
       }),
       calls
     ) as unknown as Db
-    const candidates = await listMatchCandidates(db, CAMPAIGN)
+    const candidates = await listMatchCandidates(db, CAMPAIGN, STAFF_VIEWER)
     expect(calls).toHaveLength(1)
     expect(calls[0].target).toBe("contributions")
     expect(String(op(calls[0], "select")?.[0])).toContain("refunds:ledger_entries!contribution_id(amount)")
@@ -622,10 +624,39 @@ describe("reference codes and candidates", () => {
     expect(waitsFor(candidates[0], 350_000)).toBe(true)
 
     const missingRefunds = fakeDb(() => ({ data: [{ ...candidate, refunds: null }] })) as unknown as Db
-    await expect(listMatchCandidates(missingRefunds, CAMPAIGN)).rejects.toThrow(/ledger refunds/)
+    await expect(listMatchCandidates(missingRefunds, CAMPAIGN, STAFF_VIEWER)).rejects.toThrow(/ledger refunds/)
 
     const denied = fakeDb(() => ({ error: { code: "42501", message: "denied" } })) as unknown as Db
-    await expect(listMatchCandidates(denied, CAMPAIGN)).rejects.toMatchObject({ code: "42501" })
+    await expect(listMatchCandidates(denied, CAMPAIGN, STAFF_VIEWER)).rejects.toMatchObject({ code: "42501" })
+  })
+
+  it("leaves the viewer's own contributions out of the match list, signed in or by guest email (DOS/Give#199)", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: [
+          { ...candidate, id: "mine", contributor_user_id: STAFF, guest_email: null, refunds: [] },
+          {
+            ...candidate,
+            id: "guest-mine",
+            contributor_user_id: null,
+            guest_email: "  tai.chinh@GIVE.vn ",
+            refunds: [],
+          },
+          { ...candidate, id: "guest", contributor_user_id: null, guest_email: "lan@example.vn", refunds: [] },
+          { ...candidate, id: "user", contributor_user_id: OTHER, guest_email: null, refunds: [] },
+        ],
+      }),
+      calls
+    ) as unknown as Db
+    const candidates = await listMatchCandidates(db, CAMPAIGN, STAFF_VIEWER)
+    expect(candidates.map((c) => c.id)).toEqual(["guest", "user"])
+    expect(String(op(calls[0], "select")?.[0])).toContain("guest_email")
+    // The email is read only to filter: no page receives it.
+    for (const c of candidates) expect(c).not.toHaveProperty("guest_email")
+    // The organizer viewing their campaign: their signed-in contribution goes, the staff member's stays.
+    const asOrganizer = await listMatchCandidates(db, CAMPAIGN, { id: OTHER, email: null })
+    expect(asOrganizer.map((c) => c.id)).toEqual(["mine", "guest-mine", "guest"])
   })
 })
 
@@ -669,12 +700,14 @@ describe("returned transfers (DOS/Give#72)", () => {
       }),
       calls
     ) as unknown as Db
-    expect(await listReturnCandidates(db, CAMPAIGN)).toEqual([
+    expect(await listReturnCandidates(db, CAMPAIGN, STAFF_VIEWER)).toEqual([
       { ...base, is_refund: true, purpose: "Hoàn tiền", refund_reference_code: "GVAB12CD" },
     ])
     const select = String(op(calls[0], "select")?.[0])
     expect(select).toContain("disbursement:disbursements!inner(")
-    expect(select).toContain("refund:contributions!refund_contribution_id(reference_code)")
+    expect(select).toContain(
+      "refund:contributions!refund_contribution_id(reference_code, contributor_user_id, guest_email)"
+    )
     expect(select).toContain("returned_transfers!original_transaction_id(bank_transaction_id)")
     expect(calls[0].ops).toEqual(
       expect.arrayContaining([
@@ -688,7 +721,41 @@ describe("returned transfers (DOS/Give#72)", () => {
 
   it("throws a read error", async () => {
     const db = fakeDb(() => ({ error: { code: "57014", message: "timeout" } })) as unknown as Db
-    await expect(listReturnCandidates(db, CAMPAIGN)).rejects.toMatchObject({ code: "57014" })
+    await expect(listReturnCandidates(db, CAMPAIGN, STAFF_VIEWER)).rejects.toMatchObject({ code: "57014" })
+  })
+
+  it("leaves out a refund to the viewer's own contribution, signed in or by guest email (DOS/Give#199)", async () => {
+    const refund = (id: string, contribution: object | null) => ({
+      ...base,
+      id,
+      amount: "200000",
+      disbursement: { is_refund: true, purpose: "Hoàn tiền", refund: contribution },
+      returned_transfers: null,
+    })
+    const db = fakeDb(() => ({
+      data: [
+        refund("own", { reference_code: "GVOWN", contributor_user_id: STAFF, guest_email: null }),
+        refund("own-guest", [{ reference_code: "GVOG", contributor_user_id: null, guest_email: "TAI.CHINH@give.vn" }]),
+        refund("other", { reference_code: "GVOTH", contributor_user_id: null, guest_email: "lan@example.vn" }),
+        // Unreadable contribution: kept, and the database still refuses an own one.
+        refund("unknown", null),
+        // A payment has no contribution and is never left out.
+        {
+          ...base,
+          id: "pay",
+          amount: "200000",
+          disbursement: { is_refund: false, purpose: "Mua gạo", refund: null },
+          returned_transfers: null,
+        },
+      ],
+    })) as unknown as Db
+    const list = await listReturnCandidates(db, CAMPAIGN, STAFF_VIEWER)
+    expect(list.map((c) => [c.id, c.refund_reference_code])).toEqual([
+      ["other", "GVOTH"],
+      ["unknown", null],
+      ["pay", null],
+    ])
+    for (const c of list) expect(Object.keys(c)).not.toEqual(expect.arrayContaining(["guest_email"]))
   })
 
   it("offers only what the database would accept: campaign, account, asset, amount and local day", () => {

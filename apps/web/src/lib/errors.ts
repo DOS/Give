@@ -277,7 +277,7 @@ export const CORRECT_EXPLANATION_MESSAGES: Record<string, string> = {
   GIVE_TRANSACTION_NOT_INBOUND: "Chỉ sửa được giải trình của khoản tiền vào.",
   GIVE_TRANSACTION_UNATTRIBUTED: "Giao dịch này không thuộc chiến dịch nào, nên không có lượt ủng hộ nào để ghi nhận.",
   GIVE_SELF_REVIEW:
-    "Bạn không sửa được giải trình này: bạn là người tổ chức chiến dịch, người đã giải trình khoản này, hoặc người ủng hộ của lượt đã chọn. Nhờ một quản trị viên khác.",
+    "Bạn không sửa được giải trình này: bạn là người tổ chức chiến dịch, người đã giải trình khoản này, hoặc người ủng hộ của lượt đã chọn (kể cả lượt ủng hộ không đăng nhập dùng email của bạn). Nhờ một quản trị viên khác.",
   GIVE_EXPLANATION_ALREADY_CORRECTED:
     "Giải trình này đã được sửa rồi (với lượt ủng hộ hoặc lý do khác). Mỗi giải trình chỉ sửa được một lần. Hãy tải lại trang.",
   GIVE_TRANSACTION_NOT_EXPLAINED:

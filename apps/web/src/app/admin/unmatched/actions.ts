@@ -14,6 +14,7 @@ import {
 } from "@/lib/errors"
 import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
+import { isOwnContribution, OWN_CONTRIBUTION_MESSAGES } from "@/lib/own-contribution"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import {
   explainersOf,
@@ -166,6 +167,8 @@ const RETURN_MESSAGES: Record<string, string> = {
     "Một trong hai giao dịch là khoản chuyển giữa các tài khoản của chiến dịch, nên không ghi nhận được là tiền bị trả lại.",
   GIVE_LEDGER_POST_MISSING:
     "Một trong hai giao dịch chưa được ghi sổ đầy đủ, hoặc khoản tiền vào đã được xử lý. Hãy tải lại trang; nếu vẫn lỗi, thử lại sau ít phút.",
+  // A returned refund to the actor's own contribution (DOS/Give#199).
+  GIVE_SELF_REVIEW: OWN_CONTRIBUTION_MESSAGES.returnedRefund,
 }
 
 /**
@@ -364,7 +367,8 @@ export async function correctExplanation(
     if (tx.corrected_to && tx.corrected_to !== contribution.id) {
       return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_EXPLANATION_ALREADY_CORRECTED)
     }
-    if (contribution.contributor_user_id === userId) return fail(CORRECTION_SELF_REVIEW)
+    // Signed in, or a guest contribution with the admin's email (DOS/Give#199).
+    if (isOwnContribution(contribution, session.user)) return fail(OWN_CONTRIBUTION_MESSAGES.correction)
     if ((await explainersOf(db, [tx.id])).get(tx.id) === userId) return fail(CORRECTION_SELF_REVIEW)
     before = await paidBreakdown(db, campaign.id)
   } catch (error) {
