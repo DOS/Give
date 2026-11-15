@@ -108,7 +108,14 @@ describe("listUnmatched", () => {
     const db = fakeDb(
       () => ({
         data: [
-          { id: "t", campaign_id: CAMPAIGN, amount: "150000", transaction_matches: null, inbound_explanations: null },
+          {
+            id: "t",
+            campaign_id: CAMPAIGN,
+            amount: "150000",
+            transaction_matches: null,
+            inbound_explanations: null,
+            own_in: null,
+          },
         ],
       }),
       calls
@@ -130,9 +137,12 @@ describe("listUnmatched", () => {
         ["not", "campaign_id", "is", null],
         ["is", "transaction_matches", null],
         ["is", "inbound_explanations", null],
+        // The incoming leg of a transfer between the campaign's own accounts is settled (DOS/Give#84).
+        ["is", "own_in", null],
         ["eq", "campaign_id", CAMPAIGN],
       ])
     )
+    expect(String(op(calls[0], "select")?.[0])).toContain("own_in:own_account_transfers!in_transaction_id(id)")
   })
 
   it("reads the account's owner and the binding's account, as an object or a one-row array", async () => {

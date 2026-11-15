@@ -2,6 +2,7 @@ import Link from "next/link"
 
 import { LedgerIcon } from "@/components/ui/icons"
 import { MoneyRow } from "@/components/ui/Money"
+import { OwnTransferNote } from "@/components/OwnTransferNote"
 import { formatVnd } from "@/lib/format"
 import { explainedOutAmount, remainingAmount, type MoneyTotals as Totals } from "@/lib/statement"
 
@@ -43,6 +44,7 @@ export function MoneyTotals({ totals, statementHref }: { totals: Totals; stateme
           tổ chức nạp thêm, ngân hàng hoàn phí hoặc trả lãi), đã được Give giải trình trên sao kê.
         </p>
       )}
+      {totals.own_transfer_amount > 0 && <OwnTransferNote amount={totals.own_transfer_amount} />}
       <dl className="border-t border-border pt-3">
         {isBack && <MoneyRow label="Đã cam kết" amount={totals.pledged_amount} figure="pledged" />}
         <MoneyRow label="Đã chi" amount={totals.disbursed_amount} figure="disbursed" />

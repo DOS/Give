@@ -30,6 +30,7 @@ const totals: Totals = {
   backers_count: 0,
   payments_stopped_at: null,
   payments_stopped_note: null,
+  own_transfer_amount: 0,
 }
 
 /** The text of each figure, by its data-figure key. */
@@ -61,6 +62,18 @@ describe("MoneyTotals", () => {
     expect(html).toContain("không phải tiền ủng hộ")
     // The headline stays the gross amount in the account.
     expect(figures(html).paid).toBe(formatVnd(1_500_000))
+  })
+
+  it("says an own-account transfer is in neither paid nor spent, only when there is one (DOS/Give#84)", () => {
+    expect(renderToStaticMarkup(createElement(MoneyTotals, { totals }))).not.toContain("tài khoản cũ")
+    const html = renderToStaticMarkup(
+      createElement(MoneyTotals, { totals: { ...totals, own_transfer_amount: 3_000_000 } })
+    )
+    expect(figures(html).own_transfer).toBe(formatVnd(3_000_000))
+    expect(html).toContain("không phải tiền ủng hộ mới hay khoản chi")
+    // The view already leaves the pair out: the figures stay what it sent.
+    expect(figures(html).paid).toBe(formatVnd(1_500_000))
+    expect(figures(html).disbursed).toBe(formatVnd(700_000))
   })
 
   it("adds pledged for a back campaign", () => {

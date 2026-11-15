@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
 
-import { dbErrorMessage, giveErrorCode, OPEN_MESSAGES, REVIEW_MESSAGES, SUBMIT_MESSAGES } from "./errors"
+import {
+  dbErrorMessage,
+  giveErrorCode,
+  OPEN_MESSAGES,
+  OWN_TRANSFER_MESSAGES,
+  REVIEW_MESSAGES,
+  SUBMIT_MESSAGES,
+} from "./errors"
 
 describe("giveErrorCode", () => {
   it("reads the code at the start of the message", () => {
@@ -60,5 +67,51 @@ describe("dbErrorMessage", () => {
     const message = dbErrorMessage({ code: "XX000", message: "internal: relation give.secret" })
     expect(message).not.toContain("give.secret")
     expect(message).toBe("Có lỗi xảy ra. Hãy thử lại sau.")
+  })
+})
+
+describe("own-account transfer refusals (DOS/Give#84)", () => {
+  // Every code give.mark_own_account_transfer raises (DOS-Me 20261115120000), in its check order.
+  const CODES = [
+    "GIVE_NOT_ALLOWED",
+    "GIVE_REASON_REQUIRED",
+    "GIVE_REASON_TOO_LONG",
+    "GIVE_TRANSACTION_NOT_FOUND",
+    "GIVE_TRANSACTION_NOT_OUTBOUND",
+    "GIVE_TRANSACTION_NOT_INBOUND",
+    "GIVE_TRANSACTION_UNATTRIBUTED",
+    "GIVE_OWN_TRANSFER_CAMPAIGN_MISMATCH",
+    "GIVE_SELF_REVIEW",
+    "GIVE_TRANSACTION_ALREADY_TRANSFERRED",
+    "GIVE_OWN_TRANSFER_AMOUNT_MISMATCH",
+    "GIVE_OWN_TRANSFER_NOT_SWAPPED",
+    "GIVE_DISBURSEMENT_ALREADY_EXPLAINED",
+    "GIVE_TRANSACTION_ALREADY_MATCHED",
+    "GIVE_TRANSACTION_ALREADY_EXPLAINED",
+    "GIVE_LEDGER_POST_MISSING",
+  ]
+  const generic = dbErrorMessage(null)
+
+  it("words every code for finance, never the generic message", () => {
+    for (const code of CODES) {
+      const message = dbErrorMessage({ code: "23514", message: `${code}: detail` }, OWN_TRANSFER_MESSAGES)
+      expect(message, code).not.toBe(generic)
+      expect(message, code).toBe(OWN_TRANSFER_MESSAGES[code])
+    }
+    expect(Object.keys(OWN_TRANSFER_MESSAGES).sort()).toEqual([...CODES].sort())
+  })
+
+  it("words the pair-only codes outside the finance page too", () => {
+    for (const code of [
+      "GIVE_TRANSACTION_OWN_TRANSFER",
+      "GIVE_TRANSACTION_ALREADY_TRANSFERRED",
+      "GIVE_OWN_TRANSFER_CAMPAIGN_MISMATCH",
+      "GIVE_OWN_TRANSFER_AMOUNT_MISMATCH",
+      "GIVE_OWN_TRANSFER_NOT_SWAPPED",
+    ]) {
+      expect(dbErrorMessage({ code: "23514", message: code }), code).not.toBe(generic)
+    }
+    // An organizer explaining a paired outgoing leg learns why it is refused.
+    expect(dbErrorMessage({ code: "23514", message: "GIVE_TRANSACTION_OWN_TRANSFER" })).toContain("tài khoản mới")
   })
 })
