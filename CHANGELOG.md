@@ -251,6 +251,19 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   (the generic text was about receiving accounts), and the organizer's
   unmatched page states the rule: their own contribution matches by
   reference code, or Give's finance staff match it (#199 / #202).
+- Finance and admin staff record a campaign's transfer out as a refund to a
+  chosen contribution on the new admin tab "Hoàn tiền" (`/admin/refunds`,
+  campaigns with transfers out still to explain, longest waiting first, then
+  `/admin/refunds/[id]`). It is the path for a refund to the organizer's own
+  contribution, which the organizer cannot book since #199. Only refunds;
+  the same list rules as the organizer's page (no move between the
+  campaign's own accounts, transfers the bank returned shown apart and not
+  offered), the organizer form's validation and evidence upload (now in
+  `lib/disbursement-evidence.ts`), and a picker without the staff member's
+  own contributions or those with less left to refund than the transfer.
+  The role is checked with the staff member's own token first. The
+  organizer's refund refusal and hint now tell them to ask Give's finance
+  staff, who record it as a refund (#203 / #204).
 
 ### Platform
 

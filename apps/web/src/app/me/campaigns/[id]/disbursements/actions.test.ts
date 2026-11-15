@@ -208,7 +208,7 @@ describe("explainDisbursement", () => {
     const guest = await explainDisbursement(CAMPAIGN, TX, null, refund)
     expect(guest?.ok).toBe(false)
     expect(guest?.message).toContain("Bạn không ghi được khoản hoàn tiền cho lượt ủng hộ của chính mình")
-    expect(guest?.message).toContain("đội ngũ Give")
+    expect(guest?.message).toContain("báo bộ phận tài chính của Give")
     expect(uploads()).toHaveLength(0)
     expect(rpc("record_disbursement")).toBeUndefined()
 
