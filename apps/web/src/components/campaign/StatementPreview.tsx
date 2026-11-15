@@ -8,6 +8,7 @@ import { Callout } from "@/components/ui/Callout"
 import { formatDate, formatVnd } from "@/lib/format"
 import {
   counterpartyLabel,
+  explainedNotDonation,
   remainingAmount,
   returnBankFee,
   statementHref,
@@ -27,7 +28,7 @@ function RowNote({ row }: { row: StatementRow }) {
   // A transfer between the campaign's own accounts after a swap (DOS/Give#84).
   if (row.own_transfer_label) return <Badge tone="info">Chuyển tài khoản</Badge>
   if (row.direction === "in") {
-    if (!row.in_explanation && !row.return_of) return null
+    if (!explainedNotDonation(row) && !row.return_of) return null
     // A fee the bank kept on a returned transfer (DOS/Give#195), named once
     // per pair: on the money that came back, not again on the transfer out.
     const fee = row.return_of ? returnBankFee(row, null) : 0

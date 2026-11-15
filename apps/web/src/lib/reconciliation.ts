@@ -271,7 +271,19 @@ function one<T>(value: T | T[] | null | undefined): T | null {
   return (Array.isArray(value) ? value[0] : value) ?? null
 }
 
-/** One incoming transaction the caller may read, with its match, explanation or return link if any. */
+type CorrectionRef = { contribution_id: string }
+type ExplanationRef = {
+  kind: string
+  inbound_explanation_corrections?: CorrectionRef | CorrectionRef[] | null
+}
+
+/**
+ * One incoming transaction the caller may read, with its match, explanation
+ * or return link if any. A corrected explanation (DOS/Give#71) is superseded
+ * by its correction: the transaction is matched to the correction's
+ * contribution and no longer explained, so explained_as is null and
+ * corrected_to names that contribution.
+ */
 export async function getIncoming(
   db: Db,
   id: string
@@ -280,6 +292,8 @@ export async function getIncoming(
       direction: string
       matched_to: string | null
       explained_as: string | null
+      /** The contribution a correction of its explanation credited the money to (DOS/Give#71). */
+      corrected_to: string | null
       /** The outgoing transaction it was linked to as returned money (DOS/Give#72). */
       returned_of: string | null
     })
@@ -288,7 +302,8 @@ export async function getIncoming(
   const { data, error } = await db
     .from("bank_transactions")
     .select(
-      `${TX_COLUMNS}, direction, transaction_matches(contribution_id), inbound_explanations(kind), ` +
+      `${TX_COLUMNS}, direction, transaction_matches(contribution_id), ` +
+        "inbound_explanations(kind, inbound_explanation_corrections(contribution_id)), " +
         "returned_transfers!bank_transaction_id(original_transaction_id)"
     )
     .eq("id", id)
@@ -303,14 +318,17 @@ export async function getIncoming(
   } = data as unknown as UnmatchedTransaction & {
     direction: string
     transaction_matches: { contribution_id: string } | { contribution_id: string }[] | null
-    inbound_explanations?: { kind: string } | { kind: string }[] | null
+    inbound_explanations?: ExplanationRef | ExplanationRef[] | null
     returned_transfers?: { original_transaction_id: string } | { original_transaction_id: string }[] | null
   }
+  const explained = one(explanation)
+  const corrected = one(explained?.inbound_explanation_corrections)?.contribution_id ?? null
   return {
     ...tx,
     amount: Number(tx.amount),
-    matched_to: one(match)?.contribution_id ?? null,
-    explained_as: one(explanation)?.kind ?? null,
+    matched_to: corrected ?? one(match)?.contribution_id ?? null,
+    explained_as: corrected ? null : (explained?.kind ?? null),
+    corrected_to: corrected,
     returned_of: one(returned)?.original_transaction_id ?? null,
   }
 }
@@ -328,16 +346,21 @@ export interface MatchCandidate {
   guest_name: string | null
   is_anonymous: boolean
   created_at: string
+  /** The signed-in contributor, null for a guest: staff never credit money to their own (GIVE_SELF_REVIEW). */
+  contributor_user_id?: string | null
 }
 
 export interface ContributionTarget {
   id: string
   reference_code: string
   status: string
+  /** The signed-in contributor, null for a guest (DOS/Give#71: staff never credit their own). */
+  contributor_user_id: string | null
 }
 
 const CANDIDATE_COLUMNS =
-  "id, kind, reference_code, intended_amount, received_amount, status, public_name, guest_name, is_anonymous, created_at"
+  "id, kind, reference_code, intended_amount, received_amount, status, public_name, guest_name, is_anonymous, created_at, " +
+  "contributor_user_id"
 
 function toAmount(value: unknown): number {
   if (typeof value !== "number" && (typeof value !== "string" || value.trim() === "")) {
@@ -410,7 +433,10 @@ export async function findContribution(
   campaignId: string,
   by: { id: string } | { referenceCode: string }
 ): Promise<ContributionTarget | null> {
-  let query = db.from("contributions").select("id, reference_code, status").eq("campaign_id", campaignId)
+  let query = db
+    .from("contributions")
+    .select("id, reference_code, status, contributor_user_id")
+    .eq("campaign_id", campaignId)
   query = "id" in by ? query.eq("id", by.id) : query.eq("reference_code", by.referenceCode)
   const { data, error } = await query.maybeSingle()
   if (error) throw error
@@ -535,9 +561,23 @@ export interface InboundExplanation {
   evidence: string
   explained_at: string
   tx: { amount: number; booked_at: string; campaign_id: string }
+  /** Its correction, once an admin corrected it (DOS/Give#71): the explanation is then superseded. */
+  correction: InboundCorrection | null
 }
 
-/** The latest explanations of incoming money the caller may read (finance/admin staff: all). */
+/** give.inbound_explanation_corrections as clients may read it (corrected_by is never granted). */
+export interface InboundCorrection {
+  contribution_id: string
+  reason: string
+  corrected_at: string
+  contribution: { reference_code: string } | null
+}
+
+type InboundExplanationRow = Omit<InboundExplanation, "correction"> & {
+  correction?: InboundCorrection | InboundCorrection[] | null
+}
+
+/** The latest explanations of incoming money the caller may read (finance/admin staff: all), with any correction. */
 export async function listInboundExplanations(
   db: Db,
   { limit = 30 }: { limit?: number } = {}
@@ -545,15 +585,90 @@ export async function listInboundExplanations(
   const { data, error } = await db
     .from("inbound_explanations")
     .select(
-      "bank_transaction_id, kind, reason, evidence, explained_at, tx:bank_transactions!inner(amount, booked_at, campaign_id)"
+      "bank_transaction_id, kind, reason, evidence, explained_at, tx:bank_transactions!inner(amount, booked_at, campaign_id), " +
+        "correction:inbound_explanation_corrections(contribution_id, reason, corrected_at, contribution:contributions(reference_code))"
     )
     .order("explained_at", { ascending: false })
     .limit(limit)
   if (error) throw error
-  return ((data ?? []) as unknown as InboundExplanation[]).map((e) => ({
-    ...e,
-    tx: { ...e.tx, amount: Number(e.tx.amount) },
-  }))
+  return ((data ?? []) as unknown as InboundExplanationRow[]).map(({ correction, ...e }) => {
+    const c = one(correction)
+    return {
+      ...e,
+      tx: { ...e.tx, amount: Number(e.tx.amount) },
+      correction: c ? { ...c, contribution: one(c.contribution) } : null,
+    }
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Correcting a mistaken explanation (DOS/Give#71)
+// ---------------------------------------------------------------------------
+
+/** give.inbound_explanation_corrections.reason: up to this many characters. */
+export const MAX_CORRECTION_REASON_LENGTH = 1000
+
+/** The audit action give.explain_inbound_transaction writes, with the explaining staff member as actor. */
+const EXPLAIN_AUDIT_ACTION = "bank_transaction.explain_inbound"
+
+/**
+ * Who explained each transaction, from give.audit_log (admins only under
+ * RLS; inbound_explanations.explained_by is not granted to clients). Used to
+ * hide the correction from the admin who made the explanation, since
+ * give.correct_inbound_explanation refuses them (GIVE_SELF_REVIEW). A
+ * transaction without an audit row, or whose actor was deleted, is left out.
+ */
+export async function explainersOf(db: Db, transactionIds: readonly string[]): Promise<Map<string, string>> {
+  const unique = [...new Set(transactionIds)]
+  if (unique.length === 0) return new Map()
+  const { data, error } = await db
+    .from("audit_log")
+    .select("entity_id, actor_id")
+    .eq("action", EXPLAIN_AUDIT_ACTION)
+    .eq("entity", "bank_transaction")
+    .in("entity_id", unique)
+  if (error) throw error
+  const explainers = new Map<string, string>()
+  for (const row of (data ?? []) as { entity_id: string; actor_id: string | null }[]) {
+    if (row.actor_id) explainers.set(row.entity_id, row.actor_id)
+  }
+  return explainers
+}
+
+/**
+ * Why the viewer may not correct this explanation, worded for them, or null
+ * when they may. Mirrors the refusals give.correct_inbound_explanation
+ * raises before it looks at the contribution: admins only (not finance: the
+ * correction undoes a finance decision), never on their own campaign or
+ * their own explanation (GIVE_SELF_REVIEW), and once only. The database
+ * still checks all of it under its locks.
+ */
+export function correctionBlocked(
+  e: Pick<InboundExplanation, "correction">,
+  viewer: { id: string; isAdmin: boolean; organizerId?: string | null; explainerId?: string | null }
+): string | null {
+  if (!viewer.isAdmin || e.correction) return null
+  if (viewer.organizerId === viewer.id) {
+    return "Bạn là người tổ chức chiến dịch này, nên không sửa được giải trình. Nhờ một quản trị viên khác."
+  }
+  if (viewer.explainerId === viewer.id) {
+    return "Bạn là người đã giải trình khoản này, nên không tự sửa được. Nhờ một quản trị viên khác."
+  }
+  return null
+}
+
+/** Contributions an admin may credit corrected money to: not their own (GIVE_SELF_REVIEW). */
+export function correctionCandidates(candidates: readonly MatchCandidate[], viewerId: string): MatchCandidate[] {
+  return candidates.filter((c) => c.contributor_user_id !== viewerId)
+}
+
+/** The sentence a correction ends with: the money moves from "not a donation" to matched, paid does not move. */
+export function paidAfterCorrect(before: PaidBreakdown | null, after: PaidBreakdown | null): string {
+  if (!before || !after) return ""
+  if (before.paid === after.paid) {
+    return ` Tổng đã thanh toán không đổi: ${formatVnd(after.paid)} (đã khớp ${formatVnd(before.received)} → ${formatVnd(after.received)}, không phải tiền ủng hộ ${formatVnd(before.other)} → ${formatVnd(after.other)}).`
+  }
+  return ` Tổng đã thanh toán hiện là ${formatVnd(after.paid)} (trước khi sửa: ${formatVnd(before.paid)}; có giao dịch khác vừa được ghi cùng lúc).`
 }
 
 // ---------------------------------------------------------------------------

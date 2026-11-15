@@ -1,8 +1,18 @@
+import { ActionForm, SubmitButton } from "@/components/forms"
+import { buttonClass } from "@/components/ui/Button"
+import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
+import { ChevronDownIcon } from "@/components/ui/icons"
+import type { ActionResult } from "@/lib/errors"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import {
+  candidateLabel,
+  MAX_CORRECTION_REASON_LENGTH,
   transactionSourceLabel,
+  waitsFor,
+  type InboundCorrection,
   type InboundExplanation,
+  type MatchCandidate,
   type ManualMatch,
   type PaidBreakdown,
   type ReturnedTransfer,
@@ -78,13 +88,28 @@ export function ManualMatchList({ matches, titles }: { matches: ManualMatch[]; t
   )
 }
 
-/** Recent explanations of incoming money that is not a donation, with their private reason and evidence. */
+/**
+ * What an admin may do about one explanation (DOS/Give#71): correct it with
+ * these candidates, or a sentence saying why they may not.
+ */
+export type CorrectionOffer =
+  | { action: (state: ActionResult, form: FormData) => Promise<ActionResult>; candidates: MatchCandidate[] }
+  | { blocked: string }
+
+/**
+ * Recent explanations of incoming money that is not a donation, with their
+ * private reason and evidence. A corrected one shows its correction; with
+ * corrections (admins only), an uncorrected one offers "Sửa giải trình".
+ */
 export function InboundExplanationList({
   explanations,
   titles,
+  corrections,
 }: {
   explanations: InboundExplanation[]
   titles?: Map<string, string>
+  /** By transaction id; an explanation without an entry offers nothing. */
+  corrections?: Map<string, CorrectionOffer>
 }) {
   return (
     <section aria-labelledby="inbound-explanations-heading">
@@ -95,23 +120,157 @@ export function InboundExplanationList({
         <EmptyState title="Chưa có khoản tiền vào nào được giải trình là không phải tiền ủng hộ." />
       ) : (
         <ul className="divide-y divide-border card">
-          {explanations.map((e) => (
-            <li key={e.bank_transaction_id} className="space-y-1 p-4 sm:px-6">
-              <p className="flex flex-wrap justify-between gap-x-4 gap-y-1">
-                <span className="min-w-0 break-words">
-                  <span className="font-semibold text-fg tabular-nums">+{formatVnd(e.tx.amount)}</span> ·{" "}
-                  {inboundExplanationLabel(e.kind)}
-                  {titles && <span className="text-muted"> · {titles.get(e.tx.campaign_id) ?? "Chiến dịch"}</span>}
-                </span>
-                <span className="text-sm text-muted">Giải trình lúc {formatDateTime(e.explained_at)}</span>
-              </p>
-              <p className="break-words text-fg">Lý do: {e.reason}</p>
-              <p className="break-words text-muted">Bằng chứng: {e.evidence}</p>
-            </li>
-          ))}
+          {explanations.map((e) => {
+            const offer = e.correction ? undefined : corrections?.get(e.bank_transaction_id)
+            return (
+              <li key={e.bank_transaction_id} className="space-y-1 p-4 sm:px-6">
+                <p className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+                  <span className="min-w-0 break-words">
+                    <span
+                      className={`font-semibold tabular-nums ${e.correction ? "text-muted line-through" : "text-fg"}`}
+                    >
+                      +{formatVnd(e.tx.amount)}
+                    </span>{" "}
+                    · {inboundExplanationLabel(e.kind)}
+                    {titles && <span className="text-muted"> · {titles.get(e.tx.campaign_id) ?? "Chiến dịch"}</span>}
+                  </span>
+                  <span className="text-sm text-muted">Giải trình lúc {formatDateTime(e.explained_at)}</span>
+                </p>
+                <p className="break-words text-fg">Lý do: {e.reason}</p>
+                <p className="break-words text-muted">Bằng chứng: {e.evidence}</p>
+                {e.correction && <CorrectedNote amount={e.tx.amount} correction={e.correction} />}
+                {offer && "blocked" in offer && <p className="pt-2 text-sm text-muted">{offer.blocked}</p>}
+                {offer && "action" in offer && (
+                  <CorrectExplanationForm
+                    txId={e.bank_transaction_id}
+                    amount={e.tx.amount}
+                    candidates={offer.candidates}
+                    action={offer.action}
+                  />
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
     </section>
+  )
+}
+
+/** A correction replaces the explanation: the money is a donation of this contribution. */
+function CorrectedNote({ amount, correction }: { amount: number; correction: InboundCorrection }) {
+  return (
+    <div className="pt-2">
+      <Callout tone="info" title="Giải trình này đã được sửa.">
+        <p className="break-words">
+          {formatVnd(amount)} là tiền của lượt ủng hộ{" "}
+          {correction.contribution ? (
+            <RefCode>{correction.contribution.reference_code}</RefCode>
+          ) : (
+            <MachineId>{correction.contribution_id}</MachineId>
+          )}
+          , không còn tính là &quot;không phải tiền ủng hộ&quot;. Sửa lúc {formatDateTime(correction.corrected_at)}.
+        </p>
+        <p className="break-words">Lý do sửa: {correction.reason}</p>
+      </Callout>
+    </div>
+  )
+}
+
+/**
+ * Admin only (DOS/Give#71): credits explained money to a contribution of the
+ * same campaign, with a required reason. Contributions waiting for exactly
+ * this amount come first; the admin's own contributions are left out.
+ */
+function CorrectExplanationForm({
+  txId,
+  amount,
+  candidates,
+  action,
+}: {
+  txId: string
+  amount: number
+  candidates: MatchCandidate[]
+  action: (state: ActionResult, form: FormData) => Promise<ActionResult>
+}) {
+  const sameAmount = candidates.filter((c) => waitsFor(c, amount))
+  const others = candidates.filter((c) => !waitsFor(c, amount))
+  return (
+    <details className="group pt-2">
+      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 font-medium text-fg hover:text-primary [&::-webkit-details-marker]:hidden">
+        Giải trình nhầm? Sửa giải trình
+        <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
+      </summary>
+      {candidates.length === 0 ? (
+        <div className="mt-3 max-w-160">
+          <Callout tone="info" title="Chiến dịch không có lượt ủng hộ nào nhận được khoản này.">
+            Chỉ lượt ủng hộ của cùng chiến dịch, chưa hủy hay hoàn tiền, và không phải của chính bạn mới chọn được.
+          </Callout>
+        </div>
+      ) : (
+        <ActionForm
+          action={action}
+          confirm={`Sửa giải trình: ghi nhận ${formatVnd(amount)} là tiền của lượt ủng hộ đã chọn? Tiền chuyển từ "không phải tiền ủng hộ" sang "đã khớp", tổng đã thanh toán không đổi, và sao kê công khai hiện giao dịch là tiền ủng hộ. Mỗi giải trình chỉ sửa được một lần.`}
+          className="mt-3 grid max-w-160 gap-6"
+        >
+          <p className="text-fg">
+            Dùng khi khoản này thực ra là tiền ủng hộ của một lượt trong cùng chiến dịch. Giải trình cũ vẫn được giữ
+            trong nhật ký; lần sửa được ghi vào nhật ký kiểm toán.
+          </p>
+          <div>
+            <label htmlFor={`correct-contribution-${txId}`} className="label">
+              Lượt ủng hộ
+            </label>
+            <select
+              id={`correct-contribution-${txId}`}
+              name="contribution_id"
+              className="field"
+              defaultValue=""
+              required
+            >
+              <option value="" disabled>
+                Chọn lượt ủng hộ…
+              </option>
+              {sameAmount.length > 0 && (
+                <optgroup label="Đang chờ đúng số tiền này">
+                  {sameAmount.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {candidateLabel(c)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {others.length > 0 && (
+                <optgroup label="Lượt ủng hộ khác">
+                  {others.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {candidateLabel(c)}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
+          </div>
+          <div>
+            <label htmlFor={`correct-reason-${txId}`} className="label">
+              Lý do sửa (không công khai)
+            </label>
+            <textarea
+              id={`correct-reason-${txId}`}
+              name="reason"
+              className="field"
+              rows={2}
+              maxLength={MAX_CORRECTION_REASON_LENGTH}
+              required
+              placeholder="Vì sao giải trình trước là nhầm, và bạn đã kiểm tra những gì"
+            />
+          </div>
+          <div>
+            <SubmitButton className={buttonClass({ variant: "secondary" })}>Sửa giải trình</SubmitButton>
+          </div>
+        </ActionForm>
+      )}
+    </details>
   )
 }
 

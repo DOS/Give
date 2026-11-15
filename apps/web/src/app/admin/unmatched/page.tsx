@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
 import {
+  type CorrectionOffer,
   InboundExplanationList,
   ManualMatchList,
   ReturnedTransferList,
@@ -10,13 +11,16 @@ import {
 import { UnmatchedTransactionCard } from "@/components/UnmatchedTransaction"
 import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
-import { explainTransaction, linkReturnedTransfer } from "@/app/admin/unmatched/actions"
+import { correctExplanation, explainTransaction, linkReturnedTransfer } from "@/app/admin/unmatched/actions"
 import { matchTransaction } from "@/app/me/campaigns/[id]/unmatched/actions"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
 import { campaignRefs, FINANCE_ROLES } from "@/lib/receiving-accounts"
 import {
   campaignOrganizers,
+  correctionBlocked,
+  correctionCandidates,
+  explainersOf,
   listInboundExplanations,
   listManualMatches,
   listMatchCandidates,
@@ -27,6 +31,8 @@ import {
   ownerMismatchNotice,
   returnCandidatesFor,
   UNATTRIBUTED_CAUSES,
+  type InboundExplanation,
+  type MatchCandidate,
   type ReturnCandidate,
 } from "@/lib/reconciliation"
 import { accountLabels } from "@/lib/statement-import"
@@ -88,6 +94,7 @@ export default async function AdminUnmatchedPage() {
   ])
   const candidates = new Map(campaignIds.map((id, i) => [id, candidateLists[i]]))
   const titles = new Map([...refs].map(([id, ref]) => [id, ref.title]))
+  const corrections = await correctionOffers(db, session.user.id, explanations, candidates)
 
   return (
     <AdminPage
@@ -167,9 +174,68 @@ export default async function AdminUnmatchedPage() {
 
       <ManualMatchList matches={matches} titles={titles} />
 
-      <InboundExplanationList explanations={explanations} titles={titles} />
+      <InboundExplanationList explanations={explanations} titles={titles} corrections={corrections} />
 
       <ReturnedTransferList returns={returns} titles={titles} />
     </AdminPage>
   )
+}
+
+/**
+ * "Sửa giải trình" for admins (DOS/Give#71): every uncorrected explanation
+ * gets the form, or the reason this admin may not correct it (their own
+ * campaign or their own explanation). Finance staff get nothing. A failed
+ * read leaves the offer out or keeps it; give.correct_inbound_explanation
+ * checks everything again.
+ */
+async function correctionOffers(
+  db: ReturnType<typeof dbAs>,
+  userId: string,
+  explanations: InboundExplanation[],
+  known: Map<string, MatchCandidate[]>
+): Promise<Map<string, CorrectionOffer>> {
+  const open = explanations.filter((e) => !e.correction)
+  if (open.length === 0 || !(await isStaff(db, ["admin"]))) return new Map()
+  const campaignIds = [...new Set(open.map((e) => e.tx.campaign_id))]
+  const missing = campaignIds.filter((id) => !known.has(id))
+  const [organizers, explainers, lists] = await Promise.all([
+    campaignOrganizers(db, campaignIds).catch((e: { code?: string; message?: string } | null) => {
+      console.error("managed_campaigns organizers failed", e?.code, e?.message)
+      return new Map<string, string>()
+    }),
+    explainersOf(
+      db,
+      open.map((e) => e.bank_transaction_id)
+    ).catch((e: { code?: string; message?: string } | null) => {
+      console.error("audit_log explainers failed", e?.code, e?.message)
+      return new Map<string, string>()
+    }),
+    // Without candidates the campaign's explanations offer no correction this time.
+    Promise.all(missing.map((id) => listMatchCandidates(db, id).catch(() => null))),
+  ])
+  const candidates = new Map(known)
+  missing.forEach((id, i) => {
+    const list = lists[i]
+    if (list) candidates.set(id, list)
+  })
+  const offers = new Map<string, CorrectionOffer>()
+  for (const e of open) {
+    const blocked = correctionBlocked(e, {
+      id: userId,
+      isAdmin: true,
+      organizerId: organizers.get(e.tx.campaign_id),
+      explainerId: explainers.get(e.bank_transaction_id),
+    })
+    if (blocked) {
+      offers.set(e.bank_transaction_id, { blocked })
+      continue
+    }
+    const list = candidates.get(e.tx.campaign_id)
+    if (!list) continue
+    offers.set(e.bank_transaction_id, {
+      action: correctExplanation.bind(null, e.bank_transaction_id),
+      candidates: correctionCandidates(list, userId),
+    })
+  }
+  return offers
 }

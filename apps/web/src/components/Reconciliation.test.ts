@@ -2,9 +2,14 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
-import type { ReturnedTransfer, UnattributedTransaction } from "@/lib/reconciliation"
+import type {
+  InboundExplanation,
+  MatchCandidate,
+  ReturnedTransfer,
+  UnattributedTransaction,
+} from "@/lib/reconciliation"
 
-import { ReturnedTransferList, UnattributedList } from "./Reconciliation"
+import { InboundExplanationList, ReturnedTransferList, UnattributedList } from "./Reconciliation"
 
 const ACCOUNT = "33333333-3333-4333-8333-333333333333"
 
@@ -93,5 +98,82 @@ describe("ReturnedTransferList (DOS/Give#72)", () => {
 
   it("has an empty state", () => {
     expect(html([])).toContain("Chưa có khoản tiền nào được ghi nhận là bị ngân hàng trả lại.")
+  })
+})
+
+describe("InboundExplanationList: correcting an explanation (DOS/Give#71)", () => {
+  const explanation = (id: string, extra: Partial<InboundExplanation> = {}): InboundExplanation => ({
+    bank_transaction_id: id,
+    kind: "organizer_top_up",
+    reason: "Organizer said it was a top-up",
+    evidence: "Message of 2026-11-02",
+    explained_at: "2026-11-02T03:00:00Z",
+    tx: { amount: 300_000, booked_at: "2026-10-30T03:00:00Z", campaign_id: "c" },
+    correction: null,
+    ...extra,
+  })
+  const candidate: MatchCandidate = {
+    id: "44444444-4444-4444-8444-444444444444",
+    kind: "donation",
+    reference_code: "GV7K2M9QX",
+    intended_amount: 300_000,
+    received_amount: 0,
+    refunded_amount: 0,
+    status: "awaiting_transfer",
+    public_name: "Cô Ba",
+    guest_name: null,
+    is_anonymous: false,
+    created_at: "2026-10-29T00:00:00Z",
+    contributor_user_id: null,
+  }
+  const action = async () => null
+  const render = (
+    explanations: InboundExplanation[],
+    corrections?: Parameters<typeof InboundExplanationList>[0]["corrections"]
+  ) => renderToStaticMarkup(createElement(InboundExplanationList, { explanations, corrections }))
+
+  it("offers the correction form with a required contribution and reason", () => {
+    const html = render([explanation("t1")], new Map([["t1", { action, candidates: [candidate] }]]))
+    expect(html).toContain("Giải trình nhầm? Sửa giải trình")
+    expect(html).toContain('name="contribution_id"')
+    expect(html).toContain("Đang chờ đúng số tiền này")
+    expect(html).toContain("GV7K2M9QX")
+    expect(html).toMatch(/<textarea[^>]*name="reason"[^>]*required/)
+    expect(html).toContain('maxLength="1000"')
+    expect(html).toContain(">Sửa giải trình</button>")
+  })
+
+  it("offers nothing without an entry (finance staff) and says why when self-review blocks it", () => {
+    expect(render([explanation("t1")])).not.toContain("Sửa giải trình")
+    const blocked = "Bạn là người đã giải trình khoản này, nên không tự sửa được. Nhờ một quản trị viên khác."
+    const html = render([explanation("t1")], new Map([["t1", { blocked }]]))
+    expect(html).toContain(blocked)
+    expect(html).not.toContain('name="contribution_id"')
+  })
+
+  it("shows a corrected explanation with its correction and no form", () => {
+    const html = render(
+      [
+        explanation("t1", {
+          correction: {
+            contribution_id: candidate.id,
+            reason: "Donor sent the bank receipt",
+            corrected_at: "2026-11-15T03:00:00Z",
+            contribution: { reference_code: "GV7K2M9QX" },
+          },
+        }),
+      ],
+      new Map([["t1", { action, candidates: [candidate] }]])
+    )
+    expect(html).toContain("Giải trình này đã được sửa.")
+    expect(html).toContain("GV7K2M9QX")
+    expect(html).toContain("Lý do sửa: Donor sent the bank receipt")
+    expect(html).not.toContain('name="contribution_id"')
+  })
+
+  it("says when no contribution of the campaign can take the money", () => {
+    const html = render([explanation("t1")], new Map([["t1", { action, candidates: [] }]]))
+    expect(html).toContain("Chiến dịch không có lượt ủng hộ nào nhận được khoản này.")
+    expect(html).not.toContain('name="reason"')
   })
 })

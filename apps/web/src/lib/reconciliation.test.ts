@@ -5,7 +5,11 @@ import { fakeDb, op, type Call } from "@/test/fake-db"
 import type { Db } from "./campaigns"
 import {
   candidateLabel,
+  correctionBlocked,
+  correctionCandidates,
+  explainersOf,
   getIncoming,
+  paidAfterCorrect,
   listInboundExplanations,
   listManualMatches,
   listMatchCandidates,
@@ -302,7 +306,7 @@ describe("getIncoming", () => {
       explained_as: "interest",
       returned_of: null,
     })
-    expect(String(op(calls[0], "select")?.[0])).toContain("inbound_explanations(kind)")
+    expect(String(op(calls[0], "select")?.[0])).toContain("inbound_explanations(kind, ")
     expect(String(op(calls[0], "select")?.[0])).toContain(
       "returned_transfers!bank_transaction_id(original_transaction_id)"
     )
@@ -316,6 +320,111 @@ describe("getIncoming", () => {
       data: { ...row, transaction_matches: null, returned_transfers: [{ original_transaction_id: "o1" }] },
     })) as unknown as Db
     expect(await getIncoming(db, "t")).toMatchObject({ returned_of: "o1" })
+  })
+})
+
+describe("getIncoming with a corrected explanation (DOS/Give#71)", () => {
+  it("prefers the correction: matched to its contribution, no longer explained", async () => {
+    const row = { id: "t", campaign_id: CAMPAIGN, amount: "300000", direction: "in" }
+    const calls: Call[] = []
+    let db = fakeDb(
+      () => ({
+        data: {
+          ...row,
+          transaction_matches: { contribution_id: "c1" },
+          inbound_explanations: {
+            kind: "organizer_top_up",
+            inbound_explanation_corrections: { contribution_id: "c1" },
+          },
+        },
+      }),
+      calls
+    ) as unknown as Db
+    expect(await getIncoming(db, "t")).toMatchObject({
+      amount: 300000,
+      matched_to: "c1",
+      explained_as: null,
+      corrected_to: "c1",
+    })
+    expect(String(op(calls[0], "select")?.[0])).toContain(
+      "inbound_explanations(kind, inbound_explanation_corrections(contribution_id))"
+    )
+
+    // Arrays, and the correction wins even if the match were not visible.
+    db = fakeDb(() => ({
+      data: {
+        ...row,
+        transaction_matches: [],
+        inbound_explanations: [{ kind: "interest", inbound_explanation_corrections: [{ contribution_id: "c2" }] }],
+      },
+    })) as unknown as Db
+    expect(await getIncoming(db, "t")).toMatchObject({ matched_to: "c2", explained_as: null, corrected_to: "c2" })
+
+    // Not corrected: still explained, not matched.
+    db = fakeDb(() => ({
+      data: {
+        ...row,
+        transaction_matches: null,
+        inbound_explanations: { kind: "interest", inbound_explanation_corrections: null },
+      },
+    })) as unknown as Db
+    expect(await getIncoming(db, "t")).toMatchObject({ matched_to: null, explained_as: "interest", corrected_to: null })
+  })
+})
+
+describe("correcting an explanation (DOS/Give#71)", () => {
+  const ME = "me"
+  const open = { correction: null }
+
+  it("reads who explained each transaction from the audit log, skipping deleted actors", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: [
+          { entity_id: "t1", actor_id: "u1" },
+          { entity_id: "t2", actor_id: null },
+        ],
+      }),
+      calls
+    ) as unknown as Db
+    expect(await explainersOf(db, ["t1", "t2", "t1"])).toEqual(new Map([["t1", "u1"]]))
+    expect(calls[0].target).toBe("audit_log")
+    expect(calls[0].ops).toContainEqual(["eq", "action", "bank_transaction.explain_inbound"])
+    expect(calls[0].ops).toContainEqual(["eq", "entity", "bank_transaction"])
+    expect(op(calls[0], "in")).toEqual(["entity_id", ["t1", "t2"]])
+
+    const none: Call[] = []
+    expect(await explainersOf(fakeDb(() => ({ data: [] }), none) as unknown as Db, [])).toEqual(new Map())
+    expect(none).toHaveLength(0)
+  })
+
+  it("offers the correction to admins only, never on their own campaign or explanation, and once", () => {
+    const viewer = { id: ME, isAdmin: true, organizerId: "org", explainerId: "fin" }
+    expect(correctionBlocked(open, viewer)).toBeNull()
+    expect(correctionBlocked(open, { ...viewer, organizerId: ME })).toContain("người tổ chức chiến dịch này")
+    expect(correctionBlocked(open, { ...viewer, explainerId: ME })).toContain("người đã giải trình khoản này")
+    // Not an admin, or already corrected: nothing to block, the caller offers nothing.
+    expect(correctionBlocked(open, { ...viewer, isAdmin: false, organizerId: ME })).toBeNull()
+    const corrected = {
+      correction: { contribution_id: "c", reason: "r", corrected_at: "2026-11-15T00:00:00Z", contribution: null },
+    }
+    expect(correctionBlocked(corrected, { ...viewer, organizerId: ME })).toBeNull()
+  })
+
+  it("leaves the admin's own contributions out of the candidates", () => {
+    const c = (id: string, contributor_user_id: string | null) =>
+      ({ id, contributor_user_id }) as unknown as Parameters<typeof correctionCandidates>[0][number]
+    expect(correctionCandidates([c("a", ME), c("b", "other"), c("g", null)], ME).map((x) => x.id)).toEqual(["b", "g"])
+  })
+
+  it("says the paid total did not move: the money moves from not a donation to matched", () => {
+    const before = { received: 500_000, unmatched: 0, other: 300_000, paid: 800_000 }
+    const after = { received: 800_000, unmatched: 0, other: 0, paid: 800_000 }
+    expect(paidAfterCorrect(before, after).replace(/\u00a0/g, " ")).toBe(
+      " Tổng đã thanh toán không đổi: 800.000 ₫ (đã khớp 500.000 ₫ → 800.000 ₫, không phải tiền ủng hộ 300.000 ₫ → 0 ₫)."
+    )
+    expect(paidAfterCorrect(before, { ...after, paid: 900_000 })).toContain("trước khi sửa")
+    expect(paidAfterCorrect(null, after)).toBe("")
   })
 })
 
@@ -344,6 +453,38 @@ describe("listInboundExplanations", () => {
     // Who explained it is never read (not granted to clients).
     expect(String(op(calls[0], "select")?.[0])).not.toContain("explained_by")
     expect(op(calls[0], "order")).toEqual(["explained_at", { ascending: false }])
+    expect(explanations[0].correction).toBeNull()
+    // The correction is read without corrected_by (never granted to clients).
+    expect(String(op(calls[0], "select")?.[0])).toContain(
+      "correction:inbound_explanation_corrections(contribution_id, reason, corrected_at, contribution:contributions(reference_code))"
+    )
+    expect(String(op(calls[0], "select")?.[0])).not.toContain("corrected_by")
+  })
+
+  it("reads a correction as an object or an array (DOS/Give#71)", async () => {
+    const correction = {
+      contribution_id: "c",
+      reason: "Donor proof",
+      corrected_at: "2026-11-15T00:00:00Z",
+      contribution: [{ reference_code: "GV7K2M9QX" }],
+    }
+    const db = fakeDb(() => ({
+      data: [
+        {
+          bank_transaction_id: "t",
+          kind: "organizer_top_up",
+          reason: "r",
+          evidence: "e",
+          explained_at: "2026-11-02T00:00:00Z",
+          tx: { amount: "300000", booked_at: "2026-10-30T00:00:00Z", campaign_id: CAMPAIGN },
+          correction: [correction],
+        },
+      ],
+    })) as unknown as Db
+    expect((await listInboundExplanations(db))[0].correction).toEqual({
+      ...correction,
+      contribution: { reference_code: "GV7K2M9QX" },
+    })
   })
 })
 

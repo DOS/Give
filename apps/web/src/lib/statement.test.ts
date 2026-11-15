@@ -5,6 +5,7 @@ import { fakeDb, op, type Call } from "@/test/fake-db"
 
 import {
   counterpartyLabel,
+  explainedNotDonation,
   evidenceCampaignId,
   evidencePath,
   evidenceUrl,
@@ -237,6 +238,21 @@ describe("public statement", () => {
       "Khoản khác, không phải tiền ủng hộ"
     )
     expect(counterpartyLabel({ ...row, ...unnamed, in_explanation: null })).toBe("Chưa khớp với lượt ủng hộ nào")
+  })
+
+  it("shows a corrected explanation as the donation it is, not as money that is not a donation (DOS/Give#71)", () => {
+    const row = { direction: "in" as const, recipient: null, explained: null }
+    // give.public_statement after a correction: matched, the donor's name, in_explanation NULL.
+    const corrected = { ...row, matched: true, donor_name: "Cô Ba", donor_anonymous: false, in_explanation: null }
+    expect(counterpartyLabel(corrected)).toBe("Cô Ba")
+    expect(explainedNotDonation(corrected)).toBe(false)
+    // A matched row never reads as "not a donation", even with a superseded kind still present.
+    const stale = { ...corrected, in_explanation: "organizer_top_up" }
+    expect(counterpartyLabel(stale)).toBe("Cô Ba")
+    expect(explainedNotDonation(stale)).toBe(false)
+    // An uncorrected explanation still does; an outgoing row never does.
+    expect(explainedNotDonation({ ...row, matched: false, in_explanation: "interest" })).toBe(true)
+    expect(explainedNotDonation({ ...row, direction: "out", matched: false, in_explanation: "interest" })).toBe(false)
   })
 
   it("labels money a bank returned from a transfer out, never by the sender (DOS/Give#72)", () => {
