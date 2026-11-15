@@ -13,6 +13,7 @@ import { requireSession } from "@/lib/auth/session"
 import { getCampaignById, isPublicStatus } from "@/lib/campaigns"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
+import { OWN_CONTRIBUTION_SCOPE } from "@/lib/own-contribution"
 import {
   categoryLabel,
   DISBURSEMENT_CATEGORIES,
@@ -64,7 +65,7 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
   const [{ pending, returned }, done, refundable] = await Promise.all([
     listUnexplainedOutgoing(db, campaign.id),
     listExplainedOutgoing(db, campaign.id),
-    listRefundable(db, campaign.id),
+    listRefundable(db, campaign.id, session.user),
   ])
   const [refundCodes, hiddenEvidence] = await Promise.all([
     listReferenceCodes(
@@ -324,7 +325,8 @@ function ExplainForm({
         </select>
         <p id={`${p}-refund-hint`} className="hint">
           Chỉ chọn khi loại khoản chi là “Hoàn tiền cho người ủng hộ”. Khoản đó được tính vào “đã hoàn lại” thay vì “đã
-          chi”.
+          chi”. Lượt ủng hộ của chính bạn ({OWN_CONTRIBUTION_SCOPE}) không có trong danh sách. Nếu cần hoàn tiền cho
+          lượt đó, hãy liên hệ đội ngũ Give.
         </p>
       </div>
       <EvidenceFields idPrefix={p} label="Ảnh chứng từ (hóa đơn, biên nhận, ảnh trao tặng)" />

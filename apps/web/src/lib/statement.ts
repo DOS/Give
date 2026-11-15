@@ -3,6 +3,7 @@ import { z } from "zod"
 import type { CampaignType, Db } from "./campaigns"
 import { formatDate, formatVnd } from "./format"
 import { isUuid } from "./ids"
+import { isOwnContribution, type Viewer } from "./own-contribution"
 
 /**
  * Money transparency (docs/Give-Technical-Design.md sections 2.4 and 4.1
@@ -859,8 +860,20 @@ export async function getOutgoing(
 }
 
 const REFUNDABLE_COLUMNS = "id, kind, reference_code, public_name, is_anonymous, received_amount"
+/** Read only to apply the own-contribution rule (DOS/Give#199), then dropped. */
+const OWNER_COLUMNS = "contributor_user_id, guest_email"
 
 type ContributionRow = Omit<RefundableContribution, "refundable_amount">
+type OwnedContributionRow = ContributionRow & { contributor_user_id: string | null; guest_email: string | null }
+
+/** The row without the columns read for the own-contribution rule. */
+function withoutOwner({
+  contributor_user_id: _user,
+  guest_email: _email,
+  ...row
+}: OwnedContributionRow): ContributionRow {
+  return row
+}
 
 /** Earlier refunds per contribution of the campaign (ledger 'refunded' posts and reversals). */
 async function refundedByContribution(db: Db, campaignId: string, ids?: string[]): Promise<Map<string, number>> {
@@ -888,12 +901,22 @@ function withRefundable(rows: ContributionRow[], refunded: Map<string, number>):
     .filter((x) => x.refundable_amount > 0)
 }
 
-/** Contributions of the campaign that can still be refunded, newest first (no guest name or email). */
-export async function listRefundable(db: Db, campaignId: string, limit = 1000): Promise<RefundableContribution[]> {
+/**
+ * Contributions of the campaign that can still be refunded, newest first (no
+ * guest name or email). The viewer's own, signed in or as a guest with their
+ * email, are left out: nobody books a refund to their own contribution
+ * (DOS/Give#199).
+ */
+export async function listRefundable(
+  db: Db,
+  campaignId: string,
+  viewer: Viewer,
+  limit = 1000
+): Promise<RefundableContribution[]> {
   const [{ data, error }, refunded] = await Promise.all([
     db
       .from("contributions")
-      .select(REFUNDABLE_COLUMNS)
+      .select(`${REFUNDABLE_COLUMNS}, ${OWNER_COLUMNS}`)
       .eq("campaign_id", campaignId)
       .gt("received_amount", 0)
       .order("created_at", { ascending: false })
@@ -901,19 +924,25 @@ export async function listRefundable(db: Db, campaignId: string, limit = 1000): 
     refundedByContribution(db, campaignId),
   ])
   if (error) throw error
-  return withRefundable((data ?? []) as unknown as ContributionRow[], refunded)
+  const rows = (data ?? []) as unknown as OwnedContributionRow[]
+  return withRefundable(rows.filter((x) => !isOwnContribution(x, viewer)).map(withoutOwner), refunded)
 }
 
-/** One contribution of the campaign that can still be refunded, or null. */
+/**
+ * One contribution of the campaign that can still be refunded, or null;
+ * `own` when it is the viewer's (DOS/Give#199), so the action words the
+ * refusal before the database raises it.
+ */
 export async function getRefundable(
   db: Db,
   campaignId: string,
-  contributionId: string
-): Promise<RefundableContribution | null> {
+  contributionId: string,
+  viewer: Viewer
+): Promise<(RefundableContribution & { own: boolean }) | null> {
   const [{ data, error }, refunded] = await Promise.all([
     db
       .from("contributions")
-      .select(REFUNDABLE_COLUMNS)
+      .select(`${REFUNDABLE_COLUMNS}, ${OWNER_COLUMNS}`)
       .eq("id", contributionId)
       .eq("campaign_id", campaignId)
       .gt("received_amount", 0)
@@ -921,7 +950,10 @@ export async function getRefundable(
     refundedByContribution(db, campaignId, [contributionId]),
   ])
   if (error) throw error
-  return data ? (withRefundable([data as unknown as ContributionRow], refunded)[0] ?? null) : null
+  if (!data) return null
+  const row = data as unknown as OwnedContributionRow
+  const refundable = withRefundable([withoutOwner(row)], refunded)[0]
+  return refundable ? { ...refundable, own: isOwnContribution(row, viewer) } : null
 }
 
 /** Reference codes of the campaign's contributions, by id (to label explained refunds). */

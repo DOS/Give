@@ -241,6 +241,16 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   row's date, see a notice instead of the forms (the database refuses them
   with `GIVE_SELF_REVIEW`, for every resolution). Every refusal of the
   resolution is worded in Vietnamese (#78 / #200, takes over #189).
+- Nobody settles money to their own contribution, signed in or as a guest
+  with their own email: the match list (`/admin/unmatched`,
+  `/me/campaigns/[id]/unmatched`), the correction list, the refund picker
+  (`/me/campaigns/[id]/disbursements`) and the returned-refund list leave out
+  the viewer's own contributions. `guest_email` is read only with the
+  viewer's own token and only to filter; it never reaches a page. Each of
+  the four actions words the database's `GIVE_SELF_REVIEW` for its context
+  (the generic text was about receiving accounts), and the organizer's
+  unmatched page states the rule: their own contribution matches by
+  reference code, or Give's finance staff match it (#199 / #202).
 
 ### Platform
 
@@ -292,6 +302,14 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   `20261116120000_give_statement_row_not_a_transaction`. The Give app's #78
   change calls it, so it needs this migration on Production before it is
   released.
+- Own guest contributions in the self-review rule: `give.is_own_contribution`
+  (signed in, or a guest email equal to the actor's auth email after trim and
+  lowercase), checked by `give.correct_inbound_explanation`,
+  `give.match_transaction` (manual), `give.record_disbursement` (refund) and
+  `give.link_returned_transfer` (returned refund) with `GIVE_SELF_REVIEW`; the
+  last three also newly refuse the actor's own signed-in contribution
+  (#199 / DOS/DOS.Me#1687, on Beta). Migration
+  `20261116150000_give_self_review_guest_contribution`.
 
 ### On Production (database only)
 
@@ -314,6 +332,10 @@ has no Production deploy. Behaviour to know:
 - Migration `20261116120000_give_statement_row_not_a_transaction.sql` (#78)
   must reach DOS.Me `main` (Production) before Give `main` ships the
   `not_a_transaction` staff resolution in `apps/web`.
+- Migration `20261116150000_give_self_review_guest_contribution.sql` (#199)
+  must reach DOS.Me `main` (Production) before Give `main` ships #199's
+  hidden own contributions and wording, so the database refuses what the
+  app hides.
 - The test-only changes #135 / DOS/DOS.Me#1663 and #144 / DOS/DOS.Me#1664 are
   on DOS.Me `dev` and are to be promoted together (#155). Until then DOS.Me
   `main` carries `give_staff_role_revoke_lock.test.sql` with the known test

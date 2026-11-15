@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/ui/PageHeader"
 import { requireSession } from "@/lib/auth/session"
 import { getCampaignById } from "@/lib/campaigns"
 import { isUuid } from "@/lib/ids"
+import { OWN_CONTRIBUTION_SCOPE } from "@/lib/own-contribution"
 import {
   listManualMatches,
   listMatchCandidates,
@@ -36,7 +37,7 @@ export default async function UnmatchedPage({ params }: { params: Promise<{ id: 
     listUnmatched(db, { campaignId: campaign.id }),
     paidBreakdown(db, campaign.id),
     listManualMatches(db, { campaignId: campaign.id }),
-    listMatchCandidates(db, campaign.id),
+    listMatchCandidates(db, campaign.id, session.user),
   ])
 
   return (
@@ -45,7 +46,9 @@ export default async function UnmatchedPage({ params }: { params: Promise<{ id: 
         Tiền đã vào tài khoản nhận nhưng nội dung chuyển khoản không có mã ủng hộ hợp lệ. Nếu bạn biết khoản này của
         lượt ủng hộ nào (người ủng hộ báo lại, hoặc đúng tên và số tiền), hãy khớp tay. Khớp tay chỉ chuyển khoản tiền
         từ &quot;chưa khớp&quot; sang &quot;đã khớp&quot;: tổng đã thanh toán không đổi. Mọi lần khớp tay được ghi vào
-        nhật ký kiểm toán.
+        nhật ký kiểm toán. Không ai khớp tay tiền vào lượt ủng hộ của chính mình ({OWN_CONTRIBUTION_SCOPE}), nên các
+        lượt đó không có trong danh sách: khoản tiền cho lượt ủng hộ của bạn tự khớp khi nội dung chuyển khoản có đúng
+        mã ủng hộ; nếu không, nhân viên tài chính của Give sẽ khớp giúp.
       </PageHeader>
 
       {/* One 8-column reading column (DESIGN.md 2.2). */}

@@ -11,6 +11,7 @@ const CONTRIBUTION = "44444444-4444-4444-8444-444444444444"
 
 const state = vi.hoisted(() => ({
   userId: "66666666-6666-4666-8666-666666666666",
+  email: null as string | null,
   responses: {} as Record<string, Result | Handler>,
   ledger: [] as Result[],
   serviceHandler: (() => undefined) as Handler,
@@ -20,7 +21,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/lib/auth/session", () => ({
-  getSession: vi.fn(async () => ({ user: { id: state.userId, email: null, name: null }, accessToken: "token" })),
+  getSession: vi.fn(async () => ({ user: { id: state.userId, email: state.email, name: null }, accessToken: "token" })),
 }))
 vi.mock("@/lib/supabase", () => ({
   dbAs: () =>
@@ -77,6 +78,7 @@ const AFTER = { received_amount: 500000, unmatched_amount: 0, other_amount: 3000
 beforeEach(() => {
   vi.mocked(revalidatePath).mockClear()
   state.userId = FINANCE
+  state.email = null
   state.userCalls.length = 0
   state.serviceCalls.length = 0
   state.responses = {
@@ -338,8 +340,44 @@ describe("correctExplanation (DOS/Give#71)", () => {
     state.responses.contributions = {
       data: { id: CONTRIBUTION, reference_code: "GV7K2M9QX", status: "awaiting_transfer", contributor_user_id: ADMIN },
     }
-    expect((await correctExplanation(TX, null, form(CORRECT)))?.message).toContain(SELF)
+    expect((await correctExplanation(TX, null, form(CORRECT)))?.message).toContain(
+      "Lượt ủng hộ đã chọn là của chính bạn"
+    )
     expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("refuses the admin's own guest contribution, same email in other case and spaces (DOS/Give#199)", async () => {
+    state.email = "Quan.Tri@Give.vn"
+    state.responses.contributions = {
+      data: {
+        id: CONTRIBUTION,
+        reference_code: "GV7K2M9QX",
+        status: "awaiting_transfer",
+        contributor_user_id: null,
+        guest_email: "  quan.tri@GIVE.vn ",
+      },
+    }
+    const result = await correctExplanation(TX, null, form(CORRECT))
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toContain("Lượt ủng hộ đã chọn là của chính bạn")
+    expect(result?.message).toContain("không đăng nhập nhưng dùng email của bạn")
+    expect(result?.message).toContain("Nhờ một quản trị viên khác")
+    expect(state.serviceCalls).toHaveLength(0)
+    const lookup = state.userCalls.find((c) => c.target === "contributions")
+    expect(String(op(lookup, "select")?.[0])).toContain("guest_email")
+
+    // Another guest's contribution is corrected.
+    state.responses.contributions = {
+      data: { ...((state.responses.contributions as Result).data as object), guest_email: "lan@example.vn" },
+    }
+    expect((await correctExplanation(TX, null, form(CORRECT)))?.ok).toBe(true)
+  })
+
+  it("words the database's GIVE_SELF_REVIEW with the guest-email case", async () => {
+    state.serviceHandler = () => ({ error: { code: "42501", message: "GIVE_SELF_REVIEW" } })
+    const result = await correctExplanation(TX, null, form(CORRECT))
+    expect(result?.message).toContain("Bạn không sửa được giải trình này")
+    expect(result?.message).toContain("kể cả lượt ủng hộ không đăng nhập dùng email của bạn")
   })
 
   it("requires a contribution and a reason of at most 1000 characters, before reading anything", async () => {
@@ -446,6 +484,16 @@ describe("linkReturnedTransfer (DOS/Give#72)", () => {
   beforeEach(() => {
     state.ledger = [{ data: BEFORE }, { data: RETURNED }]
     state.serviceHandler = () => ({ data: { outcome: "disbursement_returned", replayed: false } })
+  })
+
+  it("words GIVE_SELF_REVIEW for a returned refund to the actor's own contribution (DOS/Give#199)", async () => {
+    state.serviceHandler = () => ({ error: { code: "42501", message: "GIVE_SELF_REVIEW" } })
+    const result = await linkReturnedTransfer(TX, null, form(LINK))
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toContain("khoản hoàn tiền cho lượt ủng hộ của chính bạn")
+    expect(result?.message).toContain("lại nợ khoản hoàn đó cho bạn")
+    expect(result?.message).toContain("Nhờ một nhân viên tài chính khác")
+    expect(result?.message).not.toContain("tài khoản nhận")
   })
 
   it("links as finance staff, says what changed and that the paid total dropped", async () => {

@@ -23,7 +23,10 @@ vi.mock("next/navigation", () => ({
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/lib/auth/session", () => ({
   getSession: vi.fn(async () => ({ user: { id: USER, email: null, name: null }, accessToken: "token" })),
-  requireSession: vi.fn(async () => ({ user: { id: USER, email: null, name: null }, accessToken: "token" })),
+  requireSession: vi.fn(async () => ({
+    user: { id: USER, email: "To.Chuc@Example.vn", name: null },
+    accessToken: "token",
+  })),
 }))
 vi.mock("@/lib/supabase", () => ({
   dbAs: () => fakeDb((call) => state.handler(call), state.calls),
@@ -147,5 +150,59 @@ describe("disbursements page: transfers a bank returned (DOS/Give#194)", () => {
     expect(section(html, "returned-heading")).toBe("")
     expect(html).not.toContain('data-notice="returned"')
     expect(section(html, "pending-heading")).toMatch(/Chưa giải trình<span[^>]*>1<\/span>/)
+  })
+})
+
+describe("disbursements page: the organizer's own contributions (DOS/Give#199)", () => {
+  it("leaves the organizer's own contributions out of the refund picker and says why", async () => {
+    const base = handler({
+      unexplained: [{ ...tx(PENDING, 100_000, "2026-11-01T02:00:00Z"), disbursements: null, returned: null }],
+    })
+    state.handler = (call) =>
+      call.target === "contributions"
+        ? {
+            data: [
+              {
+                id: "c1",
+                kind: "donation",
+                reference_code: "GVMINE001",
+                public_name: "Tôi",
+                is_anonymous: false,
+                received_amount: 100_000,
+                contributor_user_id: USER,
+                guest_email: null,
+              },
+              {
+                id: "c2",
+                kind: "donation",
+                reference_code: "GVMINE002",
+                public_name: null,
+                is_anonymous: true,
+                received_amount: 100_000,
+                contributor_user_id: null,
+                guest_email: " to.chuc@EXAMPLE.vn ",
+              },
+              {
+                id: "c3",
+                kind: "donation",
+                reference_code: "GVLAN0003",
+                public_name: "Lan",
+                is_anonymous: false,
+                received_amount: 100_000,
+                contributor_user_id: null,
+                guest_email: "lan@example.vn",
+              },
+            ],
+          }
+        : base(call)
+    const html = await render()
+    expect(html).toContain("GVLAN0003")
+    expect(html).not.toContain("GVMINE001")
+    expect(html).not.toContain("GVMINE002")
+    // The guest email is read only to filter: it never reaches the page.
+    expect(html).not.toContain("lan@example.vn")
+    expect(html).toContain(
+      "Lượt ủng hộ của chính bạn (lượt bạn ủng hộ khi đăng nhập, hoặc khi không đăng nhập nhưng dùng email của bạn) không có trong danh sách"
+    )
   })
 })

@@ -7,6 +7,7 @@ import { getCampaignById, isStaff } from "@/lib/campaigns"
 import { dbErrorMessage, done, fail, type ActionResult, type DbErrorLike } from "@/lib/errors"
 import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
+import { isOwnContribution, OWN_CONTRIBUTION_MESSAGES } from "@/lib/own-contribution"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import {
   findContribution,
@@ -52,12 +53,16 @@ const MATCH_MESSAGES: Record<string, string> = {
   // DOS/Give#119, worded in #136). Only an admin data repair clears it, so the
   // organizer is sent to the Give team.
   GIVE_ACCOUNT_OWNER_MISMATCH: OWNER_MISMATCH_FOR_ORGANIZER,
+  // Nobody matches money to their own contribution, signed in or as a guest
+  // with their email (DOS/Give#199); the organizer is told how it still gets matched.
+  GIVE_SELF_REVIEW: OWN_CONTRIBUTION_MESSAGES.matchAsOrganizer,
 }
 
 /** The same code worded for finance staff, who are the Give team: it goes to an admin. */
 const STAFF_MATCH_MESSAGES: Record<string, string> = {
   ...MATCH_MESSAGES,
   GIVE_ACCOUNT_OWNER_MISMATCH: OWNER_MISMATCH_FOR_STAFF,
+  GIVE_SELF_REVIEW: OWN_CONTRIBUTION_MESSAGES.matchAsStaff,
 }
 
 export async function matchTransaction(
@@ -99,6 +104,14 @@ export async function matchTransaction(
     }
     if (!(MATCHABLE_STATUSES as readonly string[]).includes(contribution.status)) {
       return fail(MATCH_MESSAGES.GIVE_CONTRIBUTION_NOT_MATCHABLE)
+    }
+    // The picker leaves the viewer's own contributions out; a typed code may still name one.
+    if (isOwnContribution(contribution, session.user)) {
+      return fail(
+        campaign.organizer_id === session.user.id
+          ? OWN_CONTRIBUTION_MESSAGES.matchAsOrganizer
+          : OWN_CONTRIBUTION_MESSAGES.matchAsStaff
+      )
     }
     before = await paidBreakdown(db, campaign.id)
   } catch (error) {

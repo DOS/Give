@@ -1,5 +1,6 @@
 import type { Db } from "./campaigns"
 import { formatVnd, toVietnamLocalInput } from "./format"
+import { isOwnContribution, type Viewer } from "./own-contribution"
 
 /**
  * Manual matching of incoming transactions that carried no usable reference
@@ -356,6 +357,8 @@ export interface ContributionTarget {
   status: string
   /** The signed-in contributor, null for a guest (DOS/Give#71: staff never credit their own). */
   contributor_user_id: string | null
+  /** A guest's email, read with the actor's token only to apply the own-contribution rule (DOS/Give#199). */
+  guest_email: string | null
 }
 
 const CANDIDATE_COLUMNS =
@@ -376,12 +379,15 @@ function toAmount(value: unknown): number {
  * ledger refunds read under the caller's RLS (ledger_entries_read: the
  * campaign's organizer and finance/admin staff). Never falls back to gross if
  * refunds are missing. The match form puts those still waiting for the
- * transaction's net amount due first (DOS/Give#93).
+ * transaction's net amount due first (DOS/Give#93). The viewer's own
+ * contributions, signed in or as a guest with their email, are left out:
+ * nobody matches or credits money to their own (DOS/Give#199). guest_email
+ * is read for that and dropped.
  */
-export async function listMatchCandidates(db: Db, campaignId: string): Promise<MatchCandidate[]> {
+export async function listMatchCandidates(db: Db, campaignId: string, viewer: Viewer): Promise<MatchCandidate[]> {
   const { data, error } = await db
     .from("contributions")
-    .select(`${CANDIDATE_COLUMNS}, refunds:ledger_entries!contribution_id(amount)`)
+    .select(`${CANDIDATE_COLUMNS}, guest_email, refunds:ledger_entries!contribution_id(amount)`)
     .eq("campaign_id", campaignId)
     .in("status", [...MATCHABLE_STATUSES])
     .eq("refunds.bucket", "refunded")
@@ -390,12 +396,14 @@ export async function listMatchCandidates(db: Db, campaignId: string): Promise<M
   if (error) throw error
   return (
     (data ?? []) as unknown as (Omit<MatchCandidate, "refunded_amount"> & {
+      guest_email?: string | null
       refunds?: { amount: unknown }[] | null
     })[]
-  ).map(({ refunds, ...c }) => {
+  ).flatMap(({ refunds, guest_email, ...c }) => {
     if (!Array.isArray(refunds)) {
       throw new Error("Match candidate query did not return ledger refunds")
     }
+    if (isOwnContribution({ contributor_user_id: c.contributor_user_id, guest_email }, viewer)) return []
     return {
       ...c,
       intended_amount: toAmount(c.intended_amount),
@@ -435,7 +443,7 @@ export async function findContribution(
 ): Promise<ContributionTarget | null> {
   let query = db
     .from("contributions")
-    .select("id, reference_code, status, contributor_user_id")
+    .select("id, reference_code, status, contributor_user_id, guest_email")
     .eq("campaign_id", campaignId)
   query = "id" in by ? query.eq("id", by.id) : query.eq("reference_code", by.referenceCode)
   const { data, error } = await query.maybeSingle()
@@ -657,7 +665,12 @@ export function correctionBlocked(
   return null
 }
 
-/** Contributions an admin may credit corrected money to: not their own (GIVE_SELF_REVIEW). */
+/**
+ * Contributions an admin may credit corrected money to: not their own
+ * (GIVE_SELF_REVIEW). listMatchCandidates already leaves out the viewer's
+ * own, guest ones with their email included (DOS/Give#199); this keeps the
+ * signed-in check for a list read some other way.
+ */
 export function correctionCandidates(candidates: readonly MatchCandidate[], viewerId: string): MatchCandidate[] {
   return candidates.filter((c) => c.contributor_user_id !== viewerId)
 }
@@ -698,10 +711,12 @@ export interface ReturnCandidate {
   refund_reference_code: string | null
 }
 
+type RefundedContribution = { reference_code: string; contributor_user_id: string | null; guest_email: string | null }
+
 type CandidateDisbursement = {
   is_refund: boolean
   purpose: string
-  refund: { reference_code: string } | { reference_code: string }[] | null
+  refund: RefundedContribution | RefundedContribution[] | null
 }
 
 interface ReturnCandidateRow extends Omit<ReturnCandidate, "is_refund" | "purpose" | "refund_reference_code"> {
@@ -716,14 +731,18 @@ export const RETURN_CANDIDATE_LIMIT = 200
  * Explained outgoing transactions of the campaign that no incoming
  * transaction returned yet, newest first, at most RETURN_CANDIDATE_LIMIT.
  * Read with the caller's token: finance/admin staff read every campaign's
- * transactions and explanations.
+ * transactions and explanations. A refund to the viewer's own contribution
+ * (signed in or as a guest with their email) is left out: linking its return
+ * makes the refund owed to them again (DOS/Give#199). The contribution's
+ * contributor and guest email are read for that and dropped.
  */
-export async function listReturnCandidates(db: Db, campaignId: string): Promise<ReturnCandidate[]> {
+export async function listReturnCandidates(db: Db, campaignId: string, viewer: Viewer): Promise<ReturnCandidate[]> {
   const { data, error } = await db
     .from("bank_transactions")
     .select(
       "id, campaign_id, receiving_account_id, asset, amount, booked_at, booked_date_only, counterparty_account_masked, " +
-        "disbursement:disbursements!inner(is_refund, purpose, refund:contributions!refund_contribution_id(reference_code)), " +
+        "disbursement:disbursements!inner(is_refund, purpose, " +
+        "refund:contributions!refund_contribution_id(reference_code, contributor_user_id, guest_email)), " +
         "returned_transfers!original_transaction_id(bank_transaction_id)"
     )
     .eq("direction", "out")
@@ -736,13 +755,15 @@ export async function listReturnCandidates(db: Db, campaignId: string): Promise<
     ({ disbursement, returned_transfers: _returned, ...tx }) => {
       const d = one(disbursement)
       if (!d) return []
+      const refund = one(d.refund)
+      if (d.is_refund && refund && isOwnContribution(refund, viewer)) return []
       return [
         {
           ...tx,
           amount: toAmount(tx.amount),
           is_refund: d.is_refund,
           purpose: d.purpose,
-          refund_reference_code: one(d.refund)?.reference_code ?? null,
+          refund_reference_code: refund?.reference_code ?? null,
         },
       ]
     }
