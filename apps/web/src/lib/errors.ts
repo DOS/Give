@@ -132,6 +132,11 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_OWN_TRANSFER_CAMPAIGN_MISMATCH: "Hai giao dịch thuộc hai chiến dịch khác nhau.",
   GIVE_OWN_TRANSFER_AMOUNT_MISMATCH: "Hai giao dịch phải cùng số tiền và cùng loại tiền.",
   GIVE_OWN_TRANSFER_NOT_SWAPPED: "Hai tài khoản không nối với nhau bằng một lần đổi tài khoản đã duyệt của chiến dịch.",
+  // Statement row resolution for non-transactions (DOS/Give#78).
+  GIVE_RESOLUTION_NOT_FOR_REASON:
+    "Chỉ đánh dấu “không phải giao dịch thật” được cho dòng thuộc lần tải sao kê đã bị đội tài chính bỏ qua.",
+  GIVE_ROW_HAS_ACTIVE_DUPLICATE:
+    "Một lần tải sao kê khác có dòng đã được bỏ qua vì trùng với dòng này, nên không thể đánh dấu dòng này là không phải giao dịch thật. Hãy kiểm tra lại với sao kê ngân hàng: nếu đây là giao dịch thật, hãy nhập hoặc đánh dấu là giao dịch đã ghi.",
   // Reward tiers and fulfillment of back campaigns (DOS/Give#30, #83).
   GIVE_REWARD_TIERS_BACK_ONLY: "Chỉ dự án có quà tặng mới có các mức phần thưởng.",
   GIVE_REWARD_TIER_INVALID: "Thông tin phần thưởng không hợp lệ.",
@@ -286,6 +291,37 @@ export const CORRECT_EXPLANATION_MESSAGES: Record<string, string> = {
     "Lượt ủng hộ đã chọn thuộc chiến dịch khác. Chỉ chọn được lượt ủng hộ của cùng chiến dịch.",
   GIVE_CONTRIBUTION_NOT_MATCHABLE:
     "Lượt ủng hộ này không nhận thêm tiền được (đã hủy, đã hoàn tiền, hoặc khác loại tiền). Hãy chọn lượt khác.",
+}
+
+/**
+ * Every refusal of give.resolve_statement_import_row (design section 5.2,
+ * DOS/Give#78), worded for finance staff resolving a statement row on
+ * /admin/statements: its own checks, and the recording of an imported row
+ * (give.record_bank_transaction). Codes shared with other actions are worded
+ * for this one here.
+ */
+export const STATEMENT_ROW_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Chỉ nhân viên tài chính hoặc quản trị viên được xử lý dòng sao kê.",
+  GIVE_RESOLUTION_INVALID: "Cách xử lý không hợp lệ.",
+  GIVE_RESOLUTION_NOTE_REQUIRED: "Ghi chú là bắt buộc: ghi bạn đã đối chiếu với nguồn nào.",
+  GIVE_IMPORT_ROW_NOT_FOUND: "Không tìm thấy dòng sao kê này.",
+  GIVE_IMPORT_ROW_NOT_AMBIGUOUS:
+    "Dòng này đã được xử lý theo cách khác (có thể bởi người khác). Hãy tải lại trang để xem kết quả.",
+  GIVE_SELF_REVIEW:
+    "Bạn không xử lý được dòng này: tài khoản nhận là của bạn, hoặc dòng thuộc thời gian tài khoản gắn với chiến dịch do bạn tổ chức. Một nhân viên tài chính khác cần xử lý.",
+  GIVE_RESOLUTION_CANDIDATE:
+    "Dòng này khớp với một dòng sao kê đã tải trước. Hãy đánh dấu là giao dịch đã ghi, hoặc tích xác nhận đây là giao dịch khác rồi mới nhập.",
+  GIVE_DUPLICATE_TARGET_INVALID:
+    "Giao dịch đã chọn không cùng tài khoản, chiều hoặc số tiền với dòng này, hoặc một dòng khác trong cùng file đã ứng với nó.",
+  GIVE_RESOLUTION_NOT_FOR_REASON:
+    "Chỉ đánh dấu “không phải giao dịch thật” được cho dòng thuộc lần tải sao kê đã bị đội tài chính bỏ qua.",
+  GIVE_ROW_HAS_ACTIVE_DUPLICATE:
+    "Một lần tải sao kê khác có dòng đã được bỏ qua vì trùng với dòng này, nên không thể đánh dấu dòng này là không phải giao dịch thật. Hãy kiểm tra lại với sao kê ngân hàng: nếu đây là giao dịch thật, hãy nhập hoặc đánh dấu là giao dịch đã ghi.",
+  GIVE_TRANSACTION_CONFLICT:
+    "Mã giao dịch của dòng này đã được ghi với số tiền, chiều hoặc ngày khác, nên không nhập được. Hãy đối chiếu với sao kê ngân hàng; nếu đúng là giao dịch đã ghi, hãy đánh dấu là giao dịch đã ghi.",
+  GIVE_BINDING_CHANGED: "Tài khoản vừa được gắn hoặc đổi chiến dịch trong lúc nhập. Hãy tải lại trang và thử lại.",
+  GIVE_ACCOUNT_OWNER_MISMATCH:
+    "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên dòng này không nhập được cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch.",
 }
 
 /** Result shape that form actions return to useActionState. */
