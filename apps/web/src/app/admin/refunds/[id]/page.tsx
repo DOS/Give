@@ -242,8 +242,8 @@ function RefundForm({
             </p>
           </div>
           <Callout>
-            Chứng từ của khoản hoàn tiền không được công khai: chỉ người tổ chức chiến dịch và bộ phận tài chính của
-            Give xem được.
+            Chứng từ của khoản hoàn tiền không được công khai: chỉ người tổ chức chiến dịch, bộ phận tài chính và quản
+            trị viên của Give xem được.
           </Callout>
         </div>
         <div>

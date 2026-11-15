@@ -9,7 +9,8 @@ export function RefundsIntro() {
       </p>
       <p>
         Chỉ ghi khoản hoàn tiền; các khoản chi khác để người tổ chức giải trình. Bạn không ghi được khoản hoàn cho lượt
-        ủng hộ của chính mình. Giải trình đã gửi thì công khai trên sao kê và không sửa được.
+        ủng hộ của chính mình. Giải trình đã gửi thì không sửa được, và hiện trên sao kê công khai khi chiến dịch công
+        khai.
       </p>
     </>
   )

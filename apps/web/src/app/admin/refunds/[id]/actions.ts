@@ -41,6 +41,8 @@ const OWN_ACCOUNT_TRANSFER =
 const STAFF_REFUND_MESSAGES: Record<string, string> = {
   GIVE_SELF_REVIEW: OWN_CONTRIBUTION_MESSAGES.refundAsStaff,
   GIVE_NOT_ALLOWED: NOT_ALLOWED,
+  // The transfer was read above, so here it means the staff role ended in between (actor_manages_campaign).
+  GIVE_TRANSACTION_NOT_FOUND: `${NOT_ALLOWED} Nếu bạn vẫn là nhân viên tài chính, hãy tải lại trang.`,
   GIVE_TRANSACTION_OWN_TRANSFER: OWN_ACCOUNT_TRANSFER,
 }
 

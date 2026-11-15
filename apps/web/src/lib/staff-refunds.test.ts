@@ -30,6 +30,8 @@ describe("listCampaignsWithUnexplainedOutgoing", () => {
       ["is", "own_out", null],
     ])
     expect(op(query, "select")?.[0]).toContain("own_out:own_account_transfers!out_transaction_id(id)")
+    // give.returned_transfers is keyed by bank_transaction_id and has no id column (DOS.Me 20261115150000).
+    expect(op(query, "select")?.[0]).toContain("returned:returned_transfers!original_transaction_id(linked_at)")
     expect(op(query, "order")).toEqual(["booked_at", { ascending: true }])
     expect(op(query, "limit")).toEqual([10])
     // No campaign to name: no second read.
@@ -41,7 +43,12 @@ describe("listCampaignsWithUnexplainedOutgoing", () => {
       [
         { campaign_id: B, amount: "100000", booked_at: "2026-10-01T00:00:00+00:00", returned: [] },
         { campaign_id: A, amount: 200_000, booked_at: "2026-10-02T00:00:00+00:00", returned: null },
-        { campaign_id: A, amount: 50_000, booked_at: "2026-10-03T00:00:00+00:00", returned: [{ id: "r" }] },
+        {
+          campaign_id: A,
+          amount: 50_000,
+          booked_at: "2026-10-03T00:00:00+00:00",
+          returned: [{ linked_at: "2026-10-04T00:00:00+00:00" }],
+        },
         { campaign_id: B, amount: 300_000, booked_at: "2026-10-04T00:00:00+00:00", returned: [] },
         { campaign_id: A, amount: 1_000, booked_at: "2026-10-05T00:00:00+00:00" },
       ],

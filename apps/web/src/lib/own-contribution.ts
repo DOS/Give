@@ -55,7 +55,7 @@ export const OWN_CONTRIBUTION_MESSAGES = {
    * The organizer explaining a refund on /me/campaigns/[id]/disbursements.
    * Finance records it on /admin/refunds (DOS/Give#203).
    */
-  refund: `Bạn không ghi được khoản hoàn tiền cho lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Đừng giải trình khoản chuyển này ở đây: hãy báo bộ phận tài chính của Give, họ sẽ ghi nó là hoàn tiền cho lượt của bạn. Đến lúc đó khoản chuyển vẫn ở mục “Chưa giải trình”.`,
+  refund: `Bạn không ghi được khoản hoàn tiền cho lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Đừng giải trình khoản chuyển này ở đây: hãy báo bộ phận tài chính của Give, họ sẽ ghi nó là hoàn tiền cho lượt của bạn. Trong lúc chờ, khoản chuyển vẫn ở mục “Chưa giải trình”.`,
   /** Finance/admin staff recording a refund on /admin/refunds/[id] (DOS/Give#203). */
   refundAsStaff: `Bạn không ghi được khoản hoàn tiền cho lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Nhờ một nhân viên tài chính khác ghi khoản này.`,
   /** Finance/admin staff linking a returned refund on /admin/unmatched. */

@@ -49,7 +49,7 @@ export async function listCampaignsWithUnexplainedOutgoing(
   const { data, error } = await db
     .from("bank_transactions")
     .select(
-      "campaign_id, amount, booked_at, disbursements(bank_transaction_id), own_out:own_account_transfers!out_transaction_id(id), returned:returned_transfers!original_transaction_id(id)"
+      "campaign_id, amount, booked_at, disbursements(bank_transaction_id), own_out:own_account_transfers!out_transaction_id(id), returned:returned_transfers!original_transaction_id(linked_at)"
     )
     .eq("direction", "out")
     .not("campaign_id", "is", null)
