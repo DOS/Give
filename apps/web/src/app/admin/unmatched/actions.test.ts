@@ -260,7 +260,7 @@ describe("linkReturnedTransfer (DOS/Give#72)", () => {
     expect(await linkReturnedTransfer(TX, null, form(LINK))).toEqual({
       ok: true,
       message: vnd(
-        "Đã ghi nhận 300.000 ₫ là tiền bị ngân hàng trả lại của một khoản hoàn tiền. Tổng đã hoàn của chiến dịch giảm 300.000 ₫, và lượt ủng hộ đó lại cần được hoàn tiền: hãy báo người tổ chức hoàn lại cho người ủng hộ (kiểm tra lại số tài khoản nhận) rồi giải trình khoản hoàn mới. Khi đó là một cam kết còn bị nợ tiền hoàn, Give đã gửi thông báo cho người tổ chức, và cho người ủng hộ nếu cam kết trở lại chờ hoàn tiền; các trường hợp khác (như một lượt ủng hộ trực tiếp) không có thông báo tự động. Sao kê công khai hiện hai giao dịch là một khoản chuyển bị trả lại."
+        "Đã ghi nhận 300.000 ₫ là tiền bị ngân hàng trả lại của một khoản hoàn tiền. Tổng đã hoàn của chiến dịch giảm 300.000 ₫, và lượt ủng hộ đó lại cần được hoàn tiền: hãy báo người tổ chức hoàn lại cho người ủng hộ (kiểm tra lại số tài khoản nhận) rồi giải trình khoản hoàn mới. Nếu đó là một cam kết nay còn phải được hoàn tiền, Give đã gửi thông báo cho người tổ chức (và cho người ủng hộ nếu cam kết trở lại trạng thái Chờ hoàn tiền); các trường hợp khác (như một lượt ủng hộ trực tiếp) không có thông báo tự động. Sao kê công khai hiện hai giao dịch là một khoản chuyển bị trả lại."
       ),
     })
   })
@@ -295,7 +295,7 @@ describe("linkReturnedTransfer (DOS/Give#72)", () => {
     const result = await linkReturnedTransfer(TX, null, form(LINK))
     expect(result?.ok).toBe(true)
     expect(result?.message).toContain(
-      "Tổng đã hoàn của chiến dịch giảm bằng cả khoản hoàn tiền gốc (kể cả phí nếu ngân hàng giữ lại), và lượt ủng hộ đó lại cần được hoàn đủ"
+      "Tổng đã hoàn của chiến dịch giảm đúng bằng số tiền của khoản hoàn tiền gốc (kể cả phần phí nếu ngân hàng giữ lại; phần phí tính vào tổng đã chi), và lượt ủng hộ đó lại cần được hoàn đủ"
     )
     expect(result?.message).not.toContain("giảm 300.000")
   })

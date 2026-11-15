@@ -82,7 +82,7 @@ describe("ReturnedTransferList (DOS/Give#72)", () => {
   it("shows the fee the bank kept: on a refund the organizer bears it (DOS/Give#195)", () => {
     const out = html([link])
     expect(out).toContain(
-      "Ngân hàng giữ 10.000 ₫ phí: tính là phí ngân hàng (đã chi) của chiến dịch, không tính là đã hoàn. Người tổ chức phải hoàn lại đủ khoản hoàn tiền cho người ủng hộ."
+      "Ngân hàng giữ 10.000 ₫ phí: tính là phí ngân hàng (đã chi) của chiến dịch, không tính là đã hoàn. Người ủng hộ cần được hoàn đủ bằng một khoản chuyển mới; người tổ chức chịu phí."
     )
     const payment = html([{ ...link, original: { ...link.original!, is_refund: false } }])
     expect(payment).toContain("Ngân hàng giữ 10.000 ₫ phí: vẫn tính là đã chi.")

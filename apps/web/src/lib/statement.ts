@@ -420,7 +420,7 @@ export function returnedTransferText(
     if (fee > 0) {
       text += ` Ngân hàng giữ lại ${formatVnd(fee)} phí: phần này là phí ngân hàng, tính vào tổng đã chi`
       text += pair?.is_refund
-        ? ", không phải tiền người ủng hộ đã nhận. Người tổ chức vẫn phải hoàn đủ cho người ủng hộ."
+        ? ", không phải tiền người ủng hộ đã nhận. Người ủng hộ được hoàn đủ bằng một khoản chuyển mới; người tổ chức chịu phí."
         : "."
     }
     return text
@@ -430,8 +430,8 @@ export function returnedTransferText(
     let text = `Khoản hoàn tiền này không đến được người ủng hộ: ngân hàng đã trả lại${back}. Cả khoản −${formatVnd(row.amount)} không còn tính vào tổng đã hoàn lại`
     text +=
       fee > 0
-        ? `; ngân hàng giữ ${formatVnd(fee)} phí, tính là phí ngân hàng trong tổng đã chi. Người tổ chức phải hoàn lại đủ cho người ủng hộ.`
-        : ". Người tổ chức phải hoàn lại cho người ủng hộ."
+        ? `; ngân hàng giữ ${formatVnd(fee)} phí, tính là phí ngân hàng trong tổng đã chi. Người ủng hộ được hoàn đủ bằng một khoản chuyển mới; người tổ chức chịu phí.`
+        : ". Người ủng hộ được hoàn lại bằng một khoản chuyển mới."
     return text
   }
   let text = pair
@@ -746,11 +746,11 @@ export function returnedOutgoingText(
   const back = `Ngân hàng đã trả lại +${formatVnd(returned.amount)} ngày ${formatDate(returned.booked_at)}`
   if (disbursement.is_refund) {
     if (fee === 0) {
-      return `${back}: khoản hoàn tiền này chưa đến được người ủng hộ, nên không còn tính là đã hoàn. Nếu bạn chưa chuyển lại, hãy kiểm tra số tài khoản với người ủng hộ, chuyển lại ${formatVnd(tx.amount)} rồi giải trình khoản chuyển mới là hoàn tiền.`
+      return `${back}: khoản hoàn tiền này chưa đến được người ủng hộ, nên không còn tính là đã hoàn. Nếu bạn chưa chuyển lại, hãy kiểm tra số tài khoản với người ủng hộ, chuyển lại ${formatVnd(tx.amount)} rồi giải trình khoản chuyển mới là hoàn tiền. Nếu đã chuyển lại rồi, đừng chuyển thêm: số còn phải hoàn (nếu có) hiện trong danh sách chọn lượt ủng hộ khi giải trình hoàn tiền.`
     }
     return (
       `${back} và giữ ${formatVnd(fee)} phí: khoản hoàn tiền này chưa đến được người ủng hộ. Cả khoản −${formatVnd(tx.amount)} không còn tính là đã hoàn, kể cả phần phí. ` +
-      `Phí ${formatVnd(fee)} do bạn chịu (tính là phí ngân hàng trong tổng đã chi), không trừ vào tiền hoàn. Nếu bạn chưa chuyển lại, hãy kiểm tra số tài khoản với người ủng hộ, chuyển lại đủ ${formatVnd(tx.amount)} rồi giải trình khoản chuyển mới là hoàn tiền.`
+      `Phí ${formatVnd(fee)} do bạn chịu (tính là phí ngân hàng trong tổng đã chi), không trừ vào tiền hoàn. Nếu bạn chưa chuyển lại, hãy kiểm tra số tài khoản với người ủng hộ, chuyển lại đủ ${formatVnd(tx.amount)} rồi giải trình khoản chuyển mới là hoàn tiền. Nếu đã chuyển lại rồi, đừng chuyển thêm: số còn phải hoàn (nếu có) hiện trong danh sách chọn lượt ủng hộ khi giải trình hoàn tiền.`
     )
   }
   return fee === 0

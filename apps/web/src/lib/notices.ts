@@ -174,7 +174,7 @@ export function describeNotice(notice: Notice, options?: NoticeRenderOptions): N
         // the full amount owed, so nothing is added or taken off here.
         const fee = count(p, "bank_fee")
         body += fee
-          ? ` chưa nhận được khoản hoàn tiền bạn đã chuyển: ngân hàng đã trả lại nhưng giữ ${formatVnd(fee)} phí. Khoản chuyển trước không được tính là đã hoàn, kể cả phần phí; phí này do bạn chịu, không trừ vào tiền hoàn. Hãy kiểm tra lại số tài khoản với người ủng hộ và chuyển lại đủ`
+          ? ` chưa nhận được khoản hoàn tiền bạn đã chuyển: ngân hàng đã trả lại nhưng giữ ${formatVnd(fee)} phí. Cả khoản bạn đã chuyển trước đó, kể cả phần phí, không còn được tính là đã hoàn; phí này do bạn chịu, không trừ vào tiền hoàn. Hãy kiểm tra lại số tài khoản với người ủng hộ và chuyển lại đủ`
           : " chưa nhận được khoản hoàn tiền bạn đã chuyển: ngân hàng đã trả lại. Hãy kiểm tra lại số tài khoản với người ủng hộ và hoàn lại"
         body += owed ? ` ${formatVnd(owed)}` : " số tiền còn nợ họ"
         body += by ? ` trước ${formatDate(by)}` : ""

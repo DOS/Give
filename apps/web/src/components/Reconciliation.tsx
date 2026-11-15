@@ -127,7 +127,7 @@ export function InboundExplanationList({
 export function returnedFeeText(fee: number, isRefund: boolean | null): string {
   const head = `Ngân hàng giữ ${formatVnd(fee)} phí`
   if (isRefund) {
-    return `${head}: tính là phí ngân hàng (đã chi) của chiến dịch, không tính là đã hoàn. Người tổ chức phải hoàn lại đủ khoản hoàn tiền cho người ủng hộ.`
+    return `${head}: tính là phí ngân hàng (đã chi) của chiến dịch, không tính là đã hoàn. Người ủng hộ cần được hoàn đủ bằng một khoản chuyển mới; người tổ chức chịu phí.`
   }
   if (isRefund === false) return `${head}: vẫn tính là đã chi.`
   return `${head}.`

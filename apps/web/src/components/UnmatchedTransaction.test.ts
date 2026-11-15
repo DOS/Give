@@ -109,6 +109,18 @@ describe("UnmatchedTransactionCard: returned transfers (DOS/Give#72)", () => {
     expect(html).not.toContain("báo quản trị viên")
   })
 
+  it("words a bank fee as #195 books it: a refund's fee is spent, never refunded", () => {
+    const html = render({ explainAction: action, returnAction: action, returnCandidates: [candidate] }).replace(
+      /\s+/g,
+      " "
+    )
+    expect(html).toContain("Với khoản chi, phần phí vẫn tính là đã chi.")
+    expect(html).toContain(
+      "Với khoản hoàn tiền, cả khoản hoàn không còn tính là đã hoàn (kể cả phí), phần phí tính vào tổng đã chi, và người tổ chức phải hoàn lại đủ cho người ủng hộ."
+    )
+    expect(html).not.toContain("đã chi hoặc đã hoàn")
+  })
+
   it("says why no outgoing transaction fits, without a form", () => {
     const html = render({ returnAction: action, returnCandidates: [] })
     expect(html).toContain("Không có khoản chuyển đi nào phù hợp.")

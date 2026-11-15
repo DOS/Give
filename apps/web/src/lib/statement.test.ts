@@ -430,7 +430,7 @@ describe("bank fee on a returned transfer (DOS/Give#195)", () => {
     expect(incoming).toContain(
       "Ngân hàng giữ lại 11.000 ₫ phí: phần này là phí ngân hàng, tính vào tổng đã chi, không phải tiền người ủng hộ đã nhận."
     )
-    expect(incoming).toContain("Người tổ chức vẫn phải hoàn đủ cho người ủng hộ.")
+    expect(incoming).toContain("Người ủng hộ được hoàn đủ bằng một khoản chuyển mới; người tổ chức chịu phí.")
     // #72's wording counted the fee as refunded; that is gone.
     expect(incoming).not.toContain("vẫn tính là đã hoàn lại")
     const outgoing = vnd(returnedTransferText(outRow, inPair))
@@ -439,7 +439,7 @@ describe("bank fee on a returned transfer (DOS/Give#195)", () => {
     )
     expect(outgoing).toContain("Cả khoản −300.000 ₫ không còn tính vào tổng đã hoàn lại")
     expect(outgoing).toContain("ngân hàng giữ 11.000 ₫ phí, tính là phí ngân hàng trong tổng đã chi")
-    expect(outgoing).toContain("Người tổ chức phải hoàn lại đủ cho người ủng hộ.")
+    expect(outgoing).toContain("Người ủng hộ được hoàn đủ bằng một khoản chuyển mới; người tổ chức chịu phí.")
   })
 
   it("keeps a fee on a returned payment spent, and names no fee when the bank returned everything", () => {
@@ -509,6 +509,8 @@ describe("bank fee on a returned transfer (DOS/Give#195)", () => {
     expect(refund).toContain("Phí 11.000 ₫ do bạn chịu")
     expect(refund).toContain("chuyển lại đủ 300.000 ₫")
     expect(refund).not.toContain("289.000 ₫ rồi")
+    // A re-sent refund must not be sent twice.
+    expect(refund).toContain("Nếu đã chuyển lại rồi, đừng chuyển thêm")
     const full = vnd(returnedOutgoingText({ amount: 300_000 }, { is_refund: true }, { ...back, amount: 300_000 }))
     expect(full).not.toContain("phí")
     expect(full).toContain("chuyển lại 300.000 ₫")

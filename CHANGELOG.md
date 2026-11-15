@@ -199,7 +199,8 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   transaction it came from, with a private reason and evidence
   (`give.link_returned_transfer`). The row leaves the unmatched queues; the
   campaign's spent or refunded total and "đã thanh toán" drop by the returned
-  amount; a refunded pledge is owed a refund again and both people get a
+  amount (for a refund, the refunded total drops by the original amount since
+  #195); a refunded pledge is owed a refund again and both people get a
   notice. The public statement shows both rows as a returned transfer
   ("Tiền chuyển đi bị trả lại"), with the other row's amount and day and no
   personal data (#72 / #193).

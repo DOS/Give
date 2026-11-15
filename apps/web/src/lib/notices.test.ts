@@ -274,7 +274,7 @@ describe("describeNotice", () => {
     const owed = describeNotice(notice({ kind: "refund_owed", payload }))
     expect(owed.title).toBe("Cần hoàn tiền cho người ủng hộ")
     expect(owed.body).toContain(`ngân hàng đã trả lại nhưng giữ ${formatVnd(11_000)} phí`)
-    expect(owed.body).toContain("Khoản chuyển trước không được tính là đã hoàn, kể cả phần phí")
+    expect(owed.body).toContain("Cả khoản bạn đã chuyển trước đó, kể cả phần phí, không còn được tính là đã hoàn")
     expect(owed.body).toContain("phí này do bạn chịu, không trừ vào tiền hoàn")
     // The full amount, as the payload gives it: never minus the fee, never plus it again.
     expect(owed.body).toContain(`chuyển lại đủ ${formatVnd(300_000)} trước 29/11/2026`)

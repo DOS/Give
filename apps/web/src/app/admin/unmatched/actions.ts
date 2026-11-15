@@ -267,12 +267,12 @@ function returnedMessage(outcome: ReturnOutcome | null, amount: number, original
   if (outcome === "refund_returned") {
     const fee = original === null ? 0 : original - amount
     const notices =
-      " Khi đó là một cam kết còn bị nợ tiền hoàn, Give đã gửi thông báo cho người tổ chức, và cho người ủng hộ nếu cam kết trở lại chờ hoàn tiền; các trường hợp khác (như một lượt ủng hộ trực tiếp) không có thông báo tự động."
+      " Nếu đó là một cam kết nay còn phải được hoàn tiền, Give đã gửi thông báo cho người tổ chức (và cho người ủng hộ nếu cam kết trở lại trạng thái Chờ hoàn tiền); các trường hợp khác (như một lượt ủng hộ trực tiếp) không có thông báo tự động."
     const ask =
       "hãy báo người tổ chức hoàn lại cho người ủng hộ (kiểm tra lại số tài khoản nhận) rồi giải trình khoản hoàn mới."
     let text: string
     if (original === null) {
-      text = `${head} của một khoản hoàn tiền. Tổng đã hoàn của chiến dịch giảm bằng cả khoản hoàn tiền gốc (kể cả phí nếu ngân hàng giữ lại), và lượt ủng hộ đó lại cần được hoàn đủ: ${ask}`
+      text = `${head} của một khoản hoàn tiền. Tổng đã hoàn của chiến dịch giảm đúng bằng số tiền của khoản hoàn tiền gốc (kể cả phần phí nếu ngân hàng giữ lại; phần phí tính vào tổng đã chi), và lượt ủng hộ đó lại cần được hoàn đủ: ${ask}`
     } else if (fee > 0) {
       text = `${head} của khoản hoàn tiền ${formatVnd(original)}; ngân hàng giữ ${formatVnd(fee)} phí. Cả khoản hoàn không còn tính là đã hoàn: tổng đã hoàn của chiến dịch giảm ${formatVnd(original)}, phí ${formatVnd(fee)} tính vào tổng đã chi, và người ủng hộ lại cần được hoàn đủ ${formatVnd(original)} (người tổ chức chịu phí): ${ask}`
     } else {
