@@ -27,6 +27,9 @@ import {
   remainingAmount,
   reportSchema,
   RETURNED_IN_LABEL,
+  returnBankFee,
+  returnedOutgoingText,
+  returnedTransferText,
   STATEMENT_PAGE_SIZE,
   statementHref,
   type MoneyTotals,
@@ -354,6 +357,181 @@ describe("public statement", () => {
     // A returned transfer shows its pair and when it was recorded, never why (DOS/Give#72).
     expect(columns).toEqual(expect.arrayContaining(["return_of", "returned_by", "returned_at"]))
     expect(columns.join(",")).not.toMatch(/reason|evidence/)
+  })
+})
+
+describe("bank fee on a returned transfer (DOS/Give#195)", () => {
+  const vnd = (text: string) => text.replace(/\u00a0/g, " ")
+  // A 300k refund the bank sent back as 289k: the view puts the 11k fee on BOTH rows.
+  const outRow = {
+    id: "o1",
+    direction: "out" as const,
+    amount: 300_000,
+    is_refund: true,
+    return_of: null,
+    returned_by: "i1",
+    return_bank_fee: 11_000,
+  }
+  const inRow = {
+    id: "i1",
+    direction: "in" as const,
+    amount: 289_000,
+    is_refund: null,
+    return_of: "o1",
+    returned_by: null,
+    return_bank_fee: 11_000,
+  }
+  const outPair = {
+    id: "o1",
+    direction: "out" as const,
+    is_refund: true,
+    amount: 300_000,
+    booked_at: "2026-11-08T03:00:00Z",
+  }
+  const inPair = {
+    id: "i1",
+    direction: "in" as const,
+    is_refund: null,
+    amount: 289_000,
+    booked_at: "2026-11-10T03:00:00Z",
+  }
+
+  it("reads return_bank_fee with the statement and turns it into a number", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: [
+          { ...inRow, return_bank_fee: "11000" },
+          { id: "x", amount: 1, return_bank_fee: null },
+        ],
+        count: 2,
+      }),
+      calls
+    )
+    const { rows } = await listStatement(db as never, CAMPAIGN)
+    expect(selected(calls[0])).toContain("return_bank_fee")
+    expect(rows[0].return_bank_fee).toBe(11_000)
+    expect(rows[1].return_bank_fee).toBeNull()
+  })
+
+  it("takes the fee once per pair: the same 11k on each row, never 22k", () => {
+    expect(returnBankFee(inRow, null)).toBe(11_000)
+    expect(returnBankFee(outRow, null)).toBe(11_000)
+    const notes = [returnedTransferText(inRow, outPair), returnedTransferText(outRow, inPair)].map(vnd)
+    for (const note of notes) {
+      expect(note.match(/giữ(?: lại)? [\d.]+ ₫ phí/g)).toEqual([expect.stringContaining("11.000 ₫")])
+      expect(note).not.toContain("22.000 ₫")
+    }
+  })
+
+  it("shows the fee as a bank fee, not as money that reached the backer", () => {
+    const incoming = vnd(returnedTransferText(inRow, outPair))
+    expect(incoming).toContain("Tiền của khoản hoàn tiền −300.000 ₫ ngày 08/11/2026 quay về")
+    expect(incoming).toContain(
+      "Ngân hàng giữ lại 11.000 ₫ phí: phần này là phí ngân hàng, tính vào tổng đã chi, không phải tiền người ủng hộ đã nhận."
+    )
+    expect(incoming).toContain("Người tổ chức vẫn phải hoàn đủ cho người ủng hộ.")
+    // #72's wording counted the fee as refunded; that is gone.
+    expect(incoming).not.toContain("vẫn tính là đã hoàn lại")
+    const outgoing = vnd(returnedTransferText(outRow, inPair))
+    expect(outgoing).toContain(
+      "Khoản hoàn tiền này không đến được người ủng hộ: ngân hàng đã trả lại +289.000 ₫ ngày 10/11/2026."
+    )
+    expect(outgoing).toContain("Cả khoản −300.000 ₫ không còn tính vào tổng đã hoàn lại")
+    expect(outgoing).toContain("ngân hàng giữ 11.000 ₫ phí, tính là phí ngân hàng trong tổng đã chi")
+    expect(outgoing).toContain("Người tổ chức phải hoàn lại đủ cho người ủng hộ.")
+  })
+
+  it("keeps a fee on a returned payment spent, and names no fee when the bank returned everything", () => {
+    const payOut = { ...outRow, is_refund: false }
+    expect(vnd(returnedTransferText(payOut, inPair))).toContain(
+      "Ngân hàng giữ 11.000 ₫ phí, phần này vẫn tính là đã chi."
+    )
+    const payIn = vnd(returnedTransferText(inRow, { ...outPair, is_refund: false }))
+    expect(payIn).toContain("tính vào tổng đã chi.")
+    expect(payIn).not.toContain("người ủng hộ")
+    const full = { ...inRow, amount: 300_000, return_bank_fee: 0 }
+    expect(returnBankFee(full, outPair)).toBe(0)
+    expect(returnedTransferText(full, outPair)).not.toContain("phí")
+    expect(returnedTransferText({ ...outRow, return_bank_fee: 0 }, null)).not.toContain("phí")
+  })
+
+  it("falls back to the pair's amounts, and is 0 off a returned pair", () => {
+    expect(returnBankFee({ ...inRow, return_bank_fee: null }, outPair)).toBe(11_000)
+    expect(returnBankFee({ ...outRow, return_bank_fee: undefined }, inPair)).toBe(11_000)
+    expect(returnBankFee({ ...inRow, return_bank_fee: null }, null)).toBe(0)
+    expect(returnBankFee({ ...inRow, return_of: null, return_bank_fee: 5 }, null)).toBe(0)
+    // Without the other row, the incoming note still names the fee from the column.
+    expect(vnd(returnedTransferText(inRow, null))).toContain("Ngân hàng giữ lại 11.000 ₫ phí")
+  })
+
+  it("reads the returned money for the organizer with each explained transfer out", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: [
+          {
+            id: "o1",
+            amount: "300000",
+            disbursement: { is_refund: true },
+            returned: {
+              linked_at: "2026-11-12T03:00:00Z",
+              back: { amount: "289000", booked_at: "2026-11-10T03:00:00Z" },
+            },
+          },
+          { id: "o2", amount: 50_000, disbursement: { is_refund: false }, returned: null },
+          { id: "o3", amount: 70_000, disbursement: { is_refund: false }, returned: [] },
+        ],
+      }),
+      calls
+    )
+    const rows = await listExplainedOutgoing(db as never, CAMPAIGN)
+    expect(selected(calls[0])).toContain(
+      "returned:returned_transfers!original_transaction_id(linked_at, back:bank_transactions!bank_transaction_id(amount, booked_at))"
+    )
+    // The private reason and evidence of the link are never read here.
+    expect(selected(calls[0])?.split("returned:")[1]).not.toMatch(/reason|evidence|linked_by/)
+    expect(rows[0].amount).toBe(300_000)
+    expect(rows[0].returned).toEqual({
+      amount: 289_000,
+      booked_at: "2026-11-10T03:00:00Z",
+      linked_at: "2026-11-12T03:00:00Z",
+    })
+    expect(rows[1].returned).toBeNull()
+    expect(rows[2].returned).toBeNull()
+  })
+
+  it("tells the organizer to send the full refund again, the fee being theirs", () => {
+    const back = { amount: 289_000, booked_at: "2026-11-10T03:00:00Z", linked_at: "2026-11-12T03:00:00Z" }
+    const refund = vnd(returnedOutgoingText({ amount: 300_000 }, { is_refund: true }, back))
+    expect(refund).toContain("Ngân hàng đã trả lại +289.000 ₫ ngày 10/11/2026 và giữ 11.000 ₫ phí")
+    expect(refund).toContain("Cả khoản −300.000 ₫ không còn tính là đã hoàn, kể cả phần phí.")
+    expect(refund).toContain("Phí 11.000 ₫ do bạn chịu")
+    expect(refund).toContain("chuyển lại đủ 300.000 ₫")
+    expect(refund).not.toContain("289.000 ₫ rồi")
+    const full = vnd(returnedOutgoingText({ amount: 300_000 }, { is_refund: true }, { ...back, amount: 300_000 }))
+    expect(full).not.toContain("phí")
+    expect(full).toContain("chuyển lại 300.000 ₫")
+    const payment = vnd(returnedOutgoingText({ amount: 300_000 }, { is_refund: false }, back))
+    expect(payment).toContain("phí 11.000 ₫ vẫn tính là đã chi")
+    expect(payment).not.toContain("người ủng hộ")
+  })
+
+  it("does not take the fee off the refund queue: a returned refund is refundable in full again", async () => {
+    const db = fakeDb((call) =>
+      call.target === "contributions"
+        ? { data: [{ id: "a", reference_code: "GVA", received_amount: 300_000 }] }
+        : // The refund (+300k) and its return post (−300k, the original amount); the 11k fee is a
+          // 'disbursed' post with no contribution, so it never reaches this read.
+          {
+            data: [
+              { contribution_id: "a", amount: 300_000 },
+              { contribution_id: "a", amount: -300_000 },
+            ],
+          }
+    )
+    const rows = await listRefundable(db as never, CAMPAIGN)
+    expect(rows.map((x) => [x.id, x.refundable_amount])).toEqual([["a", 300_000]])
   })
 })
 

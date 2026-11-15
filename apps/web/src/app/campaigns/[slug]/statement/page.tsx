@@ -22,6 +22,7 @@ import {
   listStatement,
   listStatementPairs,
   parseStatementParams,
+  returnedTransferText,
   STATEMENT_FILTER_LABELS,
   STATEMENT_FILTERS,
   STATEMENT_PAGE_SIZE,
@@ -281,29 +282,13 @@ function StatementItem({
 }
 
 /**
- * Both rows of a returned transfer (DOS/Give#72): the transfer out, and the
- * money the bank sent back. Each names the other's amount and local day when
- * it could be read; the reason and evidence are never public.
+ * Both rows of a returned transfer (DOS/Give#72), with the bank fee when the
+ * bank kept one (DOS/Give#195); the words are returnedTransferText's.
  */
 function ReturnedNote({ row, pair }: { row: StatementRow; pair: StatementPair | null }) {
   const incoming = row.direction === "in"
   const recorded = row.returned_at ? ` Give ghi nhận ngày ${formatDate(row.returned_at)}.` : ""
-  let text: string
-  if (incoming) {
-    // The return nets the original's bucket, so it is not money received.
-    const spent = pair?.is_refund ? "đã hoàn lại" : "đã chi"
-    text = pair
-      ? `Tiền của khoản ${pair.is_refund ? "hoàn tiền" : "chi"} −${formatVnd(pair.amount)} ngày ${formatDate(pair.booked_at)} quay về, nên không tính vào tổng đã nhận.`
-      : "Tiền chiến dịch đã chuyển đi quay về, nên không tính vào tổng đã nhận."
-    if (pair && pair.amount > row.amount) {
-      text += ` Ngân hàng giữ lại ${formatVnd(pair.amount - row.amount)} phí, phần này vẫn tính là ${spent}.`
-    }
-  } else {
-    const spent = row.is_refund ? "đã hoàn lại" : "đã chi"
-    text = pair
-      ? `Khoản này không chuyển được: ngân hàng trả lại +${formatVnd(pair.amount)} ngày ${formatDate(pair.booked_at)}, số tiền về đó không còn tính vào tổng ${spent}.`
-      : `Khoản này không chuyển được: ngân hàng đã trả tiền lại, số tiền về đó không còn tính vào tổng ${spent}.`
-  }
+  const text = returnedTransferText(row, pair)
   return (
     <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
       {incoming ? <Badge>Không phải tiền ủng hộ</Badge> : <Badge tone="info">Bị ngân hàng trả lại</Badge>}
