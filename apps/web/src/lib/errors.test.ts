@@ -8,6 +8,7 @@ import {
   OWN_TRANSFER_MESSAGES,
   REVIEW_MESSAGES,
   SUBMIT_MESSAGES,
+  STATEMENT_ROW_MESSAGES,
 } from "./errors"
 
 describe("giveErrorCode", () => {
@@ -61,6 +62,15 @@ describe("dbErrorMessage", () => {
   it("words the account owner refusal on paths other than the match action (DOS/Give#148)", () => {
     expect(dbErrorMessage({ code: "23514", message: "GIVE_ACCOUNT_OWNER_MISMATCH" })).toBe(
       "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch này không xử lý được cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch."
+    )
+  })
+
+  it("words non-transaction statement row resolution refusals (DOS/Give#78)", () => {
+    expect(dbErrorMessage({ code: "23514", message: "GIVE_RESOLUTION_NOT_FOR_REASON: balance_break" })).toBe(
+      "Chỉ đánh dấu “không phải giao dịch thật” được cho dòng thuộc lần tải sao kê đã bị đội tài chính bỏ qua."
+    )
+    expect(dbErrorMessage({ code: "23514", message: "GIVE_ROW_HAS_ACTIVE_DUPLICATE" })).toContain(
+      "Một lần tải sao kê khác có dòng đã được bỏ qua vì trùng với dòng này"
     )
   })
 
@@ -154,5 +164,40 @@ describe("explanation correction refusals (DOS/Give#71)", () => {
     expect(dbErrorMessage({ message: "GIVE_REASON_TOO_LONG" }, CORRECT_EXPLANATION_MESSAGES)).toBe(
       "Lý do tối đa 1000 ký tự."
     )
+  })
+})
+
+describe("STATEMENT_ROW_MESSAGES (DOS/Give#78)", () => {
+  // Every code give.resolve_statement_import_row raises (DOS/DOS.Me
+  // 20261116120000), and those of recording an imported row that a stored
+  // row can reach (give.record_bank_transaction).
+  const CODES = [
+    "GIVE_NOT_ALLOWED",
+    "GIVE_RESOLUTION_INVALID",
+    "GIVE_RESOLUTION_NOTE_REQUIRED",
+    "GIVE_IMPORT_ROW_NOT_FOUND",
+    "GIVE_IMPORT_ROW_NOT_AMBIGUOUS",
+    "GIVE_SELF_REVIEW",
+    "GIVE_DUPLICATE_TARGET_INVALID",
+    "GIVE_RESOLUTION_CANDIDATE",
+    "GIVE_RESOLUTION_NOT_FOR_REASON",
+    "GIVE_ROW_HAS_ACTIVE_DUPLICATE",
+    "GIVE_TRANSACTION_CONFLICT",
+    "GIVE_BINDING_CHANGED",
+    "GIVE_ACCOUNT_OWNER_MISMATCH",
+  ]
+
+  it("words every refusal of the resolution in Vietnamese", () => {
+    for (const code of CODES) {
+      const message = dbErrorMessage({ message: `${code}: detail` }, STATEMENT_ROW_MESSAGES)
+      expect(message, code).toBe(STATEMENT_ROW_MESSAGES[code])
+      expect(message, code).not.toBe("Có lỗi xảy ra. Hãy thử lại sau.")
+      expect(message, code).not.toMatch(/GIVE_|[a-z]+_[a-z]+/)
+    }
+  })
+
+  it("tells staff why their own money is refused and who can resolve it", () => {
+    expect(STATEMENT_ROW_MESSAGES.GIVE_SELF_REVIEW).toContain("tài khoản nhận là của bạn")
+    expect(STATEMENT_ROW_MESSAGES.GIVE_SELF_REVIEW).toContain("Một nhân viên tài chính khác cần xử lý")
   })
 })
