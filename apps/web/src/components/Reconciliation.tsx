@@ -5,6 +5,7 @@ import {
   type InboundExplanation,
   type ManualMatch,
   type PaidBreakdown,
+  type ReturnedTransfer,
   type UnattributedTransaction,
 } from "@/lib/reconciliation"
 import { inboundExplanationLabel } from "@/lib/statement"
@@ -106,6 +107,53 @@ export function InboundExplanationList({
               </p>
               <p className="break-words text-fg">Lý do: {e.reason}</p>
               <p className="break-words text-muted">Bằng chứng: {e.evidence}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+/**
+ * Recent links of money a bank returned to the outgoing transaction it came
+ * from (DOS/Give#72), with their private reason and evidence.
+ */
+export function ReturnedTransferList({
+  returns,
+  titles,
+}: {
+  returns: ReturnedTransfer[]
+  titles?: Map<string, string>
+}) {
+  return (
+    <section aria-labelledby="returned-transfers-heading">
+      <h2 id="returned-transfers-heading" className="mb-6 text-h2">
+        Tiền bị trả lại đã ghi nhận gần đây ({returns.length})
+      </h2>
+      {returns.length === 0 ? (
+        <EmptyState title="Chưa có khoản tiền nào được ghi nhận là bị ngân hàng trả lại." />
+      ) : (
+        <ul className="divide-y divide-border card">
+          {returns.map((r) => (
+            <li key={r.bank_transaction_id} className="space-y-1 p-4 sm:px-6">
+              <p className="flex flex-wrap justify-between gap-x-4 gap-y-1">
+                <span className="min-w-0 break-words">
+                  <span className="font-semibold text-fg tabular-nums">+{formatVnd(r.tx.amount)}</span> trả lại{" "}
+                  {r.original?.is_refund ? "khoản hoàn tiền" : "khoản chi"}
+                  {r.original && (
+                    <>
+                      {" "}
+                      <span className="tabular-nums">−{formatVnd(r.original.amount)}</span> ngày{" "}
+                      {formatDate(r.original.booked_at)}
+                    </>
+                  )}
+                  {titles && <span className="text-muted"> · {titles.get(r.tx.campaign_id) ?? "Chiến dịch"}</span>}
+                </span>
+                <span className="text-sm text-muted">Ghi nhận lúc {formatDateTime(r.linked_at)}</span>
+              </p>
+              <p className="break-words text-fg">Lý do: {r.reason}</p>
+              <p className="break-words text-muted">Bằng chứng: {r.evidence}</p>
             </li>
           ))}
         </ul>

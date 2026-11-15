@@ -56,6 +56,9 @@ const row = (over: Partial<StatementRow>): StatementRow => ({
   own_transfer_id: null,
   own_transfer_at: null,
   own_transfer_label: null,
+  return_of: null,
+  returned_by: null,
+  returned_at: null,
   ...over,
 })
 
@@ -87,5 +90,33 @@ describe("StatementPreview: a transfer between the campaign's own accounts (DOS/
   it("shows no transfer note without a pair", () => {
     const html = renderToStaticMarkup(createElement(StatementPreview, { slug: "a", totals, rows: [] }))
     expect(html).not.toContain("tài khoản cũ")
+  })
+})
+
+describe("StatementPreview: a transfer out that a bank returned (DOS/Give#72)", () => {
+  it("labels the money that came back as not a donation and the transfer out as returned", () => {
+    const html = renderToStaticMarkup(
+      createElement(StatementPreview, {
+        slug: "a",
+        totals,
+        rows: [
+          row({ id: "in", direction: "in", amount: 290_000, return_of: "out", returned_at: "2026-11-12T00:00:00Z" }),
+          row({
+            id: "out",
+            explained: true,
+            purpose: "Mua rau",
+            returned_by: "in",
+            returned_at: "2026-11-12T00:00:00Z",
+          }),
+        ],
+      })
+    )
+    expect(html).toContain("Ngân hàng trả lại tiền chuyển đi")
+    expect(html).toContain("Không phải tiền ủng hộ")
+    expect(html).toContain("Bị ngân hàng trả lại")
+    // The returned transfer out keeps its purpose but not the "explained" badge.
+    expect(html).toContain("Mua rau")
+    expect(html).not.toContain("Đã giải trình")
+    expect(html).not.toContain("Chưa khớp với lượt ủng hộ nào")
   })
 })

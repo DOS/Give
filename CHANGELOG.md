@@ -190,6 +190,15 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   the campaign's organizer shows why it cannot be matched instead of a match
   form; `/admin/unmatched` lists incoming money that belongs to no campaign
   (read only); the "no campaign" message names every cause (#148 / #164).
+- Money a bank returned from a transfer out (a bounced payment or refund):
+  finance staff link it on `/admin/unmatched` to the explained outgoing
+  transaction it came from, with a private reason and evidence
+  (`give.link_returned_transfer`). The row leaves the unmatched queues; the
+  campaign's spent or refunded total and "đã thanh toán" drop by the returned
+  amount; a refunded pledge is owed a refund again and both people get a
+  notice. The public statement shows both rows as a returned transfer
+  ("Tiền chuyển đi bị trả lại"), with the other row's amount and day and no
+  personal data (#72 / #193).
 
 ### Platform
 
@@ -213,6 +222,11 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   transaction is not attributed to, or matched on, a campaign whose organizer
   does not own the receiving account (#119 / DOS/DOS.Me#1662). Migration
   `20261112090000_give_reconciliation_account_owner`.
+- Returned transfers: `give.returned_transfers`, `give.link_returned_transfer`
+  and three `give.public_statement` columns (`return_of`, `returned_by`,
+  `returned_at`) (#72 / DOS/DOS.Me#1680, on Beta). Migration
+  `20261115150000_give_returned_transfers`. The Give app's #72 change reads
+  them, so it needs this migration on Production before it is released.
 
 ### On Production (database only)
 

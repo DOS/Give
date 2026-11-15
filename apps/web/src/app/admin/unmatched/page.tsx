@@ -1,11 +1,16 @@
 import type { Metadata } from "next"
 import { notFound } from "next/navigation"
 
-import { InboundExplanationList, ManualMatchList, UnattributedList } from "@/components/Reconciliation"
+import {
+  InboundExplanationList,
+  ManualMatchList,
+  ReturnedTransferList,
+  UnattributedList,
+} from "@/components/Reconciliation"
 import { UnmatchedTransactionCard } from "@/components/UnmatchedTransaction"
 import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
-import { explainTransaction } from "@/app/admin/unmatched/actions"
+import { explainTransaction, linkReturnedTransfer } from "@/app/admin/unmatched/actions"
 import { matchTransaction } from "@/app/me/campaigns/[id]/unmatched/actions"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
@@ -15,10 +20,14 @@ import {
   listInboundExplanations,
   listManualMatches,
   listMatchCandidates,
+  listReturnCandidates,
+  listReturnedTransfers,
   listUnattributed,
   listUnmatched,
   ownerMismatchNotice,
+  returnCandidatesFor,
   UNATTRIBUTED_CAUSES,
+  type ReturnCandidate,
 } from "@/lib/reconciliation"
 import { accountLabels } from "@/lib/statement-import"
 import { dbAs } from "@/lib/supabase"
@@ -33,7 +42,7 @@ export default async function AdminUnmatchedPage() {
   // Finance and admin staff only; others get a 404.
   if (!(await isStaff(db, FINANCE_ROLES))) notFound()
 
-  const [{ transactions: unmatched, total }, unattributed, matches, explanations] = await Promise.all([
+  const [{ transactions: unmatched, total }, unattributed, matches, explanations, returns] = await Promise.all([
     listUnmatched(db),
     // A read error hides only this read-only section, not the queue above.
     listUnattributed(db).catch((e: { code?: string; message?: string } | null) => {
@@ -42,13 +51,19 @@ export default async function AdminUnmatchedPage() {
     }),
     listManualMatches(db),
     listInboundExplanations(db),
+    // A read error hides only this list, not the queue above.
+    listReturnedTransfers(db).catch((e: { code?: string; message?: string } | null) => {
+      console.error("returned_transfers failed", e?.code, e?.message)
+      return []
+    }),
   ])
   const campaignIds = [...new Set(unmatched.map((tx) => tx.campaign_id))]
-  const [refs, candidateLists, organizers, accounts] = await Promise.all([
+  const [refs, candidateLists, organizers, accounts, returnCandidates] = await Promise.all([
     campaignRefs(db, [
       ...campaignIds,
       ...matches.map((m) => m.tx.campaign_id),
       ...explanations.map((e) => e.tx.campaign_id),
+      ...returns.map((r) => r.tx.campaign_id),
     ]),
     Promise.all(campaignIds.map((id) => listMatchCandidates(db, id))),
     // Without organizers the match forms stay and the database still refuses.
@@ -63,6 +78,13 @@ export default async function AdminUnmatchedPage() {
         return new Map<string, string>()
       }
     ),
+    // Without candidates the return form says none fits; matching and explaining still work.
+    Promise.all(campaignIds.map((id) => listReturnCandidates(db, id)))
+      .then((lists) => lists.flat())
+      .catch((e: { code?: string; message?: string } | null) => {
+        console.error("return candidates failed", e?.code, e?.message)
+        return [] as ReturnCandidate[]
+      }),
   ])
   const candidates = new Map(campaignIds.map((id, i) => [id, candidateLists[i]]))
   const titles = new Map([...refs].map(([id, ref]) => [id, ref.title]))
@@ -82,6 +104,10 @@ export default async function AdminUnmatchedPage() {
             Khoản không phải tiền ủng hộ (người tổ chức nạp thêm, ngân hàng hoàn phí, lãi) thì giải trình thay vì khớp,
             kể cả khi chiến dịch đã hủy hoặc đã đóng: ghi lý do và bằng chứng đã kiểm tra. Sao kê công khai chỉ hiện
             loại khoản tiền; tổng đã thanh toán không đổi, và giao dịch không còn chặn việc nhả tài khoản nhận.
+          </p>
+          <p>
+            Tiền của khoản chi hay khoản hoàn tiền bị ngân hàng trả lại thì ghi nhận ở từng giao dịch, mục &quot;Tiền
+            chuyển đi bị ngân hàng trả lại?&quot;.
           </p>
         </>
       }
@@ -106,6 +132,8 @@ export default async function AdminUnmatchedPage() {
                 explainAction={explainTransaction.bind(null, tx.id)}
                 campaignTitle={titles.get(tx.campaign_id) ?? tx.campaign_id}
                 matchBlocked={ownerMismatchNotice(tx, organizers.get(tx.campaign_id), session.user.id)}
+                returnAction={linkReturnedTransfer.bind(null, tx.id)}
+                returnCandidates={returnCandidatesFor(tx, returnCandidates)}
               />
             ))}
           </ItemList>
@@ -140,6 +168,8 @@ export default async function AdminUnmatchedPage() {
       <ManualMatchList matches={matches} titles={titles} />
 
       <InboundExplanationList explanations={explanations} titles={titles} />
+
+      <ReturnedTransferList returns={returns} titles={titles} />
     </AdminPage>
   )
 }

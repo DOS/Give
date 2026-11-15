@@ -221,6 +221,16 @@ describe("matchTransaction", () => {
     )
   })
 
+  it("refuses a transaction linked as money a bank returned, from a stale page (DOS/Give#72)", async () => {
+    state.responses.bank_transactions = {
+      data: { ...tx().data, returned_transfers: { original_transaction_id: "o1" } },
+    }
+    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toBe(
+      "Giao dịch này đã được nhân viên tài chính ghi nhận là tiền bị ngân hàng trả lại, nên không khớp được nữa. Hãy tải lại trang."
+    )
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
   it("says why when the account's owner is not the campaign's organizer (DOS/Give#136)", async () => {
     const happened =
       "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được."

@@ -9,7 +9,13 @@ import {
   listInboundExplanations,
   listManualMatches,
   listMatchCandidates,
+  listReturnCandidates,
+  listReturnedTransfers,
   listUnmatched,
+  paidAfterReturn,
+  returnCandidateLabel,
+  returnCandidatesFor,
+  RETURN_CANDIDATE_LIMIT,
   accountOwnerMismatch,
   campaignOrganizers,
   listUnattributed,
@@ -24,6 +30,7 @@ import {
   REFERENCE_CODE,
   waitsFor,
   type MatchCandidate,
+  type ReturnCandidate,
 } from "./reconciliation"
 
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
@@ -139,10 +146,14 @@ describe("listUnmatched", () => {
         ["is", "inbound_explanations", null],
         // The incoming leg of a transfer between the campaign's own accounts is settled (DOS/Give#84).
         ["is", "own_in", null],
+        ["is", "returned_transfers", null],
         ["eq", "campaign_id", CAMPAIGN],
       ])
     )
     expect(String(op(calls[0], "select")?.[0])).toContain("own_in:own_account_transfers!in_transaction_id(id)")
+    // A transaction linked as returned (DOS/Give#72) leaves the queue; the embed names the incoming foreign key.
+    expect(String(op(calls[0], "select")?.[0])).toContain("returned_transfers!bank_transaction_id(bank_transaction_id)")
+    expect(String(op(calls[0], "select")?.[0])).toContain("asset")
   })
 
   it("reads the account's owner and the binding's account, as an object or a one-row array", async () => {
@@ -285,13 +296,26 @@ describe("getIncoming", () => {
       () => ({ data: { ...row, transaction_matches: null, inbound_explanations: { kind: "interest" } } }),
       calls
     ) as unknown as Db
-    expect(await getIncoming(db, "t")).toMatchObject({ amount: 150000, matched_to: null, explained_as: "interest" })
+    expect(await getIncoming(db, "t")).toMatchObject({
+      amount: 150000,
+      matched_to: null,
+      explained_as: "interest",
+      returned_of: null,
+    })
     expect(String(op(calls[0], "select")?.[0])).toContain("inbound_explanations(kind)")
+    expect(String(op(calls[0], "select")?.[0])).toContain(
+      "returned_transfers!bank_transaction_id(original_transaction_id)"
+    )
 
     db = fakeDb(() => ({
       data: { ...row, transaction_matches: [{ contribution_id: "c" }], inbound_explanations: [] },
     })) as unknown as Db
     expect(await getIncoming(db, "t")).toMatchObject({ matched_to: "c", explained_as: null })
+
+    db = fakeDb(() => ({
+      data: { ...row, transaction_matches: null, returned_transfers: [{ original_transaction_id: "o1" }] },
+    })) as unknown as Db
+    expect(await getIncoming(db, "t")).toMatchObject({ returned_of: "o1" })
   })
 })
 
@@ -461,5 +485,159 @@ describe("reference codes and candidates", () => {
 
     const denied = fakeDb(() => ({ error: { code: "42501", message: "denied" } })) as unknown as Db
     await expect(listMatchCandidates(denied, CAMPAIGN)).rejects.toMatchObject({ code: "42501" })
+  })
+})
+
+describe("returned transfers (DOS/Give#72)", () => {
+  const ACCOUNT = "55555555-5555-4555-8555-555555555555"
+  const base: ReturnCandidate = {
+    id: "o1",
+    campaign_id: CAMPAIGN,
+    receiving_account_id: ACCOUNT,
+    asset: "VND",
+    amount: 200_000,
+    booked_at: "2026-11-08T03:00:00Z",
+    booked_date_only: false,
+    counterparty_account_masked: "****9999",
+    is_refund: false,
+    purpose: "Mua gạo",
+    refund_reference_code: null,
+  }
+  const incoming = {
+    campaign_id: CAMPAIGN,
+    receiving_account_id: ACCOUNT,
+    asset: "VND",
+    amount: 200_000,
+    booked_at: "2026-11-10T03:00:00Z",
+  }
+
+  it("reads explained, not yet returned outgoing transactions of one campaign", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: [
+          {
+            ...base,
+            amount: "200000",
+            disbursement: { is_refund: true, purpose: "Hoàn tiền", refund: [{ reference_code: "GVAB12CD" }] },
+            returned_transfers: null,
+          },
+          // Defensive: a row without its explanation is never offered.
+          { ...base, id: "o2", disbursement: null, returned_transfers: null },
+        ],
+      }),
+      calls
+    ) as unknown as Db
+    expect(await listReturnCandidates(db, CAMPAIGN)).toEqual([
+      { ...base, is_refund: true, purpose: "Hoàn tiền", refund_reference_code: "GVAB12CD" },
+    ])
+    const select = String(op(calls[0], "select")?.[0])
+    expect(select).toContain("disbursement:disbursements!inner(")
+    expect(select).toContain("refund:contributions!refund_contribution_id(reference_code)")
+    expect(select).toContain("returned_transfers!original_transaction_id(bank_transaction_id)")
+    expect(calls[0].ops).toEqual(
+      expect.arrayContaining([
+        ["eq", "direction", "out"],
+        ["eq", "campaign_id", CAMPAIGN],
+        ["is", "returned_transfers", null],
+        ["limit", RETURN_CANDIDATE_LIMIT],
+      ])
+    )
+  })
+
+  it("throws a read error", async () => {
+    const db = fakeDb(() => ({ error: { code: "57014", message: "timeout" } })) as unknown as Db
+    await expect(listReturnCandidates(db, CAMPAIGN)).rejects.toMatchObject({ code: "57014" })
+  })
+
+  it("offers only what the database would accept: campaign, account, asset, amount and local day", () => {
+    const fits = (c: Partial<ReturnCandidate>, tx = incoming) =>
+      returnCandidatesFor(tx, [{ ...base, ...c }]).length === 1
+    expect(fits({})).toBe(true)
+    expect(fits({ amount: 250_000 })).toBe(true) // the bank kept a fee
+    expect(fits({ amount: 199_999 })).toBe(false)
+    expect(fits({ campaign_id: OTHER })).toBe(false)
+    expect(fits({ receiving_account_id: OTHER })).toBe(false)
+    expect(fits({ asset: "USDT" })).toBe(false)
+    expect(fits({ booked_at: "2026-11-10T03:00:00Z" })).toBe(true) // same moment
+    // Same local day in Vietnam (UTC+7), later hour: still accepted, as the database compares days.
+    expect(fits({ booked_at: "2026-11-10T16:59:00Z" }, { ...incoming, booked_at: "2026-11-09T17:00:00Z" })).toBe(true)
+    // The next local day: refused.
+    expect(fits({ booked_at: "2026-11-10T17:00:00Z" }, { ...incoming, booked_at: "2026-11-10T16:59:00Z" })).toBe(false)
+  })
+
+  it("labels a candidate by amount, local day, kind and purpose", () => {
+    expect(returnCandidateLabel(base)).toBe(vnd("−200.000 ₫ · 08/11/2026 · Khoản chi · Mua gạo"))
+    expect(
+      returnCandidateLabel({
+        ...base,
+        booked_at: "2026-11-08T18:00:00Z",
+        is_refund: true,
+        refund_reference_code: "GVAB12CD",
+        purpose: "x".repeat(80),
+      })
+    ).toBe(vnd(`−200.000 ₫ · 09/11/2026 · Hoàn tiền GVAB12CD · ${"x".repeat(59)}…`))
+    expect(returnCandidateLabel({ ...base, is_refund: true })).toContain("· Hoàn tiền · Mua gạo")
+  })
+
+  it("says the paid total dropped by the returned amount, or that something else moved too", () => {
+    const before = { received: 500_000, unmatched: 200_000, other: 0, paid: 700_000 }
+    expect(paidAfterReturn(before, { received: 500_000, unmatched: 0, other: 0, paid: 500_000 }, 200_000)).toBe(
+      vnd(
+        " Tổng đã thanh toán giảm từ 700.000 ₫ xuống 500.000 ₫ (chưa khớp 200.000 ₫ → 0 ₫): tiền bị trả lại là tiền của chiến dịch quay về, không phải tiền ủng hộ mới."
+      )
+    )
+    expect(paidAfterReturn(before, { received: 500_000, unmatched: 50_000, other: 0, paid: 550_000 }, 200_000)).toBe(
+      vnd(
+        " Tổng đã thanh toán hiện là 550.000 ₫ (trước khi ghi nhận: 700.000 ₫; có giao dịch khác vừa được ghi cùng lúc)."
+      )
+    )
+    expect(paidAfterReturn(null, before, 1)).toBe("")
+  })
+
+  it("reads the latest links with both transactions and never linked_by", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: [
+          {
+            bank_transaction_id: "i1",
+            original_transaction_id: "o1",
+            reason: "Sai số tài khoản",
+            evidence: "Thư ngân hàng",
+            linked_at: "2026-11-12T00:00:00Z",
+            tx: { amount: "190000", booked_at: "2026-11-10T00:00:00Z", campaign_id: CAMPAIGN },
+            original: { amount: "200000", booked_at: "2026-11-08T00:00:00Z", disbursement: [{ is_refund: true }] },
+          },
+          {
+            bank_transaction_id: "i2",
+            original_transaction_id: "o2",
+            reason: "r",
+            evidence: "e",
+            linked_at: "2026-11-11T00:00:00Z",
+            tx: { amount: 1, booked_at: "2026-11-10T00:00:00Z", campaign_id: CAMPAIGN },
+            original: null,
+          },
+        ],
+      }),
+      calls
+    ) as unknown as Db
+    const returns = await listReturnedTransfers(db)
+    expect(returns[0]).toEqual({
+      bank_transaction_id: "i1",
+      original_transaction_id: "o1",
+      reason: "Sai số tài khoản",
+      evidence: "Thư ngân hàng",
+      linked_at: "2026-11-12T00:00:00Z",
+      tx: { amount: 190_000, booked_at: "2026-11-10T00:00:00Z", campaign_id: CAMPAIGN },
+      original: { amount: 200_000, booked_at: "2026-11-08T00:00:00Z", is_refund: true },
+    })
+    expect(returns[1].original).toBeNull()
+    expect(calls[0].target).toBe("returned_transfers")
+    const select = String(op(calls[0], "select")?.[0])
+    expect(select).toContain("tx:bank_transactions!bank_transaction_id!inner(")
+    expect(select).toContain("original:bank_transactions!original_transaction_id(")
+    expect(select).not.toContain("linked_by")
+    expect(op(calls[0], "order")).toEqual(["linked_at", { ascending: false }])
   })
 })

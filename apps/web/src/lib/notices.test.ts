@@ -235,6 +235,31 @@ describe("describeNotice", () => {
     expect(reminder.body).toContain(formatVnd(150_000))
   })
 
+  it("words a refund the bank sent back (DOS/Give#72)", () => {
+    const payload = {
+      campaign_title: "Đèn",
+      reference_code: "GVAB12CD",
+      received_amount: 150_000,
+      refund_amount: 150_000,
+      reason: "refund_returned",
+      refund_due_at: "2026-11-29T00:00:00Z",
+    }
+    const refund = describeNotice(notice({ kind: "refund_due", payload }))
+    expect(refund.title).toBe("Bạn sẽ được hoàn tiền")
+    expect(refund.body).toContain("ngân hàng đã trả lại")
+    expect(refund.body).toContain(formatVnd(150_000))
+    expect(refund.body).toContain("29/11/2026")
+    expect(refund.body).not.toContain("không còn hiệu lực")
+    // What is owed after a bank fee can be less than what the backer sent.
+    expect(refund.body).not.toContain("bạn đã chuyển")
+    const owed = describeNotice(notice({ kind: "refund_owed", payload }))
+    expect(owed.body).toContain("mã GVAB12CD")
+    expect(owed.body).toContain("chưa nhận được khoản hoàn tiền bạn đã chuyển: ngân hàng đã trả lại")
+    expect(owed.body).toContain(`hoàn lại ${formatVnd(150_000)} trước 29/11/2026`)
+    expect(owed.body).not.toContain("không còn hiệu lực")
+    expect(owed.href).toBe(`/me/campaigns/${CAMPAIGN}/disbursements`)
+  })
+
   it("covers a stop and a resume of payment requests (DOS/Give#89)", () => {
     const base = { campaign_title: "Đèn", campaign_slug: "den-ngu", public_note: "Give đang xác minh." }
     const backer = describeNotice(

@@ -105,6 +105,22 @@ const GIVE_MESSAGES: Record<string, string> = {
   // as a statement upload or a parked event, if one raises it later (#148).
   GIVE_ACCOUNT_OWNER_MISMATCH:
     "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch này không xử lý được cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch.",
+  // Money a bank returned from a transfer out (DOS/Give#72): give.link_returned_transfer.
+  GIVE_ORIGINAL_TRANSACTION_NOT_FOUND: "Không tìm thấy khoản chuyển đi gốc, hoặc bạn không có quyền với giao dịch đó.",
+  GIVE_ORIGINAL_NOT_EXPLAINED:
+    "Khoản chuyển đi gốc chưa được giải trình. Người tổ chức cần giải trình khoản đó trước (là khoản chi hay khoản hoàn tiền), rồi mới ghi nhận được tiền bị trả lại.",
+  GIVE_RETURN_CAMPAIGN_MISMATCH:
+    "Khoản chuyển đi gốc thuộc chiến dịch khác. Tiền bị trả lại phải cùng chiến dịch với khoản chuyển đi gốc.",
+  GIVE_RETURN_ACCOUNT_MISMATCH:
+    "Khoản chuyển đi gốc đi từ một tài khoản nhận khác. Ngân hàng trả tiền về đúng tài khoản đã chuyển đi.",
+  GIVE_RETURN_ASSET_MISMATCH: "Khoản chuyển đi gốc dùng loại tiền khác với khoản tiền bị trả lại.",
+  GIVE_RETURN_EXCEEDS_ORIGINAL:
+    "Số tiền bị trả lại lớn hơn khoản chuyển đi gốc, nên không phải tiền của khoản đó. Hãy chọn đúng khoản chuyển đi gốc.",
+  GIVE_RETURN_BEFORE_ORIGINAL:
+    "Tiền bị trả lại được ghi trước ngày của khoản chuyển đi gốc, nên không phải tiền của khoản đó. Hãy chọn đúng khoản chuyển đi gốc.",
+  GIVE_TRANSACTION_ALREADY_RETURNED:
+    "Khoản tiền vào này đã được ghi nhận là tiền bị trả lại, với khoản chuyển đi gốc, lý do hoặc bằng chứng khác. Ghi nhận đã lưu thì không sửa được.",
+  GIVE_ORIGINAL_ALREADY_RETURNED: "Khoản chuyển đi gốc này đã được ghi nhận là bị trả lại bởi một khoản tiền vào khác.",
   GIVE_ACCOUNT_HISTORY_OPEN:
     "Tài khoản này đã được đổi ra khỏi một chiến dịch mà phần tiền chưa xong (chiến dịch chưa kết thúc đủ 30 ngày, hoặc còn giao dịch chưa đối chiếu, chưa giải trình, hoặc còn dòng sao kê chưa ghi nhận), nên chưa dùng cho chiến dịch khác được.",
   // Transfers between a campaign's own accounts after a swap (DOS/Give#84);
