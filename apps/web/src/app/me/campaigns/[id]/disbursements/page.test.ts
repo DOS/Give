@@ -114,7 +114,8 @@ describe("disbursements page: transfers a bank returned (DOS/Give#194)", () => {
     expect(returned).toContain(row)
     expect(row).toContain('data-notice="returned"')
     expect(row).toContain('role="note"')
-    expect(row).toContain("Ngân hàng đã trả lại +289.000 ₫ ngày 10/11/2026 và giữ 11.000 ₫ phí")
+    expect(row).toContain("Give sẽ xử lý khoản này")
+    expect(row).toContain("Ngân hàng đã trả lại +289.000 ₫ ngày 10/11/2026 và giữ 11.000 ₫ phí ngân hàng")
     // No explain form, no overdue reminder.
     expect(row).not.toContain("Gửi giải trình")
     expect(row).not.toContain("<form")

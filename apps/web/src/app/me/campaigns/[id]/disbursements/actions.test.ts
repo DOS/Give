@@ -237,7 +237,8 @@ describe("explainDisbursement", () => {
     const result = await explainDisbursement(CAMPAIGN, TX, null, form({}, [png()]))
     expect(result).toEqual({
       ok: false,
-      message: "Ngân hàng đã trả lại khoản chuyển này, nên đây không phải khoản chi cần giải trình.",
+      message:
+        "Giao dịch này đã được ghi nhận là bị ngân hàng trả lại. Bộ phận tài chính của Give sẽ xử lý, bạn không giải trình nó như một khoản chi. Hãy tải lại trang.",
     })
     // The link was read with the organizer's token, in the same read as the transaction.
     const read = state.userCalls.find((c) => c.target === "bank_transactions")
@@ -248,7 +249,7 @@ describe("explainDisbursement", () => {
   it("refuses a returned transfer even when the money that came back cannot be read", async () => {
     state.userHandler = reads({ returned: [{ linked_at: "2026-11-12T03:00:00Z", back: null }] })
     const result = await explainDisbursement(CAMPAIGN, TX, null, form())
-    expect(result?.message).toContain("không phải khoản chi cần giải trình")
+    expect(result?.message).toContain("bị ngân hàng trả lại")
     expect(state.serviceCalls).toHaveLength(0)
   })
 

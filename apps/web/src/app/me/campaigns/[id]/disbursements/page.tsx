@@ -79,9 +79,10 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
     <MeDetail>
       <PageHeader back={{ href: `/me/campaigns/${campaign.id}`, label: campaign.title }} title="Giải trình khoản chi">
         <p>
-          Mỗi khoản tiền ra khỏi tài khoản nhận cần được giải trình trong {EXPLAIN_WITHIN_DAYS} ngày. Mục đích, loại
-          khoản chi, người nhận và ảnh chứng từ sẽ hiện công khai trên sao kê; số khoản chưa giải trình cũng được công
-          khai. Giải trình đã gửi thì không sửa được, nhưng có thể thêm chứng từ.
+          Mỗi khoản tiền ra khỏi tài khoản nhận (trừ khoản bị ngân hàng trả lại) cần được giải trình trong{" "}
+          {EXPLAIN_WITHIN_DAYS} ngày. Mục đích, loại khoản chi, người nhận và ảnh chứng từ sẽ hiện công khai trên sao
+          kê; số khoản chưa giải trình cũng được công khai. Giải trình đã gửi thì không sửa được, nhưng có thể thêm
+          chứng từ.
         </p>
         {isPublicStatus(campaign.status) && (
           <Link href={statementHref(campaign.slug, "all")} className="inline-flex min-h-11 items-center link">
@@ -127,8 +128,8 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
                 {returned.map((tx) => (
                   <li key={tx.id} className="min-w-0 card p-4 sm:p-6">
                     <TransactionHeader tx={tx} />
-                    <ReturnedNotice title="Bị ngân hàng trả lại">
-                      {returnedUnexplainedText(tx, tx.returned)}
+                    <ReturnedNotice title="Give sẽ xử lý khoản này">
+                      {returnedUnexplainedText(tx, tx.returned, tx.linked_at)}
                     </ReturnedNotice>
                   </li>
                 ))}

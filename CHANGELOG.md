@@ -217,9 +217,9 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 - `/me/campaigns/[id]/disbursements`: a transfer out that finance linked as
   returned by the bank but that has no explanation is listed under its own
   "Bị ngân hàng trả lại" heading with the return day, is never offered to
-  explain and does not count under "Chưa giải trình"; the explain action
-  refuses it. The database already links only explained transfers, so this
-  is a guard (#194).
+  explain and does not count under this page's "Chưa giải trình"; the
+  explain action refuses it. The database already links only explained
+  transfers, so this is a guard (#194).
 - Correcting a mistaken explanation of incoming money: on `/admin/unmatched`,
   an admin (not finance, and never the campaign's organizer, the person who
   explained it or the contributor) can correct an item of "Đã giải trình gần

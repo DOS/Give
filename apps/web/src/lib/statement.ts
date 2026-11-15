@@ -654,6 +654,8 @@ export interface ReturnedBack {
 export interface ReturnedUnexplained extends OutgoingTransaction {
   /** Null when the link is there but the money that came back could not be read. */
   returned: ReturnedBack | null
+  /** When finance linked the return. */
+  linked_at: string
 }
 
 /** The organizer's outgoing transactions that have no explanation. */
@@ -711,11 +713,14 @@ const RETURNED_EMBED =
   "returned:returned_transfers!original_transaction_id(linked_at, back:bank_transactions!bank_transaction_id(amount, booked_at))"
 
 /** Whether a return is linked, and the money that came back when it could be read. */
-function readReturned(embed: ReturnedEmbed): { linked: boolean; back: ReturnedBack | null } {
+function readReturned(
+  embed: ReturnedEmbed
+): { linked: false; back: null } | { linked: true; linked_at: string; back: ReturnedBack | null } {
   const link = Array.isArray(embed) ? embed[0] : embed
   if (!link) return { linked: false, back: null }
   return {
     linked: true,
+    linked_at: link.linked_at,
     back: link.back
       ? { amount: num(link.back.amount), booked_at: link.back.booked_at, linked_at: link.linked_at }
       : null,
@@ -747,7 +752,7 @@ export async function listUnexplainedOutgoing(db: Db, campaignId: string): Promi
   for (const { disbursements: _embed, own_out: _pair, returned, ...row } of (data ?? []) as unknown as Row[]) {
     const tx = toOutgoing(row)
     const link = readReturned(returned)
-    if (link.linked) result.returned.push({ ...tx, returned: link.back })
+    if (link.linked) result.returned.push({ ...tx, returned: link.back, linked_at: link.linked_at })
     else result.pending.push(tx)
   }
   return result
@@ -814,14 +819,19 @@ export function returnedOutgoingText(
  */
 export function returnedUnexplainedText(
   tx: Pick<OutgoingTransaction, "amount">,
-  returned: ReturnedBack | null
+  returned: ReturnedBack | null,
+  linkedAt: string
 ): string {
+  // The public totals still count such a transfer as unexplained until
+  // finance settles it, so no total is promised here (only finance can fix it).
+  const tail =
+    "và sẽ xử lý khoản này trên sao kê công khai, nên bạn không giải trình nó như một khoản chi. Nếu sao kê vẫn tính khoản này là chưa giải trình, hãy liên hệ Give."
   if (!returned) {
-    return "Bộ phận tài chính của Give đã ghi nhận ngân hàng trả lại khoản chuyển này, nên đây không phải khoản chi cần giải trình."
+    return `Ngày ${formatDate(linkedAt)}, bộ phận tài chính của Give đã ghi nhận khoản chuyển này bị ngân hàng trả lại ${tail}`
   }
   const fee = Math.max(0, tx.amount - returned.amount)
-  const kept = fee > 0 ? ` và giữ ${formatVnd(fee)} phí` : ""
-  return `Ngân hàng đã trả lại +${formatVnd(returned.amount)} ngày ${formatDate(returned.booked_at)}${kept}: khoản chuyển này không đi được, nên đây không phải khoản chi cần giải trình.`
+  const kept = fee > 0 ? ` và giữ ${formatVnd(fee)} phí ngân hàng` : ""
+  return `Ngân hàng đã trả lại +${formatVnd(returned.amount)} ngày ${formatDate(returned.booked_at)}${kept}. Bộ phận tài chính của Give đã ghi nhận ${tail}`
 }
 
 /** An outgoing transaction with its explanation (null until explained) and whether a bank return is linked. */

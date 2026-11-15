@@ -39,7 +39,8 @@ import { firstError, formFields } from "@/lib/validation"
 const SIGNED_OUT = "Phiên đăng nhập đã hết. Hãy đăng nhập lại."
 const TX_NOT_FOUND = dbErrorMessage({ message: "GIVE_TRANSACTION_NOT_FOUND" })
 /** A transfer the bank sent back never left the campaign (DOS/Give#194). */
-const RETURNED_NOT_EXPLAINABLE = "Ngân hàng đã trả lại khoản chuyển này, nên đây không phải khoản chi cần giải trình."
+const RETURNED_NOT_EXPLAINABLE =
+  "Giao dịch này đã được ghi nhận là bị ngân hàng trả lại. Bộ phận tài chính của Give sẽ xử lý, bạn không giải trình nó như một khoản chi. Hãy tải lại trang."
 
 type Loaded = {
   campaign: CampaignWithRefs

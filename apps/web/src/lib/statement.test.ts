@@ -610,6 +610,7 @@ describe("organizer reads", () => {
     expect(selected(calls[0])).toContain("own_out:own_account_transfers!out_transaction_id(id)")
     expect(op(calls[0], "limit")).toBeUndefined()
     expect(rows).toEqual([{ id: TX, amount: 250_000 }])
+    expect(returned).toEqual([])
   })
 
   it("splits off a transfer the bank returned: it is not spending to explain (DOS/Give#194)", async () => {
@@ -643,21 +644,29 @@ describe("organizer reads", () => {
         id: "r1",
         amount: 300_000,
         returned: { amount: 289_000, booked_at: "2026-11-10T03:00:00Z", linked_at: "2026-11-12T03:00:00Z" },
+        linked_at: "2026-11-12T03:00:00Z",
       },
       // Linked, but the money that came back could not be read: still not offered to explain.
-      { id: "r2", amount: 50_000, returned: null },
+      { id: "r2", amount: 50_000, returned: null, linked_at: "2026-11-12T03:00:00Z" },
     ])
   })
 
-  it("words a returned, unexplained transfer with the return day and any fee", () => {
+  it("words a returned, unexplained transfer with the return day and any fee, promising no total", () => {
     const vnd = (text: string) => text.replace(/\u00a0/g, " ")
     const back = { amount: 289_000, booked_at: "2026-11-10T03:00:00Z", linked_at: "2026-11-12T03:00:00Z" }
-    const fee = vnd(returnedUnexplainedText({ amount: 300_000 }, back))
+    const fee = vnd(returnedUnexplainedText({ amount: 300_000 }, back, back.linked_at))
     expect(fee).toBe(
-      "Ngân hàng đã trả lại +289.000 ₫ ngày 10/11/2026 và giữ 11.000 ₫ phí: khoản chuyển này không đi được, nên đây không phải khoản chi cần giải trình."
+      "Ngân hàng đã trả lại +289.000 ₫ ngày 10/11/2026 và giữ 11.000 ₫ phí ngân hàng. Bộ phận tài chính của Give đã ghi nhận và sẽ xử lý khoản này trên sao kê công khai, nên bạn không giải trình nó như một khoản chi. Nếu sao kê vẫn tính khoản này là chưa giải trình, hãy liên hệ Give."
     )
-    expect(vnd(returnedUnexplainedText({ amount: 300_000 }, { ...back, amount: 300_000 }))).not.toContain("phí")
-    expect(returnedUnexplainedText({ amount: 300_000 }, null)).toContain("không phải khoản chi cần giải trình")
+    // The public totals still count it until finance settles it: no "not spent" claim.
+    expect(fee).not.toMatch(/không (còn )?tính vào tổng|không phải khoản chi/)
+    expect(
+      vnd(returnedUnexplainedText({ amount: 300_000 }, { ...back, amount: 300_000 }, back.linked_at))
+    ).not.toContain("phí")
+    // Without the money that came back, the day finance linked it.
+    expect(returnedUnexplainedText({ amount: 300_000 }, null, "2026-11-12T03:00:00Z")).toMatch(
+      /^Ngày 12\/11\/2026, bộ phận tài chính của Give đã ghi nhận khoản chuyển này bị ngân hàng trả lại/
+    )
   })
 
   it("reads whether a bank return is linked to the transaction being explained", async () => {
