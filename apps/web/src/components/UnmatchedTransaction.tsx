@@ -256,7 +256,7 @@ function ReturnedTransferForm({
       ) : (
         <ActionForm
           action={action}
-          confirm={`Ghi nhận ${formatVnd(tx.amount)} là tiền bị ngân hàng trả lại của khoản chuyển đi đã chọn? Nếu đó là khoản chi, tổng đã chi của chiến dịch giảm ${formatVnd(tx.amount)}; nếu là khoản hoàn tiền, tổng đã hoàn giảm đúng bằng cả khoản hoàn gốc và phí ngân hàng (nếu có) tính vào tổng đã chi. Sao kê công khai hiện hai giao dịch là một khoản chuyển bị trả lại, và ghi nhận đã lưu thì không sửa được.`}
+          confirm={`Ghi nhận ${formatVnd(tx.amount)} là tiền bị ngân hàng trả lại của khoản chuyển đi đã chọn? Nếu đó là khoản chi, tổng đã chi của chiến dịch giảm ${formatVnd(tx.amount)}; nếu là khoản hoàn tiền, tổng đã hoàn giảm đúng bằng cả khoản hoàn gốc, còn phí ngân hàng (nếu có) tính vào tổng đã chi. Sao kê công khai hiện hai giao dịch là một khoản chuyển bị trả lại, và ghi nhận đã lưu thì không sửa được.`}
           className="mt-3 grid max-w-160 gap-6"
         >
           <p className="text-fg">
