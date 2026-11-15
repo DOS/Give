@@ -237,7 +237,8 @@ export const OWN_TRANSFER_MESSAGES: Record<string, string> = {
     "Người tổ chức đã giải trình khoản tiền ra này là một khoản chi. Giải trình đã công khai thì không đổi được.",
   GIVE_TRANSACTION_ALREADY_MATCHED: "Khoản tiền vào này đã được khớp với một lượt ủng hộ.",
   GIVE_TRANSACTION_ALREADY_EXPLAINED: "Khoản tiền vào này đã được giải trình là tiền không phải ủng hộ.",
-  GIVE_LEDGER_POST_MISSING: "Một trong hai giao dịch chưa được ghi sổ đầy đủ. Hãy thử lại sau ít phút.",
+  GIVE_LEDGER_POST_MISSING:
+    "Một trong hai giao dịch không còn chờ xử lý trong sổ: chưa được ghi sổ, hoặc đã được xử lý theo cách khác (ví dụ đã ghi là tiền bị trả lại). Hãy tải lại trang; nếu vẫn lỗi, báo đội ngũ kỹ thuật.",
 }
 
 /** Result shape that form actions return to useActionState. */

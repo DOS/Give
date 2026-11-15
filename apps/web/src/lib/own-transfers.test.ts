@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 import type { Db } from "./campaigns"
-import { listOwnTransfers, listSwapTransfers, pairCandidates, type TransferLeg } from "./own-transfers"
+import { listOwnTransfers, listSwapTransfers, pairCandidates, sentElsewhere, type TransferLeg } from "./own-transfers"
 
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
 const OTHER_CAMPAIGN = "33333333-3333-4333-8333-333333333333"
@@ -90,6 +90,7 @@ describe("listSwapTransfers", () => {
     expect(result).toHaveLength(1)
     expect(result[0].old_account?.account_number).toBe("1")
     expect(result[0].new_account?.account_number).toBe("2")
+    expect(result[0].target_account_numbers).toEqual(["2"])
     expect(result[0].outs.map((t) => [t.id, t.amount])).toEqual([["out1", 3_000_000]])
     // Only the same campaign's legs; extra embed columns are not carried along.
     expect(result[0].ins.map((t) => t.id)).toEqual(["in1"])
@@ -193,5 +194,18 @@ describe("listOwnTransfers", () => {
     expect(rows[0].campaign).toEqual({ slug: "a", title: "A" })
     expect(rows[0].out_tx?.amount).toBe(3_000_000)
     expect(rows[0].in_tx).toEqual({ booked_at: "y", booked_date_only: true })
+  })
+})
+
+describe("sentElsewhere", () => {
+  it("warns only when the bank names another destination than the new account", () => {
+    expect(sentElsewhere("****5602", ["0090212345602"])).toBe(false)
+    expect(sentElsewhere("****9999", ["0090212345602"])).toBe(true)
+    // A chain of swaps A -> B -> C: money from A straight to C is not "elsewhere".
+    expect(sentElsewhere("****0003", ["0090212345602", "0011000000003"])).toBe(false)
+    // Nothing to compare: no warning.
+    expect(sentElsewhere(null, ["0090212345602"])).toBe(false)
+    expect(sentElsewhere("****", ["0090212345602"])).toBe(false)
+    expect(sentElsewhere("****5602", [])).toBe(false)
   })
 })

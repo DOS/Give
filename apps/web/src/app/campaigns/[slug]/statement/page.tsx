@@ -254,7 +254,9 @@ function StatementItem({
             {row.in_explained_at && <span>Give giải trình ngày {formatDate(row.in_explained_at)}</span>}
           </p>
         )}
-        {incoming && row.after_close && <p className="text-sm text-warning">Tiền về sau khi chiến dịch đã kết thúc.</p>}
+        {incoming && !ownTransfer && row.after_close && (
+          <p className="text-sm text-warning">Tiền về sau khi chiến dịch đã kết thúc.</p>
+        )}
       </div>
       <p className={`shrink-0 font-semibold tabular-nums ${incoming && !ownTransfer ? "text-primary" : "text-fg"}`}>
         {incoming ? "+" : "−"}

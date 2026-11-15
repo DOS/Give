@@ -15,7 +15,9 @@ import {
   listSwapTransfers,
   OWN_TRANSFER_LABEL,
   OWN_TRANSFER_REASON_MAX,
+  OWN_TRANSFER_SWAP_LIMIT,
   pairCandidates,
+  sentElsewhere,
   type OwnTransfer,
   type SwapTransfers,
   type TransferLeg,
@@ -57,13 +59,18 @@ export default async function AdminOwnTransfersPage() {
           <p>
             Đối chiếu sao kê của cả hai tài khoản (cùng số tiền, người chuyển và người nhận là hai tài khoản của chiến
             dịch), rồi đánh dấu cặp giao dịch. Cặp đã đánh dấu không còn tính vào đã nhận hay đã chi, và sao kê công
-            khai ghi “{OWN_TRANSFER_LABEL}”. Căn cứ bạn ghi chỉ nhân viên xem được. Không hoàn tác được. Khoản tiền ra
-            nào là chi tiêu thật thì để người tổ chức giải trình như thường.
+            khai ghi “{OWN_TRANSFER_LABEL}”. Căn cứ bạn ghi không công khai, nhưng người tổ chức chiến dịch xem được.
+            Không hoàn tác được. Khoản tiền ra nào là chi tiêu thật thì để người tổ chức giải trình như thường.
           </p>
         </>
       }
     >
-      <AdminSection id="open" title="Tiền ra ở tài khoản cũ chưa giải trình" count={outCount}>
+      <AdminSection
+        id="open"
+        title="Tiền ra ở tài khoản cũ chưa giải trình"
+        count={outCount}
+        lead={`Theo ${OWN_TRANSFER_SWAP_LIMIT} lần đổi tài khoản đã duyệt gần nhất.`}
+      >
         {swaps.length === 0 ? (
           <EmptyState title="Không có khoản nào cần đối chiếu.">
             Tiền ra khỏi tài khoản cũ sau một lần đổi tài khoản đã duyệt sẽ hiện ở đây.
@@ -131,7 +138,12 @@ function SwapCard({ swap, selfId }: { swap: SwapTransfers; selfId: string }) {
       ) : (
         <ul className="divide-y divide-border border-t border-border">
           {swap.outs.map((out) => (
-            <OutLeg key={out.id} out={out} candidates={pairCandidates(out, swap.ins)} />
+            <OutLeg
+              key={out.id}
+              out={out}
+              candidates={pairCandidates(out, swap.ins)}
+              targetAccounts={swap.target_account_numbers}
+            />
           ))}
         </ul>
       )}
@@ -139,9 +151,18 @@ function SwapCard({ swap, selfId }: { swap: SwapTransfers; selfId: string }) {
   )
 }
 
-function OutLeg({ out, candidates }: { out: TransferLeg; candidates: TransferLeg[] }) {
+function OutLeg({
+  out,
+  candidates,
+  targetAccounts,
+}: {
+  out: TransferLeg
+  candidates: TransferLeg[]
+  targetAccounts: readonly string[]
+}) {
   const selectId = `in-${out.id}`
   const reasonId = `reason-${out.id}`
+  const notToNew = sentElsewhere(out.counterparty_account_masked, targetAccounts)
   return (
     <li className="space-y-4 pt-6 [&:not(:last-child)]:pb-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -158,6 +179,12 @@ function OutLeg({ out, candidates }: { out: TransferLeg; candidates: TransferLeg
         <p className="shrink-0 font-semibold text-fg tabular-nums">−{formatVnd(out.amount)}</p>
       </div>
 
+      {notToNew && candidates.length > 0 && (
+        <Callout tone="warning">
+          Khoản tiền ra này chuyển tới tài khoản {out.counterparty_account_masked}, không phải tài khoản mới của chiến
+          dịch. Có thể đây là chi tiêu thật; chỉ đánh dấu khi sao kê cho thấy tiền đã vào tài khoản mới.
+        </Callout>
+      )}
       {candidates.length === 0 ? (
         <Callout tone="info">
           Chưa có khoản tiền vào cùng số tiền ở tài khoản mới. Sao kê của tài khoản mới có thể chưa được tải lên; nếu
@@ -185,7 +212,7 @@ function OutLeg({ out, candidates }: { out: TransferLeg; candidates: TransferLeg
               ))}
             </select>
           </Field>
-          <Field htmlFor={reasonId} label="Căn cứ đã kiểm tra (chỉ nhân viên xem được)">
+          <Field htmlFor={reasonId} label="Căn cứ đã kiểm tra (không công khai; người tổ chức chiến dịch xem được)">
             <textarea
               id={reasonId}
               name="reason"

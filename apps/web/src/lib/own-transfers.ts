@@ -79,6 +79,8 @@ export interface SwapTransfers {
    * old binding ended, on another account (the database's rule), oldest first.
    */
   ins: TransferLeg[]
+  /** Account numbers of those target bindings (the new account, or a later one of a chain of swaps). */
+  target_account_numbers: string[]
 }
 
 const ACCOUNT_LABEL = "owner_user_id, channel, bank_bin, account_number, account_name"
@@ -174,17 +176,14 @@ export async function listSwapTransfers(db: Db): Promise<SwapTransfers[]> {
       const released = s.old_binding?.released_at ?? null
       const oldAccountId = s.old_binding?.receiving_account_id ?? null
       // Bindings of this campaign that an approved swap started at or after the old one ended, on another account.
-      const targets = new Set(
-        newBindings
-          .filter(
-            (b) =>
-              b.campaign_id === s.campaign_id &&
-              released !== null &&
-              new Date(b.bound_at).getTime() >= new Date(released).getTime() &&
-              b.receiving_account_id !== oldAccountId
-          )
-          .map((b) => b.id)
+      const targetBindings = newBindings.filter(
+        (b) =>
+          b.campaign_id === s.campaign_id &&
+          released !== null &&
+          new Date(b.bound_at).getTime() >= new Date(released).getTime() &&
+          b.receiving_account_id !== oldAccountId
       )
+      const targets = new Set(targetBindings.map((b) => b.id))
       return {
         swap_id: s.id,
         campaign: s.campaign,
@@ -194,6 +193,10 @@ export async function listSwapTransfers(db: Db): Promise<SwapTransfers[]> {
         new_account: accountOf(s.new_binding),
         outs: outLegs.filter((t) => t.binding_id === s.old_binding_id && t.campaign_id === s.campaign_id),
         ins: inLegs.filter((t) => targets.has(t.binding_id) && t.campaign_id === s.campaign_id),
+        target_account_numbers: targetBindings.flatMap((b) => {
+          const number = accountOf(b)?.account_number
+          return number ? [number] : []
+        }),
       }
     })
     .filter((s) => s.outs.length > 0)
@@ -208,6 +211,19 @@ export function pairCandidates(out: TransferLeg, ins: readonly TransferLeg[]): T
   return ins
     .filter((t) => t.amount === out.amount && t.asset === out.asset)
     .sort((a, b) => Math.abs(new Date(a.booked_at).getTime() - at) - Math.abs(new Date(b.booked_at).getTime() - at))
+}
+
+/**
+ * True when the bank names the outflow's destination and it is none of the
+ * campaign's later accounts (the new one, or a later one of a chain of swaps).
+ * The database does not check the counterparty (finance confirms it from the
+ * bank record), so this only warns. The masked form keeps up to the last 4
+ * characters after "****".
+ */
+export function sentElsewhere(masked: string | null, accountNumbers: readonly string[]): boolean {
+  const tail = (masked ?? "").replace(/^\*+/, "")
+  if (!tail || accountNumbers.length === 0) return false
+  return !accountNumbers.some((number) => number.endsWith(tail))
 }
 
 /** A marked pair, as finance reads it (marked_by is never granted to clients). */
