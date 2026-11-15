@@ -263,7 +263,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   own contributions or those with less left to refund than the transfer.
   The role is checked with the staff member's own token first. The
   organizer's refund refusal and hint now tell them to ask Give's finance
-  staff, who record it as a refund (#203 / #PR).
+  staff, who record it as a refund (#203 / #204).
 
 ### Platform
 
