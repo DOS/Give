@@ -256,12 +256,14 @@ function ReturnedTransferForm({
       ) : (
         <ActionForm
           action={action}
-          confirm={`Ghi nhận ${formatVnd(tx.amount)} là tiền bị ngân hàng trả lại của khoản chuyển đi đã chọn? Tổng đã chi hoặc đã hoàn của chiến dịch giảm ${formatVnd(tx.amount)}, sao kê công khai hiện hai giao dịch là một khoản chuyển bị trả lại, và ghi nhận đã lưu thì không sửa được.`}
+          confirm={`Ghi nhận ${formatVnd(tx.amount)} là tiền bị ngân hàng trả lại của khoản chuyển đi đã chọn? Nếu đó là khoản chi, tổng đã chi của chiến dịch giảm ${formatVnd(tx.amount)}; nếu là khoản hoàn tiền, tổng đã hoàn giảm đúng bằng cả khoản hoàn gốc, còn phí ngân hàng (nếu có) tính vào tổng đã chi. Sao kê công khai hiện hai giao dịch là một khoản chuyển bị trả lại, và ghi nhận đã lưu thì không sửa được.`}
           className="mt-3 grid max-w-160 gap-6"
         >
           <p className="text-fg">
             Chỉ khoản chi và khoản hoàn tiền đã được giải trình mới hiện ở đây. Nếu ngân hàng giữ lại phí, khoản tiền về
-            nhỏ hơn khoản gốc: phần phí vẫn tính là đã chi hoặc đã hoàn.
+            nhỏ hơn khoản gốc. Với khoản chi, phần phí vẫn tính là đã chi. Với khoản hoàn tiền, cả khoản hoàn không còn
+            tính là đã hoàn (kể cả phí), phần phí tính vào tổng đã chi, và người tổ chức phải hoàn lại đủ cho người ủng
+            hộ.
           </p>
           <div>
             <label htmlFor={`original-${tx.id}`} className="label">

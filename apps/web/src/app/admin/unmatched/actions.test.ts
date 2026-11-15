@@ -10,7 +10,7 @@ const TX = "77777777-7777-4777-8777-777777777777"
 
 const state = vi.hoisted(() => ({
   userId: "66666666-6666-4666-8666-666666666666",
-  responses: {} as Record<string, Result>,
+  responses: {} as Record<string, Result | Handler>,
   ledger: [] as Result[],
   serviceHandler: (() => undefined) as Handler,
   userCalls: [] as Call[],
@@ -23,10 +23,11 @@ vi.mock("@/lib/auth/session", () => ({
 }))
 vi.mock("@/lib/supabase", () => ({
   dbAs: () =>
-    fakeDb(
-      (call) => (call.target === "rpc:campaign_paid" ? state.ledger.shift() : state.responses[call.target]),
-      state.userCalls
-    ),
+    fakeDb((call) => {
+      if (call.target === "rpc:campaign_paid") return state.ledger.shift()
+      const response = state.responses[call.target]
+      return typeof response === "function" ? (response as Handler)(call) : response
+    }, state.userCalls),
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
 }))
 
@@ -259,9 +260,44 @@ describe("linkReturnedTransfer (DOS/Give#72)", () => {
     expect(await linkReturnedTransfer(TX, null, form(LINK))).toEqual({
       ok: true,
       message: vnd(
-        "Đã ghi nhận 300.000 ₫ là tiền bị ngân hàng trả lại của một khoản hoàn tiền. Tổng đã hoàn của chiến dịch giảm 300.000 ₫, và lượt ủng hộ đó lại cần được hoàn tiền: hãy báo người tổ chức hoàn lại cho người ủng hộ (kiểm tra lại số tài khoản nhận) rồi giải trình khoản hoàn mới. Nếu đó là một cam kết đã được hoàn đủ, Give cũng đã gửi thông báo cho người ủng hộ và người tổ chức; các trường hợp khác không có thông báo tự động. Sao kê công khai hiện hai giao dịch là một khoản chuyển bị trả lại."
+        "Đã ghi nhận 300.000 ₫ là tiền bị ngân hàng trả lại của một khoản hoàn tiền. Tổng đã hoàn của chiến dịch giảm 300.000 ₫, và lượt ủng hộ đó lại cần được hoàn tiền: hãy báo người tổ chức hoàn lại cho người ủng hộ (kiểm tra lại số tài khoản nhận) rồi giải trình khoản hoàn mới. Nếu đó là một cam kết nay còn phải được hoàn tiền, Give đã gửi thông báo cho người tổ chức (và cho người ủng hộ nếu cam kết trở lại trạng thái Chờ hoàn tiền); các trường hợp khác (như một lượt ủng hộ trực tiếp) không có thông báo tự động. Sao kê công khai hiện hai giao dịch là một khoản chuyển bị trả lại."
       ),
     })
+  })
+
+  it("says the whole refund, fee included, no longer counts and must be sent in full again (DOS/Give#195)", async () => {
+    state.serviceHandler = () => ({ data: { outcome: "refund_returned", replayed: false } })
+    state.ledger = [{ data: BEFORE }, { error: { code: "57014", message: "timeout" } }]
+    // The incoming 300k, then the original refund of 311k it returns.
+    state.responses.bank_transactions = (call) =>
+      call.ops.some(([name, column, value]) => name === "eq" && column === "id" && value === ORIGINAL)
+        ? { data: { amount: "311000" } }
+        : tx()
+    const result = await linkReturnedTransfer(TX, null, form(LINK))
+    expect(result?.ok).toBe(true)
+    expect(result?.message).toContain(
+      vnd(
+        "Đã ghi nhận 300.000 ₫ là tiền bị ngân hàng trả lại của khoản hoàn tiền 311.000 ₫; ngân hàng giữ 11.000 ₫ phí. Cả khoản hoàn không còn tính là đã hoàn: tổng đã hoàn của chiến dịch giảm 311.000 ₫, phí 11.000 ₫ tính vào tổng đã chi, và người ủng hộ lại cần được hoàn đủ 311.000 ₫ (người tổ chức chịu phí)"
+      )
+    )
+    // The original is read with the actor's own token, after the link.
+    const reads = state.userCalls.filter((c) => c.target === "bank_transactions")
+    expect(reads).toHaveLength(2)
+    expect(op(reads[1], "select")).toEqual(["amount"])
+  })
+
+  it("names no amount for the refunded total when the original cannot be read", async () => {
+    state.serviceHandler = () => ({ data: { outcome: "refund_returned", replayed: false } })
+    state.responses.bank_transactions = (call) =>
+      call.ops.some(([name, column, value]) => name === "eq" && column === "id" && value === ORIGINAL)
+        ? { error: { code: "42501", message: "permission denied" } }
+        : tx()
+    const result = await linkReturnedTransfer(TX, null, form(LINK))
+    expect(result?.ok).toBe(true)
+    expect(result?.message).toContain(
+      "Tổng đã hoàn của chiến dịch giảm đúng bằng số tiền của khoản hoàn tiền gốc (kể cả phần phí nếu ngân hàng giữ lại; phần phí tính vào tổng đã chi), và lượt ủng hộ đó lại cần được hoàn đủ"
+    )
+    expect(result?.message).not.toContain("giảm 300.000")
   })
 
   it("answers a replay as done without claiming a change", async () => {

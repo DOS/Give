@@ -59,6 +59,7 @@ const row = (over: Partial<StatementRow>): StatementRow => ({
   return_of: null,
   returned_by: null,
   returned_at: null,
+  return_bank_fee: null,
   ...over,
 })
 
@@ -118,5 +119,45 @@ describe("StatementPreview: a transfer out that a bank returned (DOS/Give#72)", 
     expect(html).toContain("Mua rau")
     expect(html).not.toContain("Đã giải trình")
     expect(html).not.toContain("Chưa khớp với lượt ủng hộ nào")
+  })
+})
+
+describe("StatementPreview: a bank fee on a returned refund (DOS/Give#195)", () => {
+  it("names the fee once per pair, on the money that came back, as a bank fee", () => {
+    const html = renderToStaticMarkup(
+      createElement(StatementPreview, {
+        slug: "a",
+        totals,
+        rows: [
+          row({ id: "in", direction: "in", amount: 289_000, return_of: "out", return_bank_fee: 11_000 }),
+          row({
+            id: "out",
+            amount: 300_000,
+            explained: true,
+            is_refund: true,
+            purpose: "Hoàn tiền",
+            returned_by: "in",
+            return_bank_fee: 11_000,
+          }),
+        ],
+      })
+    )
+    const fee = `Ngân hàng giữ ${formatVnd(11_000)} phí`
+    // Twice: once in the desktop table, once in the phone list; never on the transfer out.
+    expect(html.split(fee).length - 1).toBe(2)
+    expect(html).not.toContain(formatVnd(22_000))
+    expect(html).toContain("Bị ngân hàng trả lại")
+  })
+
+  it("names no fee when the bank returned everything", () => {
+    const html = renderToStaticMarkup(
+      createElement(StatementPreview, {
+        slug: "a",
+        totals,
+        rows: [row({ id: "in", direction: "in", amount: 300_000, return_of: "out", return_bank_fee: 0 })],
+      })
+    )
+    expect(html).toContain("Không phải tiền ủng hộ")
+    expect(html).not.toContain("phí")
   })
 })

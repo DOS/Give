@@ -27,6 +27,7 @@ import {
   MAX_EVIDENCE_FILES,
   MAX_EVIDENCE_PER_TRANSACTION,
   refundOptionLabel,
+  returnedOutgoingText,
   statementHref,
   type Disbursement,
   type OutgoingTransaction,
@@ -129,6 +130,19 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
                 {done.map((tx) => (
                   <li key={tx.id} className="min-w-0 card p-4 sm:p-6">
                     <TransactionHeader tx={tx} />
+                    {tx.returned && (
+                      // A transfer a bank sent back (DOS/Give#72), with the fee it kept (DOS/Give#195).
+                      <div data-notice="returned" role="note" className="mt-4">
+                        <Callout
+                          tone={tx.disbursement.is_refund ? "danger" : "info"}
+                          title={
+                            tx.disbursement.is_refund ? "Khoản hoàn tiền bị ngân hàng trả lại" : "Bị ngân hàng trả lại"
+                          }
+                        >
+                          <p>{returnedOutgoingText(tx, tx.disbursement, tx.returned)}</p>
+                        </Callout>
+                      </div>
+                    )}
                     <Explanation
                       disbursement={tx.disbursement}
                       refundCode={refundCodes.get(tx.disbursement.refund_contribution_id ?? "")}

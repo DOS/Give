@@ -149,13 +149,16 @@ export function describeNotice(notice: Notice, options?: NoticeRenderOptions): N
       const received = count(p, "refund_amount") ?? count(p, "received_amount")
       const by = text(p, "refund_due_at")
       // A refund the bank sent back (DOS/Give#72): the pledge is owed a refund again.
-      let body =
-        text(p, "reason") === "refund_returned"
-          ? `Khoản hoàn tiền cho cam kết ủng hộ ${campaignName(p, "dự án")} chưa đến được tài khoản của bạn: ngân hàng đã trả lại. Nếu số tài khoản nhận tiền của bạn đã đổi, hãy báo người tạo dự án. Người tạo dự án phải hoàn lại`
-          : `Cam kết ủng hộ ${campaignName(p, "dự án")} không còn hiệu lực (chưa được thanh toán đủ trước hạn, hoặc tiền đến sau khi cam kết đã hết hiệu lực). Người tạo dự án phải hoàn lại`
-      if (text(p, "reason") === "refund_returned") body += received ? ` ${formatVnd(received)}` : " số tiền còn nợ bạn"
+      const returned = text(p, "reason") === "refund_returned"
+      let body = returned
+        ? `Khoản hoàn tiền cho cam kết ủng hộ ${campaignName(p, "dự án")} chưa đến được tài khoản của bạn: ngân hàng đã trả lại. Nếu số tài khoản nhận tiền của bạn đã đổi, hãy báo người tạo dự án. Người tạo dự án phải hoàn lại`
+        : `Cam kết ủng hộ ${campaignName(p, "dự án")} không còn hiệu lực (chưa được thanh toán đủ trước hạn, hoặc tiền đến sau khi cam kết đã hết hiệu lực). Người tạo dự án phải hoàn lại`
+      if (returned) body += received ? ` ${formatVnd(received)}` : " số tiền còn nợ bạn"
       else body += received ? ` ${formatVnd(received)} bạn đã chuyển` : " số tiền bạn đã chuyển"
       body += by ? ` trước ${formatDate(by)}.` : "."
+      // The fee the bank kept is the organizer's to bear (DOS/Give#195): refund_amount already includes it.
+      const fee = returned ? count(p, "bank_fee") : null
+      if (fee) body += ` Ngân hàng đã giữ ${formatVnd(fee)} phí; người tạo dự án chịu phí này, bạn vẫn được hoàn đủ.`
       return { title: "Bạn sẽ được hoàn tiền", body: capitalize(body), ...pledgeLink(p, "Xem cam kết") }
     }
     case "refund_owed": {
@@ -166,8 +169,13 @@ export function describeNotice(notice: Notice, options?: NoticeRenderOptions): N
       if (code) body += ` (mã ${code})`
       if (text(p, "reason") === "refund_returned") {
         // The refund was explained, but the bank sent it back (DOS/Give#72).
-        body +=
-          " chưa nhận được khoản hoàn tiền bạn đã chuyển: ngân hàng đã trả lại. Hãy kiểm tra lại số tài khoản với người ủng hộ và hoàn lại"
+        // A fee the bank kept is the organizer's (DOS/Give#195): the earlier
+        // refund counts zero, fee included, and refund_amount already holds
+        // the full amount owed, so nothing is added or taken off here.
+        const fee = count(p, "bank_fee")
+        body += fee
+          ? ` chưa nhận được khoản hoàn tiền bạn đã chuyển: ngân hàng đã trả lại nhưng giữ ${formatVnd(fee)} phí. Cả khoản bạn đã chuyển trước đó, kể cả phần phí, không còn được tính là đã hoàn; phí này do bạn chịu, không trừ vào tiền hoàn. Hãy kiểm tra lại số tài khoản với người ủng hộ và chuyển lại đủ`
+          : " chưa nhận được khoản hoàn tiền bạn đã chuyển: ngân hàng đã trả lại. Hãy kiểm tra lại số tài khoản với người ủng hộ và hoàn lại"
         body += owed ? ` ${formatVnd(owed)}` : " số tiền còn nợ họ"
         body += by ? ` trước ${formatDate(by)}` : ""
       } else if (text(p, "reason") === "overpaid") {

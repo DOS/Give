@@ -119,6 +119,20 @@ export function InboundExplanationList({
  * Recent links of money a bank returned to the outgoing transaction it came
  * from (DOS/Give#72), with their private reason and evidence.
  */
+/**
+ * The fee a bank kept on a returned transfer, for finance (DOS/Give#195): on
+ * a refund it is a bank fee the organizer bears, and the backer is owed the
+ * whole refund again; on a payment it stays spent.
+ */
+export function returnedFeeText(fee: number, isRefund: boolean | null): string {
+  const head = `Ngân hàng giữ ${formatVnd(fee)} phí`
+  if (isRefund) {
+    return `${head}: tính là phí ngân hàng (đã chi) của chiến dịch, không tính là đã hoàn. Người ủng hộ cần được hoàn đủ bằng một khoản chuyển mới; người tổ chức chịu phí.`
+  }
+  if (isRefund === false) return `${head}: vẫn tính là đã chi.`
+  return `${head}.`
+}
+
 export function ReturnedTransferList({
   returns,
   titles,
@@ -152,6 +166,11 @@ export function ReturnedTransferList({
                 </span>
                 <span className="text-sm text-muted">Ghi nhận lúc {formatDateTime(r.linked_at)}</span>
               </p>
+              {r.original && r.original.amount > r.tx.amount && (
+                <p className="break-words text-fg" data-figure="return_bank_fee">
+                  {returnedFeeText(r.original.amount - r.tx.amount, r.original.is_refund)}
+                </p>
+              )}
               <p className="break-words text-fg">Lý do: {r.reason}</p>
               <p className="break-words text-muted">Bằng chứng: {r.evidence}</p>
             </li>

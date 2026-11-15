@@ -6,7 +6,14 @@ import { PledgeTotals } from "@/components/PledgeTotals"
 import { Badge } from "@/components/ui/Badge"
 import { Callout } from "@/components/ui/Callout"
 import { formatDate, formatVnd } from "@/lib/format"
-import { counterpartyLabel, remainingAmount, statementHref, type MoneyTotals, type StatementRow } from "@/lib/statement"
+import {
+  counterpartyLabel,
+  remainingAmount,
+  returnBankFee,
+  statementHref,
+  type MoneyTotals,
+  type StatementRow,
+} from "@/lib/statement"
 
 /** How many of the newest statement rows the campaign page shows. */
 export const PREVIEW_ROWS = 5
@@ -20,7 +27,17 @@ function RowNote({ row }: { row: StatementRow }) {
   // A transfer between the campaign's own accounts after a swap (DOS/Give#84).
   if (row.own_transfer_label) return <Badge tone="info">Chuyển tài khoản</Badge>
   if (row.direction === "in") {
-    return row.in_explanation || row.return_of ? <Badge>Không phải tiền ủng hộ</Badge> : null
+    if (!row.in_explanation && !row.return_of) return null
+    // A fee the bank kept on a returned transfer (DOS/Give#195), named once
+    // per pair: on the money that came back, not again on the transfer out.
+    const fee = row.return_of ? returnBankFee(row, null) : 0
+    if (fee === 0) return <Badge>Không phải tiền ủng hộ</Badge>
+    return (
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <Badge>Không phải tiền ủng hộ</Badge>
+        <span className="text-sm text-muted">Ngân hàng giữ {formatVnd(fee)} phí</span>
+      </span>
+    )
   }
   // A transfer out that a bank returned (DOS/Give#72).
   if (row.returned_by) return <Badge tone="info">Bị ngân hàng trả lại</Badge>

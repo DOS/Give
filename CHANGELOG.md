@@ -199,10 +199,21 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   transaction it came from, with a private reason and evidence
   (`give.link_returned_transfer`). The row leaves the unmatched queues; the
   campaign's spent or refunded total and "đã thanh toán" drop by the returned
-  amount; a refunded pledge is owed a refund again and both people get a
+  amount (for a refund, the refunded total drops by the original amount since
+  #195); a refunded pledge is owed a refund again and both people get a
   notice. The public statement shows both rows as a returned transfer
   ("Tiền chuyển đi bị trả lại"), with the other row's amount and day and no
   personal data (#72 / #193).
+- A bank fee kept on a returned refund is the organizer's to bear, and the
+  backer is owed the full refund again (owner decision). The organizer's
+  `refund_owed` notice says the bank kept a fee and asks to send the full
+  amount again; the backer's `refund_due` notice says they still get it in
+  full. On `/me/campaigns/[id]/disbursements` an explained transfer that a
+  bank returned shows what came back, the fee, and for a refund the full
+  amount to send again. The public statement and its preview show the fee
+  as a bank fee in "đã chi" on the returned pair, once per pair, never as
+  money that reached the backer; `/admin/unmatched` shows it on each
+  returned transfer and in the link message (#195).
 
 ### Platform
 
@@ -231,6 +242,12 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   `returned_at`) (#72 / DOS/DOS.Me#1680, on Beta). Migration
   `20261115150000_give_returned_transfers`. The Give app's #72 change reads
   them, so it needs this migration on Production before it is released.
+- Bank fee on a returned refund: a linked refund is reversed in full and the
+  fee is booked as spent; `give.public_statement` gains `return_bank_fee`
+  (#195 / DOS/DOS.Me#1683, on Beta). Migration
+  `20261115170000_give_returned_refund_bank_fee`. The Give app's #195 change
+  reads the column, so it needs this migration on Production before it is
+  released.
 
 ### On Production (database only)
 

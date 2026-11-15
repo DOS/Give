@@ -250,7 +250,7 @@ describe("describeNotice", () => {
     expect(refund.body).toContain(formatVnd(150_000))
     expect(refund.body).toContain("29/11/2026")
     expect(refund.body).not.toContain("không còn hiệu lực")
-    // What is owed after a bank fee can be less than what the backer sent.
+    // What is owed after a bounce can differ from what the backer sent (earlier partial refunds).
     expect(refund.body).not.toContain("bạn đã chuyển")
     const owed = describeNotice(notice({ kind: "refund_owed", payload }))
     expect(owed.body).toContain("mã GVAB12CD")
@@ -258,6 +258,69 @@ describe("describeNotice", () => {
     expect(owed.body).toContain(`hoàn lại ${formatVnd(150_000)} trước 29/11/2026`)
     expect(owed.body).not.toContain("không còn hiệu lực")
     expect(owed.href).toBe(`/me/campaigns/${CAMPAIGN}/disbursements`)
+  })
+
+  it("tells the organizer a bank kept a fee and to send the full amount again (DOS/Give#195)", () => {
+    // refund_amount is the full amount owed now: the database reversed the whole refund, fee included.
+    const payload = {
+      campaign_title: "Đèn",
+      reference_code: "GVAB12CD",
+      received_amount: 300_000,
+      refund_amount: 300_000,
+      bank_fee: 11_000,
+      reason: "refund_returned",
+      refund_due_at: "2026-11-29T00:00:00Z",
+    }
+    const owed = describeNotice(notice({ kind: "refund_owed", payload }))
+    expect(owed.title).toBe("Cần hoàn tiền cho người ủng hộ")
+    expect(owed.body).toContain(`ngân hàng đã trả lại nhưng giữ ${formatVnd(11_000)} phí`)
+    expect(owed.body).toContain("Cả khoản bạn đã chuyển trước đó, kể cả phần phí, không còn được tính là đã hoàn")
+    expect(owed.body).toContain("phí này do bạn chịu, không trừ vào tiền hoàn")
+    // The full amount, as the payload gives it: never minus the fee, never plus it again.
+    expect(owed.body).toContain(`chuyển lại đủ ${formatVnd(300_000)} trước 29/11/2026`)
+    expect(owed.body).not.toContain(formatVnd(289_000))
+    expect(owed.body).not.toContain(formatVnd(311_000))
+    expect(owed.href).toBe(`/me/campaigns/${CAMPAIGN}/disbursements`)
+
+    const backer = describeNotice(notice({ kind: "refund_due", payload }))
+    expect(backer.body).toContain(`Người tạo dự án phải hoàn lại ${formatVnd(300_000)} trước 29/11/2026.`)
+    expect(backer.body).toContain(
+      `Ngân hàng đã giữ ${formatVnd(11_000)} phí; người tạo dự án chịu phí này, bạn vẫn được hoàn đủ.`
+    )
+    expect(backer.body).not.toContain(formatVnd(289_000))
+  })
+
+  it("says nothing about a fee when the bank returned everything, or for another reason", () => {
+    const base = { campaign_title: "Đèn", reference_code: "GVAB12CD", refund_amount: 300_000 }
+    for (const kind of ["refund_owed", "refund_due"]) {
+      expect(describeNotice(notice({ kind, payload: { ...base, reason: "refund_returned" } })).body).not.toContain(
+        "phí"
+      )
+      expect(
+        describeNotice(notice({ kind, payload: { ...base, reason: "refund_returned", bank_fee: 0 } })).body
+      ).not.toContain("phí")
+      // bank_fee only means something on a returned refund.
+      expect(
+        describeNotice(notice({ kind, payload: { ...base, reason: "overpaid", bank_fee: 5_000 } })).body
+      ).not.toContain("giữ")
+    }
+  })
+
+  it("words the fee on an overpaid pledge whose excess refund bounced (DOS/Give#195)", () => {
+    const owed = describeNotice(
+      notice({
+        kind: "refund_owed",
+        payload: {
+          campaign_title: "Đèn",
+          reference_code: "GVAB12CD",
+          refund_amount: 50_000,
+          bank_fee: 3_000,
+          reason: "refund_returned",
+        },
+      })
+    )
+    expect(owed.body).toContain(`giữ ${formatVnd(3_000)} phí`)
+    expect(owed.body).toContain(`chuyển lại đủ ${formatVnd(50_000)},`)
   })
 
   it("covers a stop and a resume of payment requests (DOS/Give#89)", () => {

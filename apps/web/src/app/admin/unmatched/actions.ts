@@ -235,23 +235,50 @@ export async function linkReturnedTransfer(
   }
 
   let after = null
+  let original: number | null = null
   try {
     after = await paidBreakdown(db, campaign.id)
   } catch {
     // The link is recorded; only the totals line is left out.
   }
-  return done(returnedMessage(result?.outcome ?? null, tx.amount) + paidAfterReturn(before, after, tx.amount))
+  if (result?.outcome === "refund_returned") {
+    // The refunded total drops by the original refund, fee included (DOS/Give#195).
+    try {
+      const read = await db.from("bank_transactions").select("amount").eq("id", originalId).maybeSingle()
+      const amount = Number((read.data as { amount?: unknown } | null)?.amount)
+      if (!read.error && Number.isFinite(amount) && amount >= tx.amount) original = amount
+    } catch {
+      // The link is recorded; the message names no amounts for the refund.
+    }
+  }
+  return done(returnedMessage(result?.outcome ?? null, tx.amount, original) + paidAfterReturn(before, after, tx.amount))
 }
 
-/** What the link changed, in words; the refund case asks for a new refund. */
-function returnedMessage(outcome: ReturnOutcome | null, amount: number): string {
+/**
+ * What the link changed, in words; the refund case asks for a new refund.
+ * A returned refund counts zero, fee included: the fee the bank kept is a
+ * bank fee in "đã chi" that the organizer bears, and the backer is owed the
+ * full refund again (DOS/Give#195). `original` is the refund's amount, null
+ * when it could not be read.
+ */
+function returnedMessage(outcome: ReturnOutcome | null, amount: number, original: number | null = null): string {
   const head = `Đã ghi nhận ${formatVnd(amount)} là tiền bị ngân hàng trả lại`
   const statement = " Sao kê công khai hiện hai giao dịch là một khoản chuyển bị trả lại."
   if (outcome === "refund_returned") {
-    return (
-      `${head} của một khoản hoàn tiền. Tổng đã hoàn của chiến dịch giảm ${formatVnd(amount)}, và lượt ủng hộ đó lại cần được hoàn tiền: hãy báo người tổ chức hoàn lại cho người ủng hộ (kiểm tra lại số tài khoản nhận) rồi giải trình khoản hoàn mới. Nếu đó là một cam kết đã được hoàn đủ, Give cũng đã gửi thông báo cho người ủng hộ và người tổ chức; các trường hợp khác không có thông báo tự động.` +
-      statement
-    )
+    const fee = original === null ? 0 : original - amount
+    const notices =
+      " Nếu đó là một cam kết nay còn phải được hoàn tiền, Give đã gửi thông báo cho người tổ chức (và cho người ủng hộ nếu cam kết trở lại trạng thái Chờ hoàn tiền); các trường hợp khác (như một lượt ủng hộ trực tiếp) không có thông báo tự động."
+    const ask =
+      "hãy báo người tổ chức hoàn lại cho người ủng hộ (kiểm tra lại số tài khoản nhận) rồi giải trình khoản hoàn mới."
+    let text: string
+    if (original === null) {
+      text = `${head} của một khoản hoàn tiền. Tổng đã hoàn của chiến dịch giảm đúng bằng số tiền của khoản hoàn tiền gốc (kể cả phần phí nếu ngân hàng giữ lại; phần phí tính vào tổng đã chi), và lượt ủng hộ đó lại cần được hoàn đủ: ${ask}`
+    } else if (fee > 0) {
+      text = `${head} của khoản hoàn tiền ${formatVnd(original)}; ngân hàng giữ ${formatVnd(fee)} phí. Cả khoản hoàn không còn tính là đã hoàn: tổng đã hoàn của chiến dịch giảm ${formatVnd(original)}, phí ${formatVnd(fee)} tính vào tổng đã chi, và người ủng hộ lại cần được hoàn đủ ${formatVnd(original)} (người tổ chức chịu phí): ${ask}`
+    } else {
+      text = `${head} của một khoản hoàn tiền. Tổng đã hoàn của chiến dịch giảm ${formatVnd(original)}, và lượt ủng hộ đó lại cần được hoàn tiền: ${ask}`
+    }
+    return text + notices + statement
   }
   if (outcome === "disbursement_returned") {
     return `${head} của một khoản chi. Tổng đã chi của chiến dịch giảm ${formatVnd(amount)}.` + statement

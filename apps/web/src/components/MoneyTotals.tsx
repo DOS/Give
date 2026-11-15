@@ -59,7 +59,7 @@ export function MoneyTotals({ totals, statementHref }: { totals: Totals; stateme
       <p className="text-sm text-muted">Còn lại = đã nhận − đã chi − đã hoàn lại, theo sao kê đã ghi nhận.</p>
       {totals.disbursed_amount > 0 && (
         <p className="text-sm text-muted">
-          Trong số đã chi, {formatVnd(explainedOutAmount(totals))} đã được người tổ chức giải trình.
+          Trong số đã chi, {formatVnd(explainedOutAmount(totals))} đã được giải trình.
         </p>
       )}
       {statementHref && (
