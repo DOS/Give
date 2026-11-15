@@ -223,7 +223,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   does not move. A corrected item shows its correction and cannot be
   corrected again. The app reads a corrected transaction as matched, not
   explained, and the public statement shows it as a donation only
-  (#71 / #PR71).
+  (#71 / #198).
 
 ### Platform
 
