@@ -161,6 +161,8 @@ export async function listSwapTransfers(db: Db): Promise<SwapTransfers[]> {
           .eq("direction", "in")
           .not("campaign_id", "is", null)
           .is("transaction_matches", null)
+          // Any explanation row, a returned one included (DOS/Give#196): give.mark_own_account_transfer
+          // refuses a transaction with an explanation even after its return, so it is never offered as a leg.
           .is("inbound_explanations", null)
           .is("own_in", null)
           .order("booked_at", { ascending: true })

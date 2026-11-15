@@ -208,6 +208,26 @@ describe("matchTransaction", () => {
     expect(state.serviceCalls).toHaveLength(0)
   })
 
+  it("matches money whose explanation an admin returned to unmatched (DOS/Give#196)", async () => {
+    state.responses.bank_transactions = {
+      data: {
+        ...tx().data,
+        inbound_explanations: {
+          kind: "organizer_top_up",
+          inbound_explanation_corrections: null,
+          inbound_explanation_returns: { returned_at: "2026-11-15T00:00:00Z" },
+        },
+      },
+    }
+    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.ok).toBe(true)
+    expect(op(state.serviceCalls[0], "args")).toEqual([
+      { p_bank_transaction_id: TX, p_contribution_id: CONTRIBUTION, p_actor_id: ORGANIZER },
+    ])
+    // By a typed reference code too.
+    expect((await matchTransaction(TX, null, form({ reference_code: "GV7K2M9QX" })))?.ok).toBe(true)
+    expect(state.serviceCalls).toHaveLength(2)
+  })
+
   it("refuses a transaction explained as not a donation (DOS/Give#49)", async () => {
     state.responses.bank_transactions = { data: { ...tx().data, inbound_explanations: { kind: "organizer_top_up" } } }
     expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toContain(

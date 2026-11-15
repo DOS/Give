@@ -133,3 +133,35 @@ describe("UnmatchedTransactionCard: returned transfers (DOS/Give#72)", () => {
     expect(html).not.toContain("bị ngân hàng trả lại")
   })
 })
+
+describe("UnmatchedTransactionCard: an explanation returned to unmatched (DOS/Give#196)", () => {
+  const returnedExplanation = {
+    kind: "organizer_top_up",
+    reason: "Mai says it is her donation",
+    returned_at: "2026-11-15T03:00:00Z",
+  }
+
+  it("says what it was and why it came back, and keeps only the match form", () => {
+    const html = render({ explainAction: action, returnAction: action, returnedExplanation })
+    expect(html).toContain("Khoản này từng được giải trình nhầm và đã được đưa về chưa khớp.")
+    expect(html).toContain("Người tổ chức nạp thêm tiền")
+    expect(html).toContain("Lý do đưa về: Mai says it is her donation")
+    expect(html).toContain("không giải trình lại được là &quot;không phải tiền ủng hộ&quot;")
+    expect(html).toContain('name="contribution_id"')
+    expect(html).toContain('name="reference_code"')
+    // Neither explained again nor linked as a returned transfer: the database refuses both.
+    expect(html).not.toContain("Giải trình khoản này")
+    expect(html).not.toContain('name="kind"')
+    expect(html).not.toContain("bị ngân hàng trả lại? Ghi nhận")
+  })
+
+  it("shows the organizer the same note on their page", () => {
+    const html = render({ returnedExplanation })
+    expect(html).toContain("đã được đưa về chưa khớp")
+    expect(html).toContain(">Khớp</button>")
+  })
+
+  it("adds nothing to money that was never explained", () => {
+    expect(render({ explainAction: action })).not.toContain("đưa về chưa khớp")
+  })
+})

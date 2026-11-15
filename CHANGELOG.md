@@ -163,6 +163,23 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Money (M1)
 
+- An admin can send an explanation of incoming money as "không phải tiền
+  ủng hộ" back to unmatched: "Đưa về chưa khớp" on each item of "Đã giải
+  trình gần đây" on `/admin/unmatched`, with a required private reason (up to
+  1000 characters), for money that turns out to be a donation whose
+  contribution is not known yet. The form says that afterwards the money can
+  be matched to a contribution but is never explained as "không phải tiền
+  ủng hộ" again. It is not offered to finance staff, and an admin who
+  organizes the campaign or made the explanation, or a transaction whose
+  account binding is released, gets the reason instead of the form; a
+  corrected or returned explanation offers nothing. Returned money shows again
+  under "Chờ khớp" on `/admin/unmatched` and on the organizer's
+  `/me/campaigns/[id]/unmatched`, with a note naming the old kind and the
+  reason, and is matched there (pick or reference code); the explain and
+  returned-transfer forms are left out for it, and the correction button is
+  hidden for a returned explanation. Every refusal of
+  `give.return_inbound_to_unmatched` and `GIVE_EXPLANATION_RETURNED` from the
+  explain and correct actions are worded (#196).
 - Guest donation tracking link across devices: a guest holding a valid status
   token on `/donations/[code]` can copy a reusable `/donations/[code]/track`
   link; opening it on another browser or device validates the token in
@@ -323,6 +340,14 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   last three also newly refuse the actor's own signed-in contribution
   (#199 / DOS/DOS.Me#1687, on Beta). Migration
   `20261116150000_give_self_review_guest_contribution`.
+- Returning a mistaken explanation to unmatched:
+  `give.inbound_explanation_returns` and `give.return_inbound_to_unmatched`
+  (admin only, `GIVE_SELF_REVIEW` for the organizer and the explainer, once per
+  transaction, refused once corrected or on a released binding). The money
+  moves from `other_in` back to `unmatched_in`, totals unchanged; afterwards it
+  is matched, never explained, corrected or linked as a returned transfer
+  again (#196 / DOS/DOS.Me#1692, on Beta). Migration
+  `20261117090000_give_return_inbound_to_unmatched`.
 
 ### On Production (database only)
 
@@ -349,6 +374,10 @@ has no Production deploy. Behaviour to know:
   must reach DOS.Me `main` (Production) before Give `main` ships #199's
   hidden own contributions and wording, so the database refuses what the
   app hides.
+- Migration `20261117090000_give_return_inbound_to_unmatched.sql` (#196)
+  must reach DOS.Me `main` (Production) before Give `main` ships #196: the
+  app reads `give.inbound_explanation_returns` in every unmatched list and in
+  each match, explain, correct and link action, so those fail without it.
 - The test-only changes #135 / DOS/DOS.Me#1663 and #144 / DOS/DOS.Me#1664 are
   on DOS.Me `dev` and are to be promoted together (#155). Until then DOS.Me
   `main` carries `give_staff_role_revoke_lock.test.sql` with the known test

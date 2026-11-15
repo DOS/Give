@@ -8,6 +8,10 @@ import {
   correctionBlocked,
   correctionCandidates,
   explainersOf,
+  explanationOpen,
+  paidAfterReturnToUnmatched,
+  RETURN_TO_UNMATCHED_EFFECT,
+  returnToUnmatchedBlocked,
   getIncoming,
   paidAfterCorrect,
   listInboundExplanations,
@@ -115,74 +119,115 @@ describe("paidAfterExplain", () => {
   })
 })
 
+/** The read of returned explanations in listUnmatched (DOS/Give#196). */
+const RETURNED_EMBED =
+  "explanation:inbound_explanations!inner(kind, returned:inbound_explanation_returns!inner(reason, returned_at))"
+const isReturnedRead = (call: Call) => String(op(call, "select")?.[0]).includes(RETURNED_EMBED)
+
 describe("listUnmatched", () => {
   it("selects incoming, attributed transactions with neither a match nor an explanation", async () => {
     const calls: Call[] = []
     const db = fakeDb(
-      () => ({
-        data: [
-          {
-            id: "t",
-            campaign_id: CAMPAIGN,
-            amount: "150000",
-            transaction_matches: null,
-            inbound_explanations: null,
-            own_in: null,
-          },
-        ],
-      }),
+      (call) =>
+        isReturnedRead(call)
+          ? { data: [], count: 0 }
+          : {
+              data: [
+                {
+                  id: "t",
+                  campaign_id: CAMPAIGN,
+                  amount: "150000",
+                  booked_at: "2026-11-01T00:00:00Z",
+                  transaction_matches: null,
+                  inbound_explanations: null,
+                  own_in: null,
+                },
+              ],
+            },
       calls
     ) as unknown as Db
     expect(await listUnmatched(db, { campaignId: CAMPAIGN })).toEqual({
       transactions: [
-        { id: "t", campaign_id: CAMPAIGN, amount: 150000, account_owner_id: null, binding_account_id: null },
+        {
+          id: "t",
+          campaign_id: CAMPAIGN,
+          amount: 150000,
+          booked_at: "2026-11-01T00:00:00Z",
+          account_owner_id: null,
+          binding_account_id: null,
+          returned_explanation: null,
+        },
       ],
       total: 1,
     })
-    expect(calls[0].target).toBe("bank_transactions")
-    expect(String(op(calls[0], "select")?.[0])).toContain(
-      "account:receiving_accounts!receiving_account_id(owner_user_id)"
-    )
-    expect(String(op(calls[0], "select")?.[0])).toContain("binding:account_bindings!binding_id(receiving_account_id)")
-    expect(calls[0].ops).toEqual(
-      expect.arrayContaining([
-        ["eq", "direction", "in"],
-        ["not", "campaign_id", "is", null],
-        ["is", "transaction_matches", null],
-        ["is", "inbound_explanations", null],
-        // The incoming leg of a transfer between the campaign's own accounts is settled (DOS/Give#84).
-        ["is", "own_in", null],
-        ["is", "returned_transfers", null],
-        ["eq", "campaign_id", CAMPAIGN],
-      ])
-    )
-    expect(String(op(calls[0], "select")?.[0])).toContain("own_in:own_account_transfers!in_transaction_id(id)")
-    // A transaction linked as returned (DOS/Give#72) leaves the queue; the embed names the incoming foreign key.
-    expect(String(op(calls[0], "select")?.[0])).toContain("returned_transfers!bank_transaction_id(bank_transaction_id)")
-    expect(String(op(calls[0], "select")?.[0])).toContain("asset")
+    expect(calls).toHaveLength(2)
+    const [open, returned] = calls
+    for (const call of calls) {
+      expect(call.target).toBe("bank_transactions")
+      expect(String(op(call, "select")?.[0])).toContain(
+        "account:receiving_accounts!receiving_account_id(owner_user_id)"
+      )
+      expect(String(op(call, "select")?.[0])).toContain("binding:account_bindings!binding_id(receiving_account_id)")
+      expect(call.ops).toEqual(
+        expect.arrayContaining([
+          ["eq", "direction", "in"],
+          ["not", "campaign_id", "is", null],
+          ["is", "transaction_matches", null],
+          // The incoming leg of a transfer between the campaign's own accounts is settled (DOS/Give#84).
+          ["is", "own_in", null],
+          ["is", "returned_transfers", null],
+          ["eq", "campaign_id", CAMPAIGN],
+        ])
+      )
+      expect(String(op(call, "select")?.[0])).toContain("own_in:own_account_transfers!in_transaction_id(id)")
+      // A transaction linked as returned (DOS/Give#72) leaves the queue; the embed names the incoming foreign key.
+      expect(String(op(call, "select")?.[0])).toContain("returned_transfers!bank_transaction_id(bank_transaction_id)")
+      expect(String(op(call, "select")?.[0])).toContain("asset")
+      expect(op(call, "order")).toEqual(["booked_at", { ascending: false }])
+    }
+    // Never explained...
+    expect(isReturnedRead(open)).toBe(false)
+    expect(open.ops).toContainEqual(["is", "inbound_explanations", null])
+    // ...or explained and returned to unmatched (DOS/Give#196): both embeds are required, returned_by is not read.
+    expect(isReturnedRead(returned)).toBe(true)
+    expect(returned.ops).not.toContainEqual(["is", "inbound_explanations", null])
+    expect(String(op(returned, "select")?.[0])).not.toContain("returned_by")
   })
 
   it("reads the account's owner and the binding's account, as an object or a one-row array", async () => {
-    const db = fakeDb(() => ({
-      data: [
-        {
-          id: "a",
-          campaign_id: CAMPAIGN,
-          amount: 1,
-          account: { owner_user_id: ORGANIZER },
-          binding: { receiving_account_id: "r" },
-        },
-        {
-          id: "b",
-          campaign_id: CAMPAIGN,
-          amount: 2,
-          account: [{ owner_user_id: OTHER }],
-          binding: [{ receiving_account_id: "r" }],
-        },
-        { id: "c", campaign_id: CAMPAIGN, amount: 3, account: null, binding: null },
-      ],
-      count: 7,
-    })) as unknown as Db
+    const db = fakeDb((call) =>
+      isReturnedRead(call)
+        ? { data: [], count: 0 }
+        : {
+            data: [
+              {
+                id: "a",
+                campaign_id: CAMPAIGN,
+                amount: 1,
+                booked_at: "2026-11-03T00:00:00Z",
+                account: { owner_user_id: ORGANIZER },
+                binding: { receiving_account_id: "r" },
+              },
+              {
+                id: "b",
+                campaign_id: CAMPAIGN,
+                amount: 2,
+                booked_at: "2026-11-02T00:00:00Z",
+                account: [{ owner_user_id: OTHER }],
+                binding: [{ receiving_account_id: "r" }],
+              },
+              {
+                id: "c",
+                campaign_id: CAMPAIGN,
+                amount: 3,
+                booked_at: "2026-11-01T00:00:00Z",
+                account: null,
+                binding: null,
+              },
+            ],
+            count: 7,
+          }
+    ) as unknown as Db
     const { transactions, total } = await listUnmatched(db)
     expect(transactions.map((t) => [t.id, t.account_owner_id, t.binding_account_id])).toEqual([
       ["a", ORGANIZER, "r"],
@@ -192,6 +237,63 @@ describe("listUnmatched", () => {
     expect(transactions[0]).not.toHaveProperty("account")
     expect(transactions[0]).not.toHaveProperty("binding")
     expect(total).toBe(7)
+  })
+
+  it("lists money whose explanation was returned once, newest first, with what it was (DOS/Give#196)", async () => {
+    const returnedRow = (id: string, booked: string, nested: "object" | "array") => {
+      const ret = { reason: "Mai says it is her donation", returned_at: "2026-11-15T09:00:00Z" }
+      const explanation = { kind: "organizer_top_up", returned: nested === "object" ? ret : [ret] }
+      return {
+        id,
+        campaign_id: CAMPAIGN,
+        amount: "300000",
+        booked_at: booked,
+        explanation: nested === "object" ? explanation : [explanation],
+      }
+    }
+    const db = fakeDb((call) =>
+      isReturnedRead(call)
+        ? {
+            data: [
+              returnedRow("r1", "2026-11-02T00:00:00Z", "object"),
+              returnedRow("r2", "2026-10-20T00:00:00Z", "array"),
+            ],
+            count: 2,
+          }
+        : {
+            data: [
+              { id: "o1", campaign_id: CAMPAIGN, amount: 1, booked_at: "2026-11-05T00:00:00Z" },
+              { id: "o2", campaign_id: CAMPAIGN, amount: 2, booked_at: "2026-10-25T00:00:00Z" },
+            ],
+            count: 5,
+          }
+    ) as unknown as Db
+    const { transactions, total } = await listUnmatched(db, { limit: 3 })
+    // Merged by booking time and cut to the limit; the total counts both sets, which never overlap.
+    expect(transactions.map((t) => t.id)).toEqual(["o1", "r1", "o2"])
+    expect(total).toBe(7)
+    expect(transactions[1]).toMatchObject({
+      amount: 300000,
+      returned_explanation: {
+        kind: "organizer_top_up",
+        reason: "Mai says it is her donation",
+        returned_at: "2026-11-15T09:00:00Z",
+      },
+    })
+    expect(transactions[1]).not.toHaveProperty("explanation")
+    expect(transactions[0].returned_explanation).toBeNull()
+    expect((await listUnmatched(db)).transactions.find((t) => t.id === "r2")?.returned_explanation?.kind).toBe(
+      "organizer_top_up"
+    )
+  })
+
+  it("throws when either read fails, rather than hiding unmatched money", async () => {
+    const failing = (returned: boolean) =>
+      fakeDb((call) =>
+        isReturnedRead(call) === returned ? { error: { code: "PGRST200", message: "no relationship" } } : { data: [] }
+      ) as unknown as Db
+    await expect(listUnmatched(failing(true))).rejects.toMatchObject({ code: "PGRST200" })
+    await expect(listUnmatched(failing(false))).rejects.toMatchObject({ code: "PGRST200" })
   })
 })
 
@@ -349,7 +451,7 @@ describe("getIncoming with a corrected explanation (DOS/Give#71)", () => {
       corrected_to: "c1",
     })
     expect(String(op(calls[0], "select")?.[0])).toContain(
-      "inbound_explanations(kind, inbound_explanation_corrections(contribution_id))"
+      "inbound_explanations(kind, inbound_explanation_corrections(contribution_id), inbound_explanation_returns(returned_at))"
     )
 
     // Arrays, and the correction wins even if the match were not visible.
@@ -370,7 +472,111 @@ describe("getIncoming with a corrected explanation (DOS/Give#71)", () => {
         inbound_explanations: { kind: "interest", inbound_explanation_corrections: null },
       },
     })) as unknown as Db
-    expect(await getIncoming(db, "t")).toMatchObject({ matched_to: null, explained_as: "interest", corrected_to: null })
+    expect(await getIncoming(db, "t")).toMatchObject({
+      matched_to: null,
+      explained_as: "interest",
+      corrected_to: null,
+      explanation_returned: false,
+    })
+  })
+})
+
+describe("getIncoming with a returned explanation (DOS/Give#196)", () => {
+  const row = { id: "t", campaign_id: CAMPAIGN, amount: "300000", direction: "in" }
+
+  it("is no longer explained: unmatched until matched, and flagged as returned", async () => {
+    for (const returns of [{ returned_at: "2026-11-15T00:00:00Z" }, [{ returned_at: "2026-11-15T00:00:00Z" }]]) {
+      const db = fakeDb(() => ({
+        data: {
+          ...row,
+          transaction_matches: null,
+          inbound_explanations: {
+            kind: "organizer_top_up",
+            inbound_explanation_corrections: null,
+            inbound_explanation_returns: returns,
+          },
+        },
+      })) as unknown as Db
+      expect(await getIncoming(db, "t")).toMatchObject({
+        matched_to: null,
+        explained_as: null,
+        corrected_to: null,
+        explanation_returned: true,
+      })
+    }
+  })
+
+  it("keeps the match once the returned money is matched", async () => {
+    const db = fakeDb(() => ({
+      data: {
+        ...row,
+        transaction_matches: [{ contribution_id: "c3" }],
+        inbound_explanations: [{ kind: "interest", inbound_explanation_returns: [{ returned_at: "x" }] }],
+      },
+    })) as unknown as Db
+    expect(await getIncoming(db, "t")).toMatchObject({
+      matched_to: "c3",
+      explained_as: null,
+      explanation_returned: true,
+    })
+  })
+
+  it("is not returned without a return row (an empty embed)", async () => {
+    const db = fakeDb(() => ({
+      data: { ...row, inbound_explanations: { kind: "interest", inbound_explanation_returns: [] } },
+    })) as unknown as Db
+    expect(await getIncoming(db, "t")).toMatchObject({ explained_as: "interest", explanation_returned: false })
+  })
+})
+
+describe("returning an explanation to unmatched (DOS/Give#196)", () => {
+  const ME = "me"
+  const open = { correction: null, returned: null, binding_released: false }
+  const returned = { reason: "r", returned_at: "2026-11-15T00:00:00Z" }
+  const correction = { contribution_id: "c", reason: "r", corrected_at: "x", contribution: null }
+
+  it("offers nothing to non-admins, or once corrected or returned", () => {
+    expect(returnToUnmatchedBlocked(open, { id: ME, isAdmin: false, organizerId: ME })).toBeNull()
+    expect(returnToUnmatchedBlocked({ ...open, correction }, { id: ME, isAdmin: true, organizerId: ME })).toBeNull()
+    expect(returnToUnmatchedBlocked({ ...open, returned }, { id: ME, isAdmin: true, explainerId: ME })).toBeNull()
+    expect(explanationOpen(open)).toBe(true)
+    expect(explanationOpen({ correction, returned: null })).toBe(false)
+    expect(explanationOpen({ correction: null, returned })).toBe(false)
+  })
+
+  it("blocks the organizer, the explainer and a released binding, and lets another admin return it", () => {
+    expect(returnToUnmatchedBlocked(open, { id: ME, isAdmin: true, organizerId: ME })).toContain(
+      "Bạn là người tổ chức chiến dịch này"
+    )
+    expect(returnToUnmatchedBlocked(open, { id: ME, isAdmin: true, organizerId: "x", explainerId: ME })).toContain(
+      "Bạn là người đã giải trình khoản này"
+    )
+    expect(
+      returnToUnmatchedBlocked({ ...open, binding_released: true }, { id: ME, isAdmin: true, organizerId: "x" })
+    ).toContain("Sửa giải trình")
+    expect(returnToUnmatchedBlocked(open, { id: ME, isAdmin: true, organizerId: "x", explainerId: "y" })).toBeNull()
+    // Unknown binding or explainer: the form stays and the database decides.
+    expect(returnToUnmatchedBlocked({ ...open, binding_released: null }, { id: ME, isAdmin: true })).toBeNull()
+  })
+
+  it("hides the correction of a returned explanation", () => {
+    expect(correctionBlocked({ correction: null, returned }, { id: ME, isAdmin: true, organizerId: ME })).toBeNull()
+  })
+
+  it("says the money can be matched but never explained again", () => {
+    expect(RETURN_TO_UNMATCHED_EFFECT).toContain("khớp được với một lượt ủng hộ")
+    expect(RETURN_TO_UNMATCHED_EFFECT).toContain('không giải trình lại được là "không phải tiền ủng hộ"')
+  })
+
+  it("says the paid total did not move when the money only moved back to unmatched", () => {
+    const before = { received: 0, unmatched: 0, other: 300000, paid: 300000 }
+    expect(paidAfterReturnToUnmatched(before, { received: 0, unmatched: 300000, other: 0, paid: 300000 })).toBe(
+      vnd(
+        " Tổng đã thanh toán không đổi: 300.000 ₫ (không phải tiền ủng hộ 300.000 ₫ → 0 ₫, chưa khớp 0 ₫ → 300.000 ₫)."
+      )
+    )
+    expect(paidAfterReturnToUnmatched(before, { ...before, paid: 400000 })).toContain("trước khi đưa về")
+    expect(paidAfterReturnToUnmatched(null, before)).toBe("")
   })
 })
 
@@ -461,6 +667,46 @@ describe("listInboundExplanations", () => {
       "correction:inbound_explanation_corrections(contribution_id, reason, corrected_at, contribution:contributions(reference_code))"
     )
     expect(String(op(calls[0], "select")?.[0])).not.toContain("corrected_by")
+    // The return is read without returned_by, and the binding's release with the transaction (DOS/Give#196).
+    expect(String(op(calls[0], "select")?.[0])).toContain("returned:inbound_explanation_returns(reason, returned_at)")
+    expect(String(op(calls[0], "select")?.[0])).not.toContain("returned_by")
+    expect(String(op(calls[0], "select")?.[0])).toContain("binding:account_bindings!binding_id(released_at)")
+    expect(explanations[0]).toMatchObject({ returned: null, binding_released: null })
+    expect(explanations[0].tx).not.toHaveProperty("binding")
+  })
+
+  it("reads a return and the binding's release, as an object or an array (DOS/Give#196)", async () => {
+    const ret = { reason: "Mai says it is hers", returned_at: "2026-11-15T00:00:00Z" }
+    const db = fakeDb(() => ({
+      data: [
+        {
+          bank_transaction_id: "a",
+          kind: "interest",
+          reason: "r",
+          evidence: "e",
+          explained_at: "2026-11-02T00:00:00Z",
+          tx: { amount: "1", booked_at: "x", campaign_id: CAMPAIGN, binding: { released_at: null } },
+          returned: ret,
+        },
+        {
+          bank_transaction_id: "b",
+          kind: "interest",
+          reason: "r",
+          evidence: "e",
+          explained_at: "2026-11-01T00:00:00Z",
+          tx: {
+            amount: "2",
+            booked_at: "x",
+            campaign_id: CAMPAIGN,
+            binding: [{ released_at: "2026-11-10T00:00:00Z" }],
+          },
+          returned: [],
+        },
+      ],
+    })) as unknown as Db
+    const [a, b] = await listInboundExplanations(db)
+    expect(a).toMatchObject({ returned: ret, binding_released: false })
+    expect(b).toMatchObject({ returned: null, binding_released: true })
   })
 
   it("reads a correction as an object or an array (DOS/Give#71)", async () => {

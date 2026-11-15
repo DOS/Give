@@ -110,6 +110,8 @@ describe("InboundExplanationList: correcting an explanation (DOS/Give#71)", () =
     explained_at: "2026-11-02T03:00:00Z",
     tx: { amount: 300_000, booked_at: "2026-10-30T03:00:00Z", campaign_id: "c" },
     correction: null,
+    returned: null,
+    binding_released: false,
     ...extra,
   })
   const candidate: MatchCandidate = {
@@ -129,8 +131,9 @@ describe("InboundExplanationList: correcting an explanation (DOS/Give#71)", () =
   const action = async () => null
   const render = (
     explanations: InboundExplanation[],
-    corrections?: Parameters<typeof InboundExplanationList>[0]["corrections"]
-  ) => renderToStaticMarkup(createElement(InboundExplanationList, { explanations, corrections }))
+    corrections?: Parameters<typeof InboundExplanationList>[0]["corrections"],
+    returns?: Parameters<typeof InboundExplanationList>[0]["returns"]
+  ) => renderToStaticMarkup(createElement(InboundExplanationList, { explanations, corrections, returns }))
 
   it("offers the correction form with a required contribution and reason", () => {
     const html = render([explanation("t1")], new Map([["t1", { action, candidates: [candidate] }]]))
@@ -178,5 +181,74 @@ describe("InboundExplanationList: correcting an explanation (DOS/Give#71)", () =
     expect(html).toContain('name="reference_code"')
     expect(html).toContain('name="reason"')
     expect(html).toContain("Lượt cũ hơn thì nhập mã ủng hộ.")
+  })
+})
+
+describe("InboundExplanationList: returning an explanation to unmatched (DOS/Give#196)", () => {
+  const explanation = (extra: Partial<InboundExplanation> = {}): InboundExplanation => ({
+    bank_transaction_id: "t1",
+    kind: "organizer_top_up",
+    reason: "Organizer said it was a top-up",
+    evidence: "Message of 2026-11-02",
+    explained_at: "2026-11-02T03:00:00Z",
+    tx: { amount: 300_000, booked_at: "2026-10-30T03:00:00Z", campaign_id: "c" },
+    correction: null,
+    returned: null,
+    binding_released: false,
+    ...extra,
+  })
+  const action = async () => null
+  const render = (
+    explanations: InboundExplanation[],
+    returns?: Parameters<typeof InboundExplanationList>[0]["returns"],
+    corrections?: Parameters<typeof InboundExplanationList>[0]["corrections"]
+  ) =>
+    renderToStaticMarkup(createElement(InboundExplanationList, { explanations, corrections, returns })).replace(
+      /\s+/g,
+      " "
+    )
+
+  it("offers 'Đưa về chưa khớp' with a required reason and says it is never explained again", () => {
+    const html = render([explanation()], new Map([["t1", { action }]]))
+    expect(html).toContain("Đưa về chưa khớp")
+    expect(html).toMatch(/<textarea[^>]*id="return-unmatched-reason-t1"[^>]*required/)
+    expect(html).toContain('maxLength="1000"')
+    expect(html).toContain("khớp được với một lượt ủng hộ của chiến dịch")
+    expect(html).toContain("không giải trình lại được là &quot;không phải tiền ủng hộ&quot;")
+    expect(html).toContain("Mỗi giao dịch chỉ đưa về được một lần.")
+    expect(html).toContain(">Đưa về chưa khớp</button>")
+  })
+
+  it("offers nothing without an entry (finance staff) and says why when it is blocked", () => {
+    expect(render([explanation()])).not.toContain("Đưa về chưa khớp")
+    const blocked = "Bạn là người tổ chức chiến dịch này, nên không đưa được khoản này về chưa khớp."
+    const html = render([explanation()], new Map([["t1", { blocked }]]))
+    expect(html).toContain(blocked)
+    expect(html).not.toContain("return-unmatched-reason")
+  })
+
+  it("shows a returned explanation with its return, and neither form", () => {
+    const html = render(
+      [explanation({ returned: { reason: "Mai says it is hers", returned_at: "2026-11-15T03:00:00Z" } })],
+      new Map([["t1", { action }]]),
+      new Map([["t1", { action, candidates: [] }]])
+    )
+    expect(html).toContain("Giải trình này đã được đưa về chưa khớp.")
+    expect(html).toContain("Lý do đưa về: Mai says it is hers")
+    expect(html).toContain("line-through")
+    expect(html).not.toContain("return-unmatched-reason")
+    expect(html).not.toContain("Sửa giải trình")
+  })
+
+  it("offers no return on a corrected explanation", () => {
+    const html = render(
+      [
+        explanation({
+          correction: { contribution_id: "c", reason: "r", corrected_at: "2026-11-15T03:00:00Z", contribution: null },
+        }),
+      ],
+      new Map([["t1", { action }]])
+    )
+    expect(html).not.toContain("return-unmatched-reason")
   })
 })

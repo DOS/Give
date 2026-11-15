@@ -13,7 +13,11 @@ import { isOwnContribution, type Viewer } from "./own-contribution"
  * moves it to 'other_in' the same way (DOS/Give#49). Money a bank returned
  * from a transfer out (a bounced payment or refund) is linked to that
  * outgoing transaction instead: give.link_returned_transfer reverses the
- * 'unmatched_in' post and nets the outgoing post (DOS/Give#72).
+ * 'unmatched_in' post and nets the outgoing post (DOS/Give#72). An admin can
+ * send a mistaken explanation back to 'unmatched_in'
+ * (give.return_inbound_to_unmatched, DOS/Give#196): the explanation row stays,
+ * superseded by its row in give.inbound_explanation_returns, and the money is
+ * unmatched again until it is matched; it is never explained again.
  *
  * Reads run with the caller's token: the campaign's organizer and
  * finance/admin staff see its transactions, contributions and ledger.
@@ -87,66 +91,119 @@ export interface UnmatchedRow extends UnmatchedTransaction {
    * (account_bindings_read).
    */
   binding_account_id: string | null
+  /**
+   * The explanation an admin sent back to unmatched (DOS/Give#196), or null
+   * for money that was never explained. Such money is matched like any other
+   * unmatched money, and never explained again or linked as a returned transfer.
+   */
+  returned_explanation: ReturnedExplanation | null
+}
+
+/** A mistaken explanation that was returned to unmatched, as clients may read it (returned_by is never granted). */
+export interface ReturnedExplanation {
+  /** The kind the explanation gave, now superseded. */
+  kind: string
+  /** Why the admin returned it. */
+  reason: string
+  returned_at: string
+}
+
+const UNMATCHED_EMBEDS =
+  "transaction_matches(bank_transaction_id), own_in:own_account_transfers!in_transaction_id(id), " +
+  "returned_transfers!bank_transaction_id(bank_transaction_id), " +
+  "account:receiving_accounts!receiving_account_id(owner_user_id), " +
+  "binding:account_bindings!binding_id(receiving_account_id)"
+
+type ReturnRef = { reason: string; returned_at: string }
+
+type UnmatchedRead = UnmatchedTransaction & {
+  transaction_matches?: unknown
+  inbound_explanations?: unknown
+  explanation?:
+    | { kind: string; returned?: ReturnRef | ReturnRef[] | null }
+    | { kind: string; returned?: ReturnRef | ReturnRef[] | null }[]
+    | null
+  own_in?: unknown
+  returned_transfers?: unknown
+  account?: { owner_user_id: string } | { owner_user_id: string }[] | null
+  binding?: { receiving_account_id: string } | { receiving_account_id: string }[] | null
 }
 
 /**
- * Incoming, attributed transactions with neither a match, an explanation nor
- * a link as a returned transfer, newest first. Every such transaction is
- * posted to 'unmatched_in' when it is recorded (give.record_bank_transaction
- * -> give.match_transaction). The incoming leg of a transfer between the
- * campaign's own accounts (DOS/Give#84) is settled and cannot be matched, so
- * it is left out. give.returned_transfers has two foreign keys to
- * bank_transactions, so the embed names the incoming one (DOS/Give#72).
+ * Incoming, attributed transactions with no match, no explanation that still
+ * stands, and no link as a returned transfer, newest first, with their
+ * count. Every such transaction is posted to 'unmatched_in' when it is
+ * recorded (give.record_bank_transaction -> give.match_transaction), or again
+ * when an admin returns its explanation (DOS/Give#196). The incoming leg of a
+ * transfer between the campaign's own accounts (DOS/Give#84) is settled and
+ * cannot be matched, so it is left out. give.returned_transfers has two
+ * foreign keys to bank_transactions, so the embed names the incoming one
+ * (DOS/Give#72).
+ *
+ * Two reads, both with the caller's token: transactions never explained, and
+ * transactions whose explanation has a return row (both embeds required, so
+ * only returned explanations pass; the return is read under its RLS, which
+ * follows the transaction). PostgREST cannot say "no explanation, or a
+ * returned one" in one filter. The two sets are disjoint, so the total is
+ * their sum and nothing is listed twice.
  */
 export async function listUnmatched(
   db: Db,
   { campaignId, limit = 100 }: { campaignId?: string; limit?: number } = {}
 ): Promise<{ transactions: UnmatchedRow[]; total: number }> {
-  let query = db
-    .from("bank_transactions")
-    .select(
-      `${TX_COLUMNS}, transaction_matches(bank_transaction_id), inbound_explanations(bank_transaction_id), ` +
-        "own_in:own_account_transfers!in_transaction_id(id), " +
-        "returned_transfers!bank_transaction_id(bank_transaction_id), " +
-        "account:receiving_accounts!receiving_account_id(owner_user_id), " +
-        "binding:account_bindings!binding_id(receiving_account_id)",
-      { count: "exact" }
+  const read = (explanation: string, neverExplained: boolean) => {
+    let query = db
+      .from("bank_transactions")
+      .select(`${TX_COLUMNS}, ${UNMATCHED_EMBEDS}, ${explanation}`, { count: "exact" })
+      .eq("direction", "in")
+      .not("campaign_id", "is", null)
+      .is("transaction_matches", null)
+      .is("own_in", null)
+      .is("returned_transfers", null)
+    if (neverExplained) query = query.is("inbound_explanations", null)
+    if (campaignId) query = query.eq("campaign_id", campaignId)
+    return query.order("booked_at", { ascending: false }).limit(limit)
+  }
+  const [open, returned] = await Promise.all([
+    read("inbound_explanations(bank_transaction_id)", true),
+    read(
+      "explanation:inbound_explanations!inner(kind, returned:inbound_explanation_returns!inner(reason, returned_at))",
+      false
+    ),
+  ])
+  if (open.error) throw open.error
+  if (returned.error) throw returned.error
+  const rows = [
+    ...((open.data ?? []) as unknown as UnmatchedRead[]),
+    ...((returned.data ?? []) as unknown as UnmatchedRead[]),
+  ]
+  const transactions = rows
+    .map(
+      ({
+        transaction_matches: _match,
+        inbound_explanations: _explanation,
+        explanation,
+        own_in: _pair,
+        returned_transfers: _returned,
+        account,
+        binding,
+        ...tx
+      }): UnmatchedRow => {
+        const e = one(explanation)
+        const r = one(e?.returned)
+        return {
+          ...tx,
+          amount: Number(tx.amount),
+          account_owner_id: one(account)?.owner_user_id ?? null,
+          binding_account_id: one(binding)?.receiving_account_id ?? null,
+          returned_explanation: e && r ? { kind: e.kind, reason: r.reason, returned_at: r.returned_at } : null,
+        }
+      }
     )
-    .eq("direction", "in")
-    .not("campaign_id", "is", null)
-    .is("transaction_matches", null)
-    .is("inbound_explanations", null)
-    .is("own_in", null)
-    .is("returned_transfers", null)
-  if (campaignId) query = query.eq("campaign_id", campaignId)
-  const { data, error, count } = await query.order("booked_at", { ascending: false }).limit(limit)
-  if (error) throw error
-  const transactions = (
-    (data ?? []) as unknown as (UnmatchedTransaction & {
-      transaction_matches?: unknown
-      inbound_explanations?: unknown
-      own_in?: unknown
-      returned_transfers?: unknown
-      account?: { owner_user_id: string } | { owner_user_id: string }[] | null
-      binding?: { receiving_account_id: string } | { receiving_account_id: string }[] | null
-    })[]
-  ).map(
-    ({
-      transaction_matches: _match,
-      inbound_explanations: _explanation,
-      own_in: _pair,
-      returned_transfers: _returned,
-      account,
-      binding,
-      ...tx
-    }) => ({
-      ...tx,
-      amount: Number(tx.amount),
-      account_owner_id: one(account)?.owner_user_id ?? null,
-      binding_account_id: one(binding)?.receiving_account_id ?? null,
-    })
-  )
-  return { transactions, total: count ?? transactions.length }
+    .sort((a, b) => Date.parse(b.booked_at) - Date.parse(a.booked_at) || b.id.localeCompare(a.id))
+    .slice(0, limit)
+  const total = (open.count ?? (open.data ?? []).length) + (returned.count ?? (returned.data ?? []).length)
+  return { transactions, total }
 }
 
 /**
@@ -276,6 +333,7 @@ type CorrectionRef = { contribution_id: string }
 type ExplanationRef = {
   kind: string
   inbound_explanation_corrections?: CorrectionRef | CorrectionRef[] | null
+  inbound_explanation_returns?: { returned_at: string } | { returned_at: string }[] | null
 }
 
 /**
@@ -283,7 +341,9 @@ type ExplanationRef = {
  * or return link if any. A corrected explanation (DOS/Give#71) is superseded
  * by its correction: the transaction is matched to the correction's
  * contribution and no longer explained, so explained_as is null and
- * corrected_to names that contribution.
+ * corrected_to names that contribution. A returned explanation (DOS/Give#196)
+ * is superseded by its return: explained_as is null and explanation_returned
+ * is true; the money is unmatched until it is matched (matched_to).
  */
 export async function getIncoming(
   db: Db,
@@ -297,6 +357,8 @@ export async function getIncoming(
       corrected_to: string | null
       /** The outgoing transaction it was linked to as returned money (DOS/Give#72). */
       returned_of: string | null
+      /** Its explanation was returned to unmatched (DOS/Give#196): it is never explained, corrected or linked again. */
+      explanation_returned: boolean
     })
   | null
 > {
@@ -304,7 +366,7 @@ export async function getIncoming(
     .from("bank_transactions")
     .select(
       `${TX_COLUMNS}, direction, transaction_matches(contribution_id), ` +
-        "inbound_explanations(kind, inbound_explanation_corrections(contribution_id)), " +
+        "inbound_explanations(kind, inbound_explanation_corrections(contribution_id), inbound_explanation_returns(returned_at)), " +
         "returned_transfers!bank_transaction_id(original_transaction_id)"
     )
     .eq("id", id)
@@ -324,13 +386,15 @@ export async function getIncoming(
   }
   const explained = one(explanation)
   const corrected = one(explained?.inbound_explanation_corrections)?.contribution_id ?? null
+  const explanationReturned = one(explained?.inbound_explanation_returns) !== null
   return {
     ...tx,
     amount: Number(tx.amount),
     matched_to: corrected ?? one(match)?.contribution_id ?? null,
-    explained_as: corrected ? null : (explained?.kind ?? null),
+    explained_as: corrected || explanationReturned ? null : (explained?.kind ?? null),
     corrected_to: corrected,
     returned_of: one(returned)?.original_transaction_id ?? null,
+    explanation_returned: explanationReturned,
   }
 }
 
@@ -571,6 +635,20 @@ export interface InboundExplanation {
   tx: { amount: number; booked_at: string; campaign_id: string }
   /** Its correction, once an admin corrected it (DOS/Give#71): the explanation is then superseded. */
   correction: InboundCorrection | null
+  /** Its return to unmatched, once an admin returned it (DOS/Give#196): the explanation is then superseded. */
+  returned: InboundReturn | null
+  /**
+   * Whether the account binding of its transaction is released (null when
+   * the reader may not read the binding): a released binding takes no
+   * unmatched money again, so the return is refused (GIVE_BINDING_RELEASED).
+   */
+  binding_released: boolean | null
+}
+
+/** give.inbound_explanation_returns as clients may read it (returned_by is never granted). */
+export interface InboundReturn {
+  reason: string
+  returned_at: string
 }
 
 /** give.inbound_explanation_corrections as clients may read it (corrected_by is never granted). */
@@ -581,11 +659,18 @@ export interface InboundCorrection {
   contribution: { reference_code: string } | null
 }
 
-type InboundExplanationRow = Omit<InboundExplanation, "correction"> & {
+type ReleasedRef = { released_at: string | null }
+type InboundExplanationRow = Omit<InboundExplanation, "correction" | "returned" | "binding_released" | "tx"> & {
+  tx: InboundExplanation["tx"] & { binding?: ReleasedRef | ReleasedRef[] | null }
   correction?: InboundCorrection | InboundCorrection[] | null
+  returned?: InboundReturn | InboundReturn[] | null
 }
 
-/** The latest explanations of incoming money the caller may read (finance/admin staff: all), with any correction. */
+/**
+ * The latest explanations of incoming money the caller may read
+ * (finance/admin staff: all), with any correction or return to unmatched,
+ * and whether the transaction's binding is released.
+ */
 export async function listInboundExplanations(
   db: Db,
   { limit = 30 }: { limit?: number } = {}
@@ -593,18 +678,24 @@ export async function listInboundExplanations(
   const { data, error } = await db
     .from("inbound_explanations")
     .select(
-      "bank_transaction_id, kind, reason, evidence, explained_at, tx:bank_transactions!inner(amount, booked_at, campaign_id), " +
-        "correction:inbound_explanation_corrections(contribution_id, reason, corrected_at, contribution:contributions(reference_code))"
+      "bank_transaction_id, kind, reason, evidence, explained_at, " +
+        "tx:bank_transactions!inner(amount, booked_at, campaign_id, binding:account_bindings!binding_id(released_at)), " +
+        "correction:inbound_explanation_corrections(contribution_id, reason, corrected_at, contribution:contributions(reference_code)), " +
+        "returned:inbound_explanation_returns(reason, returned_at)"
     )
     .order("explained_at", { ascending: false })
     .limit(limit)
   if (error) throw error
-  return ((data ?? []) as unknown as InboundExplanationRow[]).map(({ correction, ...e }) => {
+  return ((data ?? []) as unknown as InboundExplanationRow[]).map(({ correction, returned, tx, ...e }) => {
     const c = one(correction)
+    const { binding, ...rest } = tx
+    const b = one(binding)
     return {
       ...e,
-      tx: { ...e.tx, amount: Number(e.tx.amount) },
+      tx: { ...rest, amount: Number(rest.amount) },
       correction: c ? { ...c, contribution: one(c.contribution) } : null,
+      returned: one(returned),
+      binding_released: b ? b.released_at !== null : null,
     }
   })
 }
@@ -652,10 +743,10 @@ export async function explainersOf(db: Db, transactionIds: readonly string[]): P
  * still checks all of it under its locks.
  */
 export function correctionBlocked(
-  e: Pick<InboundExplanation, "correction">,
+  e: Pick<InboundExplanation, "correction"> & Partial<Pick<InboundExplanation, "returned">>,
   viewer: { id: string; isAdmin: boolean; organizerId?: string | null; explainerId?: string | null }
 ): string | null {
-  if (!viewer.isAdmin || e.correction) return null
+  if (!viewer.isAdmin || e.correction || e.returned) return null
   if (viewer.organizerId === viewer.id) {
     return "Bạn là người tổ chức chiến dịch này, nên không sửa được giải trình. Nhờ một quản trị viên khác."
   }
@@ -682,6 +773,60 @@ export function paidAfterCorrect(before: PaidBreakdown | null, after: PaidBreakd
     return ` Tổng đã thanh toán không đổi: ${formatVnd(after.paid)} (đã khớp ${formatVnd(before.received)} → ${formatVnd(after.received)}, không phải tiền ủng hộ ${formatVnd(before.other)} → ${formatVnd(after.other)}).`
   }
   return ` Tổng đã thanh toán hiện là ${formatVnd(after.paid)} (trước khi sửa: ${formatVnd(before.paid)}; có giao dịch khác vừa được ghi cùng lúc).`
+}
+
+// ---------------------------------------------------------------------------
+// Returning a mistaken explanation to unmatched (DOS/Give#196)
+// ---------------------------------------------------------------------------
+
+/** give.inbound_explanation_returns.reason: up to this many characters. */
+export const MAX_RETURN_TO_UNMATCHED_REASON_LENGTH = 1000
+
+/** What happens after a return, said wherever an admin can return an explanation. */
+export const RETURN_TO_UNMATCHED_EFFECT =
+  'Sau khi đưa về, khoản tiền tính là chưa khớp: người tổ chức hoặc nhân viên tài chính khớp được với một lượt ủng hộ của chiến dịch, nhưng không giải trình lại được là "không phải tiền ủng hộ", không sửa giải trình được và không ghi nhận được là tiền bị ngân hàng trả lại. Mỗi giao dịch chỉ đưa về được một lần.'
+
+/**
+ * An explanation an admin may still return or correct: neither corrected nor
+ * returned (the two exclude each other, and each happens once).
+ */
+export function explanationOpen(e: Pick<InboundExplanation, "correction" | "returned">): boolean {
+  return !e.correction && !e.returned
+}
+
+/**
+ * Why the viewer may not return this explanation to unmatched, worded for
+ * them, or null when they may. Mirrors the refusals of
+ * give.return_inbound_to_unmatched that the page can see: admins only, never
+ * on their own campaign or their own explanation (GIVE_SELF_REVIEW), and not
+ * once the transaction's binding is released (GIVE_BINDING_RELEASED). A
+ * corrected or returned explanation offers nothing (null). The database
+ * checks all of it again under its locks.
+ */
+export function returnToUnmatchedBlocked(
+  e: Pick<InboundExplanation, "correction" | "returned" | "binding_released">,
+  viewer: { id: string; isAdmin: boolean; organizerId?: string | null; explainerId?: string | null }
+): string | null {
+  if (!viewer.isAdmin || !explanationOpen(e)) return null
+  if (viewer.organizerId === viewer.id) {
+    return "Bạn là người tổ chức chiến dịch này, nên không đưa được khoản này về chưa khớp. Nhờ một quản trị viên khác."
+  }
+  if (viewer.explainerId === viewer.id) {
+    return "Bạn là người đã giải trình khoản này, nên không tự đưa về chưa khớp được. Nhờ một quản trị viên khác."
+  }
+  if (e.binding_released) {
+    return 'Tài khoản nhận đã được nhả khỏi chiến dịch, nên khoản này không đưa về chưa khớp được nữa. Nếu đây là tiền ủng hộ của một lượt đã biết, dùng "Sửa giải trình".'
+  }
+  return null
+}
+
+/** The sentence a return ends with: the money moves from "not a donation" back to unmatched, paid does not move. */
+export function paidAfterReturnToUnmatched(before: PaidBreakdown | null, after: PaidBreakdown | null): string {
+  if (!before || !after) return ""
+  if (before.paid === after.paid) {
+    return ` Tổng đã thanh toán không đổi: ${formatVnd(after.paid)} (không phải tiền ủng hộ ${formatVnd(before.other)} → ${formatVnd(after.other)}, chưa khớp ${formatVnd(before.unmatched)} → ${formatVnd(after.unmatched)}).`
+  }
+  return ` Tổng đã thanh toán hiện là ${formatVnd(after.paid)} (trước khi đưa về: ${formatVnd(before.paid)}; có giao dịch khác vừa được ghi cùng lúc).`
 }
 
 // ---------------------------------------------------------------------------

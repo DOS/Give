@@ -6,6 +6,7 @@ import { getSession } from "@/lib/auth/session"
 import { getCampaignById, isPublicStatus, isStaff } from "@/lib/campaigns"
 import {
   CORRECT_EXPLANATION_MESSAGES,
+  RETURN_TO_UNMATCHED_MESSAGES,
   dbErrorMessage,
   done,
   fail,
@@ -22,10 +23,12 @@ import {
   getIncoming,
   MAX_CORRECTION_REASON_LENGTH,
   MAX_EXPLANATION_LENGTH,
+  MAX_RETURN_TO_UNMATCHED_REASON_LENGTH,
   normalizeReferenceCode,
   paidAfterCorrect,
   paidAfterExplain,
   paidAfterReturn,
+  paidAfterReturnToUnmatched,
   paidBreakdown,
   REFERENCE_CODE,
   UNATTRIBUTED_CAUSES,
@@ -52,6 +55,8 @@ const TX_NOT_FOUND = dbErrorMessage({ message: "GIVE_TRANSACTION_NOT_FOUND" })
 /** A transaction linked as returned money since the page loaded (DOS/Give#72). */
 const ALREADY_LINKED_AS_RETURN =
   "Giao dịch này đã được ghi nhận là tiền bị ngân hàng trả lại, nên không giải trình được nữa. Hãy tải lại trang."
+/** An explanation returned to unmatched (DOS/Give#196) is never made again: the money is matched. */
+const EXPLANATION_RETURNED = dbErrorMessage({ message: "GIVE_EXPLANATION_RETURNED" })
 
 const EXPLAIN_MESSAGES: Record<string, string> = {
   GIVE_NOT_ALLOWED: NOT_ALLOWED,
@@ -104,6 +109,7 @@ export async function explainTransaction(
     if (!tx.campaign_id) return fail(EXPLAIN_MESSAGES.GIVE_TRANSACTION_UNATTRIBUTED)
     if (tx.matched_to) return fail(EXPLAIN_MESSAGES.GIVE_TRANSACTION_ALREADY_MATCHED)
     if (tx.returned_of) return fail(ALREADY_LINKED_AS_RETURN)
+    if (tx.explanation_returned) return fail(EXPLANATION_RETURNED)
     campaign = await getCampaignById(db, tx.campaign_id)
     if (!campaign) return fail(TX_NOT_FOUND)
     before = await paidBreakdown(db, campaign.id)
@@ -161,8 +167,9 @@ const RETURN_MESSAGES: Record<string, string> = {
   GIVE_TRANSACTION_NOT_OUTBOUND: "Khoản chi gốc phải là một khoản tiền ra.",
   GIVE_TRANSACTION_ALREADY_MATCHED:
     "Giao dịch này đã được khớp với một lượt ủng hộ, nên không ghi nhận được là tiền bị trả lại.",
+  // Also raised for an explanation returned to unmatched (DOS/Give#196): that money is only matched.
   GIVE_TRANSACTION_ALREADY_EXPLAINED:
-    "Giao dịch này đã được giải trình là không phải tiền ủng hộ, nên không ghi nhận được là tiền bị trả lại. Giải trình đã ghi thì không sửa được.",
+    "Giao dịch này đã được giải trình là không phải tiền ủng hộ (kể cả khi giải trình sau đó được đưa về chưa khớp), nên không ghi nhận được là tiền bị trả lại.",
   GIVE_TRANSACTION_OWN_TRANSFER:
     "Một trong hai giao dịch là khoản chuyển giữa các tài khoản của chiến dịch, nên không ghi nhận được là tiền bị trả lại.",
   GIVE_LEDGER_POST_MISSING:
@@ -215,7 +222,7 @@ export async function linkReturnedTransfer(
     if (tx.direction !== "in") return fail(RETURN_MESSAGES.GIVE_TRANSACTION_NOT_INBOUND)
     if (!tx.campaign_id) return fail(RETURN_MESSAGES.GIVE_TRANSACTION_UNATTRIBUTED)
     if (tx.matched_to) return fail(RETURN_MESSAGES.GIVE_TRANSACTION_ALREADY_MATCHED)
-    if (tx.explained_as) return fail(RETURN_MESSAGES.GIVE_TRANSACTION_ALREADY_EXPLAINED)
+    if (tx.explained_as || tx.explanation_returned) return fail(RETURN_MESSAGES.GIVE_TRANSACTION_ALREADY_EXPLAINED)
     campaign = await getCampaignById(db, tx.campaign_id)
     if (!campaign) return fail(TX_NOT_FOUND)
     before = await paidBreakdown(db, campaign.id)
@@ -355,6 +362,7 @@ export async function correctExplanation(
     if (tx.direction !== "in") return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_TRANSACTION_NOT_INBOUND)
     if (!tx.campaign_id) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_TRANSACTION_UNATTRIBUTED)
     if (!tx.corrected_to) {
+      if (tx.explanation_returned) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_EXPLANATION_RETURNED)
       if (tx.matched_to) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_TRANSACTION_ALREADY_MATCHED)
       if (!tx.explained_as) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_TRANSACTION_NOT_EXPLAINED)
     }
@@ -406,5 +414,99 @@ export async function correctExplanation(
   }
   return done(
     `Đã sửa giải trình: ${formatVnd(tx.amount)} nay là tiền của lượt ủng hộ ${contribution.reference_code}, không còn tính là "không phải tiền ủng hộ".${isPublicStatus(campaign.status) ? " Sao kê công khai hiện giao dịch này là tiền ủng hộ." : ""}${paidAfterCorrect(before, after)}`
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Returning a mistaken explanation to unmatched (DOS/Give#196)
+// ---------------------------------------------------------------------------
+
+const RETURN_SELF_REVIEW = RETURN_TO_UNMATCHED_MESSAGES.GIVE_SELF_REVIEW
+
+/**
+ * Sends an explanation of incoming money as "not a donation" back to
+ * unmatched, with a required reason, by an admin only (not finance: it undoes
+ * a finance decision), and never by the campaign's organizer or the person who
+ * explained it (GIVE_SELF_REVIEW). For money that turns out to be a donation
+ * whose contribution is not known yet: afterwards it is matched like any
+ * unmatched money, and never explained, corrected or linked as a returned
+ * transfer again. give.return_inbound_to_unmatched runs as the service role
+ * with the actor's id and checks all of it under its locks (the binding is
+ * not released, the account belongs to the organizer, once per
+ * transaction); as for a correction, the role, the transaction, the campaign
+ * and the explainer are first read with the actor's own token, so a forged
+ * session cookie fails here. A retry with the same reason is answered as a
+ * replay.
+ */
+export async function returnToUnmatched(
+  transactionId: string,
+  _state: ActionResult,
+  form: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  if (!isUuid(transactionId)) return fail(TX_NOT_FOUND)
+  // Browsers submit line breaks as CRLF; count and store them as one character.
+  const reason = String(form.get("reason") ?? "")
+    .replace(/\r\n/g, "\n")
+    .trim()
+  if (!reason) return fail(RETURN_TO_UNMATCHED_MESSAGES.GIVE_REASON_REQUIRED)
+  // Counted in characters (code points), as the database's char_length does.
+  if ([...reason].length > MAX_RETURN_TO_UNMATCHED_REASON_LENGTH) {
+    return fail(RETURN_TO_UNMATCHED_MESSAGES.GIVE_REASON_TOO_LONG)
+  }
+
+  const userId = session.user.id
+  const db = dbAs(session.accessToken)
+  let tx, campaign, before
+  try {
+    if (!(await isStaff(db, ADMIN_ONLY))) return fail(RETURN_TO_UNMATCHED_MESSAGES.GIVE_NOT_ALLOWED)
+    tx = await getIncoming(db, transactionId)
+    if (!tx) return fail(TX_NOT_FOUND)
+    if (tx.direction !== "in") return fail(RETURN_TO_UNMATCHED_MESSAGES.GIVE_TRANSACTION_NOT_INBOUND)
+    if (!tx.campaign_id) return fail(RETURN_TO_UNMATCHED_MESSAGES.GIVE_TRANSACTION_UNATTRIBUTED)
+    // Returned already: only the same reason is a replay, and the database decides that.
+    if (!tx.explanation_returned) {
+      if (tx.corrected_to) return fail(RETURN_TO_UNMATCHED_MESSAGES.GIVE_EXPLANATION_ALREADY_CORRECTED)
+      if (tx.matched_to) return fail(RETURN_TO_UNMATCHED_MESSAGES.GIVE_TRANSACTION_ALREADY_MATCHED)
+      if (!tx.explained_as) return fail(RETURN_TO_UNMATCHED_MESSAGES.GIVE_TRANSACTION_NOT_EXPLAINED)
+    }
+    campaign = await getCampaignById(db, tx.campaign_id)
+    if (!campaign) return fail(TX_NOT_FOUND)
+    if (campaign.organizer_id === userId) return fail(RETURN_SELF_REVIEW)
+    if ((await explainersOf(db, [tx.id])).get(tx.id) === userId) return fail(RETURN_SELF_REVIEW)
+    before = await paidBreakdown(db, campaign.id)
+  } catch (error) {
+    return fail(dbErrorMessage(error as DbErrorLike, RETURN_TO_UNMATCHED_MESSAGES))
+  }
+
+  const { data, error } = await dbService()
+    .rpc("return_inbound_to_unmatched", {
+      p_bank_transaction_id: tx.id,
+      p_actor_id: userId,
+      p_reason: reason,
+    })
+    .maybeSingle()
+  if (error) return fail(dbErrorMessage(error, RETURN_TO_UNMATCHED_MESSAGES))
+  const result = data as { outcome: string; replayed: boolean } | null
+
+  revalidatePath("/admin/unmatched")
+  revalidatePath(`/me/campaigns/${campaign.id}/unmatched`)
+  revalidatePath(`/me/campaigns/${campaign.id}`)
+  revalidatePath(`/campaigns/${campaign.slug}`)
+  revalidatePath(`/campaigns/${campaign.slug}/statement`)
+
+  if (result?.replayed) {
+    return done("Giải trình này đã được đưa về chưa khớp từ trước, với cùng lý do. Không có gì thay đổi.")
+  }
+
+  let after = null
+  try {
+    after = await paidBreakdown(db, campaign.id)
+  } catch {
+    // The return is recorded; only the totals line is left out.
+  }
+  return done(
+    `Đã đưa ${formatVnd(tx.amount)} về chưa khớp: khoản này không còn tính là "không phải tiền ủng hộ" và hiện ở mục "Chờ khớp" để khớp với một lượt ủng hộ. Không giải trình lại được là "không phải tiền ủng hộ".${isPublicStatus(campaign.status) ? " Sao kê công khai hiện giao dịch này là chưa khớp." : ""}${paidAfterReturnToUnmatched(before, after)}`
   )
 }
