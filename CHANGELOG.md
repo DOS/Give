@@ -234,7 +234,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   own the account, or organize a campaign it is or was bound to for the
   row's date, see a notice instead of the forms (the database refuses them
   with `GIVE_SELF_REVIEW`, for every resolution). Every refusal of the
-  resolution is worded in Vietnamese (#78 / #PR_NUMBER, takes over #189).
+  resolution is worded in Vietnamese (#78 / #200, takes over #189).
 
 ### Platform
 
