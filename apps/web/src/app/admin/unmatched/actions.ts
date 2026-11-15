@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { getSession } from "@/lib/auth/session"
-import { getCampaignById, isStaff } from "@/lib/campaigns"
+import { getCampaignById, isPublicStatus, isStaff } from "@/lib/campaigns"
 import {
   CORRECT_EXPLANATION_MESSAGES,
   dbErrorMessage,
@@ -21,10 +21,12 @@ import {
   getIncoming,
   MAX_CORRECTION_REASON_LENGTH,
   MAX_EXPLANATION_LENGTH,
+  normalizeReferenceCode,
   paidAfterCorrect,
   paidAfterExplain,
   paidAfterReturn,
   paidBreakdown,
+  REFERENCE_CODE,
   UNATTRIBUTED_CAUSES,
   type ReturnOutcome,
 } from "@/lib/reconciliation"
@@ -325,13 +327,17 @@ export async function correctExplanation(
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
   if (!isUuid(transactionId)) return fail(TX_NOT_FOUND)
-  const contributionId = String(form.get("contribution_id") ?? "")
+  // A pick from the list, or a typed reference code for a contribution the list leaves out.
+  const picked = String(form.get("contribution_id") ?? "")
+  const typed = normalizeReferenceCode(String(form.get("reference_code") ?? ""))
   // Browsers submit line breaks as CRLF; count and store them as one character.
   const reason = String(form.get("reason") ?? "")
     .replace(/\r\n/g, "\n")
     .trim()
-  if (!contributionId) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_CONTRIBUTION_REQUIRED)
-  if (!isUuid(contributionId)) return fail("Lượt ủng hộ không hợp lệ.")
+  if (picked && typed) return fail("Chọn lượt ủng hộ trong danh sách hoặc nhập mã ủng hộ, không cả hai.")
+  if (!picked && !typed) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_CONTRIBUTION_REQUIRED)
+  if (picked && !isUuid(picked)) return fail("Lượt ủng hộ không hợp lệ.")
+  if (typed && !REFERENCE_CODE.test(typed)) return fail(`"${typed}" không phải mã ủng hộ hợp lệ (dạng GV và 7 ký tự).`)
   if (!reason) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_REASON_REQUIRED)
   // Counted in characters (code points), as the database's char_length does.
   if ([...reason].length > MAX_CORRECTION_REASON_LENGTH) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_REASON_TOO_LONG)
@@ -345,10 +351,6 @@ export async function correctExplanation(
     if (!tx) return fail(TX_NOT_FOUND)
     if (tx.direction !== "in") return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_TRANSACTION_NOT_INBOUND)
     if (!tx.campaign_id) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_TRANSACTION_UNATTRIBUTED)
-    // Corrected already: only the exact same correction is a replay, and the database decides that.
-    if (tx.corrected_to && tx.corrected_to !== contributionId) {
-      return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_EXPLANATION_ALREADY_CORRECTED)
-    }
     if (!tx.corrected_to) {
       if (tx.matched_to) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_TRANSACTION_ALREADY_MATCHED)
       if (!tx.explained_as) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_TRANSACTION_NOT_EXPLAINED)
@@ -356,8 +358,12 @@ export async function correctExplanation(
     campaign = await getCampaignById(db, tx.campaign_id)
     if (!campaign) return fail(TX_NOT_FOUND)
     if (campaign.organizer_id === userId) return fail(CORRECTION_SELF_REVIEW)
-    contribution = await findContribution(db, campaign.id, { id: contributionId })
+    contribution = await findContribution(db, campaign.id, picked ? { id: picked } : { referenceCode: typed })
     if (!contribution) return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_CONTRIBUTION_CAMPAIGN_MISMATCH)
+    // Corrected already: only the exact same correction is a replay, and the database decides that.
+    if (tx.corrected_to && tx.corrected_to !== contribution.id) {
+      return fail(CORRECT_EXPLANATION_MESSAGES.GIVE_EXPLANATION_ALREADY_CORRECTED)
+    }
     if (contribution.contributor_user_id === userId) return fail(CORRECTION_SELF_REVIEW)
     if ((await explainersOf(db, [tx.id])).get(tx.id) === userId) return fail(CORRECTION_SELF_REVIEW)
     before = await paidBreakdown(db, campaign.id)
@@ -395,6 +401,6 @@ export async function correctExplanation(
     // The correction is recorded; only the totals line is left out.
   }
   return done(
-    `Đã sửa giải trình: ${formatVnd(tx.amount)} nay là tiền của lượt ủng hộ ${contribution.reference_code}, không còn tính là "không phải tiền ủng hộ". Sao kê công khai hiện giao dịch này là tiền ủng hộ.${paidAfterCorrect(before, after)}`
+    `Đã sửa giải trình: ${formatVnd(tx.amount)} nay là tiền của lượt ủng hộ ${contribution.reference_code}, không còn tính là "không phải tiền ủng hộ".${isPublicStatus(campaign.status) ? " Sao kê công khai hiện giao dịch này là tiền ủng hộ." : ""}${paidAfterCorrect(before, after)}`
   )
 }

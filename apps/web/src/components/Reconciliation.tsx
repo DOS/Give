@@ -179,8 +179,9 @@ function CorrectedNote({ amount, correction }: { amount: number; correction: Inb
 
 /**
  * Admin only (DOS/Give#71): credits explained money to a contribution of the
- * same campaign, with a required reason. Contributions waiting for exactly
- * this amount come first; the admin's own contributions are left out.
+ * same campaign (picked from the list or typed as a reference code), with a
+ * required reason. Contributions waiting for exactly this amount come first;
+ * the admin's own contributions are left out of the list.
  */
 function CorrectExplanationForm({
   txId,
@@ -201,75 +202,81 @@ function CorrectExplanationForm({
         Giải trình nhầm? Sửa giải trình
         <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
       </summary>
-      {candidates.length === 0 ? (
-        <div className="mt-3 max-w-160">
-          <Callout tone="info" title="Chiến dịch không có lượt ủng hộ nào nhận được khoản này.">
-            Chỉ lượt ủng hộ của cùng chiến dịch, chưa hủy hay hoàn tiền, và không phải của chính bạn mới chọn được.
-          </Callout>
-        </div>
-      ) : (
-        <ActionForm
-          action={action}
-          confirm={`Sửa giải trình: ghi nhận ${formatVnd(amount)} là tiền của lượt ủng hộ đã chọn? Tiền chuyển từ "không phải tiền ủng hộ" sang "đã khớp", tổng đã thanh toán không đổi, và sao kê công khai hiện giao dịch là tiền ủng hộ. Mỗi giải trình chỉ sửa được một lần.`}
-          className="mt-3 grid max-w-160 gap-6"
-        >
-          <p className="text-fg">
-            Dùng khi khoản này thực ra là tiền ủng hộ của một lượt trong cùng chiến dịch. Giải trình cũ vẫn được giữ
-            trong nhật ký; lần sửa được ghi vào nhật ký kiểm toán.
+      <ActionForm
+        action={action}
+        confirm={`Sửa giải trình: ghi nhận ${formatVnd(amount)} là tiền của lượt ủng hộ đã chọn? Tiền chuyển từ "không phải tiền ủng hộ" sang "đã khớp", tổng đã thanh toán không đổi, và sao kê công khai hiện giao dịch là tiền ủng hộ. Mỗi giải trình chỉ sửa được một lần.`}
+        className="mt-3 grid max-w-160 gap-6"
+      >
+        <p className="text-fg">
+          Dùng khi khoản này thực ra là tiền ủng hộ của một lượt trong cùng chiến dịch. Giải trình cũ vẫn được giữ trong
+          nhật ký; lần sửa được ghi vào nhật ký kiểm toán.
+        </p>
+        <div>
+          <div className="grid gap-4 sm:grid-cols-[2fr_1fr] [&>*]:min-w-0">
+            <div>
+              <label htmlFor={`correct-contribution-${txId}`} className="label">
+                Lượt ủng hộ
+              </label>
+              <select id={`correct-contribution-${txId}`} name="contribution_id" className="field" defaultValue="">
+                <option value="">
+                  {candidates.length > 0 ? "Chọn lượt ủng hộ…" : "Không có lượt nào trong danh sách"}
+                </option>
+                {sameAmount.length > 0 && (
+                  <optgroup label="Đang chờ đúng số tiền này">
+                    {sameAmount.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {candidateLabel(c)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {others.length > 0 && (
+                  <optgroup label="Lượt ủng hộ khác">
+                    {others.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {candidateLabel(c)}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
+            <div>
+              <label htmlFor={`correct-code-${txId}`} className="label">
+                hoặc mã ủng hộ
+              </label>
+              <input
+                id={`correct-code-${txId}`}
+                name="reference_code"
+                className="field font-mono uppercase"
+                placeholder="GV…"
+                maxLength={16}
+              />
+            </div>
+          </div>
+          <p className="mt-2 text-sm text-muted">
+            Danh sách có tối đa 200 lượt mới nhất còn nhận tiền, không gồm lượt của chính bạn. Lượt cũ hơn thì nhập mã
+            ủng hộ.
           </p>
-          <div>
-            <label htmlFor={`correct-contribution-${txId}`} className="label">
-              Lượt ủng hộ
-            </label>
-            <select
-              id={`correct-contribution-${txId}`}
-              name="contribution_id"
-              className="field"
-              defaultValue=""
-              required
-            >
-              <option value="" disabled>
-                Chọn lượt ủng hộ…
-              </option>
-              {sameAmount.length > 0 && (
-                <optgroup label="Đang chờ đúng số tiền này">
-                  {sameAmount.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {candidateLabel(c)}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-              {others.length > 0 && (
-                <optgroup label="Lượt ủng hộ khác">
-                  {others.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {candidateLabel(c)}
-                    </option>
-                  ))}
-                </optgroup>
-              )}
-            </select>
-          </div>
-          <div>
-            <label htmlFor={`correct-reason-${txId}`} className="label">
-              Lý do sửa (không công khai)
-            </label>
-            <textarea
-              id={`correct-reason-${txId}`}
-              name="reason"
-              className="field"
-              rows={2}
-              maxLength={MAX_CORRECTION_REASON_LENGTH}
-              required
-              placeholder="Vì sao giải trình trước là nhầm, và bạn đã kiểm tra những gì"
-            />
-          </div>
-          <div>
-            <SubmitButton className={buttonClass({ variant: "secondary" })}>Sửa giải trình</SubmitButton>
-          </div>
-        </ActionForm>
-      )}
+        </div>
+        <div>
+          <label htmlFor={`correct-reason-${txId}`} className="label">
+            Lý do sửa (không công khai)
+          </label>
+          <textarea
+            id={`correct-reason-${txId}`}
+            name="reason"
+            className="field"
+            rows={2}
+            maxLength={MAX_CORRECTION_REASON_LENGTH}
+            required
+            placeholder="Vì sao giải trình trước là nhầm, và bạn đã kiểm tra những gì"
+          />
+        </div>
+        <div>
+          <SubmitButton className={buttonClass({ variant: "secondary" })}>Sửa giải trình</SubmitButton>
+        </div>
+      </ActionForm>
     </details>
   )
 }

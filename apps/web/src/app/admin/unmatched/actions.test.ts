@@ -239,7 +239,9 @@ describe("correctExplanation (DOS/Give#71)", () => {
       bank_transactions: tx({
         inbound_explanations: { kind: "organizer_top_up", inbound_explanation_corrections: null },
       }),
-      "rpc:managed_campaigns": { data: { id: CAMPAIGN, slug: "chau-be-abcde", organizer_id: ORGANIZER } },
+      "rpc:managed_campaigns": {
+        data: { id: CAMPAIGN, slug: "chau-be-abcde", organizer_id: ORGANIZER, status: "live" },
+      },
       contributions: {
         data: { id: CONTRIBUTION, reference_code: "GV7K2M9QX", status: "awaiting_transfer", contributor_user_id: null },
       },
@@ -283,6 +285,33 @@ describe("correctExplanation (DOS/Give#71)", () => {
     expect(op(state.userCalls[3], "eq")).toEqual(["campaign_id", CAMPAIGN])
     expect(revalidatePath).toHaveBeenCalledWith("/admin/unmatched")
     expect(revalidatePath).toHaveBeenCalledWith("/campaigns/chau-be-abcde/statement")
+  })
+
+  it("finds a contribution the list leaves out by its typed reference code", async () => {
+    const result = await correctExplanation(TX, null, form({ reference_code: " gv 7k2m 9qx ", reason: CORRECT.reason }))
+    expect(result?.ok).toBe(true)
+    const lookup = state.userCalls.find((c) => c.target === "contributions")
+    expect(lookup?.ops).toContainEqual(["eq", "reference_code", "GV7K2M9QX"])
+    expect(op(state.serviceCalls[0], "args")?.[0]).toMatchObject({ p_contribution_id: CONTRIBUTION })
+  })
+
+  it("takes a pick or a code, not both, and checks the code's shape before reading anything", async () => {
+    expect((await correctExplanation(TX, null, form({ ...CORRECT, reference_code: "GV7K2M9QX" })))?.message).toBe(
+      "Chọn lượt ủng hộ trong danh sách hoặc nhập mã ủng hộ, không cả hai."
+    )
+    expect((await correctExplanation(TX, null, form({ reference_code: "ABC", reason: "r" })))?.message).toContain(
+      "không phải mã ủng hộ hợp lệ"
+    )
+    expect(state.userCalls).toHaveLength(0)
+  })
+
+  it("does not promise a public statement row for a campaign that is not public", async () => {
+    state.responses["rpc:managed_campaigns"] = {
+      data: { id: CAMPAIGN, slug: "chau-be-abcde", organizer_id: ORGANIZER, status: "cancelled" },
+    }
+    const result = await correctExplanation(TX, null, form(CORRECT))
+    expect(result?.ok).toBe(true)
+    expect(result?.message).not.toContain("Sao kê công khai")
   })
 
   it("refuses finance staff and everyone else who is not an admin", async () => {

@@ -136,6 +136,7 @@ describe("InboundExplanationList: correcting an explanation (DOS/Give#71)", () =
     const html = render([explanation("t1")], new Map([["t1", { action, candidates: [candidate] }]]))
     expect(html).toContain("Giải trình nhầm? Sửa giải trình")
     expect(html).toContain('name="contribution_id"')
+    expect(html).toContain('name="reference_code"')
     expect(html).toContain("Đang chờ đúng số tiền này")
     expect(html).toContain("GV7K2M9QX")
     expect(html).toMatch(/<textarea[^>]*name="reason"[^>]*required/)
@@ -171,9 +172,11 @@ describe("InboundExplanationList: correcting an explanation (DOS/Give#71)", () =
     expect(html).not.toContain('name="contribution_id"')
   })
 
-  it("says when no contribution of the campaign can take the money", () => {
+  it("keeps the code field when the list has no contribution to offer", () => {
     const html = render([explanation("t1")], new Map([["t1", { action, candidates: [] }]]))
-    expect(html).toContain("Chiến dịch không có lượt ủng hộ nào nhận được khoản này.")
-    expect(html).not.toContain('name="reason"')
+    expect(html).toContain("Không có lượt nào trong danh sách")
+    expect(html).toContain('name="reference_code"')
+    expect(html).toContain('name="reason"')
+    expect(html).toContain("Lượt cũ hơn thì nhập mã ủng hộ.")
   })
 })

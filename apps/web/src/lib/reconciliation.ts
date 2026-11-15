@@ -616,7 +616,7 @@ const EXPLAIN_AUDIT_ACTION = "bank_transaction.explain_inbound"
  * RLS; inbound_explanations.explained_by is not granted to clients). Used to
  * hide the correction from the admin who made the explanation, since
  * give.correct_inbound_explanation refuses them (GIVE_SELF_REVIEW). A
- * transaction without an audit row, or whose actor was deleted, is left out.
+ * transaction without an audit row, or with no actor on it, is left out.
  */
 export async function explainersOf(db: Db, transactionIds: readonly string[]): Promise<Map<string, string>> {
   const unique = [...new Set(transactionIds)]
