@@ -142,7 +142,7 @@ describe("UnmatchedTransactionCard: an explanation returned to unmatched (DOS/Gi
   }
 
   it("says what it was and why it came back, and keeps only the match form", () => {
-    const html = render({ explainAction: action, returnAction: action, returnedExplanation })
+    const html = render({ explainAction: action, returnAction: action, returnedExplanation, showReturnReason: true })
     expect(html).toContain("Khoản này từng được giải trình nhầm và đã được đưa về chưa khớp.")
     expect(html).toContain("Người tổ chức nạp thêm tiền")
     expect(html).toContain("Lý do đưa về: Mai says it is her donation")
@@ -155,9 +155,12 @@ describe("UnmatchedTransactionCard: an explanation returned to unmatched (DOS/Gi
     expect(html).not.toContain("bị ngân hàng trả lại? Ghi nhận")
   })
 
-  it("shows the organizer the same note on their page", () => {
+  it("shows the organizer the note without the admin's private reason", () => {
     const html = render({ returnedExplanation })
     expect(html).toContain("đã được đưa về chưa khớp")
+    expect(html).toContain("Người tổ chức nạp thêm tiền")
+    expect(html).not.toContain("Lý do đưa về")
+    expect(html).not.toContain("Mai says it is her donation")
     expect(html).toContain(">Khớp</button>")
   })
 

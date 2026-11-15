@@ -270,7 +270,13 @@ describe("listReconciliationAudit", () => {
     expect(calls[0].target).toBe("audit_log")
     expect(op(calls[0], "in")).toEqual([
       "action",
-      ["statement_import_row.resolve", "bank_transaction.manual_match", "bank_transaction.explain_inbound"],
+      [
+        "statement_import_row.resolve",
+        "bank_transaction.manual_match",
+        "bank_transaction.explain_inbound",
+        "bank_transaction.correct_explanation",
+        "bank_transaction.return_explanation",
+      ],
     ])
     expect(AUDIT_ACTION_LABELS["bank_transaction.explain_inbound"]).toBe("Giải trình tiền vào không phải tiền ủng hộ")
   })
@@ -315,6 +321,35 @@ describe("listReconciliationAudit", () => {
         })
       )
     ).toBe("Là giao dịch đã ghi: Trùng FT9")
+  })
+
+  it("shows a correction and a return of an explanation, so the audit never stops at the explanation", () => {
+    const base = {
+      id: 2,
+      actor_id: USER,
+      entity: "bank_transaction",
+      entity_id: "t1",
+      created_at: "2026-11-15T08:00:00Z",
+    }
+    expect(
+      reconciliationAuditSummary({
+        ...base,
+        action: "bank_transaction.return_explanation",
+        before: { bucket: "other_in", kind: "organizer_top_up" },
+        after: { bucket: "unmatched_in", amount: 300000, reason: "Chị Mai xác nhận là tiền ủng hộ" },
+      }).replace(/\u00a0/g, " ")
+    ).toBe(
+      '300.000 ₫ chuyển từ "không phải tiền ủng hộ" (Người tổ chức nạp thêm tiền) về "chưa khớp": Chị Mai xác nhận là tiền ủng hộ'
+    )
+    expect(
+      reconciliationAuditSummary({
+        ...base,
+        action: "bank_transaction.correct_explanation",
+        before: { bucket: "other_in" },
+        after: { bucket: "received", amount: 150000, contribution_id: "c1", reason: "Biên lai" },
+      }).replace(/\u00a0/g, " ")
+    ).toBe('150.000 ₫ chuyển từ "không phải tiền ủng hộ" sang "đã khớp", lượt ủng hộ c1: Biên lai')
+    expect(AUDIT_ACTION_LABELS["bank_transaction.return_explanation"]).toBe("Đưa giải trình về chưa khớp")
   })
 })
 

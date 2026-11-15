@@ -486,12 +486,17 @@ export const RECONCILIATION_AUDIT_ACTIONS = [
   "statement_import_row.resolve",
   "bank_transaction.manual_match",
   "bank_transaction.explain_inbound",
+  // An explanation corrected to a contribution (DOS/Give#71) or returned to unmatched (DOS/Give#196).
+  "bank_transaction.correct_explanation",
+  "bank_transaction.return_explanation",
 ] as const
 
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "statement_import_row.resolve": "Xử lý dòng sao kê",
   "bank_transaction.manual_match": "Khớp tay giao dịch",
   "bank_transaction.explain_inbound": "Giải trình tiền vào không phải tiền ủng hộ",
+  "bank_transaction.correct_explanation": "Sửa giải trình thành tiền ủng hộ",
+  "bank_transaction.return_explanation": "Đưa giải trình về chưa khớp",
 }
 
 /** The latest reconciliation audit entries. give.audit_log is readable by admins only; others get none. */
@@ -522,6 +527,16 @@ export function reconciliationAuditSummary(entry: AuditEntry): string {
     const reason = typeof after.reason === "string" ? after.reason : ""
     const evidence = typeof after.evidence === "string" ? after.evidence : ""
     return `${formatVnd(Number(after.amount ?? 0))} chuyển từ "chưa khớp" sang "không phải tiền ủng hộ" (${kind}): ${reason}. Bằng chứng: ${evidence}`
+  }
+  if (entry.action === "bank_transaction.correct_explanation") {
+    const reason = typeof after.reason === "string" ? after.reason : ""
+    return `${formatVnd(Number(after.amount ?? 0))} chuyển từ "không phải tiền ủng hộ" sang "đã khớp", lượt ủng hộ ${String(after.contribution_id ?? "—")}: ${reason}`
+  }
+  if (entry.action === "bank_transaction.return_explanation") {
+    const before = entry.before ?? {}
+    const kind = typeof before.kind === "string" ? inboundExplanationLabel(before.kind) : "—"
+    const reason = typeof after.reason === "string" ? after.reason : ""
+    return `${formatVnd(Number(after.amount ?? 0))} chuyển từ "không phải tiền ủng hộ" (${kind}) về "chưa khớp": ${reason}`
   }
   return ""
 }

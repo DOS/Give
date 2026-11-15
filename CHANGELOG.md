@@ -174,12 +174,15 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   account binding is released, gets the reason instead of the form; a
   corrected or returned explanation offers nothing. Returned money shows again
   under "Chờ khớp" on `/admin/unmatched` and on the organizer's
-  `/me/campaigns/[id]/unmatched`, with a note naming the old kind and the
-  reason, and is matched there (pick or reference code); the explain and
+  `/me/campaigns/[id]/unmatched`, with a note naming the old kind (and, on
+  `/admin/unmatched` only, the admin's private reason), and is matched there
+  (pick or reference code); the explain and
   returned-transfer forms are left out for it, and the correction button is
   hidden for a returned explanation. Every refusal of
   `give.return_inbound_to_unmatched` and `GIVE_EXPLANATION_RETURNED` from the
-  explain and correct actions are worded (#196).
+  explain and correct actions are worded. The reconciliation audit on
+  `/admin/statements` now also lists corrections (#71) and returns of an
+  explanation (#196).
 - Guest donation tracking link across devices: a guest holding a valid status
   token on `/donations/[code]` can copy a reusable `/donations/[code]/track`
   link; opening it on another browser or device validates the token in

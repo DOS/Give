@@ -41,6 +41,7 @@ export function UnmatchedTransactionCard({
   returnAction,
   returnCandidates = [],
   returnedExplanation = null,
+  showReturnReason = false,
 }: {
   tx: UnmatchedTransaction
   candidates: MatchCandidate[]
@@ -55,6 +56,12 @@ export function UnmatchedTransactionCard({
   returnCandidates?: ReturnCandidate[]
   /** The explanation an admin returned to unmatched, if any (DOS/Give#196). */
   returnedExplanation?: ReturnedExplanation | null
+  /**
+   * Staff pages only: the admin's reason for the return. It is written as
+   * private ("không công khai"), so the organizer's page leaves it out, as it
+   * leaves out explanation and correction reasons.
+   */
+  showReturnReason?: boolean
 }) {
   const sameAmount = candidates.filter((c) => waitsFor(c, tx.amount))
   const others = candidates.filter((c) => !waitsFor(c, tx.amount))
@@ -101,7 +108,7 @@ export function UnmatchedTransactionCard({
             trị viên đưa về chưa khớp lúc {formatDateTime(returnedExplanation.returned_at)}. Hãy khớp với lượt ủng hộ
             của khoản tiền. Khoản này không giải trình lại được là &quot;không phải tiền ủng hộ&quot;.
           </p>
-          <p className="break-words">Lý do đưa về: {returnedExplanation.reason}</p>
+          {showReturnReason && <p className="break-words">Lý do đưa về: {returnedExplanation.reason}</p>}
         </Callout>
       )}
 

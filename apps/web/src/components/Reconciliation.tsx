@@ -210,8 +210,8 @@ function ReturnedNote({ amount, returned }: { amount: number; returned: InboundR
     <div className="pt-2">
       <Callout tone="info" title="Giải trình này đã được đưa về chưa khớp.">
         <p className="break-words">
-          {formatVnd(amount)} không còn tính là &quot;không phải tiền ủng hộ&quot;: khoản tiền đang chờ khớp với một
-          lượt ủng hộ. Đưa về lúc {formatDateTime(returned.returned_at)}.
+          {formatVnd(amount)} không còn tính là &quot;không phải tiền ủng hộ&quot;: khoản tiền được đưa về chưa khớp để
+          khớp với một lượt ủng hộ. Đưa về lúc {formatDateTime(returned.returned_at)}.
         </p>
         <p className="break-words">Lý do đưa về: {returned.reason}</p>
       </Callout>

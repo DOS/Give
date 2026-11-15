@@ -162,6 +162,7 @@ export default async function AdminUnmatchedPage() {
                 returnAction={linkReturnedTransfer.bind(null, tx.id)}
                 returnCandidates={returnCandidatesFor(tx, returnCandidates)}
                 returnedExplanation={tx.returned_explanation}
+                showReturnReason
               />
             ))}
           </ItemList>

@@ -162,7 +162,8 @@ export async function listUnmatched(
       .is("returned_transfers", null)
     if (neverExplained) query = query.is("inbound_explanations", null)
     if (campaignId) query = query.eq("campaign_id", campaignId)
-    return query.order("booked_at", { ascending: false }).limit(limit)
+    // The id breaks ties at the limit, so both reads cut the same way the merge sorts.
+    return query.order("booked_at", { ascending: false }).order("id", { ascending: false }).limit(limit)
   }
   const [open, returned] = await Promise.all([
     read("inbound_explanations(bank_transaction_id)", true),
