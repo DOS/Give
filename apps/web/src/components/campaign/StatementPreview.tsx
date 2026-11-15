@@ -19,7 +19,11 @@ function rowText(row: StatementRow): string {
 function RowNote({ row }: { row: StatementRow }) {
   // A transfer between the campaign's own accounts after a swap (DOS/Give#84).
   if (row.own_transfer_label) return <Badge tone="info">Chuyển tài khoản</Badge>
-  if (row.direction === "in") return row.in_explanation ? <Badge>Không phải tiền ủng hộ</Badge> : null
+  if (row.direction === "in") {
+    return row.in_explanation || row.return_of ? <Badge>Không phải tiền ủng hộ</Badge> : null
+  }
+  // A transfer out that a bank returned (DOS/Give#72).
+  if (row.returned_by) return <Badge tone="info">Bị ngân hàng trả lại</Badge>
   if (row.is_refund) return <Badge>Hoàn tiền</Badge>
   return row.explained ? <Badge tone="brand">Đã giải trình</Badge> : <Badge tone="warning">Chưa giải trình</Badge>
 }

@@ -44,6 +44,9 @@ const MATCH_MESSAGES: Record<string, string> = {
   GIVE_TRANSACTION_NOT_INBOUND: "Chỉ khớp được các khoản tiền vào.",
   GIVE_TRANSACTION_EXPLAINED:
     "Giao dịch này đã được nhân viên tài chính giải trình là không phải tiền ủng hộ, nên không khớp được nữa.",
+  // Linked as money a bank returned (DOS/Give#72), possibly since the page loaded.
+  GIVE_TRANSACTION_RETURNED:
+    "Giao dịch này đã được nhân viên tài chính ghi nhận là tiền bị ngân hàng trả lại, nên không khớp được nữa. Hãy tải lại trang.",
   GIVE_TRANSACTION_UNATTRIBUTED: `Giao dịch này không thuộc chiến dịch nào, nên không khớp được. Lý do có thể là: ${UNATTRIBUTED_CAUSES}.`,
   // The account's owner is not the campaign's organizer (the database rule of
   // DOS/Give#119, worded in #136). Only an admin data repair clears it, so the
@@ -88,6 +91,7 @@ export async function matchTransaction(
     contribution = await findContribution(db, campaign.id, picked ? { id: picked } : { referenceCode: typed })
     if (!contribution) return fail("Không tìm thấy lượt ủng hộ này trong chiến dịch của giao dịch.")
     if (tx.explained_as) return fail(MATCH_MESSAGES.GIVE_TRANSACTION_EXPLAINED)
+    if (tx.returned_of) return fail(MATCH_MESSAGES.GIVE_TRANSACTION_RETURNED)
     if (tx.matched_to) {
       return tx.matched_to === contribution.id
         ? done(`Giao dịch đã được khớp với lượt ủng hộ ${contribution.reference_code} từ trước.`)

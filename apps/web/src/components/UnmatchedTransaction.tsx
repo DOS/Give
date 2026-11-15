@@ -7,8 +7,11 @@ import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import {
   candidateLabel,
   MAX_EXPLANATION_LENGTH,
+  RETURN_CANDIDATE_LIMIT,
+  returnCandidateLabel,
   waitsFor,
   type MatchCandidate,
+  type ReturnCandidate,
   type UnmatchedTransaction,
 } from "@/lib/reconciliation"
 import { INBOUND_EXPLANATION_KINDS } from "@/lib/statement"
@@ -20,7 +23,9 @@ import { MachineId } from "@/components/ui/RefCode"
  * With explainAction (finance/admin page), also the form that explains it as
  * money that is not a donation. With matchBlocked, a notice that says why no
  * match can succeed takes the match form's place (DOS/Give#148); the
- * explanation form stays (DOS/Give#137).
+ * explanation form stays (DOS/Give#137). With returnAction (finance/admin
+ * page), also the form that links it to the outgoing transaction a bank
+ * returned it from (DOS/Give#72), offering returnCandidates.
  */
 export function UnmatchedTransactionCard({
   tx,
@@ -29,6 +34,8 @@ export function UnmatchedTransactionCard({
   explainAction,
   campaignTitle,
   matchBlocked,
+  returnAction,
+  returnCandidates = [],
 }: {
   tx: UnmatchedTransaction
   candidates: MatchCandidate[]
@@ -38,6 +45,9 @@ export function UnmatchedTransactionCard({
   campaignTitle?: string
   /** Why the database refuses every match of this transaction, worded for the reader. */
   matchBlocked?: string | null
+  returnAction?: (state: ActionResult, form: FormData) => Promise<ActionResult>
+  /** Outgoing transactions this one may be the return of (returnCandidatesFor). */
+  returnCandidates?: ReturnCandidate[]
 }) {
   const sameAmount = candidates.filter((c) => waitsFor(c, tx.amount))
   const others = candidates.filter((c) => !waitsFor(c, tx.amount))
@@ -130,6 +140,7 @@ export function UnmatchedTransactionCard({
       )}
 
       {explainAction && <ExplainInboundForm tx={tx} action={explainAction} />}
+      {returnAction && <ReturnedTransferForm tx={tx} candidates={returnCandidates} action={returnAction} />}
     </li>
   )
 }
@@ -158,8 +169,8 @@ function ExplainInboundForm({
         className="mt-3 grid max-w-160 gap-6"
       >
         <Callout tone="warning">
-          Không dùng cho tiền chuyển đi bị ngân hàng trả lại (khoản chi hoặc khoản hoàn tiền không thành công): khoản đó
-          vẫn đang được tính là đã chi hoặc đã hoàn, nên để nguyên và báo quản trị viên.
+          Không dùng cho tiền chuyển đi bị ngân hàng trả lại (khoản chi hoặc khoản hoàn tiền không thành công): ghi nhận
+          khoản đó ở mục &quot;Tiền chuyển đi bị ngân hàng trả lại?&quot; bên dưới.
         </Callout>
         <div>
           <label htmlFor={`kind-${tx.id}`} className="label">
@@ -207,6 +218,98 @@ function ExplainInboundForm({
           <SubmitButton className={buttonClass({ variant: "secondary" })}>Giải trình</SubmitButton>
         </div>
       </ActionForm>
+    </details>
+  )
+}
+
+/**
+ * Finance/admin only: links the transaction to the outgoing transaction a
+ * bank returned it from (DOS/Give#72). That transaction's 'disbursed' or
+ * 'refunded' post is netted, so the campaign's spent or refunded total drops;
+ * the public statement shows both rows as one returned transfer, and the
+ * reason and evidence stay private.
+ */
+function ReturnedTransferForm({
+  tx,
+  candidates,
+  action,
+}: {
+  tx: UnmatchedTransaction
+  candidates: ReturnCandidate[]
+  action: (state: ActionResult, form: FormData) => Promise<ActionResult>
+}) {
+  return (
+    <details className="group border-t border-border pt-3">
+      <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 font-medium text-fg hover:text-primary [&::-webkit-details-marker]:hidden">
+        Tiền chuyển đi bị ngân hàng trả lại? Ghi nhận khoản này
+        <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
+      </summary>
+      {candidates.length === 0 ? (
+        <div className="mt-3 max-w-160">
+          <Callout tone="info" title="Không có khoản chuyển đi nào phù hợp.">
+            Khoản chuyển đi gốc (khoản chi hoặc hoàn tiền) phải cùng chiến dịch và cùng tài khoản nhận, đã được người tổ
+            chức giải trình, chưa được ghi nhận là bị trả lại, có số tiền không nhỏ hơn {formatVnd(tx.amount)} và không
+            sau ngày tiền về. Nếu khoản gốc chưa được giải trình, hãy nhắc người tổ chức giải trình trước. Chỉ{" "}
+            {RETURN_CANDIDATE_LIMIT} khoản chuyển đi gần nhất của chiến dịch được xét.
+          </Callout>
+        </div>
+      ) : (
+        <ActionForm
+          action={action}
+          confirm={`Ghi nhận ${formatVnd(tx.amount)} là tiền bị ngân hàng trả lại của khoản chuyển đi đã chọn? Tổng đã chi hoặc đã hoàn của chiến dịch giảm ${formatVnd(tx.amount)}, sao kê công khai hiện hai giao dịch là một khoản chuyển bị trả lại, và ghi nhận đã lưu thì không sửa được.`}
+          className="mt-3 grid max-w-160 gap-6"
+        >
+          <p className="text-fg">
+            Chỉ khoản chi và khoản hoàn tiền đã được giải trình mới hiện ở đây. Nếu ngân hàng giữ lại phí, khoản tiền về
+            nhỏ hơn khoản gốc: phần phí vẫn tính là đã chi hoặc đã hoàn.
+          </p>
+          <div>
+            <label htmlFor={`original-${tx.id}`} className="label">
+              Khoản chuyển đi gốc
+            </label>
+            <select id={`original-${tx.id}`} name="original_transaction_id" className="field" defaultValue="" required>
+              <option value="" disabled>
+                Chọn khoản chi hoặc hoàn tiền…
+              </option>
+              {candidates.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {returnCandidateLabel(c)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor={`return-reason-${tx.id}`} className="label">
+              Lý do (không công khai)
+            </label>
+            <textarea
+              id={`return-reason-${tx.id}`}
+              name="reason"
+              className="field"
+              rows={2}
+              maxLength={MAX_EXPLANATION_LENGTH}
+              required
+              placeholder="Vì sao đây là tiền của khoản đã chọn bị trả lại"
+            />
+          </div>
+          <div>
+            <label htmlFor={`return-evidence-${tx.id}`} className="label">
+              Bằng chứng đã kiểm tra (không công khai)
+            </label>
+            <input
+              id={`return-evidence-${tx.id}`}
+              name="evidence"
+              className="field"
+              maxLength={MAX_EXPLANATION_LENGTH}
+              required
+              placeholder="Ví dụ: thư báo trả tiền, mã giao dịch gốc"
+            />
+          </div>
+          <div>
+            <SubmitButton className={buttonClass({ variant: "secondary" })}>Ghi nhận tiền bị trả lại</SubmitButton>
+          </div>
+        </ActionForm>
+      )}
     </details>
   )
 }

@@ -1,5 +1,5 @@
 import type { Db } from "./campaigns"
-import { formatVnd } from "./format"
+import { formatVnd, toVietnamLocalInput } from "./format"
 
 /**
  * Manual matching of incoming transactions that carried no usable reference
@@ -9,7 +9,10 @@ import { formatVnd } from "./format"
  * unmatched_in + other_in) stays the same, and a second match is refused.
  * Money that is not a donation (an organizer top-up, a bank fee refund or correction, interest)
  * is explained instead by finance/admin staff: give.explain_inbound_transaction
- * moves it to 'other_in' the same way (DOS/Give#49).
+ * moves it to 'other_in' the same way (DOS/Give#49). Money a bank returned
+ * from a transfer out (a bounced payment or refund) is linked to that
+ * outgoing transaction instead: give.link_returned_transfer reverses the
+ * 'unmatched_in' post and nets the outgoing post (DOS/Give#72).
  *
  * Reads run with the caller's token: the campaign's organizer and
  * finance/admin staff see its transactions, contributions and ledger.
@@ -53,6 +56,7 @@ export interface UnmatchedTransaction {
   campaign_id: string
   receiving_account_id: string
   provider_tx_id: string
+  asset: string
   amount: number
   booked_at: string
   booked_date_only: boolean
@@ -64,7 +68,7 @@ export interface UnmatchedTransaction {
 }
 
 const TX_COLUMNS =
-  "id, campaign_id, receiving_account_id, provider_tx_id, amount, booked_at, booked_date_only, description, " +
+  "id, campaign_id, receiving_account_id, provider_tx_id, asset, amount, booked_at, booked_date_only, description, " +
   "counterparty_name, counterparty_account_masked, source, after_close"
 
 /** An unmatched transaction with the owner of its receiving account, as far as the caller may read it. */
@@ -85,11 +89,13 @@ export interface UnmatchedRow extends UnmatchedTransaction {
 }
 
 /**
- * Incoming, attributed transactions with neither a match nor an explanation,
- * newest first. Every such transaction is posted to 'unmatched_in' when it is
- * recorded (give.record_bank_transaction -> give.match_transaction). The
- * incoming leg of a transfer between the campaign's own accounts (DOS/Give#84)
- * is settled and cannot be matched, so it is left out.
+ * Incoming, attributed transactions with neither a match, an explanation nor
+ * a link as a returned transfer, newest first. Every such transaction is
+ * posted to 'unmatched_in' when it is recorded (give.record_bank_transaction
+ * -> give.match_transaction). The incoming leg of a transfer between the
+ * campaign's own accounts (DOS/Give#84) is settled and cannot be matched, so
+ * it is left out. give.returned_transfers has two foreign keys to
+ * bank_transactions, so the embed names the incoming one (DOS/Give#72).
  */
 export async function listUnmatched(
   db: Db,
@@ -100,6 +106,7 @@ export async function listUnmatched(
     .select(
       `${TX_COLUMNS}, transaction_matches(bank_transaction_id), inbound_explanations(bank_transaction_id), ` +
         "own_in:own_account_transfers!in_transaction_id(id), " +
+        "returned_transfers!bank_transaction_id(bank_transaction_id), " +
         "account:receiving_accounts!receiving_account_id(owner_user_id), " +
         "binding:account_bindings!binding_id(receiving_account_id)",
       { count: "exact" }
@@ -109,6 +116,7 @@ export async function listUnmatched(
     .is("transaction_matches", null)
     .is("inbound_explanations", null)
     .is("own_in", null)
+    .is("returned_transfers", null)
   if (campaignId) query = query.eq("campaign_id", campaignId)
   const { data, error, count } = await query.order("booked_at", { ascending: false }).limit(limit)
   if (error) throw error
@@ -117,11 +125,20 @@ export async function listUnmatched(
       transaction_matches?: unknown
       inbound_explanations?: unknown
       own_in?: unknown
+      returned_transfers?: unknown
       account?: { owner_user_id: string } | { owner_user_id: string }[] | null
       binding?: { receiving_account_id: string } | { receiving_account_id: string }[] | null
     })[]
   ).map(
-    ({ transaction_matches: _match, inbound_explanations: _explanation, own_in: _pair, account, binding, ...tx }) => ({
+    ({
+      transaction_matches: _match,
+      inbound_explanations: _explanation,
+      own_in: _pair,
+      returned_transfers: _returned,
+      account,
+      binding,
+      ...tx
+    }) => ({
       ...tx,
       amount: Number(tx.amount),
       account_owner_id: one(account)?.owner_user_id ?? null,
@@ -254,16 +271,26 @@ function one<T>(value: T | T[] | null | undefined): T | null {
   return (Array.isArray(value) ? value[0] : value) ?? null
 }
 
-/** One incoming transaction the caller may read, with its match or explanation if any. */
+/** One incoming transaction the caller may read, with its match, explanation or return link if any. */
 export async function getIncoming(
   db: Db,
   id: string
 ): Promise<
-  (UnmatchedTransaction & { direction: string; matched_to: string | null; explained_as: string | null }) | null
+  | (UnmatchedTransaction & {
+      direction: string
+      matched_to: string | null
+      explained_as: string | null
+      /** The outgoing transaction it was linked to as returned money (DOS/Give#72). */
+      returned_of: string | null
+    })
+  | null
 > {
   const { data, error } = await db
     .from("bank_transactions")
-    .select(`${TX_COLUMNS}, direction, transaction_matches(contribution_id), inbound_explanations(kind)`)
+    .select(
+      `${TX_COLUMNS}, direction, transaction_matches(contribution_id), inbound_explanations(kind), ` +
+        "returned_transfers!bank_transaction_id(original_transaction_id)"
+    )
     .eq("id", id)
     .maybeSingle()
   if (error) throw error
@@ -271,17 +298,20 @@ export async function getIncoming(
   const {
     transaction_matches: match,
     inbound_explanations: explanation,
+    returned_transfers: returned,
     ...tx
   } = data as unknown as UnmatchedTransaction & {
     direction: string
     transaction_matches: { contribution_id: string } | { contribution_id: string }[] | null
     inbound_explanations?: { kind: string } | { kind: string }[] | null
+    returned_transfers?: { original_transaction_id: string } | { original_transaction_id: string }[] | null
   }
   return {
     ...tx,
     amount: Number(tx.amount),
     matched_to: one(match)?.contribution_id ?? null,
     explained_as: one(explanation)?.kind ?? null,
+    returned_of: one(returned)?.original_transaction_id ?? null,
   }
 }
 
@@ -523,5 +553,177 @@ export async function listInboundExplanations(
   return ((data ?? []) as unknown as InboundExplanation[]).map((e) => ({
     ...e,
     tx: { ...e.tx, amount: Number(e.tx.amount) },
+  }))
+}
+
+// ---------------------------------------------------------------------------
+// Money a bank returned from a transfer out (DOS/Give#72)
+// ---------------------------------------------------------------------------
+
+/** What give.link_returned_transfer did: the outgoing transaction was a payment or a refund. */
+export type ReturnOutcome = "disbursement_returned" | "refund_returned"
+
+/**
+ * An outgoing transaction that a returned incoming one may be linked to:
+ * explained (give.disbursements) and not returned yet. A leg of an
+ * own-account transfer has no disbursements row, so it is never one.
+ */
+export interface ReturnCandidate {
+  id: string
+  campaign_id: string
+  receiving_account_id: string
+  asset: string
+  amount: number
+  booked_at: string
+  booked_date_only: boolean
+  counterparty_account_masked: string | null
+  is_refund: boolean
+  purpose: string
+  /** For a refund, the refunded contribution's reference code, when the reader may read it. */
+  refund_reference_code: string | null
+}
+
+type CandidateDisbursement = {
+  is_refund: boolean
+  purpose: string
+  refund: { reference_code: string } | { reference_code: string }[] | null
+}
+
+interface ReturnCandidateRow extends Omit<ReturnCandidate, "is_refund" | "purpose" | "refund_reference_code"> {
+  disbursement: CandidateDisbursement | CandidateDisbursement[] | null
+  returned_transfers?: unknown
+}
+
+/** Outgoing transactions read per campaign for the link form. */
+export const RETURN_CANDIDATE_LIMIT = 200
+
+/**
+ * Explained outgoing transactions of the campaign that no incoming
+ * transaction returned yet, newest first, at most RETURN_CANDIDATE_LIMIT.
+ * Read with the caller's token: finance/admin staff read every campaign's
+ * transactions and explanations.
+ */
+export async function listReturnCandidates(db: Db, campaignId: string): Promise<ReturnCandidate[]> {
+  const { data, error } = await db
+    .from("bank_transactions")
+    .select(
+      "id, campaign_id, receiving_account_id, asset, amount, booked_at, booked_date_only, counterparty_account_masked, " +
+        "disbursement:disbursements!inner(is_refund, purpose, refund:contributions!refund_contribution_id(reference_code)), " +
+        "returned_transfers!original_transaction_id(bank_transaction_id)"
+    )
+    .eq("direction", "out")
+    .eq("campaign_id", campaignId)
+    .is("returned_transfers", null)
+    .order("booked_at", { ascending: false })
+    .limit(RETURN_CANDIDATE_LIMIT)
+  if (error) throw error
+  return ((data ?? []) as unknown as ReturnCandidateRow[]).flatMap(
+    ({ disbursement, returned_transfers: _returned, ...tx }) => {
+      const d = one(disbursement)
+      if (!d) return []
+      return [
+        {
+          ...tx,
+          amount: toAmount(tx.amount),
+          is_refund: d.is_refund,
+          purpose: d.purpose,
+          refund_reference_code: one(d.refund)?.reference_code ?? null,
+        },
+      ]
+    }
+  )
+}
+
+/** The local day (Vietnam time) of an ISO time, "2026-11-15". */
+function vietnamDay(iso: string): string {
+  return toVietnamLocalInput(iso).slice(0, 10)
+}
+
+/**
+ * The candidates give.link_returned_transfer would accept for this incoming
+ * transaction: same campaign, receiving account and asset, an amount not
+ * below it (the bank may keep a fee), booked no later by local day. The
+ * database checks all of this again under its locks.
+ */
+export function returnCandidatesFor(
+  tx: Pick<UnmatchedTransaction, "campaign_id" | "receiving_account_id" | "asset" | "amount" | "booked_at">,
+  candidates: readonly ReturnCandidate[]
+): ReturnCandidate[] {
+  const day = vietnamDay(tx.booked_at)
+  return candidates.filter(
+    (c) =>
+      c.campaign_id === tx.campaign_id &&
+      c.receiving_account_id === tx.receiving_account_id &&
+      c.asset === tx.asset &&
+      c.amount >= tx.amount &&
+      vietnamDay(c.booked_at) <= day
+  )
+}
+
+/** "−2.000.000 ₫ · 03/11/2026 · Hoàn tiền GV7K2M9QX · Hoàn tiền vì chiến dịch dừng" */
+export function returnCandidateLabel(c: ReturnCandidate): string {
+  const day = vietnamDay(c.booked_at).split("-").reverse().join("/")
+  const kind = c.is_refund ? ["Hoàn tiền", c.refund_reference_code].filter(Boolean).join(" ") : "Khoản chi"
+  const purpose = c.purpose.length > 60 ? `${c.purpose.slice(0, 59)}…` : c.purpose
+  return [`−${formatVnd(c.amount)}`, day, kind, purpose].filter(Boolean).join(" · ")
+}
+
+/** The sentence a link ends with: "đã thanh toán" drops by the returned amount, which it had counted as money in. */
+export function paidAfterReturn(before: PaidBreakdown | null, after: PaidBreakdown | null, amount: number): string {
+  if (!before || !after) return ""
+  if (before.paid - after.paid === amount && before.unmatched - after.unmatched === amount) {
+    return ` Tổng đã thanh toán giảm từ ${formatVnd(before.paid)} xuống ${formatVnd(after.paid)} (chưa khớp ${formatVnd(before.unmatched)} → ${formatVnd(after.unmatched)}): tiền bị trả lại là tiền của chiến dịch quay về, không phải tiền ủng hộ mới.`
+  }
+  return ` Tổng đã thanh toán hiện là ${formatVnd(after.paid)} (trước khi ghi nhận: ${formatVnd(before.paid)}; có giao dịch khác vừa được ghi cùng lúc).`
+}
+
+export interface ReturnedTransfer {
+  bank_transaction_id: string
+  original_transaction_id: string
+  reason: string
+  evidence: string
+  linked_at: string
+  tx: { amount: number; booked_at: string; campaign_id: string }
+  original: { amount: number; booked_at: string; is_refund: boolean | null } | null
+}
+
+type ReturnedTransferRow = Omit<ReturnedTransfer, "tx" | "original"> & {
+  tx: { amount: unknown; booked_at: string; campaign_id: string }
+  original: {
+    amount: unknown
+    booked_at: string
+    disbursement: { is_refund: boolean } | { is_refund: boolean }[] | null
+  } | null
+}
+
+/**
+ * The latest returned transfers the caller may read, with their private
+ * reason and evidence (finance/admin staff: all). linked_by is not granted
+ * to clients and is not read.
+ */
+export async function listReturnedTransfers(
+  db: Db,
+  { limit = 30 }: { limit?: number } = {}
+): Promise<ReturnedTransfer[]> {
+  const { data, error } = await db
+    .from("returned_transfers")
+    .select(
+      "bank_transaction_id, original_transaction_id, reason, evidence, linked_at, " +
+        "tx:bank_transactions!bank_transaction_id!inner(amount, booked_at, campaign_id), " +
+        "original:bank_transactions!original_transaction_id(amount, booked_at, disbursement:disbursements(is_refund))"
+    )
+    .order("linked_at", { ascending: false })
+    .limit(limit)
+  if (error) throw error
+  return ((data ?? []) as unknown as ReturnedTransferRow[]).map(({ tx, original, ...link }) => ({
+    ...link,
+    tx: { ...tx, amount: toAmount(tx.amount) },
+    original: original
+      ? {
+          amount: toAmount(original.amount),
+          booked_at: original.booked_at,
+          is_refund: one(original.disbursement)?.is_refund ?? null,
+        }
+      : null,
   }))
 }

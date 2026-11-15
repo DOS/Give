@@ -148,8 +148,13 @@ export function describeNotice(notice: Notice, options?: NoticeRenderOptions): N
       // refund_amount: what is still owed, net of refunds (DOS/Give#89); older payloads only have received_amount.
       const received = count(p, "refund_amount") ?? count(p, "received_amount")
       const by = text(p, "refund_due_at")
-      let body = `Cam kết ủng hộ ${campaignName(p, "dự án")} không còn hiệu lực (chưa được thanh toán đủ trước hạn, hoặc tiền đến sau khi cam kết đã hết hiệu lực). Người tạo dự án phải hoàn lại`
-      body += received ? ` ${formatVnd(received)} bạn đã chuyển` : " số tiền bạn đã chuyển"
+      // A refund the bank sent back (DOS/Give#72): the pledge is owed a refund again.
+      let body =
+        text(p, "reason") === "refund_returned"
+          ? `Khoản hoàn tiền cho cam kết ủng hộ ${campaignName(p, "dự án")} chưa đến được tài khoản của bạn: ngân hàng đã trả lại. Nếu số tài khoản nhận tiền của bạn đã đổi, hãy báo người tạo dự án. Người tạo dự án phải hoàn lại`
+          : `Cam kết ủng hộ ${campaignName(p, "dự án")} không còn hiệu lực (chưa được thanh toán đủ trước hạn, hoặc tiền đến sau khi cam kết đã hết hiệu lực). Người tạo dự án phải hoàn lại`
+      if (text(p, "reason") === "refund_returned") body += received ? ` ${formatVnd(received)}` : " số tiền còn nợ bạn"
+      else body += received ? ` ${formatVnd(received)} bạn đã chuyển` : " số tiền bạn đã chuyển"
       body += by ? ` trước ${formatDate(by)}.` : "."
       return { title: "Bạn sẽ được hoàn tiền", body: capitalize(body), ...pledgeLink(p, "Xem cam kết") }
     }
@@ -159,7 +164,13 @@ export function describeNotice(notice: Notice, options?: NoticeRenderOptions): N
       const code = text(p, "reference_code")
       let body = `Một người ủng hộ ${campaignName(p, "dự án")}`
       if (code) body += ` (mã ${code})`
-      if (text(p, "reason") === "overpaid") {
+      if (text(p, "reason") === "refund_returned") {
+        // The refund was explained, but the bank sent it back (DOS/Give#72).
+        body +=
+          " chưa nhận được khoản hoàn tiền bạn đã chuyển: ngân hàng đã trả lại. Hãy kiểm tra lại số tài khoản với người ủng hộ và hoàn lại"
+        body += owed ? ` ${formatVnd(owed)}` : " số tiền còn nợ họ"
+        body += by ? ` trước ${formatDate(by)}` : ""
+      } else if (text(p, "reason") === "overpaid") {
         // A paid pledge that received more than it pledged (DOS/Give#89).
         body += " đã chuyển nhiều hơn số cam kết. Bạn cần hoàn lại phần thừa"
         body += owed ? ` ${formatVnd(owed)}` : ""

@@ -32,7 +32,7 @@ export interface MoneyTotals {
   paid_amount: number
   /** Equal to paid_amount: the money is already the organizer's. Published, not enforced. */
   disbursable_amount: number
-  /** Every outgoing transaction that is not a refund, explained or not. */
+  /** Every outgoing transaction that is not a refund, explained or not, net of what a bank returned (DOS/Give#72). */
   disbursed_amount: number
   refunded_amount: number
   /** The part of disbursed_amount with no explanation yet. */
@@ -192,6 +192,12 @@ export interface StatementRow {
   own_transfer_id: string | null
   own_transfer_at: string | null
   own_transfer_label: string | null
+  /** On an incoming row a bank returned (DOS/Give#72): the outgoing row it returns; null otherwise. */
+  return_of: string | null
+  /** On an outgoing row a bank returned: the incoming row that brought the money back; null otherwise. */
+  returned_by: string | null
+  /** When Give recorded the return, on both rows; null otherwise. */
+  returned_at: string | null
 }
 
 // counterparty_name is left out on purpose: the bank's account-holder name is
@@ -199,7 +205,8 @@ export interface StatementRow {
 const STATEMENT_COLUMNS =
   "id, direction, asset, amount, booked_at, booked_date_only, after_close, matched, " +
   "counterparty_account_masked, explained, purpose, category, recipient, is_refund, explained_at, " +
-  "donor_name, donor_anonymous, in_explanation, in_explained_at, own_transfer_id, own_transfer_at, own_transfer_label"
+  "donor_name, donor_anonymous, in_explanation, in_explained_at, own_transfer_id, own_transfer_at, own_transfer_label, " +
+  "return_of, returned_by, returned_at"
 
 /**
  * Kinds of incoming money that is not a donation, as finance staff explain
@@ -305,6 +312,61 @@ export async function listStatement(
 
 export const ANONYMOUS_LABEL = "Ẩn danh"
 
+// ---------------------------------------------------------------------------
+// Returned transfers (DOS/Give#72)
+// ---------------------------------------------------------------------------
+
+/**
+ * The incoming row of a returned transfer: money a bank sent back from a
+ * transfer out of the campaign (a payment or a refund that did not go
+ * through). Who sent it is not public, as for any row that is not a matched
+ * donation; the reason and evidence stay private.
+ */
+export const RETURNED_IN_LABEL = "Ngân hàng trả lại tiền chuyển đi"
+
+/** The other row of a returned transfer, as the public statement shows it. */
+export interface StatementPair {
+  id: string
+  direction: Direction
+  /** On the outgoing row: whether it was a refund to a backer. */
+  is_refund: boolean | null
+  amount: number
+  booked_at: string
+}
+
+/**
+ * The other row of each returned transfer on this page (return_of or
+ * returned_by), read from give.public_statement, so a pair split across pages
+ * still names its amount and day. By the id of the row on the page.
+ */
+export async function listStatementPairs(
+  db: Db,
+  campaignId: string,
+  rows: readonly Pick<StatementRow, "id" | "return_of" | "returned_by">[]
+): Promise<Map<string, StatementPair>> {
+  const other = new Map<string, string>()
+  for (const row of rows) {
+    const id = row.return_of ?? row.returned_by
+    if (id) other.set(row.id, id)
+  }
+  if (other.size === 0) return new Map()
+  const { data, error } = await db
+    .from("public_statement")
+    .select("id, direction, is_refund, amount, booked_at")
+    .eq("campaign_id", campaignId)
+    .in("id", [...new Set(other.values())])
+  if (error) throw error
+  const byId = new Map(
+    ((data ?? []) as unknown as StatementPair[]).map((pair) => [pair.id, { ...pair, amount: num(pair.amount) }])
+  )
+  const pairs = new Map<string, StatementPair>()
+  for (const [rowId, otherId] of other) {
+    const pair = byId.get(otherId)
+    if (pair) pairs.set(rowId, pair)
+  }
+  return pairs
+}
+
 /**
  * Who is on the other side of a statement row, as far as the public may
  * know (owner decision on DOS/Give#58): for money in, the donor's chosen
@@ -315,9 +377,10 @@ export const ANONYMOUS_LABEL = "Ẩn danh"
  */
 export function counterpartyLabel(
   row: Pick<StatementRow, "direction" | "matched" | "donor_name" | "donor_anonymous" | "recipient" | "explained"> &
-    Partial<Pick<StatementRow, "in_explanation" | "own_transfer_label">>
+    Partial<Pick<StatementRow, "in_explanation" | "own_transfer_label" | "return_of">>
 ): string {
   if (row.own_transfer_label) return row.own_transfer_label
+  if (row.direction === "in" && row.return_of) return RETURNED_IN_LABEL
   if (row.direction === "out") {
     if (!row.explained) return "Chưa rõ người nhận"
     return row.recipient ?? "Không công khai"

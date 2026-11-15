@@ -20,12 +20,14 @@ import {
   getMoneyTotals,
   listPublicEvidence,
   listStatement,
+  listStatementPairs,
   parseStatementParams,
   STATEMENT_FILTER_LABELS,
   STATEMENT_FILTERS,
   STATEMENT_PAGE_SIZE,
   statementHref,
   type PublicEvidence,
+  type StatementPair,
   type StatementRow,
 } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
@@ -78,12 +80,16 @@ export default async function StatementPage({
   const pages = Math.max(1, Math.ceil(total / STATEMENT_PAGE_SIZE))
   // A stale link past the end (rows were explained since) goes to the last page.
   if (page > pages) redirect(statementHref(campaign.slug, filter, pages))
-  const evidence = await listPublicEvidence(
-    db,
-    campaign.id,
-    // Refund evidence is never public (it would name the donor); the view leaves it out too.
-    rows.filter((row) => row.direction === "out" && row.explained && !row.is_refund).map((row) => row.id)
-  )
+  const [evidence, pairs] = await Promise.all([
+    listPublicEvidence(
+      db,
+      campaign.id,
+      // Refund evidence is never public (it would name the donor); the view leaves it out too.
+      rows.filter((row) => row.direction === "out" && row.explained && !row.is_refund).map((row) => row.id)
+    ),
+    // A failed read leaves out the other row's amount and day, not the returned-transfer note.
+    listStatementPairs(db, campaign.id, rows).catch(() => new Map<string, StatementPair>()),
+  ])
   const loginHref = `/auth/login?return_path=${encodeURIComponent(statementHref(campaign.slug, filter, page))}`
 
   return (
@@ -152,6 +158,7 @@ export default async function StatementPage({
                   key={row.id}
                   row={row}
                   evidence={evidence.get(row.id) ?? []}
+                  pair={pairs.get(row.id) ?? null}
                   report={session ? reportEvidence : null}
                   loginHref={loginHref}
                 />
@@ -195,11 +202,14 @@ export default async function StatementPage({
 function StatementItem({
   row,
   evidence,
+  pair,
   report,
   loginHref,
 }: {
   row: StatementRow
   evidence: PublicEvidence[]
+  /** The other row of a returned transfer, when this row is one. */
+  pair: StatementPair | null
   report: typeof reportEvidence | null
   loginHref: string
 }) {
@@ -218,7 +228,9 @@ function StatementItem({
           {incoming ? "Tiền vào" : "Tiền ra"}
         </p>
         <p className="font-medium break-words">
-          {counterpartyLabel(row)}
+          {incoming && row.return_of && pair
+            ? `Ngân hàng trả lại ${pair.is_refund ? "khoản hoàn tiền" : "khoản chi"}`
+            : counterpartyLabel(row)}
           {row.counterparty_account_masked && (
             <span className="ml-2 text-sm font-normal text-muted">TK {row.counterparty_account_masked}</span>
           )}
@@ -243,6 +255,7 @@ function StatementItem({
               {row.explained_at && <span>Giải trình ngày {formatDate(row.explained_at)}</span>}
             </p>
             <PublicEvidenceList evidence={evidence} report={report} loginHref={loginHref} />
+            {row.returned_by && <ReturnedNote row={row} pair={pair} />}
           </div>
         )}
         {!ownTransfer && !incoming && !row.explained && (
@@ -254,7 +267,8 @@ function StatementItem({
             {row.in_explained_at && <span>Give giải trình ngày {formatDate(row.in_explained_at)}</span>}
           </p>
         )}
-        {incoming && !ownTransfer && row.after_close && (
+        {incoming && row.return_of && <ReturnedNote row={row} pair={pair} />}
+        {incoming && !ownTransfer && !row.return_of && row.after_close && (
           <p className="text-sm text-warning">Tiền về sau khi chiến dịch đã kết thúc.</p>
         )}
       </div>
@@ -263,5 +277,40 @@ function StatementItem({
         {formatVnd(row.amount)}
       </p>
     </li>
+  )
+}
+
+/**
+ * Both rows of a returned transfer (DOS/Give#72): the transfer out, and the
+ * money the bank sent back. Each names the other's amount and local day when
+ * it could be read; the reason and evidence are never public.
+ */
+function ReturnedNote({ row, pair }: { row: StatementRow; pair: StatementPair | null }) {
+  const incoming = row.direction === "in"
+  const recorded = row.returned_at ? ` Give ghi nhận ngày ${formatDate(row.returned_at)}.` : ""
+  let text: string
+  if (incoming) {
+    // The return nets the original's bucket, so it is not money received.
+    const spent = pair?.is_refund ? "đã hoàn lại" : "đã chi"
+    text = pair
+      ? `Tiền của khoản ${pair.is_refund ? "hoàn tiền" : "chi"} −${formatVnd(pair.amount)} ngày ${formatDate(pair.booked_at)} quay về, nên không tính vào tổng đã nhận.`
+      : "Tiền chiến dịch đã chuyển đi quay về, nên không tính vào tổng đã nhận."
+    if (pair && pair.amount > row.amount) {
+      text += ` Ngân hàng giữ lại ${formatVnd(pair.amount - row.amount)} phí, phần này vẫn tính là ${spent}.`
+    }
+  } else {
+    const spent = row.is_refund ? "đã hoàn lại" : "đã chi"
+    text = pair
+      ? `Khoản này không chuyển được: ngân hàng trả lại +${formatVnd(pair.amount)} ngày ${formatDate(pair.booked_at)}, số tiền về đó không còn tính vào tổng ${spent}.`
+      : `Khoản này không chuyển được: ngân hàng đã trả tiền lại, số tiền về đó không còn tính vào tổng ${spent}.`
+  }
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-muted">
+      {incoming ? <Badge>Không phải tiền ủng hộ</Badge> : <Badge tone="info">Bị ngân hàng trả lại</Badge>}
+      <span>
+        {text}
+        {recorded}
+      </span>
+    </p>
   )
 }

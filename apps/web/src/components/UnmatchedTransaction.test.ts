@@ -2,7 +2,12 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
-import { OWNER_MISMATCH_FOR_STAFF, type MatchCandidate, type UnmatchedTransaction } from "@/lib/reconciliation"
+import {
+  OWNER_MISMATCH_FOR_STAFF,
+  type MatchCandidate,
+  type ReturnCandidate,
+  type UnmatchedTransaction,
+} from "@/lib/reconciliation"
 
 import { UnmatchedTransactionCard } from "./UnmatchedTransaction"
 
@@ -11,6 +16,7 @@ const tx: UnmatchedTransaction = {
   campaign_id: "22222222-2222-4222-8222-222222222222",
   receiving_account_id: "33333333-3333-4333-8333-333333333333",
   provider_tx_id: "FT1",
+  asset: "VND",
   amount: 150_000,
   booked_at: "2026-11-10T03:00:00Z",
   booked_date_only: false,
@@ -71,5 +77,47 @@ describe("UnmatchedTransactionCard (DOS/Give#148)", () => {
     expect(exactGroup).toContain("GVNET2345")
     expect(exactGroup).not.toContain("GVGRS2345")
     expect(otherGroup).toContain("GVGRS2345")
+  })
+})
+
+describe("UnmatchedTransactionCard: returned transfers (DOS/Give#72)", () => {
+  const candidate: ReturnCandidate = {
+    id: "44444444-4444-4444-8444-444444444444",
+    campaign_id: tx.campaign_id,
+    receiving_account_id: tx.receiving_account_id,
+    asset: "VND",
+    amount: 200_000,
+    booked_at: "2026-11-08T03:00:00Z",
+    booked_date_only: false,
+    counterparty_account_masked: "****9999",
+    is_refund: true,
+    purpose: "Hoàn tiền vì dự án dừng",
+    refund_reference_code: "GVAB12CD",
+  }
+
+  it("offers the link form with the candidates, a private reason and evidence", () => {
+    const html = render({ explainAction: action, returnAction: action, returnCandidates: [candidate] })
+    expect(html).toContain("Tiền chuyển đi bị ngân hàng trả lại? Ghi nhận khoản này")
+    expect(html).toContain('name="original_transaction_id"')
+    expect(html).toContain(`value="${candidate.id}"`)
+    expect(html).toContain("Hoàn tiền GVAB12CD")
+    expect(html).toContain('id="return-reason-11111111-1111-4111-8111-111111111111"')
+    expect(html).toContain('name="evidence"')
+    expect(html).toContain("Ghi nhận tiền bị trả lại</button>")
+    // The explanation form now points to the link form instead of "báo quản trị viên".
+    expect(html).toContain("ở mục &quot;Tiền chuyển đi bị ngân hàng trả lại?&quot; bên dưới")
+    expect(html).not.toContain("báo quản trị viên")
+  })
+
+  it("says why no outgoing transaction fits, without a form", () => {
+    const html = render({ returnAction: action, returnCandidates: [] })
+    expect(html).toContain("Không có khoản chuyển đi nào phù hợp.")
+    expect(html).toContain("nhắc người tổ chức giải trình trước")
+    expect(html).not.toContain('name="original_transaction_id"')
+  })
+
+  it("is left out on the organizer page, which passes no returnAction", () => {
+    const html = render({ returnCandidates: [candidate] })
+    expect(html).not.toContain("bị ngân hàng trả lại")
   })
 })

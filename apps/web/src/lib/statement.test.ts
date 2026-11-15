@@ -18,6 +18,7 @@ import {
   listPendingOutgoing,
   listRefundable,
   listStatement,
+  listStatementPairs,
   parseEvidencePath,
   parseStatementParams,
   publicEvidenceUrl,
@@ -25,6 +26,7 @@ import {
   refundOptionLabel,
   remainingAmount,
   reportSchema,
+  RETURNED_IN_LABEL,
   STATEMENT_PAGE_SIZE,
   statementHref,
   type MoneyTotals,
@@ -234,6 +236,83 @@ describe("public statement", () => {
     expect(counterpartyLabel({ ...row, ...unnamed, in_explanation: null })).toBe("Chưa khớp với lượt ủng hộ nào")
   })
 
+  it("labels money a bank returned from a transfer out, never by the sender (DOS/Give#72)", () => {
+    const row = { direction: "in" as const, recipient: null, explained: null, matched: false }
+    const unnamed = { donor_name: null, donor_anonymous: null }
+    expect(counterpartyLabel({ ...row, ...unnamed, return_of: "o1" })).toBe(RETURNED_IN_LABEL)
+    expect(RETURNED_IN_LABEL).toBe("Ngân hàng trả lại tiền chuyển đi")
+    // The outgoing row keeps its explained recipient.
+    expect(
+      counterpartyLabel({
+        ...unnamed,
+        direction: "out",
+        matched: false,
+        recipient: "Nhà sách B",
+        explained: true,
+        return_of: null,
+      })
+    ).toBe("Nhà sách B")
+  })
+
+  it("reads the other row of each returned transfer on the page from the public view", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: [
+          {
+            id: "o1",
+            direction: "out",
+            is_refund: true,
+            amount: "200000",
+            booked_at: "2026-11-08T03:00:00Z",
+          },
+          {
+            id: "i2",
+            direction: "in",
+            is_refund: null,
+            amount: 50000,
+            booked_at: "2026-11-09T00:00:00Z",
+          },
+        ],
+      }),
+      calls
+    )
+    const pairs = await listStatementPairs(db as never, CAMPAIGN, [
+      { id: "i1", return_of: "o1", returned_by: null },
+      { id: "o2", return_of: null, returned_by: "i2" },
+      { id: "x", return_of: null, returned_by: null },
+      // Its pair could not be read (not returned by the view): no entry.
+      { id: "i3", return_of: "o3", returned_by: null },
+    ])
+    expect(pairs.get("i1")).toEqual({
+      id: "o1",
+      direction: "out",
+      is_refund: true,
+      amount: 200_000,
+      booked_at: "2026-11-08T03:00:00Z",
+    })
+    expect(pairs.get("o2")?.amount).toBe(50_000)
+    expect(pairs.has("x")).toBe(false)
+    expect(pairs.has("i3")).toBe(false)
+    expect(calls[0].target).toBe("public_statement")
+    expect(op(calls[0], "select")).toEqual(["id, direction, is_refund, amount, booked_at"])
+    expect(calls[0].ops).toEqual(
+      expect.arrayContaining([
+        ["eq", "campaign_id", CAMPAIGN],
+        ["in", "id", ["o1", "i2", "o3"]],
+      ])
+    )
+  })
+
+  it("does not read pairs for a page without returned transfers", async () => {
+    const calls: Call[] = []
+    const pairs = await listStatementPairs(fakeDb(() => ({ data: [] }), calls) as never, CAMPAIGN, [
+      { id: "x", return_of: null, returned_by: null },
+    ])
+    expect(pairs.size).toBe(0)
+    expect(calls).toHaveLength(0)
+  })
+
   it("labels money out by the explained recipient only", () => {
     const row = { direction: "out" as const, matched: false, donor_name: null, donor_anonymous: null }
     expect(counterpartyLabel({ ...row, recipient: "Nhà sách B", explained: true })).toBe("Nhà sách B")
@@ -272,6 +351,8 @@ describe("public statement", () => {
     expect(columns).toEqual(expect.arrayContaining(["donor_name", "donor_anonymous", "counterparty_account_masked"]))
     // An explanation of money in shows its kind and time; its reason and evidence are not in the view.
     expect(columns).toEqual(expect.arrayContaining(["in_explanation", "in_explained_at"]))
+    // A returned transfer shows its pair and when it was recorded, never why (DOS/Give#72).
+    expect(columns).toEqual(expect.arrayContaining(["return_of", "returned_by", "returned_at"]))
     expect(columns.join(",")).not.toMatch(/reason|evidence/)
   })
 })
