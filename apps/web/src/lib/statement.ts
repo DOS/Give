@@ -645,6 +645,25 @@ export interface ReturnedBack {
   linked_at: string
 }
 
+/**
+ * A transfer out that finance linked as returned by the bank but that has no
+ * explanation (DOS/Give#194). give.link_returned_transfer refuses an
+ * unexplained original today (GIVE_ORIGINAL_NOT_EXPLAINED), so this is a
+ * guard: such a transfer is not money spent and is never offered to explain.
+ */
+export interface ReturnedUnexplained extends OutgoingTransaction {
+  /** Null when the link is there but the money that came back could not be read. */
+  returned: ReturnedBack | null
+}
+
+/** The organizer's outgoing transactions that have no explanation. */
+export interface UnexplainedOutgoing {
+  /** Still to explain: they count as unexplained. */
+  pending: OutgoingTransaction[]
+  /** Returned by the bank: shown with the marker, never offered to explain. */
+  returned: ReturnedUnexplained[]
+}
+
 export interface ExplainedTransaction extends OutgoingTransaction {
   disbursement: Disbursement
   /** Set when finance linked money a bank returned to this transfer. */
@@ -679,17 +698,43 @@ function toOutgoing<T extends OutgoingTransaction>(tx: T): T {
   return { ...tx, amount: num(tx.amount) }
 }
 
+type ReturnedBackRow = { linked_at: string; back: { amount: unknown; booked_at: string } | null }
+type ReturnedEmbed = ReturnedBackRow | ReturnedBackRow[] | null | undefined
+
+/**
+ * The link a bank return left on a transfer out (give.returned_transfers,
+ * DOS/Give#72), read under RLS as the organizer reads their campaign's
+ * transactions. Only the amount and day of the money that came back are read,
+ * never the link's private reason or evidence.
+ */
+const RETURNED_EMBED =
+  "returned:returned_transfers!original_transaction_id(linked_at, back:bank_transactions!bank_transaction_id(amount, booked_at))"
+
+/** Whether a return is linked, and the money that came back when it could be read. */
+function readReturned(embed: ReturnedEmbed): { linked: boolean; back: ReturnedBack | null } {
+  const link = Array.isArray(embed) ? embed[0] : embed
+  if (!link) return { linked: false, back: null }
+  return {
+    linked: true,
+    back: link.back
+      ? { amount: num(link.back.amount), booked_at: link.back.booked_at, linked_at: link.linked_at }
+      : null,
+  }
+}
+
 /**
  * Every unexplained outgoing transaction of a campaign, oldest first, so none
  * can hide behind a page limit while it counts publicly as unexplained. A
  * transfer finance paired as moving the money to the campaign's new account
- * (DOS/Give#84) is settled and cannot be explained, so it is left out.
+ * (DOS/Give#84) is settled and cannot be explained, so it is left out. A
+ * transfer the bank returned (DOS/Give#194) is split off: it is not spending
+ * to explain.
  */
-export async function listPendingOutgoing(db: Db, campaignId: string): Promise<OutgoingTransaction[]> {
+export async function listUnexplainedOutgoing(db: Db, campaignId: string): Promise<UnexplainedOutgoing> {
   const { data, error } = await db
     .from("bank_transactions")
     .select(
-      `${OUTGOING_COLUMNS}, disbursements(bank_transaction_id), own_out:own_account_transfers!out_transaction_id(id)`
+      `${OUTGOING_COLUMNS}, disbursements(bank_transaction_id), own_out:own_account_transfers!out_transaction_id(id), ${RETURNED_EMBED}`
     )
     .eq("campaign_id", campaignId)
     .eq("direction", "out")
@@ -697,15 +742,16 @@ export async function listPendingOutgoing(db: Db, campaignId: string): Promise<O
     .is("own_out", null)
     .order("booked_at", { ascending: true })
   if (error) throw error
-  return ((data ?? []) as unknown as (OutgoingTransaction & { disbursements?: unknown; own_out?: unknown })[]).map(
-    (row) => {
-      const { disbursements: _embed, own_out: _pair, ...tx } = row
-      return toOutgoing(tx)
-    }
-  )
+  type Row = OutgoingTransaction & { disbursements?: unknown; own_out?: unknown; returned?: ReturnedEmbed }
+  const result: UnexplainedOutgoing = { pending: [], returned: [] }
+  for (const { disbursements: _embed, own_out: _pair, returned, ...row } of (data ?? []) as unknown as Row[]) {
+    const tx = toOutgoing(row)
+    const link = readReturned(returned)
+    if (link.linked) result.returned.push({ ...tx, returned: link.back })
+    else result.pending.push(tx)
+  }
+  return result
 }
-
-type ReturnedBackRow = { linked_at: string; back: { amount: unknown; booked_at: string } | null }
 
 /**
  * Explained outgoing transactions with their explanation and evidence, newest
@@ -719,25 +765,17 @@ export async function listExplainedOutgoing(
 ): Promise<ExplainedTransaction[]> {
   const { data, error } = await db
     .from("bank_transactions")
-    .select(
-      `${OUTGOING_COLUMNS}, disbursement:disbursements!inner(${DISBURSEMENT_COLUMNS}), ` +
-        "returned:returned_transfers!original_transaction_id(linked_at, back:bank_transactions!bank_transaction_id(amount, booked_at))"
-    )
+    .select(`${OUTGOING_COLUMNS}, disbursement:disbursements!inner(${DISBURSEMENT_COLUMNS}), ${RETURNED_EMBED}`)
     .eq("campaign_id", campaignId)
     .eq("direction", "out")
     .order("booked_at", { ascending: false })
     .limit(limit)
   if (error) throw error
-  type Row = Omit<ExplainedTransaction, "returned"> & { returned?: ReturnedBackRow | ReturnedBackRow[] | null }
-  return ((data ?? []) as unknown as Row[]).map(({ returned, ...tx }) => {
-    const link = Array.isArray(returned) ? returned[0] : returned
-    return {
-      ...toOutgoing(tx),
-      returned: link?.back
-        ? { amount: num(link.back.amount), booked_at: link.back.booked_at, linked_at: link.linked_at }
-        : null,
-    }
-  })
+  type Row = Omit<ExplainedTransaction, "returned"> & { returned?: ReturnedEmbed }
+  return ((data ?? []) as unknown as Row[]).map(({ returned, ...tx }) => ({
+    ...toOutgoing(tx),
+    returned: readReturned(returned).back,
+  }))
 }
 
 /**
@@ -768,22 +806,46 @@ export function returnedOutgoingText(
     : `${back} và giữ ${formatVnd(fee)} phí: khoản chi này không chuyển được. Số tiền về không còn tính vào tổng đã chi; phí ${formatVnd(fee)} vẫn tính là đã chi.`
 }
 
-/** One outgoing transaction of the campaign with its explanation (null until explained), or null. */
+/**
+ * What the organizer reads on a transfer out that a bank returned before it
+ * was explained (DOS/Give#194): it never left the campaign, so it is not
+ * spending to explain. Unreachable while give.link_returned_transfer refuses
+ * an unexplained original; kept so the page never offers it to explain.
+ */
+export function returnedUnexplainedText(
+  tx: Pick<OutgoingTransaction, "amount">,
+  returned: ReturnedBack | null
+): string {
+  if (!returned) {
+    return "Bộ phận tài chính của Give đã ghi nhận ngân hàng trả lại khoản chuyển này, nên đây không phải khoản chi cần giải trình."
+  }
+  const fee = Math.max(0, tx.amount - returned.amount)
+  const kept = fee > 0 ? ` và giữ ${formatVnd(fee)} phí` : ""
+  return `Ngân hàng đã trả lại +${formatVnd(returned.amount)} ngày ${formatDate(returned.booked_at)}${kept}: khoản chuyển này không đi được, nên đây không phải khoản chi cần giải trình.`
+}
+
+/** An outgoing transaction with its explanation (null until explained) and whether a bank return is linked. */
+export type OutgoingWithState = OutgoingTransaction & { disbursement: Disbursement | null; returned: boolean }
+
+/** One outgoing transaction of the campaign with its explanation and return state, or null. */
 export async function getOutgoing(
   db: Db,
   campaignId: string,
   transactionId: string
-): Promise<(OutgoingTransaction & { disbursement: Disbursement | null }) | null> {
+): Promise<OutgoingWithState | null> {
   const { data, error } = await db
     .from("bank_transactions")
-    .select(`${OUTGOING_COLUMNS}, disbursement:disbursements(${DISBURSEMENT_COLUMNS})`)
+    .select(`${OUTGOING_COLUMNS}, disbursement:disbursements(${DISBURSEMENT_COLUMNS}), ${RETURNED_EMBED}`)
     .eq("id", transactionId)
     .eq("campaign_id", campaignId)
     .eq("direction", "out")
     .maybeSingle()
   if (error) throw error
-  const tx = data as unknown as (OutgoingTransaction & { disbursement: Disbursement | null }) | null
-  return tx ? toOutgoing(tx) : null
+  const row = data as unknown as
+    (OutgoingTransaction & { disbursement: Disbursement | null; returned?: ReturnedEmbed }) | null
+  if (!row) return null
+  const { returned, ...tx } = row
+  return { ...toOutgoing(tx), returned: readReturned(returned).linked }
 }
 
 const REFUNDABLE_COLUMNS = "id, kind, reference_code, public_name, is_anonymous, received_amount"
