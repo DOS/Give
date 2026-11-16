@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
+import type { ReactNode } from "react"
 
 import { StatusBadge, TypeBadge, VerificationBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
@@ -8,15 +9,18 @@ import { ButtonLink } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { Field } from "@/components/ui/Field"
+import { MachineId } from "@/components/ui/RefCode"
 import { requireSession } from "@/lib/auth/session"
 import {
   canStopReportedPaymentRequests,
   canSuspendReportedCampaign,
   listCampaignReportQueue,
   MODERATION_NOTE_MAX,
+  parseReportsPage,
   REPORT_ACTION_LABELS,
   REPORT_REASON_LABELS,
   REPORT_STATUS_LABELS,
+  reportsPageHref,
   RESOLVED_REPORTS_LIMIT,
   type CampaignReportActionTaken,
   type ReportedCampaign,
@@ -43,16 +47,28 @@ const ACTION_TONES: Record<CampaignReportActionTaken, BadgeTone> = {
 
 /**
  * Moderator queue for reported public campaigns (DOS/Give#98): unresolved
- * reports grouped by campaign (oldest waiting report first), and campaigns
- * whose reports were recently handled. Moderator/admin staff only; everyone
- * else gets a 404.
+ * reports grouped by campaign (campaigns with new `open` reports first, oldest
+ * first, then campaigns awaiting the organizer's reply; paginated), plus
+ * campaigns whose reports were recently handled. Moderator/admin staff only;
+ * everyone else gets a 404.
  */
-export default async function AdminReportsPage() {
-  const session = await requireSession("/admin/reports")
+export default async function AdminReportsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+} = {}) {
+  const params = searchParams ? await searchParams : {}
+  const requestedPage = parseReportsPage(params)
+  const session = await requireSession(reportsPageHref(requestedPage))
   const db = dbAs(session.accessToken)
   if (!(await isStaff(db, MODERATION_ROLES))) notFound()
 
-  const { unresolved, resolved } = await listCampaignReportQueue(db)
+  const { unresolved, totalUnresolvedCampaigns, page, totalPages, resolved } = await listCampaignReportQueue(
+    db,
+    requestedPage
+  )
+  if (requestedPage > totalPages) redirect(reportsPageHref(totalPages))
+
   const resolvedTotal = resolved.reduce((sum, item) => sum + item.reports.length, 0)
 
   return (
@@ -68,17 +84,41 @@ export default async function AdminReportsPage() {
         </p>
       }
     >
-      <AdminSection id="unresolved" title="Chờ xử lý" count={unresolved.length}>
+      <AdminSection id="unresolved" title="Chờ xử lý" count={totalUnresolvedCampaigns}>
         {unresolved.length === 0 ? (
           <EmptyState title="Không có báo cáo chiến dịch nào chờ xử lý.">
-            Chiến dịch bị người xem báo cáo sẽ hiện ở đây, báo cáo sớm nhất ở trên cùng.
+            Chiến dịch bị người xem báo cáo sẽ hiện ở đây, ưu tiên các báo cáo mới gửi sớm nhất ở trên cùng.
           </EmptyState>
         ) : (
-          <ItemList>
-            {unresolved.map((item) => (
-              <UnresolvedCampaignCard key={item.campaign_id} item={item} selfId={session.user.id} />
-            ))}
-          </ItemList>
+          <>
+            <ItemList>
+              {unresolved.map((item) => (
+                <UnresolvedCampaignCard key={item.campaign_id} item={item} selfId={session.user.id} />
+              ))}
+            </ItemList>
+            {totalPages > 1 && (
+              <nav
+                aria-label="Phân trang báo cáo chờ xử lý"
+                className="flex flex-wrap items-center justify-between gap-4"
+              >
+                <p className="text-sm text-muted">
+                  Trang {page} / {totalPages} ({totalUnresolvedCampaigns} chiến dịch)
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {page > 1 && (
+                    <ButtonLink href={reportsPageHref(page - 1)} variant="secondary">
+                      Trang trước
+                    </ButtonLink>
+                  )}
+                  {page < totalPages && (
+                    <ButtonLink href={reportsPageHref(page + 1)} variant="secondary">
+                      Trang sau
+                    </ButtonLink>
+                  )}
+                </div>
+              </nav>
+            )}
+          </>
         )}
       </AdminSection>
 
@@ -101,18 +141,32 @@ export default async function AdminReportsPage() {
   )
 }
 
-function CampaignHeading({ campaign, fallbackId }: { campaign: ReportedCampaign | null; fallbackId: string }) {
+function CampaignHeading({
+  campaign,
+  fallbackId,
+  extraBadges,
+}: {
+  campaign: ReportedCampaign | null
+  fallbackId: string
+  extraBadges?: ReactNode
+}) {
+  const hasBadges = Boolean(campaign || extraBadges)
   return (
     <div className="flex flex-wrap items-start justify-between gap-4">
       <div className="min-w-0 flex-1 basis-64">
-        {campaign && (
+        {hasBadges && (
           <div className="flex flex-wrap items-center gap-2">
-            <TypeBadge type={campaign.type} />
-            <StatusBadge status={campaign.status} />
-            {campaign.payments_stopped_at && <Badge tone="danger">Đã tạm dừng thanh toán</Badge>}
+            {campaign && (
+              <>
+                <TypeBadge type={campaign.type} />
+                <StatusBadge status={campaign.status} />
+                {campaign.payments_stopped_at && <Badge tone="danger">Đã tạm dừng thanh toán</Badge>}
+              </>
+            )}
+            {extraBadges}
           </div>
         )}
-        <h3 className="mt-2 text-h3 break-words">{campaign ? campaign.title : fallbackId}</h3>
+        <h3 className="mt-2 text-h3 break-words">{campaign ? campaign.title : <MachineId>{fallbackId}</MachineId>}</h3>
       </div>
       {campaign && (
         <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary" target="_blank">
@@ -198,7 +252,9 @@ function UnresolvedCampaignCard({ item, selfId }: { item: UnresolvedCampaignItem
 
       {campaign?.status === "suspended" && (
         <Callout tone="danger">
-          Chiến dịch này đã ở trạng thái tạm dừng{campaign.review_note ? `: ${campaign.review_note}` : "."}
+          <p className="max-w-[68ch] break-words whitespace-pre-line">
+            Chiến dịch này đã ở trạng thái tạm dừng{campaign.review_note ? `: ${campaign.review_note}` : "."}
+          </p>
         </Callout>
       )}
       {campaign?.payments_stopped_at && (
@@ -207,7 +263,9 @@ function UnresolvedCampaignCard({ item, selfId }: { item: UnresolvedCampaignItem
           title={`Đã tạm dừng yêu cầu thanh toán từ ${formatDateTime(campaign.payments_stopped_at)}.`}
         >
           {campaign.payments_stopped_note && (
-            <p className="whitespace-pre-line">Ghi chú công khai: {campaign.payments_stopped_note}</p>
+            <p className="max-w-[68ch] break-words whitespace-pre-line">
+              Ghi chú công khai: {campaign.payments_stopped_note}
+            </p>
           )}
         </Callout>
       )}
@@ -347,31 +405,17 @@ function ResolvedCampaignCard({ item }: { item: ResolvedCampaignItem }) {
   const action = latest.action_taken
   return (
     <ItemCard>
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1 basis-64">
-          <div className="flex flex-wrap items-center gap-2">
-            {campaign && (
-              <>
-                <TypeBadge type={campaign.type} />
-                <StatusBadge status={campaign.status} />
-              </>
-            )}
-            {action && <Badge tone={ACTION_TONES[action]}>{REPORT_ACTION_LABELS[action]}</Badge>}
-          </div>
-          <h3 className="mt-2 text-h3 break-words">{campaign ? campaign.title : item.campaign_id}</h3>
-        </div>
-        {campaign && (
-          <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary" target="_blank">
-            Xem chiến dịch<span className="sr-only"> (mở thẻ mới)</span>
-          </ButtonLink>
-        )}
-      </div>
+      <CampaignHeading
+        campaign={campaign}
+        fallbackId={item.campaign_id}
+        extraBadges={action ? <Badge tone={ACTION_TONES[action]}>{REPORT_ACTION_LABELS[action]}</Badge> : undefined}
+      />
       <Facts columns={2}>
         <Fact label="Xử lý gần nhất">{formatDateTime(latest.handled_at)}</Fact>
         <Fact label="Số báo cáo đã chốt (trong 50 gần nhất)">{reports.length}</Fact>
         {latest.resolution_note && (
           <Fact label="Ghi chú kiểm duyệt" wide>
-            <span className="whitespace-pre-line">{latest.resolution_note}</span>
+            <p className="max-w-[68ch] break-words whitespace-pre-line">{latest.resolution_note}</p>
           </Fact>
         )}
       </Facts>

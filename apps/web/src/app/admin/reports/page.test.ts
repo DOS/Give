@@ -2,16 +2,17 @@
 /**
  * Covers the `/admin/reports` moderator queue RSC (`AdminReportsPage`) and
  * `AdminLayout` navigation wiring (DOS/Give#98): session & role guards,
- * empty states, unresolved live/awaiting/succeeded-back/ended cards, button
- * hierarchy (`DESIGN.md` 6: at most one primary button per card), self-review
- * guard, resolved list, and `AdminNav` link visibility by role.
+ * empty states, open-first queue ordering, pagination & stale-page redirect,
+ * unresolved live/awaiting/succeeded-back/ended cards, button hierarchy
+ * (`DESIGN.md` 6: at most one primary button per card), self-review guard,
+ * resolved list, and `AdminNav` link visibility by role.
  */
 import { createElement } from "react"
 import { Window } from "happy-dom"
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { CampaignReport, ReportedCampaign } from "@/lib/campaign-reports"
+import { UNRESOLVED_CAMPAIGNS_PER_PAGE, type CampaignReport, type ReportedCampaign } from "@/lib/campaign-reports"
 import { MODERATION_ROLES } from "@/lib/evidence-moderation"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
@@ -36,6 +37,12 @@ const notFoundMock = vi.hoisted(() =>
   })
 )
 
+const redirectMock = vi.hoisted(() =>
+  vi.fn((url: string): never => {
+    throw new Error(`NEXT_REDIRECT:${url}`)
+  })
+)
+
 const requireSessionMock = vi.hoisted(() =>
   vi.fn(async (_next?: string) => {
     if (!state.session) throw new Error("NEXT_REDIRECT:/auth/login")
@@ -48,6 +55,7 @@ const dbAsMock = vi.hoisted(() => vi.fn((_token?: string) => fakeDb((call) => st
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("next/navigation", () => ({
   notFound: notFoundMock,
+  redirect: redirectMock,
   usePathname: () => "/admin/reports",
 }))
 vi.mock("@/lib/auth/session", () => ({
@@ -109,6 +117,7 @@ function parseDoc(html: string) {
 
 beforeEach(() => {
   notFoundMock.mockClear()
+  redirectMock.mockClear()
   requireSessionMock.mockClear()
   dbAsMock.mockClear()
   state.calls.length = 0
@@ -149,20 +158,9 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
     )
   })
 
-  it("renders live, succeeded-back, closed, awaiting-only and own-campaign cards with proper action hierarchy", async () => {
+  it("renders open-first ordering, live/closed/own/succeeded-back cards, proper action hierarchy and resolved summaries", async () => {
     const unresolvedRows: CampaignReport[] = [
-      reportRow("r-live-1", LIVE_ID, {
-        status: "awaiting_organizer",
-        action_taken: "asked_organizer",
-        resolution_note: "Đề nghị gửi giấy xác nhận bệnh viện.",
-        handled_at: "2026-11-16T03:00:00.000Z",
-      }),
-      reportRow("r-live-2", LIVE_ID, {
-        reason_code: "other",
-        details: "Báo cáo mới bổ sung.",
-        status: "open",
-        created_at: "2026-11-16T04:00:00.000Z",
-      }),
+      // BACK_ID has the earliest created_at (01:00) but is awaiting_organizer only -> sorted after open campaigns!
       reportRow("r-back", BACK_ID, {
         reason_code: "misuse_of_funds",
         details: null,
@@ -170,9 +168,29 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
         action_taken: "asked_organizer",
         resolution_note: "Đã hỏi lần 1.",
         handled_at: "2026-11-16T05:00:00.000Z",
+        created_at: "2026-11-16T01:00:00.000Z",
       }),
-      reportRow("r-closed", CLOSED_ID, { reason_code: "false_or_misleading" }),
-      reportRow("r-own", OWN_ID, { reason_code: "prohibited_or_harmful" }),
+      reportRow("r-live-1", LIVE_ID, {
+        status: "awaiting_organizer",
+        action_taken: "asked_organizer",
+        resolution_note: "Đề nghị gửi giấy xác nhận bệnh viện.",
+        handled_at: "2026-11-16T03:00:00.000Z",
+        created_at: "2026-11-16T01:30:00.000Z",
+      }),
+      reportRow("r-live-2", LIVE_ID, {
+        reason_code: "other",
+        details: "Báo cáo mới bổ sung.",
+        status: "open",
+        created_at: "2026-11-16T02:00:00.000Z",
+      }),
+      reportRow("r-closed", CLOSED_ID, {
+        reason_code: "false_or_misleading",
+        created_at: "2026-11-16T03:00:00.000Z",
+      }),
+      reportRow("r-own", OWN_ID, {
+        reason_code: "prohibited_or_harmful",
+        created_at: "2026-11-16T04:00:00.000Z",
+      }),
     ]
     const resolvedRows: CampaignReport[] = [
       reportRow("r-done", RESOLVED_ID, {
@@ -199,8 +217,13 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
     state.handler = (call) => {
       if (call.target === "rpc:is_admin") return { data: true }
       if (call.target === "campaign_reports") {
-        const statuses = op(call, "in")?.[1] as string[] | undefined
-        return { data: statuses?.includes("open") ? unresolvedRows : resolvedRows }
+        const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
+        if (!statusFilter?.includes("open")) return { data: resolvedRows }
+        const campaignFilter = call.ops.find(([n, col]) => n === "in" && col === "campaign_id")?.[2] as
+          string[] | undefined
+        return {
+          data: campaignFilter ? unresolvedRows.filter((r) => campaignFilter.includes(r.campaign_id)) : unresolvedRows,
+        }
       }
       if (call.target === "rpc:managed_campaigns") return { data: campaigns }
       return undefined
@@ -221,9 +244,22 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
     expect(liveCard.querySelector('textarea[name="public_note"]')).toBeNull()
     expect(liveCard.querySelectorAll(".btn-primary")).toHaveLength(1)
 
-    // 2. Succeeded back campaign with awaiting-only report (open_count === 0) and stopped payments:
-    // hides ask_organizer, shows stop_payment_requests with prefilled public_note.
-    const backCard = cards[1]
+    // 2. Closed give campaign (open report): neither suspend nor stop_payment_requests; explains why.
+    const closedCard = cards[1]
+    expect(closedCard.textContent).toContain("Chiến dịch Đã Đóng")
+    expect(closedCard.textContent).toContain("Chiến dịch đã kết thúc gây quỹ nên không còn tạm dừng được")
+    expect(closedCard.querySelector('input[name="action"][value="suspend"]')).toBeNull()
+    expect(closedCard.querySelector('input[name="action"][value="stop_payment_requests"]')).toBeNull()
+
+    // 3. Moderator's own campaign (open report): hides all forms and warns against self-review.
+    const ownCard = cards[2]
+    expect(ownCard.textContent).toContain("Chiến dịch Của Tôi")
+    expect(ownCard.textContent).toContain("Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý")
+    expect(ownCard.querySelectorAll("form")).toHaveLength(0)
+
+    // 4. Succeeded back campaign with awaiting-only report (open_count === 0) and stopped payments:
+    // sorted after open campaigns, hides ask_organizer, shows stop_payment_requests with prefilled public_note.
+    const backCard = cards[3]
     expect(backCard.textContent).toContain("Đèn bàn thủ công")
     expect(backCard.textContent).toContain("(không ghi chi tiết)")
     expect(backCard.querySelector('button[value="ask_organizer"]')).toBeNull()
@@ -232,25 +268,48 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
     expect(backCard.querySelector('textarea[name="public_note"]')?.textContent).toBe("Tạm dừng để xác minh.")
     expect(backCard.querySelectorAll(".btn-primary")).toHaveLength(0)
 
-    // 3. Closed give campaign: neither suspend nor stop_payment_requests; explains why.
-    const closedCard = cards[2]
-    expect(closedCard.textContent).toContain("Chiến dịch Đã Đóng")
-    expect(closedCard.textContent).toContain("Chiến dịch đã kết thúc gây quỹ nên không còn tạm dừng được")
-    expect(closedCard.querySelector('input[name="action"][value="suspend"]')).toBeNull()
-    expect(closedCard.querySelector('input[name="action"][value="stop_payment_requests"]')).toBeNull()
-
-    // 4. Moderator's own campaign: hides all forms and warns against self-review.
-    const ownCard = cards[3]
-    expect(ownCard.textContent).toContain("Chiến dịch Của Tôi")
-    expect(ownCard.textContent).toContain("Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý")
-    expect(ownCard.querySelectorAll("form")).toHaveLength(0)
-
     // Resolved section: read-only summary with decision badge and moderator note.
     const resolvedSection = doc.querySelector('section[aria-labelledby="resolved"]')!
     expect(resolvedSection.textContent).toContain("Chiến dịch Đã Xử Lý")
     expect(resolvedSection.textContent).toContain("Bác bỏ báo cáo")
     expect(resolvedSection.textContent).toContain("Chứng từ đầy đủ, không vi phạm.")
     expect(resolvedSection.querySelectorAll("form")).toHaveLength(0)
+  })
+
+  it("renders pagination controls across pages and redirects stale out-of-range ?page= links", async () => {
+    const total = UNRESOLVED_CAMPAIGNS_PER_PAGE + 3
+    const rows = Array.from({ length: total }, (_, i) => {
+      const cid = `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`
+      return reportRow(`r-${i}`, cid, { created_at: `2026-11-16T00:00:${String(i).padStart(2, "0")}.000Z` })
+    })
+    state.handler = (call) => {
+      if (call.target === "rpc:is_admin") return { data: true }
+      if (call.target === "campaign_reports") {
+        const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
+        if (!statusFilter?.includes("open")) return { data: [] }
+        const campaignFilter = call.ops.find(([n, col]) => n === "in" && col === "campaign_id")?.[2] as
+          string[] | undefined
+        return { data: campaignFilter ? rows.filter((r) => campaignFilter.includes(r.campaign_id)) : rows }
+      }
+      if (call.target === "rpc:managed_campaigns") return { data: [] }
+      return undefined
+    }
+
+    const page1Doc = parseDoc(renderToStaticMarkup(await AdminReportsPage()))
+    const nav1 = page1Doc.querySelector('nav[aria-label="Phân trang báo cáo chờ xử lý"]')!
+    expect(nav1.textContent).toContain(`Trang 1 / 2 (${total} chiến dịch)`)
+    expect(nav1.querySelector('a[href="/admin/reports?page=2"]')?.textContent).toContain("Trang sau")
+
+    const page2Doc = parseDoc(
+      renderToStaticMarkup(await AdminReportsPage({ searchParams: Promise.resolve({ page: "2" }) }))
+    )
+    const nav2 = page2Doc.querySelector('nav[aria-label="Phân trang báo cáo chờ xử lý"]')!
+    expect(nav2.textContent).toContain(`Trang 2 / 2 (${total} chiến dịch)`)
+    expect(nav2.querySelector('a[href="/admin/reports"]')?.textContent).toContain("Trang trước")
+
+    await expect(AdminReportsPage({ searchParams: Promise.resolve({ page: "5" }) })).rejects.toThrow(
+      "NEXT_REDIRECT:/admin/reports?page=2"
+    )
   })
 })
 

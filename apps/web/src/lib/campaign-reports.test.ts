@@ -3,64 +3,87 @@ import { describe, expect, it } from "vitest"
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
 import {
+  CAMPAIGNS_PER_REQUEST,
   canStopReportedPaymentRequests,
   canSuspendReportedCampaign,
   listCampaignReportQueue,
   moderateCampaignReportsSchema,
+  parseReportsPage,
   reportCampaignSchema,
+  reportsPageHref,
 } from "./campaign-reports"
 
 const C1 = "11111111-1111-4111-8111-111111111111"
 const C2 = "22222222-2222-4222-8222-222222222222"
 const C3 = "33333333-3333-4333-8333-333333333333"
+const C4 = "44444444-4444-4444-8444-444444444444"
 const ORG = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
 describe("listCampaignReportQueue", () => {
-  it("groups unresolved reports oldest-first and resolved newest-first, never selecting reporter_id or handled_by", async () => {
+  it("orders campaigns with open reports ahead of awaiting-only campaigns, loads complete report groups, and omits reporter_id/handled_by", async () => {
+    const allUnresolved = [
+      // C4 has the oldest awaiting report (07:00), but no open report -> placed AFTER C2 and C1!
+      {
+        id: "r0",
+        campaign_id: C4,
+        reason_code: "prohibited_or_harmful",
+        details: "Chờ phản hồi",
+        status: "awaiting_organizer",
+        action_taken: "asked_organizer",
+        resolution_note: "Đã hỏi.",
+        handled_at: "2026-11-15T07:30:00Z",
+        created_at: "2026-11-15T07:00:00Z",
+        updated_at: "2026-11-15T07:30:00Z",
+      },
+      {
+        id: "r1",
+        campaign_id: C1,
+        reason_code: "fraud_or_impersonation",
+        details: "Mạo danh bệnh viện",
+        status: "awaiting_organizer",
+        action_taken: "asked_organizer",
+        resolution_note: "Đề nghị gửi giấy xác nhận.",
+        handled_at: "2026-11-15T10:00:00Z",
+        created_at: "2026-11-15T08:00:00Z",
+        updated_at: "2026-11-15T10:00:00Z",
+      },
+      // C2 has the oldest open report (09:00) -> placed first!
+      {
+        id: "r2",
+        campaign_id: C2,
+        reason_code: "misuse_of_funds",
+        details: null,
+        status: "open",
+        action_taken: null,
+        resolution_note: null,
+        handled_at: null,
+        created_at: "2026-11-15T09:00:00Z",
+        updated_at: "2026-11-15T09:00:00Z",
+      },
+      // C1 gets a newer open report (01:00 next day) -> placed second, with BOTH r1 and r3 loaded!
+      {
+        id: "r3",
+        campaign_id: C1,
+        reason_code: "other",
+        details: "Thêm chi tiết",
+        status: "open",
+        action_taken: null,
+        resolution_note: null,
+        handled_at: null,
+        created_at: "2026-11-16T01:00:00Z",
+        updated_at: "2026-11-16T01:00:00Z",
+      },
+    ]
+
     const calls: Call[] = []
     const db = fakeDb((call) => {
       if (call.target === "campaign_reports") {
-        const statuses = op(call, "in")?.[1] as string[] | undefined
-        if (statuses?.includes("open")) {
+        const campaignFilter = call.ops.find(([n, col]) => n === "in" && col === "campaign_id")?.[2] as
+          string[] | undefined
+        const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
+        if (statusFilter?.includes("open")) {
           return {
-            data: [
-              {
-                id: "r1",
-                campaign_id: C1,
-                reason_code: "fraud_or_impersonation",
-                details: "Mạo danh bệnh viện",
-                status: "awaiting_organizer",
-                action_taken: "asked_organizer",
-                resolution_note: "Đề nghị gửi giấy xác nhận.",
-                handled_at: "2026-11-15T10:00:00Z",
-                created_at: "2026-11-15T08:00:00Z",
-                updated_at: "2026-11-15T10:00:00Z",
-              },
-              {
-                id: "r2",
-                campaign_id: C2,
-                reason_code: "misuse_of_funds",
-                details: null,
-                status: "open",
-                action_taken: null,
-                resolution_note: null,
-                handled_at: null,
-                created_at: "2026-11-15T09:00:00Z",
-                updated_at: "2026-11-15T09:00:00Z",
-              },
-              {
-                id: "r3",
-                campaign_id: C1,
-                reason_code: "other",
-                details: "Thêm chi tiết",
-                status: "open",
-                action_taken: null,
-                resolution_note: null,
-                handled_at: null,
-                created_at: "2026-11-16T01:00:00Z",
-                updated_at: "2026-11-16T01:00:00Z",
-              },
-            ],
+            data: campaignFilter ? allUnresolved.filter((r) => campaignFilter.includes(r.campaign_id)) : allUnresolved,
           }
         }
         return {
@@ -137,41 +160,133 @@ describe("listCampaignReportQueue", () => {
               payments_stopped_note: null,
               organizer: null,
             },
+            {
+              id: C4,
+              slug: "chien-dich-4",
+              type: "give",
+              status: "live",
+              title: "Chiến dịch 4",
+              organizer_id: ORG,
+              review_note: null,
+              payments_stopped_at: null,
+              payments_stopped_note: null,
+              organizer: null,
+            },
           ],
         }
       }
       return undefined
     }, calls)
 
-    const { unresolved, resolved } = await listCampaignReportQueue(db as never)
+    const queue = await listCampaignReportQueue(db as never)
 
     const reportReads = calls.filter((c) => c.target === "campaign_reports")
-    expect(reportReads).toHaveLength(2)
+    expect(reportReads).toHaveLength(3)
     for (const read of reportReads) {
       const cols = String(op(read, "select")?.[0] ?? "")
       expect(cols).not.toBe("*")
       expect(cols).not.toMatch(/reporter_id|handled_by/)
     }
 
-    const managedRead = calls.find((c) => c.target === "rpc:managed_campaigns")
-    expect(op(managedRead, "in")).toEqual(["id", [C1, C2, C3]])
-
-    expect(unresolved.map((u) => [u.campaign_id, u.open_count, u.awaiting_count, u.reports.map((r) => r.id)])).toEqual([
-      [C1, 1, 1, ["r1", "r3"]],
+    expect(queue.totalUnresolvedCampaigns).toBe(3)
+    expect(queue.page).toBe(1)
+    expect(queue.totalPages).toBe(1)
+    expect(
+      queue.unresolved.map((u) => [u.campaign_id, u.open_count, u.awaiting_count, u.reports.map((r) => r.id)])
+    ).toEqual([
       [C2, 1, 0, ["r2"]],
+      [C1, 1, 1, ["r1", "r3"]],
+      [C4, 0, 1, ["r0"]],
     ])
-    expect(unresolved[0].campaign?.title).toBe("Chiến dịch 1")
-    expect(resolved).toHaveLength(1)
-    expect(resolved[0].campaign_id).toBe(C3)
-    expect(resolved[0].reports.map((r) => r.id)).toEqual(["r4", "r5"])
-    expect(resolved[0].latest.id).toBe("r4")
+    expect(queue.resolved).toHaveLength(1)
+    expect(queue.resolved[0].campaign_id).toBe(C3)
+    expect(queue.resolved[0].reports.map((r) => r.id)).toEqual(["r4", "r5"])
+    expect(queue.resolved[0].latest.id).toBe("r4")
   })
 
-  it("skips managed_campaigns when there are no reports", async () => {
+  it("paginates unresolved campaigns without letting awaiting reports starve open ones, and chunks managed_campaigns", async () => {
+    // 105 awaiting-only campaigns followed by 1 newer open campaign -> open campaign lands on page 1!
+    const awaitingIds = Array.from({ length: 105 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`)
+    const freshOpenId = "99999999-9999-4999-8999-999999999999"
+    const allRows = [
+      ...awaitingIds.map((cid, i) => ({
+        id: `aw-${i}`,
+        campaign_id: cid,
+        reason_code: "other" as const,
+        details: "waiting",
+        status: "awaiting_organizer" as const,
+        action_taken: "asked_organizer" as const,
+        resolution_note: "q",
+        handled_at: "2026-11-15T01:00:00Z",
+        created_at: `2026-11-15T00:00:${String(i % 60).padStart(2, "0")}Z`,
+        updated_at: "2026-11-15T01:00:00Z",
+      })),
+      {
+        id: "open-fresh",
+        campaign_id: freshOpenId,
+        reason_code: "fraud_or_impersonation" as const,
+        details: "fresh",
+        status: "open" as const,
+        action_taken: null,
+        resolution_note: null,
+        handled_at: null,
+        created_at: "2026-11-16T12:00:00Z",
+        updated_at: "2026-11-16T12:00:00Z",
+      },
+    ]
+
+    const calls: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "campaign_reports") {
+        const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
+        if (!statusFilter?.includes("open")) return { data: [] }
+        const campaignFilter = call.ops.find(([n, col]) => n === "in" && col === "campaign_id")?.[2] as
+          string[] | undefined
+        return { data: campaignFilter ? allRows.filter((r) => campaignFilter.includes(r.campaign_id)) : allRows }
+      }
+      if (call.target === "rpc:managed_campaigns") return { data: [] }
+      return undefined
+    }, calls)
+
+    // Page 1 with pageSize 110 forces two chunks of managed_campaigns (100 + 6).
+    const p1 = await listCampaignReportQueue(db as never, 1, 110)
+    expect(p1.unresolved[0].campaign_id).toBe(freshOpenId)
+    expect(p1.unresolved[0].open_count).toBe(1)
+    const managedCalls = calls.filter((c) => c.target === "rpc:managed_campaigns")
+    expect(managedCalls).toHaveLength(2)
+    expect((op(managedCalls[0], "in")?.[1] as string[]).length).toBe(CAMPAIGNS_PER_REQUEST)
+    expect((op(managedCalls[1], "in")?.[1] as string[]).length).toBe(6)
+
+    // Standard pagination at pageSize 20: 106 campaigns -> 6 pages; page 6 holds the last 6 awaiting campaigns.
+    const p6 = await listCampaignReportQueue(db as never, 6, 20)
+    expect(p6.totalPages).toBe(6)
+    expect(p6.page).toBe(6)
+    expect(p6.unresolved).toHaveLength(6)
+  })
+
+  it("skips managed_campaigns and full-report fetches when there are no reports", async () => {
     const calls: Call[] = []
     const db = fakeDb((call) => (call.target === "campaign_reports" ? { data: [] } : undefined), calls)
-    expect(await listCampaignReportQueue(db as never)).toEqual({ unresolved: [], resolved: [] })
+    expect(await listCampaignReportQueue(db as never)).toEqual({
+      unresolved: [],
+      totalUnresolvedCampaigns: 0,
+      page: 1,
+      totalPages: 1,
+      resolved: [],
+    })
     expect(calls.map((c) => c.target)).toEqual(["campaign_reports", "campaign_reports"])
+  })
+})
+
+describe("parseReportsPage and reportsPageHref", () => {
+  it("normalizes page query parameters and omits ?page=1", () => {
+    expect(parseReportsPage({})).toBe(1)
+    expect(parseReportsPage({ page: "0" })).toBe(1)
+    expect(parseReportsPage({ page: "-3" })).toBe(1)
+    expect(parseReportsPage({ page: "abc" })).toBe(1)
+    expect(parseReportsPage({ page: ["3", "4"] })).toBe(3)
+    expect(reportsPageHref(1)).toBe("/admin/reports")
+    expect(reportsPageHref(2)).toBe("/admin/reports?page=2")
   })
 })
 

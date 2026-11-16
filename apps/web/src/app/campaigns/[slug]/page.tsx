@@ -98,7 +98,8 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   const isGive = campaign.type === "give"
   const donationsOpen = !preview && acceptsDonations(campaign)
   const pledgesOpen = !preview && acceptsPledges(campaign)
-  const [milestones, updates, organizer, account, session, totals, accountChanges, tiers, statementRows] =
+  const sessionPromise = getSession()
+  const [milestones, updates, organizer, account, session, ownCampaign, totals, accountChanges, tiers, statementRows] =
     await Promise.all([
       listMilestones(db, campaign.id),
       listPublishedUpdates(db, campaign.id),
@@ -110,7 +111,13 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             return null
           })
         : Promise.resolve(null),
-      getSession(),
+      sessionPromise,
+      // The organizer cannot back or report their own campaign (the database refuses both).
+      preview
+        ? Promise.resolve(false)
+        : sessionPromise.then((s) =>
+            s ? organizesCampaign(dbAs(s.accessToken), campaign.id, s.user.id).catch(() => false) : false
+          ),
       // Public views only: a preview has no public totals yet.
       preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
       // A failed read hides the notice rather than the page; the statement shows it too.
@@ -138,11 +145,6 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             }),
     ])
   const canDonate = donationsOpen && account !== null
-  // The organizer cannot back or report their own campaign (the database refuses both).
-  const ownCampaign =
-    !preview && session
-      ? await organizesCampaign(dbAs(session.accessToken), campaign.id, session.user.id).catch(() => false)
-      : false
   const ownProject = pledgesOpen && ownCampaign
   const canPledge = pledgesOpen && !ownProject
   const closedNote = preview
