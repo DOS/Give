@@ -1,3 +1,4 @@
+import { ContactText } from "@/components/ContactText"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { buttonClass } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
@@ -114,7 +115,9 @@ export function UnmatchedTransactionCard({
 
       {matchBlocked ? (
         <div className="border-t border-border pt-6">
-          <Callout tone="warning">{matchBlocked}</Callout>
+          <Callout tone="warning">
+            <ContactText text={matchBlocked} />
+          </Callout>
         </div>
       ) : (
         <ActionForm

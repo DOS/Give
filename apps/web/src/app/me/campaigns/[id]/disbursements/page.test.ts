@@ -119,6 +119,9 @@ describe("disbursements page: transfers a bank returned (DOS/Give#194)", () => {
     expect(row).toContain('role="note"')
     expect(row).toContain("Give sẽ xử lý khoản này")
     expect(row).toContain("Ngân hàng đã trả lại +289.000 ₫ ngày 10/11/2026 và giữ 11.000 ₫ phí ngân hàng")
+    expect(row).toContain(
+      'hãy liên hệ Give qua email <a href="mailto:help@dos.me" class="font-medium underline">help@dos.me</a>.'
+    )
     // No explain form, no overdue reminder.
     expect(row).not.toContain("Gửi giải trình")
     expect(row).not.toContain("<form")
@@ -203,6 +206,10 @@ describe("disbursements page: the organizer's own contributions (DOS/Give#199)",
     expect(html).not.toContain("lan@example.vn")
     expect(html).toContain(
       "Lượt ủng hộ của chính bạn (lượt bạn ủng hộ khi đăng nhập, hoặc khi không đăng nhập nhưng dùng email của bạn) không có trong danh sách"
+    )
+    // Give's contact address is a link where the hint sends the organizer to finance (DOS/Give#205).
+    expect(html).toContain(
+      'hãy báo bộ phận tài chính của Give qua email <a href="mailto:help@dos.me" class="font-medium underline">help@dos.me</a>, họ sẽ ghi nó'
     )
   })
 })

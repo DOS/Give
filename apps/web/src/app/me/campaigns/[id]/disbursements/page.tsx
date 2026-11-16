@@ -3,6 +3,7 @@ import Link from "next/link"
 import type { ReactNode } from "react"
 import { notFound } from "next/navigation"
 
+import { ContactEmailLink, ContactText } from "@/components/ContactText"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { Badge } from "@/components/ui/Badge"
 import { buttonClass } from "@/components/ui/Button"
@@ -130,7 +131,7 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
                   <li key={tx.id} className="min-w-0 card p-4 sm:p-6">
                     <TransactionHeader tx={tx} />
                     <ReturnedNotice title="Give sẽ xử lý khoản này">
-                      {returnedUnexplainedText(tx, tx.returned, tx.linked_at)}
+                      <ContactText text={returnedUnexplainedText(tx, tx.returned, tx.linked_at)} />
                     </ReturnedNotice>
                   </li>
                 ))}
@@ -326,8 +327,8 @@ function ExplainForm({
         <p id={`${p}-refund-hint`} className="hint">
           Chỉ chọn khi loại khoản chi là “Hoàn tiền cho người ủng hộ”. Khoản đó được tính vào “đã hoàn lại” thay vì “đã
           chi”. Lượt ủng hộ của chính bạn ({OWN_CONTRIBUTION_SCOPE}) không có trong danh sách. Nếu khoản chuyển này là
-          hoàn tiền cho lượt đó, đừng giải trình ở đây: hãy báo bộ phận tài chính của Give, họ sẽ ghi nó là hoàn tiền
-          cho lượt của bạn.
+          hoàn tiền cho lượt đó, đừng giải trình ở đây: hãy báo bộ phận tài chính của Give qua email{" "}
+          <ContactEmailLink />, họ sẽ ghi nó là hoàn tiền cho lượt của bạn.
         </p>
       </div>
       <EvidenceFields idPrefix={p} label="Ảnh chứng từ (hóa đơn, biên nhận, ảnh trao tặng)" />

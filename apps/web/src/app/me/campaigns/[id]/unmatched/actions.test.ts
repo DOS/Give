@@ -260,7 +260,7 @@ describe("matchTransaction", () => {
     const result = await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION }))
     expect(result).toEqual({
       ok: false,
-      message: `${happened} Hãy liên hệ đội ngũ Give để kiểm tra lại tài khoản nhận và chiến dịch.`,
+      message: `${happened} Hãy liên hệ đội ngũ Give qua email help@dos.me để kiểm tra lại tài khoản nhận và chiến dịch.`,
     })
     expect(result?.message).not.toContain("GIVE_")
     expect(state.serviceCalls).toHaveLength(1)

@@ -1,6 +1,7 @@
 import { z } from "zod"
 
 import type { CampaignType, Db } from "./campaigns"
+import { VIA_CONTACT_EMAIL } from "./contact"
 import { formatDate, formatVnd } from "./format"
 import { isUuid } from "./ids"
 import { isOwnContribution, type Viewer } from "./own-contribution"
@@ -825,8 +826,7 @@ export function returnedUnexplainedText(
 ): string {
   // The public totals still count such a transfer as unexplained until
   // finance settles it, so no total is promised here (only finance can fix it).
-  const tail =
-    "và sẽ xử lý khoản này trên sao kê công khai, nên bạn không giải trình nó như một khoản chi. Nếu sao kê vẫn tính khoản này là chưa giải trình, hãy liên hệ Give."
+  const tail = `và sẽ xử lý khoản này trên sao kê công khai, nên bạn không giải trình nó như một khoản chi. Nếu sao kê vẫn tính khoản này là chưa giải trình, hãy liên hệ Give ${VIA_CONTACT_EMAIL}.`
   if (!returned) {
     return `Ngày ${formatDate(linkedAt)}, bộ phận tài chính của Give đã ghi nhận khoản chuyển này bị ngân hàng trả lại ${tail}`
   }

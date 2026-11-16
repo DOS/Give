@@ -6,6 +6,8 @@ import { fakeDb, type Call, type Handler } from "@/test/fake-db"
 
 const USER = "11111111-1111-4111-8111-111111111111"
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
+/** Give's contact address as the page renders it (DOS/Give#205). */
+const LINK = '<a href="mailto:help@dos.me" class="font-medium underline">help@dos.me</a>'
 
 const state = vi.hoisted(() => ({
   handler: (() => undefined) as Handler,
@@ -103,7 +105,7 @@ describe("EditCampaignPage unusable bound account with recorded transactions (DO
     expect(html).toContain("đề nghị đổi tài khoản bên dưới")
     expect(html).toContain(">Đổi tài khoản nhận</h3>")
     expect(html).toContain("gửi yêu cầu đổi tài khoản trong mục")
-    expect(html).not.toContain("hãy liên hệ đội ngũ Give để được hỗ trợ")
+    expect(html).not.toContain("để được hỗ trợ")
   })
 
   it("hides early release and directs a draft give campaign to contact Give without offering a swap", async () => {
@@ -112,8 +114,8 @@ describe("EditCampaignPage unusable bound account with recorded transactions (DO
     expect(html).not.toContain(">Nhả tài khoản<")
     expect(html).not.toContain("Đổi tài khoản nhận")
     expect(html).not.toContain("đề nghị đổi tài khoản bên dưới")
-    expect(html).toContain("nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give.")
-    expect(html).toContain("hãy liên hệ đội ngũ Give để được hỗ trợ.")
+    expect(html).toContain(`nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give qua email ${LINK}.`)
+    expect(html).toContain(`hãy liên hệ đội ngũ Give qua email ${LINK} để được hỗ trợ.`)
   })
 
   it("hides early release and directs a sent-back back campaign to contact Give without offering a swap", async () => {
@@ -121,7 +123,7 @@ describe("EditCampaignPage unusable bound account with recorded transactions (DO
     const html = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
     expect(html).not.toContain(">Nhả tài khoản<")
     expect(html).not.toContain("Đổi tài khoản nhận")
-    expect(html).toContain("nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give.")
-    expect(html).toContain("hãy liên hệ đội ngũ Give để được hỗ trợ.")
+    expect(html).toContain(`nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give qua email ${LINK}.`)
+    expect(html).toContain(`hãy liên hệ đội ngũ Give qua email ${LINK} để được hỗ trợ.`)
   })
 })

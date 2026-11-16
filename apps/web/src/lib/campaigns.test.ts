@@ -455,7 +455,7 @@ describe("waitingAdvice", () => {
     const disabled = advise("account_not_verified")
     expect(disabled.note).toBeNull()
     expect(disabled.sendBackReason).toBe(
-      "Tài khoản nhận tiền đang gắn không còn dùng được. Hãy nhả tài khoản đang gắn, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại của bạn rồi gửi duyệt lại. Nếu không nhả được tài khoản, hãy liên hệ đội ngũ Give."
+      "Tài khoản nhận tiền đang gắn không còn dùng được. Hãy nhả tài khoản đang gắn, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại của bạn rồi gửi duyệt lại. Nếu không nhả được tài khoản, hãy liên hệ đội ngũ Give qua email help@dos.me."
     )
     expect(advise("name_mismatch").sendBackReason).toMatch(/^Tên chủ tài khoản nhận tiền đang gắn không còn trùng/)
     expect(advise("something_new").sendBackReason).toContain("Hãy nhả tài khoản đang gắn")

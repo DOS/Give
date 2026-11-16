@@ -1,3 +1,5 @@
+import { VIA_CONTACT_EMAIL } from "./contact"
+
 /**
  * Turns database errors into messages for people. The give schema raises
  * errors whose message starts with a stable GIVE_* code; anything else gets a
@@ -49,8 +51,7 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ACCOUNT_ALREADY_BOUND:
     "Tài khoản này đang gắn với một chiến dịch khác. Hãy nhả tài khoản khỏi chiến dịch đó trước: bản nháp, hay chiến dịch được yêu cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào, nhả được ngay; các chiến dịch khác đã gửi duyệt chỉ nhả được khi đã xong hẳn phần tiền.",
   GIVE_BINDING_NOT_FOUND: "Tài khoản này hiện không gắn với chiến dịch nào.",
-  GIVE_BINDING_NOT_RELEASABLE:
-    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, được yêu cầu chỉnh sửa, hoặc đã hủy, mà tài khoản chưa nhận giao dịch nào; hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày). Giao dịch đã vào tài khoản là lịch sử tiền của chiến dịch nên tài khoản không nhả sớm được. Nếu tài khoản không dùng được nữa khi chiến dịch từ thiện đang gây quỹ, tạm dừng hoặc cần chỉnh sửa, hãy gửi yêu cầu đổi tài khoản ở mục Tài khoản nhận tiền của chiến dịch; với dự án có quà tặng, hãy liên hệ đội ngũ Give.",
+  GIVE_BINDING_NOT_RELEASABLE: `Chưa nhả được tài khoản: chiến dịch phải là bản nháp, được yêu cầu chỉnh sửa, hoặc đã hủy, mà tài khoản chưa nhận giao dịch nào; hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày). Giao dịch đã vào tài khoản là lịch sử tiền của chiến dịch nên tài khoản không nhả sớm được. Nếu tài khoản không dùng được nữa khi chiến dịch từ thiện đang gây quỹ, tạm dừng hoặc cần chỉnh sửa, hãy gửi yêu cầu đổi tài khoản ở mục Tài khoản nhận tiền của chiến dịch; với dự án có quà tặng, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`,
   GIVE_BINDING_HAS_OPEN_TRANSACTIONS:
     "Chưa nhả được tài khoản: còn giao dịch của chiến dịch chưa được đối chiếu hoặc chưa được giải trình.",
   GIVE_CAMPAIGN_ALREADY_BOUND: "Chiến dịch này đã có tài khoản nhận khác.",
@@ -103,8 +104,7 @@ const GIVE_MESSAGES: Record<string, string> = {
   // (DOS/Give#119). Only give.match_transaction raises it today, and the match
   // action words it itself (#136); this wording covers any other path, such
   // as a statement upload or a parked event, if one raises it later (#148).
-  GIVE_ACCOUNT_OWNER_MISMATCH:
-    "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch này không xử lý được cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch.",
+  GIVE_ACCOUNT_OWNER_MISMATCH: `Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch này không xử lý được cho chiến dịch đó. Hãy báo đội ngũ Give ${VIA_CONTACT_EMAIL} để kiểm tra lại tài khoản nhận và chiến dịch.`,
   // Money a bank returned from a transfer out (DOS/Give#72): give.link_returned_transfer.
   GIVE_ORIGINAL_TRANSACTION_NOT_FOUND: "Không tìm thấy khoản chuyển đi gốc, hoặc bạn không có quyền với giao dịch đó.",
   GIVE_ORIGINAL_NOT_EXPLAINED:
@@ -211,8 +211,7 @@ export function dbErrorMessage(error: DbErrorLike | null | undefined, overrides:
  * organizer's own name.
  */
 export const SUBMIT_MESSAGES: Record<string, string> = {
-  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
-    "Chưa gửi duyệt được: chiến dịch cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác (tài khoản đã nhận giao dịch thì không nhả được: với chiến dịch từ thiện, gửi yêu cầu đổi tài khoản trong cùng mục; với dự án có quà tặng, liên hệ đội ngũ Give). Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại, và tài khoản nhận tiền phải đứng tên pháp lý mới.",
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: `Chưa gửi duyệt được: chiến dịch cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác (tài khoản đã nhận giao dịch thì không nhả được: với chiến dịch từ thiện, gửi yêu cầu đổi tài khoản trong cùng mục; với dự án có quà tặng, liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}). Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại, và tài khoản nhận tiền phải đứng tên pháp lý mới.`,
 }
 
 /** The same code worded for a moderator approving or opening a campaign. */
