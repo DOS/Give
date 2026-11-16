@@ -331,7 +331,7 @@ describe("matchTransaction: nobody matches money to their own contribution (DOS/
   it("words the database's GIVE_SELF_REVIEW for the organizer and for staff", async () => {
     state.serviceHandler = () => ({ error: { code: "42501", message: "GIVE_SELF_REVIEW" } })
     const organizer = await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION }))
-    expect(organizer?.message).toContain("nhân viên tài chính của Give khớp giúp")
+    expect(organizer?.message).toContain("nhân viên tài chính của Give (qua email help@dos.me) khớp giúp")
     expect(organizer?.message).not.toContain("tài khoản nhận")
     state.userId = STAFF
     state.responses["rpc:is_admin"] = { data: true }

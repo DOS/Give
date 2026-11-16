@@ -4,6 +4,7 @@ import Link from "next/link"
 import { Suspense } from "react"
 
 import { StatusBadge, TypeBadge } from "@/components/badges"
+import { ContactText } from "@/components/ContactText"
 import { ButtonLink } from "@/components/ui/Button"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { EmptyState } from "@/components/ui/EmptyState"
@@ -80,7 +81,9 @@ async function CampaignList({ session }: { session: Session }) {
                 Tạo ngày {formatDate(campaign.created_at)}
               </p>
               {campaign.status === "changes_requested" && campaign.review_note && (
-                <p className="mt-2 text-sm font-medium break-words text-warning">Cần sửa: {campaign.review_note}</p>
+                <p className="mt-2 text-sm font-medium break-words text-warning">
+                  Cần sửa: <ContactText text={campaign.review_note} />
+                </p>
               )}
             </div>
           </div>
