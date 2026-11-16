@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 
 import {
+  OWNER_MISMATCH_FOR_ORGANIZER,
   OWNER_MISMATCH_FOR_STAFF,
   type MatchCandidate,
   type ReturnCandidate,
@@ -48,6 +49,13 @@ describe("UnmatchedTransactionCard (DOS/Give#148)", () => {
     // The explanation form stays: whether it should refuse too is DOS/Give#137.
     expect(html).toContain("Không phải tiền ủng hộ? Giải trình khoản này")
     expect(html).toContain('name="kind"')
+  })
+
+  it("links Give's contact address in the organizer's notice (DOS/Give#205)", () => {
+    const html = render({ matchBlocked: OWNER_MISMATCH_FOR_ORGANIZER, explainAction: action })
+    expect(html).toContain(
+      'Hãy liên hệ đội ngũ Give qua email <a href="mailto:help@dos.me" class="font-medium underline">help@dos.me</a> để kiểm tra lại'
+    )
   })
 
   it("groups candidates by net amount due after partial refunds (DOS/Give#93)", () => {

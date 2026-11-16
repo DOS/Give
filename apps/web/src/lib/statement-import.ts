@@ -1,5 +1,6 @@
 import { bankByBin } from "./banks"
 import type { Db } from "./campaigns"
+import { VIA_CONTACT_EMAIL } from "./contact"
 import { dbErrorMessage } from "./errors"
 import { formatVnd } from "./format"
 import { isUuid } from "./ids"
@@ -96,8 +97,7 @@ const UPLOAD_MESSAGES: Record<string, string> = {
   STATEMENT_PARSER_UNKNOWN: "Định dạng sao kê này chưa được hỗ trợ.",
   STATEMENT_FORMAT_UNSUPPORTED: "Định dạng sao kê này chưa được hỗ trợ.",
   STATEMENT_PARSER_WRONG_BANK: "Định dạng sao kê này không phải của ngân hàng của tài khoản đã chọn.",
-  STATEMENT_PARSER_FLAGS_CHANGED:
-    "Định dạng sao kê này đã đổi cách ghi so với các lần tải trước của tài khoản. Hãy báo đội ngũ Give.",
+  STATEMENT_PARSER_FLAGS_CHANGED: `Định dạng sao kê này đã đổi cách ghi so với các lần tải trước của tài khoản. Hãy báo đội ngũ Give ${VIA_CONTACT_EMAIL}.`,
   STATEMENT_PARSE_FAILED:
     "Không đọc được file. Hãy tải đúng file sao kê xuất từ ngân hàng, đúng định dạng đã chọn, chưa chỉnh sửa.",
   STATEMENT_ROWS_INVALID:
@@ -108,15 +108,12 @@ const UPLOAD_MESSAGES: Record<string, string> = {
   STATEMENT_PERIOD_INVALID: "Khoảng thời gian của sao kê không hợp lệ (ngày kết thúc không được sau hôm nay).",
   STATEMENT_PERIOD_REQUIRED: "Sao kê của định dạng này cần ghi rõ từ ngày, đến ngày.",
   STATEMENT_BALANCE_INVALID: "Số dư ghi trên sao kê không hợp lệ.",
-  GIVE_INBOUND_EVENT_DISMISSED:
-    "Đội tài chính đã bỏ qua file này (hoặc một phần của nó), nên Give không nhập nữa. Hãy liên hệ đội tài chính nếu cần nhập lại.",
+  GIVE_INBOUND_EVENT_DISMISSED: `Đội tài chính đã bỏ qua file này (hoặc một phần của nó), nên Give không nhập nữa. Nếu cần nhập lại, hãy liên hệ đội tài chính của Give ${VIA_CONTACT_EMAIL}.`,
   STATEMENT_PART_PREVIOUS_FAILED: "Phần trước của file không nhập được, nên phần này cũng không được nhập.",
-  STATEMENT_TOO_LARGE:
-    "Sao kê có một ngày nhiều giao dịch quá mức Give nhập được trong một lần. Hãy liên hệ đội tài chính của Give.",
+  STATEMENT_TOO_LARGE: `Sao kê có một ngày nhiều giao dịch quá mức Give nhập được trong một lần. Hãy liên hệ đội tài chính của Give ${VIA_CONTACT_EMAIL}.`,
   GIVE_IMPORT_CHANNEL_NOT_SUPPORTED: "Tài khoản này không nhận tiền qua sao kê tải lên.",
   GIVE_IMPORT_PARSER_INVALID: "Định dạng sao kê này chưa được hỗ trợ.",
-  GIVE_IMPORT_PARSER_FLAGS_CHANGED:
-    "Định dạng sao kê này đã đổi cách ghi so với các lần tải trước của tài khoản. Hãy báo đội ngũ Give.",
+  GIVE_IMPORT_PARSER_FLAGS_CHANGED: `Định dạng sao kê này đã đổi cách ghi so với các lần tải trước của tài khoản. Hãy báo đội ngũ Give ${VIA_CONTACT_EMAIL}.`,
   GIVE_IMPORT_PERIOD_INVALID: "Khoảng thời gian của sao kê không hợp lệ (ngày kết thúc không được sau hôm nay).",
   GIVE_IMPORT_PERIOD_REQUIRED: "Sao kê của định dạng này cần ghi rõ từ ngày, đến ngày.",
   GIVE_IMPORT_ROWS_INVALID:

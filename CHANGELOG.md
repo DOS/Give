@@ -305,6 +305,13 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Platform
 
+- Contact: Give staff are reached at `help@dos.me` (DOS.Me's public support
+  address), kept in one constant (`apps/web/src/lib/contact.ts`). The site
+  footer shows "Liên hệ: help@dos.me" under the brand line, and every
+  organizer-facing message that asks the reader to contact Give (refusals,
+  upload errors, account and status notices, the refund hint) names the
+  address as a `mailto:` link. Staff-facing messages still point at another
+  staff member (#205 / #215).
 - Admin page to grant and revoke Give staff roles (#43).
 - Auth: the session ends only on a dead refresh token; the refresh call is
   bounded (#51).

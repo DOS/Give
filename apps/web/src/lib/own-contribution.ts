@@ -1,3 +1,5 @@
+import { VIA_CONTACT_EMAIL } from "./contact"
+
 /**
  * Nobody settles money to their own contribution (GIVE_SELF_REVIEW,
  * DOS/Give#199). A contribution is the viewer's own when they gave it signed
@@ -46,7 +48,7 @@ export const OWN_CONTRIBUTION_SCOPE = "lượt bạn ủng hộ khi đăng nhậ
  */
 export const OWN_CONTRIBUTION_MESSAGES = {
   /** The organizer matching on /me/campaigns/[id]/unmatched. */
-  matchAsOrganizer: `Bạn không khớp được tiền với lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Khoản tiền đó tự khớp khi nội dung chuyển khoản có đúng mã ủng hộ; nếu không, hãy nhờ nhân viên tài chính của Give khớp giúp.`,
+  matchAsOrganizer: `Bạn không khớp được tiền với lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Khoản tiền đó tự khớp khi nội dung chuyển khoản có đúng mã ủng hộ; nếu không, hãy nhờ nhân viên tài chính của Give (${VIA_CONTACT_EMAIL}) khớp giúp.`,
   /** Finance/admin staff matching on /admin/unmatched. */
   matchAsStaff: `Bạn không khớp được tiền với lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Nhờ một nhân viên tài chính khác khớp khoản này.`,
   /** An admin correcting an explanation on /admin/unmatched, when the chosen contribution is theirs. */
@@ -55,7 +57,7 @@ export const OWN_CONTRIBUTION_MESSAGES = {
    * The organizer explaining a refund on /me/campaigns/[id]/disbursements.
    * Finance records it on /admin/refunds (DOS/Give#203).
    */
-  refund: `Bạn không ghi được khoản hoàn tiền cho lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Đừng giải trình khoản chuyển này ở đây: hãy báo bộ phận tài chính của Give, họ sẽ ghi nó là hoàn tiền cho lượt của bạn. Trong lúc chờ, khoản chuyển vẫn ở mục “Chưa giải trình”.`,
+  refund: `Bạn không ghi được khoản hoàn tiền cho lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Đừng giải trình khoản chuyển này ở đây: hãy báo bộ phận tài chính của Give ${VIA_CONTACT_EMAIL}, họ sẽ ghi nó là hoàn tiền cho lượt của bạn. Trong lúc chờ, khoản chuyển vẫn ở mục “Chưa giải trình”.`,
   /** Finance/admin staff recording a refund on /admin/refunds/[id] (DOS/Give#203). */
   refundAsStaff: `Bạn không ghi được khoản hoàn tiền cho lượt ủng hộ của chính mình (${OWN_CONTRIBUTION_SCOPE}). Nhờ một nhân viên tài chính khác ghi khoản này.`,
   /** Finance/admin staff linking a returned refund on /admin/unmatched. */

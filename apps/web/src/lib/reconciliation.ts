@@ -1,4 +1,5 @@
 import type { Db } from "./campaigns"
+import { VIA_CONTACT_EMAIL } from "./contact"
 import { formatVnd, toVietnamLocalInput } from "./format"
 import { isOwnContribution, type Viewer } from "./own-contribution"
 
@@ -232,8 +233,7 @@ export function accountOwnerMismatch(
 }
 
 /** GIVE_ACCOUNT_OWNER_MISMATCH for the campaign's organizer (DOS/Give#136): only an admin data repair clears it. */
-export const OWNER_MISMATCH_FOR_ORGANIZER =
-  "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy liên hệ đội ngũ Give để kiểm tra lại tài khoản nhận và chiến dịch."
+export const OWNER_MISMATCH_FOR_ORGANIZER = `Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL} để kiểm tra lại tài khoản nhận và chiến dịch.`
 
 /** The same for finance staff, who are the Give team: it goes to an admin. */
 export const OWNER_MISMATCH_FOR_STAFF =

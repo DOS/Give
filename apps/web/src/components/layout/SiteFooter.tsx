@@ -1,6 +1,11 @@
 import Link from "next/link"
 
 import { discoveryHref } from "@/lib/campaigns"
+import { GIVE_CONTACT_EMAIL, GIVE_CONTACT_HREF } from "@/lib/contact"
+
+const LINK_ROW = "relative flex min-h-9 w-fit items-center"
+const LINK =
+  "inline-flex min-h-7 items-center text-muted transition-colors duration-150 before:absolute before:inset-0 before:content-[''] hover:text-fg hover:underline"
 
 const SECTIONS: { title: string; links: { href: string; label: string }[] }[] = [
   {
@@ -32,7 +37,8 @@ const SECTIONS: { title: string; links: { href: string; label: string }[] }[] = 
 /**
  * Site footer (DESIGN.md 7): the sitemap of pages that exist today, 4
  * columns from 1024px and 2 below, then the bottom line in Small. About,
- * help and legal pages join it when they are written.
+ * help and legal pages join it when they are written. Under the brand line,
+ * "Liên hệ" is the one way to reach Give staff (DOS/Give#205).
  *
  * Each link is a 28px box centred in its 36px row, and the whole row is its
  * hit area (`before`, on the list item), so one-line links sit where they
@@ -49,17 +55,19 @@ export function SiteFooter() {
           <p className="mt-2 max-w-[32ch] text-muted">
             Give không giữ tiền. Mọi khoản đóng góp đi thẳng vào tài khoản của chiến dịch.
           </p>
+          <p className={`mt-1 ${LINK_ROW}`}>
+            <a href={GIVE_CONTACT_HREF} className={LINK}>
+              Liên hệ: {GIVE_CONTACT_EMAIL}
+            </a>
+          </p>
         </div>
         {SECTIONS.map((section) => (
           <nav key={section.title} aria-label={section.title} className="min-w-0">
             <h2 className="text-sm font-semibold text-fg">{section.title}</h2>
             <ul className="mt-1">
               {section.links.map((link) => (
-                <li key={link.href} className="relative flex min-h-9 w-fit items-center">
-                  <Link
-                    href={link.href}
-                    className="inline-flex min-h-7 items-center text-muted transition-colors duration-150 before:absolute before:inset-0 before:content-[''] hover:text-fg hover:underline"
-                  >
+                <li key={link.href} className={LINK_ROW}>
+                  <Link href={link.href} className={LINK}>
                     {link.label}
                   </Link>
                 </li>

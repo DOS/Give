@@ -5,6 +5,7 @@ import { notFound } from "next/navigation"
 import type { ReactNode } from "react"
 
 import { AccountStatusBadge, StatusBadge, TypeBadge } from "@/components/badges"
+import { ContactEmailLink, ContactText } from "@/components/ContactText"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Callout, type CalloutTone } from "@/components/ui/Callout"
@@ -35,6 +36,7 @@ import {
   listMilestones,
   organizerCanCancel,
 } from "@/lib/campaigns"
+import { VIA_CONTACT_EMAIL } from "@/lib/contact"
 import { formatDate, formatDateTime, formatVnd, toVietnamLocalInput } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { privateCoverUrl } from "@/lib/cover-urls"
@@ -641,7 +643,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                       !canAskSwap(campaign.status, campaign.type, accounts.boundHasTransactions) ? (
                         <>
                           Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: hãy liên hệ
-                          đội ngũ Give để được hỗ trợ.
+                          đội ngũ Give qua email <ContactEmailLink /> để được hỗ trợ.
                         </>
                       ) : (
                         <>
@@ -777,9 +779,13 @@ function ReceivingAccountSection({
           {boundUnusable && (
             <Callout tone="warning">
               Tài khoản đang gắn tạm không dùng được: {boundUnusable} Chiến dịch không nhận được tiền qua tài khoản này.
-              {type === "back" && (status === "live" || status === "suspended")
-                ? " Dự án có quà tặng chưa đổi được tài khoản khi đang gây quỹ hoặc tạm dừng: hãy liên hệ đội ngũ Give."
-                : ""}
+              {type === "back" && (status === "live" || status === "suspended") && (
+                <>
+                  {" "}
+                  Dự án có quà tặng chưa đổi được tài khoản khi đang gây quỹ hoặc tạm dừng: hãy liên hệ đội ngũ Give qua
+                  email <ContactEmailLink />.
+                </>
+              )}
             </Callout>
           )}
           {releasable ? (
@@ -795,11 +801,15 @@ function ReceivingAccountSection({
             </ActionForm>
           ) : (
             <p className="text-sm text-muted">
-              {boundHasTransactions && isEditableStatus(status)
-                ? canAskSwap(status, type, boundHasTransactions)
-                  ? "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy đề nghị đổi tài khoản bên dưới."
-                  : "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give."
-                : "Khi chiến dịch đang chờ duyệt, đã duyệt hoặc đang chạy, tài khoản không nhả được; tài khoản được nhả khi chiến dịch đã xong hẳn phần tiền."}
+              <ContactText
+                text={
+                  boundHasTransactions && isEditableStatus(status)
+                    ? canAskSwap(status, type, boundHasTransactions)
+                      ? "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy đề nghị đổi tài khoản bên dưới."
+                      : `Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
+                    : "Khi chiến dịch đang chờ duyệt, đã duyệt hoặc đang chạy, tài khoản không nhả được; tài khoản được nhả khi chiến dịch đã xong hẳn phần tiền."
+                }
+              />
             </p>
           )}
           {canAskSwap(status, type, boundHasTransactions) && (
@@ -966,8 +976,8 @@ function StatusNotice({
     : ended
       ? "Đã duyệt, nhưng chiến dịch đã quá ngày kết thúc mà chưa mở được vì không có tài khoản nhận tiền dùng được. Kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn sửa ngày (và đổi tài khoản nếu được), hoặc bạn có thể hủy chiến dịch."
       : accountBlock === "no_account"
-        ? "Đã duyệt, nhưng chiến dịch chưa mở được vì chưa gắn tài khoản nhận tiền. Gắn một tài khoản đã xác minh ở mục Tài khoản nhận tiền bên dưới; chiến dịch tự mở khi tới ngày bắt đầu. Nếu không gắn được, hãy liên hệ đội ngũ Give."
-        : "Đã duyệt, nhưng chiến dịch chưa mở được vì tài khoản nhận tiền đang gắn không dùng được. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn đổi tài khoản. Cần hỗ trợ, hãy liên hệ đội ngũ Give."
+        ? `Đã duyệt, nhưng chiến dịch chưa mở được vì chưa gắn tài khoản nhận tiền. Gắn một tài khoản đã xác minh ở mục Tài khoản nhận tiền bên dưới; chiến dịch tự mở khi tới ngày bắt đầu. Nếu không gắn được, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
+        : `Đã duyệt, nhưng chiến dịch chưa mở được vì tài khoản nhận tiền đang gắn không dùng được. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn đổi tài khoản. Cần hỗ trợ, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
   const notices: Record<string, { tone: CalloutTone; text: string }> = {
     draft: { tone: "neutral", text: "Bản nháp: chỉ bạn thấy. Hoàn thiện nội dung rồi gửi duyệt." },
     in_review: { tone: "warning", text: "Đang chờ kiểm duyệt. Nội dung tạm khóa." },
@@ -989,7 +999,7 @@ function StatusNotice({
   if (!notice) return null
   return (
     <Callout tone={notice.tone} className="break-words">
-      {notice.text}
+      <ContactText text={notice.text} />
     </Callout>
   )
 }

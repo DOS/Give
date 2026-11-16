@@ -7,6 +7,7 @@ import {
 } from "./account-swaps"
 import type { CampaignStatus, CampaignType, Db, Organizer } from "./campaigns"
 import { getOrganizer, isEditableStatus } from "./campaigns"
+import { VIA_CONTACT_EMAIL } from "./contact"
 import {
   accountUnusableReason,
   activeBinding,
@@ -45,7 +46,7 @@ export const SUBMIT_NO_ACCOUNT =
  */
 export function submitUnusableAccount(reason: string, boundHasTransactions = false, canSwap = true): string {
   if (boundHasTransactions && !canSwap) {
-    return `Chưa gửi duyệt được: tài khoản nhận tiền đang gắn không dùng được. ${reason} Tài khoản này đã nhận giao dịch nên không nhả được; hãy liên hệ đội ngũ Give để được hỗ trợ.`
+    return `Chưa gửi duyệt được: tài khoản nhận tiền đang gắn không dùng được. ${reason} Tài khoản này đã nhận giao dịch nên không nhả được; hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL} để được hỗ trợ.`
   }
   return boundHasTransactions
     ? `Chưa gửi duyệt được: tài khoản nhận tiền đang gắn không dùng được. ${reason} Tài khoản này đã nhận giao dịch nên không nhả được; hãy gửi yêu cầu đổi tài khoản trong mục Tài khoản nhận tiền của chiến dịch để bộ phận tài chính duyệt.`

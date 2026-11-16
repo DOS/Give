@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 
+import { VIA_CONTACT_EMAIL } from "./contact"
+
 /**
  * Campaign data layer over the shared Supabase `give` schema (DDL lives in
  * DOS-Me `supabase/migrations/20261031130000_give_schema_foundation.sql`).
@@ -722,7 +724,8 @@ export function waitingAdvice(
       "Tài khoản đang gắn đã nhận giao dịch nên không nhả được: chiến dịch chỉ gửi duyệt lại được khi bộ phận tài chính mở lại tài khoản đó."
     )
   }
-  if (accountStep?.startsWith("nhả")) parts.push("Nếu không nhả được tài khoản, hãy liên hệ đội ngũ Give.")
+  if (accountStep?.startsWith("nhả"))
+    parts.push(`Nếu không nhả được tài khoản, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`)
   if (ended) parts.push("Nếu không còn cần gây quỹ, hãy hủy chiến dịch.")
   return { sendBackReason: parts.join(" "), note: notes.length > 0 ? notes.join(" ") : null }
 }

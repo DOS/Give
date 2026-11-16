@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { startTransition, useActionState, useState } from "react"
 
+import { ContactText } from "@/components/ContactText"
 import { buttonClass } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
 
@@ -114,7 +115,9 @@ export function UploadForm({
       ) : (
         state?.message && (
           <div role={state.ok ? "status" : "alert"} className={state.ok ? "text-primary" : "text-danger"}>
-            <p>{state.message}</p>
+            <p>
+              <ContactText text={state.message} />
+            </p>
             {state.batchId && (
               <Link href={`/me/statements/${state.batchId}`} className="inline-flex min-h-11 items-center link">
                 Xem từng dòng của sao kê →

@@ -660,7 +660,7 @@ describe("organizer reads", () => {
     const back = { amount: 289_000, booked_at: "2026-11-10T03:00:00Z", linked_at: "2026-11-12T03:00:00Z" }
     const fee = vnd(returnedUnexplainedText({ amount: 300_000 }, back, back.linked_at))
     expect(fee).toBe(
-      "Ngân hàng đã trả lại +289.000 ₫ ngày 10/11/2026 và giữ 11.000 ₫ phí ngân hàng. Bộ phận tài chính của Give đã ghi nhận và sẽ xử lý khoản này trên sao kê công khai, nên bạn không giải trình nó như một khoản chi. Nếu sao kê vẫn tính khoản này là chưa giải trình, hãy liên hệ Give."
+      "Ngân hàng đã trả lại +289.000 ₫ ngày 10/11/2026 và giữ 11.000 ₫ phí ngân hàng. Bộ phận tài chính của Give đã ghi nhận và sẽ xử lý khoản này trên sao kê công khai, nên bạn không giải trình nó như một khoản chi. Nếu sao kê vẫn tính khoản này là chưa giải trình, hãy liên hệ Give qua email help@dos.me."
     )
     // The public totals still count it until finance settles it: no "not spent" claim.
     expect(fee).not.toMatch(/không (còn )?tính vào tổng|không phải khoản chi/)
