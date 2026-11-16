@@ -451,7 +451,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 <h2 id="milestones-heading" className="text-h2">
                   Các mốc mục tiêu
                 </h2>
-                <ol className="mt-4">
+                <ol className="mt-6">
                   {milestones.map((milestone) => (
                     <li key={milestone.id} className="border-b border-border py-3">
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -475,7 +475,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 Cập nhật
               </h2>
               {updates.length > 0 ? (
-                <ol className="mt-4 space-y-4">
+                <ol className="mt-6 space-y-4">
                   {updates.map((update) => (
                     <li key={update.id} className="card p-4 sm:p-6">
                       <p className="text-sm text-muted">{formatDate(update.published_at)}</p>
@@ -487,7 +487,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                   ))}
                 </ol>
               ) : (
-                <p className="mt-2 text-muted">Chưa có cập nhật nào.</p>
+                <p className="mt-6 text-muted">Chưa có cập nhật nào.</p>
               )}
             </section>
           </div>
