@@ -13,6 +13,18 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Report a campaign and moderator queue: public `/campaigns/[slug]` pages offer
+  a `"Báo cáo chiến dịch"` disclosure (signed-in callers submit one of six
+  structured reasons and optional details, required for `"Lý do khác"`, after
+  token and public-status verification; signed-out visitors get a return-path
+  login prompt; hidden on previews and the organizer's own campaign).
+  Moderators and admins gain the `"Báo cáo"` tab at `/admin/reports`
+  (`AdminLayout`), grouping unresolved reports oldest-first by campaign with
+  `ask_organizer` (`moderator_inquiry` in-app notice carrying only the
+  moderator's question and a `mailto:` contact link on `/me/notices`),
+  `dismiss`, `suspend` (approved/live campaigns) and `stop_payment_requests`
+  (succeeded `back` projects), refusing self-review, plus recently resolved
+  summaries and full error mappings in `errors.ts` (#98).
 - Pledge flow tests cover the `/campaigns/[slug]/pledge` RSC's session
   routing, reward and open-pledge defaults, reference-code callout and form
   visibility, plus `PledgeForm`'s sold-out rewards, amount and minimum-hint
@@ -417,6 +429,13 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   is matched, never explained, corrected or linked as a returned transfer
   again (#196 / DOS/DOS.Me#1692, on Beta). Migration
   `20261117090000_give_return_inbound_to_unmatched`.
+- Campaign reports and moderator queue: `give.campaign_reports` (RLS for
+  moderator/admin with column grants omitting `reporter_id` and `handled_by`),
+  `give.report_campaign` (20-per-24h serialized limit, idempotent while
+  unresolved), `give.moderate_campaign_reports` (`dismiss`, `ask_organizer`,
+  `suspend` mirroring `give.transition_campaign`, and `stop_payment_requests`),
+  and the `moderator_inquiry` notice kind (#207 / DOS/DOS.Me#1722, on Beta).
+  Migration `20261120090000_give_campaign_reports`.
 
 ### On Production (database only)
 
@@ -447,6 +466,11 @@ has no Production deploy. Behaviour to know:
   must reach DOS.Me `main` (Production) before Give `main` ships #196: the
   app reads `give.inbound_explanation_returns` in every unmatched list and in
   each match, explain, correct and link action, so those fail without it.
+- Migration `20261120090000_give_campaign_reports.sql` (#207) must reach
+  DOS.Me `main` (Production) before Give `main` ships #98: `/campaigns/[slug]`
+  calls `give.report_campaign`, `/admin/reports` reads `give.campaign_reports`
+  and calls `give.moderate_campaign_reports`, and `give.notices` checks the
+  `moderator_inquiry` kind.
 - The test-only changes #135 / DOS/DOS.Me#1663 and #144 / DOS/DOS.Me#1664 are
   on DOS.Me `dev` and are to be promoted together (#155). Until then DOS.Me
   `main` carries `give_staff_role_revoke_lock.test.sql` with the known test

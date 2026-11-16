@@ -60,13 +60,21 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_AMOUNT_BELOW_MINIMUM: "Số tiền thấp hơn mức ủng hộ tối thiểu của chiến dịch.",
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau.",
   GIVE_RATE_LIMITED: "Có nhiều lượt ủng hộ trong thời gian ngắn. Hãy thử lại sau ít phút.",
-  // Evidence reports and moderation (DOS/Give#58).
+  // Evidence and campaign reports and moderation (DOS/Give#58, #98).
   GIVE_EVIDENCE_NOT_FOUND: "Không tìm thấy ảnh chứng từ này, hoặc ảnh đã bị ẩn.",
+  GIVE_REPORT_REASON_INVALID: "Chọn lý do báo cáo.",
   GIVE_REPORT_REASON_TOO_LONG: "Lý do tối đa 500 ký tự.",
+  GIVE_REPORT_DETAILS_REQUIRED: "Ghi chi tiết khi chọn lý do “Lý do khác”.",
+  GIVE_REPORT_DETAILS_TOO_LONG: "Chi tiết báo cáo tối đa 1000 ký tự.",
   GIVE_REPORT_LIMIT: "Bạn đã gửi nhiều báo cáo trong 24 giờ qua. Hãy thử lại sau.",
   GIVE_MODERATION_REASON_REQUIRED: "Ghi lý do ẩn ảnh (ví dụ: lộ số CCCD của người nhận).",
   GIVE_MODERATION_REASON_TOO_LONG: "Lý do tối đa 500 ký tự.",
   GIVE_MODERATION_INVALID: "Thao tác không hợp lệ.",
+  GIVE_PUBLIC_NOTE_REQUIRED:
+    "Ghi chú công khai là bắt buộc khi tạm dừng yêu cầu thanh toán; người ủng hộ và trang dự án sẽ thấy.",
+  GIVE_PUBLIC_NOTE_TOO_LONG: "Ghi chú công khai tối đa 500 ký tự.",
+  GIVE_PAYMENT_REQUESTS_NOT_STOPPABLE:
+    "Chỉ dừng được yêu cầu thanh toán của dự án có quà tặng đã đạt mục tiêu. Chiến dịch đang gây quỹ thì tạm dừng chiến dịch.",
   GIVE_CONTRIBUTION_TYPE_MISMATCH: "Chiến dịch này không nhận ủng hộ trực tiếp.",
   // Disbursement explanations (money core part 2).
   GIVE_NOT_ALLOWED: "Bạn không có quyền thực hiện thao tác này.",
@@ -362,6 +370,43 @@ export const STATEMENT_ROW_MESSAGES: Record<string, string> = {
   GIVE_BINDING_CHANGED: "Tài khoản vừa được gắn hoặc đổi chiến dịch trong lúc nhập. Hãy tải lại trang và thử lại.",
   GIVE_ACCOUNT_OWNER_MISMATCH:
     "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên dòng này không nhập được cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch.",
+}
+
+/**
+ * Every refusal of give.report_campaign (DOS/Give#98, DOS-Me
+ * 20261120090000_give_campaign_reports.sql), worded for a signed-in visitor
+ * reporting a public campaign. GIVE_NOT_ALLOWED here is a self-report.
+ */
+export const REPORT_CAMPAIGN_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Bạn không thể báo cáo chiến dịch của chính mình.",
+  GIVE_REPORT_REASON_INVALID: "Chọn lý do báo cáo.",
+  GIVE_REPORT_DETAILS_REQUIRED: "Ghi chi tiết khi chọn lý do “Lý do khác”.",
+  GIVE_REPORT_DETAILS_TOO_LONG: "Chi tiết báo cáo tối đa 1000 ký tự.",
+  GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch công khai này.",
+  GIVE_REPORT_LIMIT: "Bạn đã gửi nhiều báo cáo trong 24 giờ qua. Hãy thử lại sau.",
+}
+
+/**
+ * Every refusal of give.moderate_campaign_reports (and
+ * give.set_payment_requests_stopped when stopping payment requests from the
+ * report queue; DOS/Give#98, DOS-Me 20261120090000_give_campaign_reports.sql),
+ * worded for a moderator or admin on /admin/reports.
+ */
+export const MODERATE_CAMPAIGN_REPORTS_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ADMIN: "Chỉ kiểm duyệt viên hoặc quản trị viên được xử lý báo cáo chiến dịch.",
+  GIVE_MODERATION_INVALID: "Thao tác không hợp lệ.",
+  GIVE_REASON_REQUIRED:
+    "Ghi ghi chú xử lý (câu hỏi gửi người tổ chức, lý do tạm dừng hoặc lý do lưu vào nhật ký kiểm toán).",
+  GIVE_REASON_TOO_LONG: "Ghi chú quá dài (tối đa 1000 ký tự).",
+  GIVE_PUBLIC_NOTE_REQUIRED:
+    "Ghi chú công khai là bắt buộc khi tạm dừng yêu cầu thanh toán; người ủng hộ và trang dự án sẽ thấy.",
+  GIVE_PUBLIC_NOTE_TOO_LONG: "Ghi chú công khai tối đa 500 ký tự.",
+  GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch. Hãy tải lại trang.",
+  GIVE_SELF_REVIEW: "Không thể xử lý báo cáo về chiến dịch do chính bạn tổ chức; một kiểm duyệt viên khác cần xử lý.",
+  GIVE_TRANSITION_NOT_ALLOWED:
+    "Chỉ tạm dừng được chiến dịch đã duyệt hoặc đang gây quỹ. Với dự án có quà tặng đã đạt mục tiêu, dùng “Tạm dừng yêu cầu thanh toán”.",
+  GIVE_PAYMENT_REQUESTS_NOT_STOPPABLE:
+    "Chỉ dừng được yêu cầu thanh toán của dự án có quà tặng đã đạt mục tiêu. Chiến dịch đang gây quỹ thì tạm dừng chiến dịch.",
 }
 
 /** Result shape that form actions return to useActionState. */
