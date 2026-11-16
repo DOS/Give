@@ -158,6 +158,9 @@ the Qwen Code PO, and Platform by the Give Product Owner.
   to split by line (Qwen: Campaigns; Claude Code: Money and Platform):
   "Chia như vậy". A `PO acceptance:` comment counts only from the PO that
   owns the PR's line.
+- JOY (2026-11-16), on empty-site discovery links: "Giữ nguyeyen" — with no
+  live campaign, keep the header, "Hai cách" and footer "Khám phá" links to
+  `/campaigns` (its empty state) as they are.
 
 Screenshot branches (`assets/pr-<n>-screenshots`): every commit on them adds
 `apps/web/vercel.json` with `{"git":{"deploymentEnabled":false}}`, so Vercel
