@@ -140,7 +140,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               <li key={item.id}>
                 <a
                   href={`#${item.id}`}
-                  className="flex min-h-11 items-center rounded px-3 text-base text-fg transition-colors duration-150 hover:bg-surface"
+                  className="flex min-h-11 items-center rounded px-3 text-base text-fg transition-colors duration-150 hover:bg-surface focus-visible:-outline-offset-4"
                 >
                   {item.label}
                 </a>

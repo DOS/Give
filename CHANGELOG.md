@@ -13,6 +13,14 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Campaign page and editor: "Các mốc mục tiêu" and "Cập nhật" (both its list
+  and its empty "Chưa có cập nhật nào." line) sit 24px below their H2 on
+  `/campaigns/[slug]`, up from 16px and 8px (`DESIGN.md` 2.4). On
+  `/me/campaigns/[id]` from 1024px, focused links in the "Trên trang này" side
+  list draw their 2px ring 2px inside the item so adjacent items do not touch;
+  `DESIGN.md` 6 names `/me/campaigns/[id]` with the side lists of `/me` and
+  `/admin`. Unit tests cover `addMilestone`, `cancelCampaign` and `postUpdate`
+  in `me/campaigns/actions.ts`, `RecentSupporters` and `RewardTiers` (#210).
 - Discovery and `Dropdown` tests: Vitest suites cover `Dropdown`'s phone-sheet
   and desktop-popover focus rules (checked-item and first-link opening focus,
   `Escape`, `focusout` containment on popover vs sheet, focus return on scrim,

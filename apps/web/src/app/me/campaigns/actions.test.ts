@@ -1,6 +1,8 @@
+import { revalidatePath } from "next/cache"
 import sharp from "sharp"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { getSession } from "@/lib/auth/session"
 import { SUBMIT_NO_ACCOUNT, submitUnusableAccount } from "@/lib/campaign-account"
 import { SUBMIT_MESSAGES } from "@/lib/errors"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
@@ -32,7 +34,16 @@ vi.mock("@/lib/supabase", () => ({
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
 }))
 
-const { deleteDraft, deleteMilestone, saveContent, submitForReview, uploadCover } = await import("./actions")
+const {
+  addMilestone,
+  cancelCampaign,
+  deleteDraft,
+  deleteMilestone,
+  postUpdate,
+  saveContent,
+  submitForReview,
+  uploadCover,
+} = await import("./actions")
 
 function owned(overrides: Record<string, unknown> = {}) {
   return {
@@ -72,6 +83,8 @@ beforeEach(() => {
   state.userCalls.length = 0
   state.serviceCalls.length = 0
   state.serviceHandler = () => undefined
+  vi.mocked(revalidatePath).mockClear()
+  vi.mocked(getSession).mockResolvedValue({ user: { id: USER, email: null, name: null }, accessToken: "token" })
 })
 
 describe("saveContent", () => {
@@ -413,5 +426,233 @@ describe("uploadCover", () => {
       op(call, "maybeSingle") ? { data: owned({ organizer_id: "someone-else" }) } : undefined
     expect((await uploadCover(CAMPAIGN, null, coverForm(await photoWithGps())))?.ok).toBe(false)
     expect(state.serviceCalls).toHaveLength(0)
+  })
+})
+
+describe("addMilestone", () => {
+  function milestoneForm(overrides: Record<string, string> = {}) {
+    const form = new FormData()
+    const values: Record<string, string> = {
+      title: "  Mua sách giáo khoa  ",
+      target_amount: "15.000.000",
+      description: "  Trao cho 50 học sinh vùng cao  ",
+      ...overrides,
+    }
+    for (const [key, value] of Object.entries(values)) form.set(key, value)
+    return form
+  }
+
+  it("refuses signed-out callers before querying", async () => {
+    vi.mocked(getSession).mockResolvedValueOnce(null)
+    expect(await addMilestone(CAMPAIGN, null, milestoneForm())).toEqual({
+      ok: false,
+      message: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+    })
+    expect(state.userCalls).toHaveLength(0)
+  })
+
+  it("refuses non-editable campaign statuses without inserting", async () => {
+    for (const status of ["in_review", "approved", "live", "cancelled"] as const) {
+      state.userCalls.length = 0
+      state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status }) } : undefined)
+      expect(await addMilestone(CAMPAIGN, null, milestoneForm())).toEqual({
+        ok: false,
+        message: "Chỉ sửa được chiến dịch đang là bản nháp hoặc cần chỉnh sửa.",
+      })
+      expect(state.userCalls.some((c) => c.target === "campaign_milestones")).toBe(false)
+    }
+  })
+
+  it("validates milestoneSchema fields before inserting", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : undefined)
+    expect(await addMilestone(CAMPAIGN, null, milestoneForm({ title: "A" }))).toEqual({
+      ok: false,
+      message: "Tên mốc cần ít nhất 2 ký tự",
+    })
+    expect(await addMilestone(CAMPAIGN, null, milestoneForm({ target_amount: "không hợp lệ" }))).toEqual({
+      ok: false,
+      message: "Số tiền không hợp lệ",
+    })
+    expect(state.userCalls.some((c) => c.target === "campaign_milestones")).toBe(false)
+  })
+
+  it("inserts the parsed milestone payload and revalidates editor, list and public campaign paths", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle") ? { data: owned({ status: "changes_requested" }) } : undefined
+    const result = await addMilestone(CAMPAIGN, null, milestoneForm())
+    expect(result).toEqual({ ok: true, message: "Đã thêm mốc." })
+
+    const insert = state.userCalls.find((c) => c.target === "campaign_milestones")
+    expect(op(insert, "insert")).toEqual([
+      {
+        campaign_id: CAMPAIGN,
+        title: "Mua sách giáo khoa",
+        target_amount: 15_000_000,
+        description: "Trao cho 50 học sinh vùng cao",
+        sort_order: 0,
+      },
+    ])
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual([
+      [`/me/campaigns/${CAMPAIGN}`],
+      ["/me/campaigns"],
+      ["/campaigns/quy-hoc-bong-abcde"],
+    ])
+  })
+
+  it("normalizes an empty description to null and surfaces database insert errors without revalidating", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : undefined)
+    await addMilestone(CAMPAIGN, null, milestoneForm({ description: "   " }))
+    const insert = state.userCalls.find((c) => c.target === "campaign_milestones")
+    expect(op(insert, "insert")).toEqual([
+      {
+        campaign_id: CAMPAIGN,
+        title: "Mua sách giáo khoa",
+        target_amount: 15_000_000,
+        description: null,
+        sort_order: 0,
+      },
+    ])
+
+    state.userCalls.length = 0
+    vi.mocked(revalidatePath).mockClear()
+    state.userHandler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: owned() }
+        : call.target === "campaign_milestones"
+          ? { error: { code: "23514", message: "GIVE_CAMPAIGN_NOT_EDITABLE" } }
+          : undefined
+    const failed = await addMilestone(CAMPAIGN, null, milestoneForm())
+    expect(failed?.ok).toBe(false)
+    expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled()
+  })
+})
+
+describe("cancelCampaign", () => {
+  function cancelForm(reason?: string) {
+    const form = new FormData()
+    if (reason !== undefined) form.set("reason", reason)
+    return form
+  }
+
+  it("trims and caps reason at 500 chars, forwards p_to_status 'cancelled', and revalidates", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "in_review" }) } : undefined)
+    const longReason = `   ${"L".repeat(525)}   `
+    const result = await cancelCampaign(CAMPAIGN, null, cancelForm(longReason))
+    expect(result).toEqual({ ok: true, message: "Đã hủy chiến dịch." })
+
+    const rpc = state.userCalls.find((c) => c.target === "rpc:transition_campaign")
+    expect(op(rpc, "args")).toEqual([
+      {
+        p_campaign_id: CAMPAIGN,
+        p_to_status: "cancelled",
+        p_reason: "L".repeat(500),
+      },
+    ])
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual([
+      [`/me/campaigns/${CAMPAIGN}`],
+      ["/me/campaigns"],
+      ["/campaigns/quy-hoc-bong-abcde"],
+    ])
+  })
+
+  it("forwards an empty trimmed reason when omitted", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : undefined)
+    expect(await cancelCampaign(CAMPAIGN, null, cancelForm())).toEqual({ ok: true, message: "Đã hủy chiến dịch." })
+    const rpc = state.userCalls.find((c) => c.target === "rpc:transition_campaign")
+    expect(op(rpc, "args")).toEqual([{ p_campaign_id: CAMPAIGN, p_to_status: "cancelled", p_reason: "" }])
+  })
+
+  it("maps transition_campaign errors with SUBMIT_MESSAGES and standard GIVE_* messages without revalidating", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: owned({ status: "live" }) }
+        : call.target === "rpc:transition_campaign"
+          ? { error: { code: "23514", message: "GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT" } }
+          : undefined
+    expect(await cancelCampaign(CAMPAIGN, null, cancelForm("Đổi kế hoạch"))).toEqual({
+      ok: false,
+      message: SUBMIT_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT,
+    })
+    expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled()
+
+    state.userHandler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: owned({ status: "live" }) }
+        : call.target === "rpc:transition_campaign"
+          ? { error: { code: "23514", message: "GIVE_TRANSITION_NOT_ALLOWED" } }
+          : undefined
+    expect(await cancelCampaign(CAMPAIGN, null, cancelForm("Đổi kế hoạch"))).toEqual({
+      ok: false,
+      message: "Không thể chuyển chiến dịch sang trạng thái này lúc này.",
+    })
+    expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled()
+  })
+})
+
+describe("postUpdate", () => {
+  function updateForm(overrides: Record<string, string> = {}) {
+    const form = new FormData()
+    const values: Record<string, string> = {
+      title: "  Đã trao đợt 1  ",
+      body: "  50 phần sách giáo khoa đã tới tay học sinh.  ",
+      ...overrides,
+    }
+    for (const [key, value] of Object.entries(values)) form.set(key, value)
+    return form
+  }
+
+  it("refuses cancelled and suspended campaigns via canPostUpdate without inserting", async () => {
+    for (const status of ["cancelled", "suspended"] as const) {
+      state.userCalls.length = 0
+      state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status }) } : undefined)
+      expect(await postUpdate(CAMPAIGN, null, updateForm())).toEqual({
+        ok: false,
+        message: "Không thể đăng cập nhật cho chiến dịch đã hủy hoặc đang tạm dừng.",
+      })
+      expect(state.userCalls.some((c) => c.target === "campaign_updates")).toBe(false)
+    }
+  })
+
+  it("validates updateSchema fields before inserting", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "live" }) } : undefined)
+    expect(await postUpdate(CAMPAIGN, null, updateForm({ title: "A" }))).toEqual({
+      ok: false,
+      message: "Nhập tiêu đề",
+    })
+    expect(await postUpdate(CAMPAIGN, null, updateForm({ body: "   " }))).toEqual({
+      ok: false,
+      message: "Nhập nội dung",
+    })
+    expect(state.userCalls.some((c) => c.target === "campaign_updates")).toBe(false)
+  })
+
+  it("inserts a public update with author_id and published_at and revalidates", async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date("2026-11-16T10:30:00.000Z"))
+      state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "live" }) } : undefined)
+
+      const result = await postUpdate(CAMPAIGN, null, updateForm())
+      expect(result).toEqual({ ok: true, message: "Đã đăng cập nhật." })
+
+      const insert = state.userCalls.find((c) => c.target === "campaign_updates")
+      expect(op(insert, "insert")).toEqual([
+        {
+          campaign_id: CAMPAIGN,
+          author_id: USER,
+          title: "Đã trao đợt 1",
+          body: "50 phần sách giáo khoa đã tới tay học sinh.",
+          visibility: "public",
+          published_at: "2026-11-16T10:30:00.000Z",
+        },
+      ])
+      expect(vi.mocked(revalidatePath).mock.calls).toEqual([
+        [`/me/campaigns/${CAMPAIGN}`],
+        ["/me/campaigns"],
+        ["/campaigns/quy-hoc-bong-abcde"],
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
