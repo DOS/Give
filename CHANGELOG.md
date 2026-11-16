@@ -13,6 +13,14 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Discovery and `Dropdown` tests: Vitest suites cover `Dropdown`'s phone-sheet
+  and desktop-popover focus rules (checked-item and first-link opening focus,
+  `Escape`, `focusout` containment on popover vs sheet, focus return on scrim,
+  "Đóng" and keyboard link activation, and outside click without stealing
+  focus) and the `/campaigns` RSC (filter-bar `keep` preservation and page-1
+  reset, `categoriesFor` narrowing when `type` changes, `"Đang lọc:"` chips and
+  `"Xoá tất cả"`, `"Xem thêm"` and the `DISCOVERY_MAX_PAGE` hint, and the
+  filtered empty state); no screen change (#209).
 - Campaign page: the "Ủng hộ chiến dịch" and "Sao kê" sections keep 24px
   between their subtitle and section content, up from 16px, matching section
   rhythm while keeping 8px from the heading to the subtitle. `DESIGN.md` 2.4
