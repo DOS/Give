@@ -6,9 +6,10 @@ import { useEffect, useId, useRef, useState, type ReactNode } from "react"
 
 /**
  * A button that shows and hides a panel (the mobile menu, the account menu).
- * The panel closes on navigation, on Escape (focus returns to the button)
- * and on a click outside. Without JavaScript the button does nothing, so
- * every link in a panel is also reachable from a page of its own.
+ * The panel closes on navigation, on Escape or a keyboard-chosen link (focus
+ * returns to the button) and on a click outside. Without JavaScript the
+ * button does nothing, so every link in a panel is also reachable from a page
+ * of its own.
  */
 export function Disclosure({
   label,
@@ -89,9 +90,12 @@ export function Disclosure({
         hidden={!open}
         className={panelClassName}
         // A link or a search inside closes the panel even when only the query
-        // string changes (the pathname check above would miss that).
+        // string changes (the pathname check above would miss that); a link
+        // chosen from the keyboard (detail 0) gives focus back to the button.
         onClick={(event) => {
-          if ((event.target as Element).closest("a")) setOpen(false)
+          if (!(event.target as Element).closest("a")) return
+          setOpen(false)
+          if (event.detail === 0) trigger.current?.focus()
         }}
         onSubmit={() => setOpen(false)}
       >

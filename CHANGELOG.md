@@ -13,6 +13,15 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Header `Disclosure` keyboard focus and layout/admin tests: choosing a link
+  inside a header `Disclosure` menu from the keyboard (`detail === 0`) gives
+  focus back to its button when the panel hides, matching `Dropdown`
+  (`DESIGN.md` 6); nothing changes on screen at rest. Vitest suites cover
+  `Disclosure`, `CurrentTabInView`, `StickyAside` and the `/admin` review
+  queue RSC (`AdminReviewPage`: session and finance/non-staff routing,
+  `listWaitingForAccount` error isolation, empty states, self-review guards,
+  `waitingAdvice` notes and `from_status="approved"` send-back forms, and
+  organizer verification concurrency fields) (#218).
 - Discovery and `Dropdown` tests: Vitest suites cover `Dropdown`'s phone-sheet
   and desktop-popover focus rules (checked-item and first-link opening focus,
   `Escape`, `focusout` containment on popover vs sheet, focus return on scrim,
