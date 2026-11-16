@@ -62,7 +62,7 @@ export const REPORT_ACTION_LABELS: Record<CampaignReportActionTaken, string> = {
 export const CAMPAIGN_REPORT_COLUMNS =
   "id, campaign_id, reason_code, details, status, action_taken, resolution_note, handled_at, created_at, updated_at"
 
-const UNRESOLVED_INDEX_COLUMNS = "id, campaign_id, status, created_at"
+const UNRESOLVED_INDEX_COLUMNS = "id, campaign_id, created_at"
 
 const MANAGED_REPORT_CAMPAIGN_COLUMNS =
   "id, slug, type, status, title, organizer_id, review_note, payments_stopped_at, payments_stopped_note, " +
@@ -72,7 +72,6 @@ const MANAGED_REPORT_CAMPAIGN_COLUMNS =
 export const UNRESOLVED_CAMPAIGNS_PER_PAGE = 20
 /** Rows read per PostgREST range request while scanning unresolved reports. */
 export const REPORT_SCAN_BATCH = 1000
-const MAX_SCAN_BATCHES = 20
 /** Maximum UUIDs in one `.in(...)` filter so query URLs stay well under proxy caps. */
 export const CAMPAIGNS_PER_REQUEST = 100
 /** Recently resolved reports read at once, newest decision first. */
@@ -156,35 +155,41 @@ export function canStopReportedPaymentRequests(campaign: Pick<ReportedCampaign, 
 interface UnresolvedIndexRow {
   id: string
   campaign_id: string
-  status: "open" | "awaiting_organizer"
   created_at: string
 }
 
-async function scanUnresolvedIndex(db: Db): Promise<UnresolvedIndexRow[]> {
-  const all: UnresolvedIndexRow[] = []
-  for (let batch = 0; batch < MAX_SCAN_BATCHES; batch++) {
-    const from = batch * REPORT_SCAN_BATCH
+async function scanCampaignIdsByStatus(db: Db, status: "open" | "awaiting_organizer"): Promise<Set<string>> {
+  const campaignIds = new Set<string>()
+  const seenRowIds = new Set<string>()
+  for (let from = 0; ; from += REPORT_SCAN_BATCH) {
     const to = from + REPORT_SCAN_BATCH - 1
     const { data, error } = await db
       .from("campaign_reports")
       .select(UNRESOLVED_INDEX_COLUMNS)
-      .in("status", ["open", "awaiting_organizer"])
+      .eq("status", status)
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
       .range(from, to)
     if (error) throw error
     const rows = (data ?? []) as UnresolvedIndexRow[]
-    all.push(...rows)
-    if (rows.length < REPORT_SCAN_BATCH) break
+    let added = 0
+    for (const row of rows) {
+      if (!seenRowIds.has(row.id)) {
+        seenRowIds.add(row.id)
+        added++
+      }
+      campaignIds.add(row.campaign_id)
+    }
+    if (rows.length < REPORT_SCAN_BATCH || added === 0) break
   }
-  return all
+  return campaignIds
 }
 
 async function loadUnresolvedForCampaigns(db: Db, campaignIds: readonly string[]): Promise<CampaignReport[]> {
   if (campaignIds.length === 0) return []
   const all: CampaignReport[] = []
-  for (let batch = 0; batch < MAX_SCAN_BATCHES; batch++) {
-    const from = batch * REPORT_SCAN_BATCH
+  const seenRowIds = new Set<string>()
+  for (let from = 0; ; from += REPORT_SCAN_BATCH) {
     const to = from + REPORT_SCAN_BATCH - 1
     const { data, error } = await db
       .from("campaign_reports")
@@ -196,8 +201,15 @@ async function loadUnresolvedForCampaigns(db: Db, campaignIds: readonly string[]
       .range(from, to)
     if (error) throw error
     const rows = (data ?? []) as CampaignReport[]
-    all.push(...rows)
-    if (rows.length < REPORT_SCAN_BATCH) break
+    let added = 0
+    for (const row of rows) {
+      if (!seenRowIds.has(row.id)) {
+        seenRowIds.add(row.id)
+        all.push(row)
+        added++
+      }
+    }
+    if (rows.length < REPORT_SCAN_BATCH || added === 0) break
   }
   return all
 }
@@ -239,8 +251,9 @@ export async function listCampaignReportQueue(
   requestedPage = 1,
   pageSize = UNRESOLVED_CAMPAIGNS_PER_PAGE
 ): Promise<CampaignReportQueue> {
-  const [indexRows, resolvedRes] = await Promise.all([
-    scanUnresolvedIndex(db),
+  const [openFirstIds, awaitingIds, resolvedRes] = await Promise.all([
+    scanCampaignIdsByStatus(db, "open"),
+    scanCampaignIdsByStatus(db, "awaiting_organizer"),
     db
       .from("campaign_reports")
       .select(CAMPAIGN_REPORT_COLUMNS)
@@ -250,14 +263,8 @@ export async function listCampaignReportQueue(
   ])
   if (resolvedRes.error) throw resolvedRes.error
 
-  const openFirstIds = new Set<string>()
-  const seenIds = new Set<string>()
-  for (const row of indexRows) {
-    seenIds.add(row.campaign_id)
-    if (row.status === "open") openFirstIds.add(row.campaign_id)
-  }
   const awaitingOnlyIds: string[] = []
-  for (const id of seenIds) {
+  for (const id of awaitingIds) {
     if (!openFirstIds.has(id)) awaitingOnlyIds.push(id)
   }
   const orderedCampaignIds = [...openFirstIds, ...awaitingOnlyIds]

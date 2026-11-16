@@ -78,6 +78,8 @@ describe("listCampaignReportQueue", () => {
     const calls: Call[] = []
     const db = fakeDb((call) => {
       if (call.target === "campaign_reports") {
+        const eqStatus = call.ops.find(([n, col]) => n === "eq" && col === "status")?.[2] as string | undefined
+        if (eqStatus) return { data: allUnresolved.filter((r) => r.status === eqStatus) }
         const campaignFilter = call.ops.find(([n, col]) => n === "in" && col === "campaign_id")?.[2] as
           string[] | undefined
         const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
@@ -181,7 +183,7 @@ describe("listCampaignReportQueue", () => {
     const queue = await listCampaignReportQueue(db as never)
 
     const reportReads = calls.filter((c) => c.target === "campaign_reports")
-    expect(reportReads).toHaveLength(3)
+    expect(reportReads).toHaveLength(4)
     for (const read of reportReads) {
       const cols = String(op(read, "select")?.[0] ?? "")
       expect(cols).not.toBe("*")
@@ -238,6 +240,8 @@ describe("listCampaignReportQueue", () => {
     const calls: Call[] = []
     const db = fakeDb((call) => {
       if (call.target === "campaign_reports") {
+        const eqStatus = call.ops.find(([n, col]) => n === "eq" && col === "status")?.[2] as string | undefined
+        if (eqStatus) return { data: allRows.filter((r) => r.status === eqStatus) }
         const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
         if (!statusFilter?.includes("open")) return { data: [] }
         const campaignFilter = call.ops.find(([n, col]) => n === "in" && col === "campaign_id")?.[2] as
@@ -264,6 +268,53 @@ describe("listCampaignReportQueue", () => {
     expect(p6.unresolved).toHaveLength(6)
   })
 
+  it("never drops fresh open reports even behind >20,000 range-paged awaiting_organizer rows", async () => {
+    const rows = Array.from({ length: 20_500 }, (_, i) => ({
+      id: `wait-${i}`,
+      campaign_id: "00000000-0000-4000-8000-000000000001",
+      reason_code: "other" as const,
+      details: "waiting",
+      status: "awaiting_organizer" as const,
+      action_taken: "asked_organizer" as const,
+      resolution_note: "q",
+      handled_at: "2026-11-15T00:00:00Z",
+      created_at: "2026-11-15T00:00:00Z",
+      updated_at: "2026-11-15T00:00:00Z",
+    }))
+    rows.push({
+      id: "fresh-open",
+      campaign_id: "99999999-9999-4999-8999-999999999999",
+      reason_code: "fraud_or_impersonation" as unknown as "other",
+      details: "fresh",
+      status: "open" as unknown as "awaiting_organizer",
+      action_taken: null as unknown as "asked_organizer",
+      resolution_note: null as unknown as string,
+      handled_at: null as unknown as string,
+      created_at: "2026-11-16T00:00:00Z",
+      updated_at: "2026-11-16T00:00:00Z",
+    })
+    const db = fakeDb((call) => {
+      if (call.target !== "campaign_reports") return { data: [] }
+      const eqStatus = call.ops.find(([n, col]) => n === "eq" && col === "status")?.[2] as string | undefined
+      const inStatuses = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
+      const inCampaigns = call.ops.find(([n, col]) => n === "in" && col === "campaign_id")?.[2] as string[] | undefined
+      const range = (op(call, "range") as [number, number] | undefined) ?? [0, 49]
+      const filtered = rows.filter(
+        (r) =>
+          (eqStatus ? r.status === eqStatus : Boolean(inStatuses?.includes(r.status))) &&
+          (!inCampaigns || inCampaigns.includes(r.campaign_id))
+      )
+      return { data: filtered.slice(range[0], range[1] + 1) }
+    })
+
+    const q = await listCampaignReportQueue(db as never, 1, 20)
+    expect(q.totalUnresolvedCampaigns).toBe(2)
+    expect(q.unresolved.map((u) => [u.campaign_id, u.reports.length])).toEqual([
+      ["99999999-9999-4999-8999-999999999999", 1],
+      ["00000000-0000-4000-8000-000000000001", 20_500],
+    ])
+  })
+
   it("skips managed_campaigns and full-report fetches when there are no reports", async () => {
     const calls: Call[] = []
     const db = fakeDb((call) => (call.target === "campaign_reports" ? { data: [] } : undefined), calls)
@@ -274,7 +325,7 @@ describe("listCampaignReportQueue", () => {
       totalPages: 1,
       resolved: [],
     })
-    expect(calls.map((c) => c.target)).toEqual(["campaign_reports", "campaign_reports"])
+    expect(calls.map((c) => c.target)).toEqual(["campaign_reports", "campaign_reports", "campaign_reports"])
   })
 })
 

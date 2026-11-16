@@ -217,6 +217,8 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
     state.handler = (call) => {
       if (call.target === "rpc:is_admin") return { data: true }
       if (call.target === "campaign_reports") {
+        const eqStatus = call.ops.find(([n, col]) => n === "eq" && col === "status")?.[2] as string | undefined
+        if (eqStatus) return { data: unresolvedRows.filter((r) => r.status === eqStatus) }
         const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
         if (!statusFilter?.includes("open")) return { data: resolvedRows }
         const campaignFilter = call.ops.find(([n, col]) => n === "in" && col === "campaign_id")?.[2] as
@@ -285,6 +287,8 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
     state.handler = (call) => {
       if (call.target === "rpc:is_admin") return { data: true }
       if (call.target === "campaign_reports") {
+        const eqStatus = call.ops.find(([n, col]) => n === "eq" && col === "status")?.[2] as string | undefined
+        if (eqStatus) return { data: rows.filter((r) => r.status === eqStatus) }
         const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
         if (!statusFilter?.includes("open")) return { data: [] }
         const campaignFilter = call.ops.find(([n, col]) => n === "in" && col === "campaign_id")?.[2] as
