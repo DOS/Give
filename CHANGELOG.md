@@ -13,6 +13,20 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Organizer campaigns, reward tiers and fulfillment tests: Vitest suites cover
+  the `/me/campaigns` RSC (session and `dbAs` RLS reads, level-2 `EmptyState`
+  keeping `PageHeader`'s `"Tạo chiến dịch"` as the sole primary CTA, badges,
+  `privateCoverUrl` thumbnail vs `CoverPlaceholder`, `isPublicStatus` `"Xem
+trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
+  `/me/campaigns/[id]/fulfillment` and `SelectAll` (`notFound()` guards,
+  `!canUpdateFulfillment` callout without querying pledges, GET filter form and
+  `"Bỏ lọc"`, filtered vs unfiltered level-2 `EmptyState`,
+  `FULFILLMENT_BATCH_MAX` summary, `RefCode`, `shippingLines` `<address>`,
+  per-row controls, and form-scoped `SelectAll` checkbox toggling), and
+  `RewardTiersSection` (`tiers === null` danger callout, empty copy,
+  `sortTiers` ordering, move/delete/edit controls and `MAX_TIERS` cap while
+  editable, and `canRetireTier`, claimed notes and retired warnings in
+  `RETIRABLE_STATUSES`); no screen change (#217).
 - Header `Disclosure` keyboard focus and layout/admin tests: choosing a link
   inside a header `Disclosure` menu from the keyboard (`detail === 0`) gives
   focus back to its button when the panel hides, matching `Dropdown`
