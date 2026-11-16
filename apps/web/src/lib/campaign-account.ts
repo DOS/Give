@@ -1,6 +1,12 @@
-import { bindingHasTransactions, listCampaignSwaps, SWAP_STATUSES, type AccountSwapRequest } from "./account-swaps"
+import {
+  bindingHasTransactions,
+  canAskSwap,
+  listCampaignSwaps,
+  SWAP_STATUSES,
+  type AccountSwapRequest,
+} from "./account-swaps"
 import type { CampaignStatus, CampaignType, Db, Organizer } from "./campaigns"
-import { getOrganizer } from "./campaigns"
+import { getOrganizer, isEditableStatus } from "./campaigns"
 import {
   accountUnusableReason,
   activeBinding,
@@ -32,9 +38,10 @@ export const SUBMIT_NO_ACCOUNT =
 /**
  * Refusal when the bound account can no longer receive money. An account that
  * already recorded a bank transaction holds the campaign's money history and
- * is never released early (GIVE_BINDING_NOT_RELEASABLE), so the organizer of
- * a give campaign asks finance to swap it instead (DOS/Give#55, #77); back
- * campaigns have no swap (`canSwap` false), so their organizer contacts Give.
+ * is never released early (GIVE_BINDING_NOT_RELEASABLE), so when `canSwap`
+ * holds (`canAskSwap`: a sent-back give campaign, DOS/Give#55, #77) the
+ * organizer asks finance to swap it instead; drafts and back campaigns have
+ * no swap (`canSwap` false), so their organizer contacts Give.
  */
 export function submitUnusableAccount(reason: string, boundHasTransactions = false, canSwap = true): string {
   if (boundHasTransactions && !canSwap) {
@@ -49,7 +56,7 @@ export function submitUnusableAccount(reason: string, boundHasTransactions = fal
  * Why a campaign cannot be sent for review because of its account, or null
  * when its bound account is usable. `bound` is the account the campaign's
  * active binding points at, or null when it has none. `canSwap` is whether
- * the campaign's type has the finance-approved swap (give only).
+ * the campaign may ask finance for an account swap now (`canAskSwap`).
  */
 export function submitAccountProblem(
   bound: Pick<ReceivingAccount, "channel" | "verification_status" | "account_name"> | null,
@@ -71,7 +78,8 @@ export async function checkSubmitAccount(
   db: Db,
   campaignId: string,
   organizerId: string,
-  type: CampaignType
+  type: CampaignType,
+  status: CampaignStatus
 ): Promise<string | null> {
   const [bindings, organizer] = await Promise.all([
     activeBindingsOfCampaign(db, campaignId),
@@ -85,7 +93,7 @@ export async function checkSubmitAccount(
     bound !== null && accountUnusableReason(bound, organizer) !== null
       ? await bindingHasTransactions(db, bindings[0].id)
       : false
-  return submitAccountProblem(bound, organizer, hasTransactions, type === "give")
+  return submitAccountProblem(bound, organizer, hasTransactions, canAskSwap(status, type, hasTransactions))
 }
 
 export interface AccountChoice {
@@ -154,7 +162,10 @@ export interface EditorAccounts {
 /**
  * Why the editor knows a campaign has no usable receiving account (so an
  * approved one does not open): none bound, or the bound one unusable. Null
- * when it has one, or when the accounts could not be read.
+ * when it has one, or when the accounts could not be read. A data-defect
+ * binding to an account the organizer does not own also reads as `"no_account"`
+ * (`boundAccountOf` searches own accounts only); the editor's status notice
+ * tells the organizer to contact Give if binding fails (DOS/Give#77).
  */
 export function openingBlock(
   accounts: Pick<EditorAccounts, "bound" | "boundUnusable"> | null
@@ -178,16 +189,18 @@ export async function loadEditorAccounts(
     .map((a) => activeBinding(a)?.campaign_id)
     .filter((id): id is string => Boolean(id) && id !== campaignId)
   const binding = bound ? activeBinding(bound) : null
-  // Money history matters only to a campaign sent back for changes (release
-  // or swap), and swaps only where a swap can happen (give, DOS/Give#55). A failed
-  // read of either shows the section without them rather than hiding it; the
-  // database refuses anything they would have prevented. An unknown money
-  // history counts as some, so the editor offers the swap (which the database
-  // turns into "release instead" if wrong) rather than a release it refuses.
+  // Money history matters to an editable campaign (draft or changes_requested,
+  // where a transaction prevents early release and may allow a swap), and swaps
+  // only where a swap can happen (give, DOS/Give#55, #77). A failed read of
+  // either shows the section without them rather than hiding it; the database
+  // refuses anything they would have prevented. Where a swap can happen, an
+  // unknown money history counts as some so the editor offers the swap (which
+  // the database turns into "release instead" if wrong) rather than a release
+  // it refuses; where no swap exists, it leaves the release button visible.
   const [refs, boundHasTransactions, swaps] = await Promise.all([
     campaignRefs(db, holders),
-    binding && status === "changes_requested"
-      ? bindingHasTransactions(db, binding.id).catch(() => true)
+    binding && isEditableStatus(status)
+      ? bindingHasTransactions(db, binding.id).catch(() => canAskSwap(status, type, true))
       : Promise.resolve(false),
     type === "give" && SWAP_STATUSES.includes(status)
       ? listCampaignSwaps(db, campaignId).catch(() => [])
@@ -199,6 +212,11 @@ export async function loadEditorAccounts(
     boundHasTransactions,
     swaps,
     choices: accountChoices(accounts, campaignId, organizer, refs),
-    submitBlocked: submitAccountProblem(bound, organizer, boundHasTransactions, type === "give"),
+    submitBlocked: submitAccountProblem(
+      bound,
+      organizer,
+      boundHasTransactions,
+      canAskSwap(status, type, boundHasTransactions)
+    ),
   }
 }
