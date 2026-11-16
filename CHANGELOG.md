@@ -13,6 +13,11 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Organizer onboarding and draft creation tests: Vitest suites cover `/start`
+  session guards, profile validation and normalization, insert/update column
+  boundaries, re-verification messages, funding models, slug collision retries,
+  database errors and redirects, plus the StartPage RSC onboarding, collapsible
+  profile, verification badges and warnings; no screen change (#208).
 - Organizer campaigns, reward tiers and fulfillment tests: Vitest suites cover
   the `/me/campaigns` RSC (session and `dbAs` RLS reads, level-2 `EmptyState`
   keeping `PageHeader`'s `"Tạo chiến dịch"` as the sole primary CTA, badges,
