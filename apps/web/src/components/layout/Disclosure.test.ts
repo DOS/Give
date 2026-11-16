@@ -228,6 +228,18 @@ describe("Disclosure (DESIGN.md 6, Menus and keyboard focus)", () => {
       expect(trigger.getAttribute("aria-expanded")).toBe("false")
       expect(document.activeElement).toBe(trigger)
 
+      // A click whose target is a Text node inside <a> also resolves to the link safely.
+      act(() => {
+        trigger.click()
+      })
+      const item2 = panel.querySelector<HTMLAnchorElement>("#item-2")!
+      item2.focus()
+      act(() => {
+        item2.firstChild!.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 0 }))
+      })
+      expect(panel.hidden).toBe(true)
+      expect(document.activeElement).toBe(trigger)
+
       // Pointer click (detail === 1) closes the panel without forcing focus back to trigger.
       act(() => {
         trigger.click()
@@ -252,6 +264,7 @@ describe("Disclosure (DESIGN.md 6, Menus and keyboard focus)", () => {
       const note = panel.querySelector<HTMLElement>("#panel-note")!
       act(() => {
         note.click()
+        note.firstChild!.dispatchEvent(new MouseEvent("click", { bubbles: true }))
       })
       expect(panel.hidden).toBe(false)
 
@@ -270,14 +283,14 @@ describe("Disclosure (DESIGN.md 6, Menus and keyboard focus)", () => {
 
     it("closes the panel without stealing focus when pathname changes", () => {
       const { outside, trigger, panel } = renderDisclosure()
+      outside.focus()
       act(() => {
         trigger.click()
       })
       expect(panel.hidden).toBe(false)
+      expect(document.activeElement).toBe(outside)
 
-      // Simulate focus already placed on page content across an App Router navigation.
-      Object.defineProperty(document, "activeElement", { configurable: true, get: () => outside })
-
+      const focusSpy = vi.spyOn(trigger, "focus")
       nav.pathname = "/campaigns"
       act(() => {
         root.render(tree())
@@ -286,16 +299,18 @@ describe("Disclosure (DESIGN.md 6, Menus and keyboard focus)", () => {
       expect(panel.hidden).toBe(true)
       expect(trigger.getAttribute("aria-expanded")).toBe("false")
       expect(document.activeElement).toBe(outside)
+      expect(focusSpy).not.toHaveBeenCalled()
     })
 
     it("closes the panel without stealing focus on outside document click", () => {
       const { outside, trigger, panel } = renderDisclosure()
+      outside.focus()
       act(() => {
         trigger.click()
       })
       expect(panel.hidden).toBe(false)
+      expect(document.activeElement).toBe(outside)
 
-      // Focus is already outside (or clicked directly); clicking outside closes without focusing trigger.
       const focusSpy = vi.spyOn(trigger, "focus")
       act(() => {
         outside.dispatchEvent(new MouseEvent("click", { bubbles: true }))
@@ -303,6 +318,7 @@ describe("Disclosure (DESIGN.md 6, Menus and keyboard focus)", () => {
 
       expect(panel.hidden).toBe(true)
       expect(trigger.getAttribute("aria-expanded")).toBe("false")
+      expect(document.activeElement).toBe(outside)
       expect(focusSpy).not.toHaveBeenCalled()
     })
   })

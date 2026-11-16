@@ -236,13 +236,18 @@ describe("AdminReviewPage (/admin, DOS/Give#218)", () => {
       setupAdmin({ queue: [], waiting: [], organizers: [] })
       const { queueSection, waitingSection, organizersSection } = await renderAdmin()
 
-      expect(queueSection.textContent).toContain("Không có chiến dịch nào chờ duyệt.")
+      expect(queueSection.querySelector("h3")?.textContent.trim()).toBe("Không có chiến dịch nào chờ duyệt.")
+      expect(queueSection.textContent).toContain(
+        "Chiến dịch người tổ chức gửi duyệt sẽ hiện ở đây, gửi sớm nhất ở trên cùng."
+      )
       expect(queueSection.querySelector("h2")?.textContent).toContain("0")
 
-      expect(waitingSection.textContent).toContain("Không có chiến dịch đã duyệt nào đang chờ tài khoản nhận.")
+      expect(waitingSection.querySelector("h3")?.textContent.trim()).toBe(
+        "Không có chiến dịch đã duyệt nào đang chờ tài khoản nhận."
+      )
       expect(waitingSection.querySelector("h2")?.textContent).toContain("0")
 
-      expect(organizersSection.textContent).toContain("Không có hồ sơ nào chờ xác minh.")
+      expect(organizersSection.querySelector("h3")?.textContent.trim()).toBe("Không có hồ sơ nào chờ xác minh.")
       expect(organizersSection.querySelector("h2")?.textContent).toContain("0")
     })
   })

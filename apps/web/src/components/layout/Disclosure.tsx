@@ -93,7 +93,13 @@ export function Disclosure({
         // string changes (the pathname check above would miss that); a link
         // chosen from the keyboard (detail 0) gives focus back to the button.
         onClick={(event) => {
-          if (!(event.target as Element).closest("a")) return
+          const target =
+            event.target instanceof Element
+              ? event.target
+              : event.target instanceof Node
+                ? event.target.parentElement
+                : null
+          if (!target?.closest("a")) return
           setOpen(false)
           if (event.detail === 0) trigger.current?.focus()
         }}
