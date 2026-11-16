@@ -13,6 +13,11 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Pledge flow tests cover the `/campaigns/[slug]/pledge` RSC's session
+  routing, reward and open-pledge defaults, reference-code callout and form
+  visibility, plus `PledgeForm`'s sold-out rewards, amount and minimum-hint
+  updates, and conditional shipping address fields; no screen change
+  (#216 / #221).
 - Organizer onboarding and draft creation tests: Vitest suites cover `/start`
   session guards, profile validation and normalization, insert/update column
   boundaries, re-verification messages, funding models, slug collision retries,
@@ -31,7 +36,7 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   `RewardTiersSection` (`tiers === null` danger callout, empty copy,
   `sortTiers` ordering, move/delete/edit controls and `MAX_TIERS` cap while
   editable, and `canRetireTier`, claimed notes and retired warnings in
-  `RETIRABLE_STATUSES`); no screen change (#217).
+  `RETIRABLE_STATUSES`); no screen change (#217 / #220).
 - Header `Disclosure` keyboard focus and layout/admin tests: choosing a link
   inside a header `Disclosure` menu from the keyboard (`detail === 0`) gives
   focus back to its button when the panel hides, matching `Dropdown`
