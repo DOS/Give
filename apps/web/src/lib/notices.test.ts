@@ -421,6 +421,43 @@ describe("describeNotice", () => {
     )
   })
 
+  it("covers a moderator inquiry to the campaign organizer (DOS/Give#98)", () => {
+    const view = describeNotice(
+      notice({
+        kind: "moderator_inquiry",
+        campaign_id: CAMPAIGN,
+        payload: {
+          campaign_slug: "quy-hoc-bong",
+          campaign_title: "Quỹ học bổng",
+          note: "Đề nghị bổ sung giấy xác nhận của trường.",
+        },
+      })
+    )
+    expect(view.title).toBe("Cần làm rõ thông tin chiến dịch")
+    expect(view.body).toContain("chiến dịch “Quỹ học bổng”")
+    expect(view.body).toContain("Nội dung: Đề nghị bổ sung giấy xác nhận của trường.")
+    expect(view.body).toContain("help@dos.me")
+    expect(view.href).toBe(`/me/campaigns/${CAMPAIGN}`)
+    expect(view.linkLabel).toBe("Quản lý chiến dịch")
+
+    // Falls back to the public campaign slug when campaign_id is absent, and to null when slug is unsafe.
+    const slugFallback = describeNotice(
+      notice({
+        kind: "moderator_inquiry",
+        campaign_id: null,
+        payload: { campaign_slug: "quy-hoc-bong" },
+      })
+    )
+    expect(slugFallback.body).toContain("chiến dịch của bạn")
+    expect(slugFallback.body).not.toContain("Nội dung:")
+    expect(slugFallback.href).toBe("/campaigns/quy-hoc-bong")
+    expect(slugFallback.linkLabel).toBe("Xem chiến dịch")
+
+    expect(
+      describeNotice(notice({ kind: "moderator_inquiry", campaign_id: null, payload: { campaign_slug: "../x" } }))
+    ).toMatchObject({ href: null, linkLabel: null })
+  })
+
   it("shows a generic notice for a kind this app does not know yet", () => {
     expect(describeNotice(notice({ kind: "something_new" })).title).toBe("Thông báo")
   })

@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { Suspense } from "react"
 
+import { ContactText } from "@/components/ContactText"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { Badge } from "@/components/ui/Badge"
 import { buttonClass, ButtonLink } from "@/components/ui/Button"
@@ -97,7 +98,9 @@ async function NoticeList({ session }: { session: Session }) {
                     {!notice.read_at && <Badge tone="brand">Mới</Badge>}
                     <h2 className="min-w-0 text-h3 break-words">{view.title}</h2>
                   </div>
-                  <p className="mt-1 max-w-[68ch] break-words text-fg">{view.body}</p>
+                  <p className="mt-1 max-w-[68ch] break-words whitespace-pre-line text-fg">
+                    <ContactText text={view.body} />
+                  </p>
                   <p className="mt-1 text-sm text-muted">{formatDateTime(notice.created_at)}</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 sm:shrink-0">

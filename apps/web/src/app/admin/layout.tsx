@@ -43,6 +43,7 @@ async function adminLinks(): Promise<AdminNavLink[]> {
     ...(moderates
       ? [
           { href: "/admin", label: "Kiểm duyệt" },
+          { href: "/admin/reports", label: "Báo cáo" },
           { href: "/admin/evidence", label: "Ảnh chứng từ" },
           { href: "/admin/payment-requests", label: "Thanh toán" },
         ]

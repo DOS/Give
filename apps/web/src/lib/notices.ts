@@ -1,4 +1,5 @@
 import type { Db } from "@/lib/campaigns"
+import { VIA_CONTACT_EMAIL } from "@/lib/contact"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { paymentRequestsStopped } from "@/lib/payment-requests"
@@ -261,6 +262,24 @@ export function describeNotice(notice: Notice, options?: NoticeRenderOptions): N
           : "Tài khoản nhận của bạn chưa được xác minh. Hãy xem lại thông tin tài khoản.",
         href: "/me/accounts",
         linkLabel: "Xem tài khoản nhận",
+      }
+    }
+    case "moderator_inquiry": {
+      const note = text(p, "note")
+      const slug = text(p, "campaign_slug")
+      let body = `Đội kiểm duyệt Give cần bạn làm rõ thêm về ${campaignName(p)}.`
+      if (note) body += ` Nội dung: ${note}`
+      body += ` Bạn có thể bổ sung cập nhật hoặc chứng từ trên trang quản lý chiến dịch, hoặc phản hồi đội ngũ Give ${VIA_CONTACT_EMAIL}.`
+      const link =
+        notice.campaign_id && isUuid(notice.campaign_id)
+          ? { href: `/me/campaigns/${notice.campaign_id}`, linkLabel: "Quản lý chiến dịch" }
+          : slug && SLUG_PATTERN.test(slug)
+            ? { href: `/campaigns/${slug}`, linkLabel: "Xem chiến dịch" }
+            : { href: null, linkLabel: null }
+      return {
+        title: "Cần làm rõ thông tin chiến dịch",
+        body,
+        ...link,
       }
     }
     default:

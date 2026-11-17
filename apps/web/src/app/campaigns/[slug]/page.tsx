@@ -16,7 +16,7 @@ import { ShareButtons } from "@/components/ShareButtons"
 import { Button, ButtonLink } from "@/components/ui/Button"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { EmptyState } from "@/components/ui/EmptyState"
-import { CheckIcon, FlagIcon, ShieldIcon } from "@/components/ui/icons"
+import { CheckIcon, ShieldIcon } from "@/components/ui/icons"
 import { Money } from "@/components/ui/Money"
 import { TabNav, type TabItem } from "@/components/ui/Tabs"
 import { listPublicAccountChanges } from "@/lib/account-swaps"
@@ -44,6 +44,7 @@ import { acceptsDonations, paymentAccount } from "@/server/contributions"
 import { listPublicTiers, organizesCampaign } from "@/server/pledges"
 
 import { DonateForm } from "./DonateForm"
+import { ReportCampaign } from "./ReportCampaign"
 
 /**
  * Public campaigns load as an anonymous visitor. If that finds nothing and
@@ -97,7 +98,8 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   const isGive = campaign.type === "give"
   const donationsOpen = !preview && acceptsDonations(campaign)
   const pledgesOpen = !preview && acceptsPledges(campaign)
-  const [milestones, updates, organizer, account, session, totals, accountChanges, tiers, statementRows] =
+  const sessionPromise = getSession()
+  const [milestones, updates, organizer, account, session, ownCampaign, totals, accountChanges, tiers, statementRows] =
     await Promise.all([
       listMilestones(db, campaign.id),
       listPublishedUpdates(db, campaign.id),
@@ -109,7 +111,13 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             return null
           })
         : Promise.resolve(null),
-      getSession(),
+      sessionPromise,
+      // The organizer cannot back or report their own campaign (the database refuses both).
+      preview
+        ? Promise.resolve(false)
+        : sessionPromise.then((s) =>
+            s ? organizesCampaign(dbAs(s.accessToken), campaign.id, s.user.id).catch(() => false) : false
+          ),
       // Public views only: a preview has no public totals yet.
       preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
       // A failed read hides the notice rather than the page; the statement shows it too.
@@ -137,9 +145,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             }),
     ])
   const canDonate = donationsOpen && account !== null
-  // The creator cannot back their own project (the database refuses it too).
-  const ownProject =
-    pledgesOpen && session ? await organizesCampaign(dbAs(session.accessToken), campaign.id, session.user.id) : false
+  const ownProject = pledgesOpen && ownCampaign
   const canPledge = pledgesOpen && !ownProject
   const closedNote = preview
     ? `Give sắp mở nhận ${isGive ? "ủng hộ" : "cam kết"}. Tiền sẽ đi thẳng vào tài khoản nhận của chiến dịch.`
@@ -365,14 +371,9 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 {!preview && (
                   <>
                     <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={siteOrigin()} />
-                    {/* No campaign report flow yet: the statement takes reports on evidence images (DOS/Give#58). */}
-                    <Link
-                      href={statementHref(campaign.slug, "out")}
-                      className="inline-flex min-h-11 w-full items-center justify-center gap-2 text-sm text-muted hover:text-fg hover:underline"
-                    >
-                      <FlagIcon width={16} height={16} />
-                      Báo cáo chứng từ có vấn đề
-                    </Link>
+                    {!ownCampaign && (
+                      <ReportCampaign campaignId={campaign.id} slug={campaign.slug} signedIn={!!session} />
+                    )}
                   </>
                 )}
               </div>

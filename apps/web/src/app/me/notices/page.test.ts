@@ -128,4 +128,37 @@ describe("MyNoticesPage (DOS/Give#93)", () => {
     expect(items[1]).toContain('href="/me/pledges/GVACT2345"')
     expect(items[1]).toContain(">Thanh toán ngay<")
   })
+
+  it("renders moderator_inquiry with ContactText mailto link and management action (DOS/Give#98)", async () => {
+    state.handler = (call) => {
+      if (call.target === "notices") {
+        if (call.ops.some(([name]) => name === "is")) return { count: 1 }
+        return {
+          data: [
+            {
+              id: "66666666-6666-4666-8666-666666666666",
+              kind: "moderator_inquiry",
+              campaign_id: ACTIVE_CAMPAIGN,
+              payload: {
+                campaign_slug: "ban-phim-co",
+                campaign_title: "Bàn phím cơ",
+                note: "Cần đối chiếu hóa đơn đặt linh kiện.",
+              },
+              created_at: "2026-11-16T04:00:00Z",
+              read_at: null,
+            },
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const html = await renderAsync(await MyNoticesPage())
+    expect(state.calls.map((c) => c.target)).toEqual(["notices", "notices"])
+    expect(html).toContain("Cần làm rõ thông tin chiến dịch")
+    expect(html).toContain("Cần đối chiếu hóa đơn đặt linh kiện.")
+    expect(html).toContain('href="mailto:help@dos.me"')
+    expect(html).toContain(`href="/me/campaigns/${ACTIVE_CAMPAIGN}"`)
+    expect(html).toContain(">Quản lý chiến dịch<")
+  })
 })

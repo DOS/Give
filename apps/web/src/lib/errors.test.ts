@@ -4,8 +4,10 @@ import {
   CORRECT_EXPLANATION_MESSAGES,
   dbErrorMessage,
   giveErrorCode,
+  MODERATE_CAMPAIGN_REPORTS_MESSAGES,
   OPEN_MESSAGES,
   OWN_TRANSFER_MESSAGES,
+  REPORT_CAMPAIGN_MESSAGES,
   RETURN_TO_UNMATCHED_MESSAGES,
   REVIEW_MESSAGES,
   SUBMIT_MESSAGES,
@@ -245,5 +247,79 @@ describe("STATEMENT_ROW_MESSAGES (DOS/Give#78)", () => {
   it("tells staff why their own money is refused and who can resolve it", () => {
     expect(STATEMENT_ROW_MESSAGES.GIVE_SELF_REVIEW).toContain("tài khoản nhận là của bạn")
     expect(STATEMENT_ROW_MESSAGES.GIVE_SELF_REVIEW).toContain("Một nhân viên tài chính khác cần xử lý")
+  })
+})
+
+describe("campaign reports and moderator queue refusals (DOS/Give#98)", () => {
+  const generic = dbErrorMessage(null)
+
+  const REPORT_CODES = [
+    "GIVE_NOT_ALLOWED",
+    "GIVE_REPORT_REASON_INVALID",
+    "GIVE_REPORT_DETAILS_REQUIRED",
+    "GIVE_REPORT_DETAILS_TOO_LONG",
+    "GIVE_CAMPAIGN_NOT_FOUND",
+    "GIVE_REPORT_LIMIT",
+  ]
+
+  const MODERATE_CODES = [
+    "GIVE_NOT_ADMIN",
+    "GIVE_MODERATION_INVALID",
+    "GIVE_REASON_REQUIRED",
+    "GIVE_REASON_TOO_LONG",
+    "GIVE_PUBLIC_NOTE_REQUIRED",
+    "GIVE_PUBLIC_NOTE_TOO_LONG",
+    "GIVE_CAMPAIGN_NOT_FOUND",
+    "GIVE_SELF_REVIEW",
+    "GIVE_TRANSITION_NOT_ALLOWED",
+    "GIVE_PAYMENT_REQUESTS_NOT_STOPPABLE",
+  ]
+
+  it("maps all new campaign report and moderation codes in global GIVE_MESSAGES", () => {
+    for (const code of [
+      "GIVE_REPORT_REASON_INVALID",
+      "GIVE_REPORT_DETAILS_REQUIRED",
+      "GIVE_REPORT_DETAILS_TOO_LONG",
+      "GIVE_REPORT_LIMIT",
+      "GIVE_MODERATION_INVALID",
+      "GIVE_REASON_TOO_LONG",
+      "GIVE_PUBLIC_NOTE_REQUIRED",
+      "GIVE_PUBLIC_NOTE_TOO_LONG",
+      "GIVE_PAYMENT_REQUESTS_NOT_STOPPABLE",
+    ]) {
+      const msg = dbErrorMessage({ code: "23514", message: `${code}: detail` })
+      expect(msg, code).not.toBe(generic)
+      expect(msg, code).not.toMatch(/GIVE_/)
+    }
+  })
+
+  it("words every give.report_campaign refusal, including GIVE_NOT_ALLOWED for self-report", () => {
+    for (const code of REPORT_CODES) {
+      const msg = dbErrorMessage({ code: "42501", message: code }, REPORT_CAMPAIGN_MESSAGES)
+      expect(msg, code).toBe(REPORT_CAMPAIGN_MESSAGES[code])
+      expect(msg, code).not.toBe(generic)
+    }
+    expect(Object.keys(REPORT_CAMPAIGN_MESSAGES).sort()).toEqual([...REPORT_CODES].sort())
+    expect(dbErrorMessage({ message: "GIVE_NOT_ALLOWED" }, REPORT_CAMPAIGN_MESSAGES)).toBe(
+      "Bạn không thể báo cáo chiến dịch của chính mình."
+    )
+  })
+
+  it("words every give.moderate_campaign_reports refusal, including GIVE_SELF_REVIEW for self-moderation", () => {
+    for (const code of MODERATE_CODES) {
+      const msg = dbErrorMessage(
+        { code: "42501", message: `${code}: closed -> suspended` },
+        MODERATE_CAMPAIGN_REPORTS_MESSAGES
+      )
+      expect(msg, code).toBe(MODERATE_CAMPAIGN_REPORTS_MESSAGES[code])
+      expect(msg, code).not.toBe(generic)
+    }
+    expect(Object.keys(MODERATE_CAMPAIGN_REPORTS_MESSAGES).sort()).toEqual([...MODERATE_CODES].sort())
+    expect(dbErrorMessage({ message: "GIVE_SELF_REVIEW" }, MODERATE_CAMPAIGN_REPORTS_MESSAGES)).toContain(
+      "chiến dịch do chính bạn tổ chức"
+    )
+    expect(dbErrorMessage({ message: "GIVE_SELF_REVIEW" }, MODERATE_CAMPAIGN_REPORTS_MESSAGES)).toContain(
+      "một kiểm duyệt viên khác"
+    )
   })
 })
