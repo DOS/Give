@@ -1,0 +1,51 @@
+{
+  "screenshotsCount": 24,
+  "screenshots": [
+    "campaign-report-375-light.png",
+    "campaign-report-768-light.png",
+    "campaign-report-1280-light.png",
+    "campaign-report-1440-light.png",
+    "admin-reports-375-light.png",
+    "admin-reports-768-light.png",
+    "admin-reports-1280-light.png",
+    "admin-reports-1440-light.png",
+    "me-notices-375-light.png",
+    "me-notices-768-light.png",
+    "me-notices-1280-light.png",
+    "me-notices-1440-light.png",
+    "campaign-report-375-dark.png",
+    "campaign-report-768-dark.png",
+    "campaign-report-1280-dark.png",
+    "campaign-report-1440-dark.png",
+    "admin-reports-375-dark.png",
+    "admin-reports-768-dark.png",
+    "admin-reports-1280-dark.png",
+    "admin-reports-1440-dark.png",
+    "me-notices-375-dark.png",
+    "me-notices-768-dark.png",
+    "me-notices-1280-dark.png",
+    "me-notices-1440-dark.png"
+  ],
+  "overflowCheckedCount": 54,
+  "maxOverflowPx": 0,
+  "keyboardCheck": {
+    "focusedReason": "report-reason",
+    "focusedDetails": "report-details",
+    "focusedSubmit": "Gửi báo cáo",
+    "adminNavAriaCurrent": "page"
+  },
+  "lighthouseScores": {
+    "campaign-report": {
+      "score": 100,
+      "failing": []
+    },
+    "admin-reports": {
+      "score": 100,
+      "failing": []
+    },
+    "me-notices": {
+      "score": 100,
+      "failing": []
+    }
+  }
+}
