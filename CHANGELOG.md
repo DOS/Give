@@ -231,7 +231,7 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   member's token through `give.bank_transaction_refusal_reasons`
   (`refusalReasons` in `lib/reconciliation.ts`). Without the function (an
   environment before DOS/DOS.Me#1757) or on a read error the rows show no
-  reason and the page no error (#138 / #PR).
+  reason and the page no error (#138 / #230).
 - Follow-ups from #64 (`apps/web`): `approveCampaign` and `requestChanges`
   report a failed campaign pre-read instead of "not found";
   `checkSubmitAccount`, `loadEditorAccounts` and `/me/campaigns/[id]` load
