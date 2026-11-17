@@ -36,6 +36,8 @@ import {
   paidAfterMatch,
   paidBreakdown,
   REFERENCE_CODE,
+  REFUSAL_REASON_LABELS,
+  refusalReasons,
   waitsFor,
   type MatchCandidate,
   type ReturnCandidate,
@@ -340,6 +342,89 @@ describe("accountOwnerMismatch and ownerMismatchNotice (DOS/Give#148)", () => {
     expect(OWNER_MISMATCH_FOR_STAFF).toBe(
       "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy báo quản trị viên kiểm tra lại tài khoản nhận và người tổ chức của chiến dịch trước khi xử lý giao dịch này."
     )
+  })
+})
+
+describe("refusalReasons (DOS/Give#138)", () => {
+  const TX_A = "aaaaaaaa-0000-4000-8000-000000000001"
+  const TX_B = "aaaaaaaa-0000-4000-8000-000000000002"
+  const BINDING = "bbbbbbbb-0000-4000-8000-000000000001"
+
+  it("asks bank_transaction_refusal_reasons once for the distinct ids and groups the rows by transaction", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({
+        data: [
+          {
+            bank_transaction_id: TX_A,
+            action: "bank_transaction.account_owner_mismatch",
+            campaign_id: CAMPAIGN,
+            binding_id: BINDING,
+            created_at: "2026-11-17T01:00:00.000Z",
+          },
+          {
+            bank_transaction_id: TX_A,
+            action: "bank_transaction.after_close",
+            campaign_id: CAMPAIGN,
+            binding_id: null,
+            created_at: "2026-11-17T02:00:00.000Z",
+          },
+          // An action the app has no words for is left out.
+          {
+            bank_transaction_id: TX_B,
+            action: "bank_transaction.something_new",
+            campaign_id: null,
+            binding_id: null,
+            created_at: "2026-11-17T03:00:00.000Z",
+          },
+        ],
+      }),
+      calls
+    ) as unknown as Db
+    const reasons = await refusalReasons(db, [TX_A, TX_B, TX_A])
+    expect(calls).toHaveLength(1)
+    expect(calls[0].target).toBe("rpc:bank_transaction_refusal_reasons")
+    expect(op(calls[0], "args")).toEqual([{ p_bank_transaction_ids: [TX_A, TX_B] }])
+    expect([...reasons.keys()]).toEqual([TX_A])
+    expect(reasons.get(TX_A)).toEqual([
+      {
+        action: "bank_transaction.account_owner_mismatch",
+        campaign_id: CAMPAIGN,
+        binding_id: BINDING,
+        created_at: "2026-11-17T01:00:00.000Z",
+      },
+      {
+        action: "bank_transaction.after_close",
+        campaign_id: CAMPAIGN,
+        binding_id: null,
+        created_at: "2026-11-17T02:00:00.000Z",
+      },
+    ])
+  })
+
+  it("does not call the database without ids", async () => {
+    const calls: Call[] = []
+    expect((await refusalReasons(fakeDb(() => ({ data: [] }), calls) as unknown as Db, [])).size).toBe(0)
+    expect(calls).toHaveLength(0)
+  })
+
+  it("is empty while the database does not have the function yet", async () => {
+    for (const code of ["PGRST202", "42883"]) {
+      const missing = fakeDb(() => ({ error: { code, message: "Could not find the function" } })) as unknown as Db
+      expect((await refusalReasons(missing, [TX_A])).size).toBe(0)
+    }
+  })
+
+  it("throws any other database error, including a refusal", async () => {
+    const refused = fakeDb(() => ({ error: { code: "42501", message: "GIVE_NOT_ALLOWED" } })) as unknown as Db
+    await expect(refusalReasons(refused, [TX_A])).rejects.toMatchObject({ code: "42501" })
+  })
+
+  it("words both reasons in plain Vietnamese", () => {
+    expect(REFUSAL_REASON_LABELS).toEqual({
+      "bank_transaction.account_owner_mismatch": "Tài khoản nhận không thuộc người tổ chức chiến dịch",
+      "bank_transaction.after_close": "Chiến dịch đã đóng khi tiền về",
+    })
   })
 })
 

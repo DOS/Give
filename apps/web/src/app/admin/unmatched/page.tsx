@@ -21,7 +21,7 @@ import {
 import { matchTransaction } from "@/app/me/campaigns/[id]/unmatched/actions"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
-import { campaignRefs, FINANCE_ROLES } from "@/lib/receiving-accounts"
+import { campaignRefs, FINANCE_ROLES, type CampaignRef } from "@/lib/receiving-accounts"
 import {
   campaignOrganizers,
   correctionBlocked,
@@ -36,12 +36,15 @@ import {
   listUnattributed,
   listUnmatched,
   ownerMismatchNotice,
+  refusalReasons,
   returnCandidatesFor,
   returnToUnmatchedBlocked,
   UNATTRIBUTED_CAUSES,
   type InboundExplanation,
   type MatchCandidate,
+  type RefusalReason,
   type ReturnCandidate,
+  type UnattributedTransaction,
 } from "@/lib/reconciliation"
 import { OWN_CONTRIBUTION_SCOPE, type Viewer } from "@/lib/own-contribution"
 import { accountLabels } from "@/lib/statement-import"
@@ -73,7 +76,7 @@ export default async function AdminUnmatchedPage() {
     }),
   ])
   const campaignIds = [...new Set(unmatched.map((tx) => tx.campaign_id))]
-  const [refs, candidateLists, organizers, accounts, returnCandidates] = await Promise.all([
+  const [refs, candidateLists, organizers, accounts, returnCandidates, refusals] = await Promise.all([
     campaignRefs(db, [
       ...campaignIds,
       ...matches.map((m) => m.tx.campaign_id),
@@ -100,6 +103,7 @@ export default async function AdminUnmatchedPage() {
         console.error("return candidates failed", e?.code, e?.message)
         return [] as ReturnCandidate[]
       }),
+    unattributedRefusals(db, unattributed?.transactions ?? []),
   ])
   const candidates = new Map(campaignIds.map((id, i) => [id, candidateLists[i]]))
   const titles = new Map([...refs].map(([id, ref]) => [id, ref.title]))
@@ -190,7 +194,13 @@ export default async function AdminUnmatchedPage() {
             Tiền vào tài khoản nhận mà không thuộc chiến dịch nào sẽ hiện ở đây.
           </EmptyState>
         ) : (
-          <UnattributedList transactions={unattributed.transactions} total={unattributed.total} accounts={accounts} />
+          <UnattributedList
+            transactions={unattributed.transactions}
+            total={unattributed.total}
+            accounts={accounts}
+            reasons={refusals.reasons}
+            campaigns={refusals.campaigns}
+          />
         )}
       </AdminSection>
 
@@ -274,4 +284,29 @@ async function explanationOffers(
     })
   }
   return { corrections, returns }
+}
+
+/**
+ * Why each unattributed transaction was not given to a campaign, and the
+ * campaigns those reasons name (DOS/Give#138). Only shown: without the
+ * reasons (a read error, or a database without the function yet) each row
+ * shows none, and without the campaigns a reason names its campaign by id.
+ */
+async function unattributedRefusals(
+  db: ReturnType<typeof dbAs>,
+  transactions: UnattributedTransaction[]
+): Promise<{ reasons: Map<string, RefusalReason[]>; campaigns: Map<string, CampaignRef> }> {
+  const reasons = await refusalReasons(
+    db,
+    transactions.map((tx) => tx.id)
+  ).catch((e: { code?: string; message?: string } | null) => {
+    console.error("bank_transaction_refusal_reasons failed", e?.code, e?.message)
+    return new Map<string, RefusalReason[]>()
+  })
+  const ids = [...reasons.values()].flat().flatMap((r) => (r.campaign_id ? [r.campaign_id] : []))
+  const campaigns = await campaignRefs(db, ids).catch((e: { code?: string; message?: string } | null) => {
+    console.error("refused campaign refs failed", e?.code, e?.message)
+    return new Map<string, CampaignRef>()
+  })
+  return { reasons, campaigns }
 }
