@@ -453,25 +453,13 @@ has no Production deploy. Behaviour to know:
   recorded unattributed, and a manual match on it is refused with
   `GIVE_ACCOUNT_OWNER_MISMATCH` (#119; follow-ups #137, #138).
 
-### Waiting for Production
+### On Production (2026-11-17)
 
-- Migration `20261116120000_give_statement_row_not_a_transaction.sql` (#78)
-  must reach DOS.Me `main` (Production) before Give `main` ships the
-  `not_a_transaction` staff resolution in `apps/web`.
-- Migration `20261116150000_give_self_review_guest_contribution.sql` (#199)
-  must reach DOS.Me `main` (Production) before Give `main` ships #199's
-  hidden own contributions and wording, so the database refuses what the
-  app hides.
-- Migration `20261117090000_give_return_inbound_to_unmatched.sql` (#196)
-  must reach DOS.Me `main` (Production) before Give `main` ships #196: the
-  app reads `give.inbound_explanation_returns` in every unmatched list and in
-  each match, explain, correct and link action, so those fail without it.
-- Migration `20261120090000_give_campaign_reports.sql` (#207) must reach
-  DOS.Me `main` (Production) before Give `main` ships #98: `/campaigns/[slug]`
-  calls `give.report_campaign`, `/admin/reports` reads `give.campaign_reports`
-  and calls `give.moderate_campaign_reports`, and `give.notices` checks the
-  `moderator_inquiry` kind.
-- The test-only changes #135 / DOS/DOS.Me#1663 and #144 / DOS/DOS.Me#1664 are
-  on DOS.Me `dev` and are to be promoted together (#155). Until then DOS.Me
-  `main` carries `give_staff_role_revoke_lock.test.sql` with the known test
-  defect of #135; no CI job runs it.
+Promoted with JOY's approval. Database first: the selective promotion
+DOS/DOS.Me#1742 (merge commit `d6732a30`) applied `20261115120000` (#84),
+`20261115150000` (#72), `20261115170000` (#195), `20261116090000` (#71),
+`20261116120000` (#78), `20261116150000` (#199), `20261117090000` (#196) and
+`20261120090000` (#207), plus the CI fix of #174. Then Give `main` took `dev`
+through #224 (merge commit `84e42a23`), which deploys give.vn on Vercel. The
+test-only #135 and #144 changes reached DOS.Me `main` earlier (#155,
+DOS/DOS.Me#1673).
