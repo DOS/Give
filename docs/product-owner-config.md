@@ -121,10 +121,12 @@ the Qwen Code PO, and Platform by the Give Product Owner.
   app code needs is on DOS.Me `main`. give.vn already served `main` before
   this was recorded; #224 (2026-11-17) is the first promotion run as a
   Production step.
-- test_environment: Vercel preview deployments of the `give` project; PR
-  previews are linked as https://beta.give.vn, behind Vercel login (seen on
-  #224, 2026-11-17). Planned against the DOS Supabase beta project; not yet
-  verified which Supabase project the previews use.
+- test_environment: Vercel preview deployments of the `give` project. The
+  `dev` branch is served at https://beta.give.vn and each PR branch gets its
+  own `give-git-<branch>-metados.vercel.app` preview, both behind Vercel
+  login (seen on #224 and #225, 2026-11-17). Planned against the DOS
+  Supabase beta project; not yet verified which Supabase project the
+  previews use.
 
 ## Checks and review
 
