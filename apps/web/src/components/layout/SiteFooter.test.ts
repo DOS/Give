@@ -8,13 +8,13 @@ const html = renderToStaticMarkup(createElement(SiteFooter))
 
 describe("SiteFooter", () => {
   it("links Give's contact address under the brand line (DOS/Give#205)", () => {
-    const row = html.match(/<p class="([^"]*)"><a href="mailto:help@dos\.me" class="([^"]*)">([^<]*)<\/a><\/p>/)
+    const row = html.match(/<p class="([^"]*)"><a href="mailto:hi@give\.vn" class="([^"]*)">([^<]*)<\/a><\/p>/)
     expect(row).not.toBeNull()
-    expect(row?.[3]).toBe("Liên hệ: help@dos.me")
+    expect(row?.[3]).toBe("Liên hệ: hi@give.vn")
     // The same 28px box in a 36px row as the sitemap links (DESIGN.md 6, Focus ring; 7).
     expect(row?.[1].split(" ")).toEqual(expect.arrayContaining(["mt-1", "relative", "min-h-9", "w-fit"]))
     expect(row?.[2].split(" ")).toEqual(expect.arrayContaining(["min-h-7", "text-muted", "before:absolute"]))
-    expect(html.indexOf("Give không giữ tiền.")).toBeLessThan(html.indexOf("mailto:help@dos.me"))
+    expect(html.indexOf("Give không giữ tiền.")).toBeLessThan(html.indexOf("mailto:hi@give.vn"))
   })
 
   it("keeps the sitemap links in the same rows", () => {
