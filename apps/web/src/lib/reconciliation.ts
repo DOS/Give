@@ -299,6 +299,63 @@ export async function listUnattributed(
   return { transactions, total: count ?? transactions.length }
 }
 
+/** The audit_log actions give.bank_transaction_refusal_reasons returns, in words (DOS/Give#138). */
+export const REFUSAL_REASON_LABELS = {
+  "bank_transaction.account_owner_mismatch": "Tài khoản nhận không thuộc người tổ chức chiến dịch",
+  "bank_transaction.after_close": "Chiến dịch đã đóng khi tiền về",
+} as const
+
+export type RefusalAction = keyof typeof REFUSAL_REASON_LABELS
+
+/** Why a bank transaction was not given to a campaign, and which campaign. */
+export interface RefusalReason {
+  action: RefusalAction
+  /** The refused campaign (mismatch), or the campaign that had closed (after close). */
+  campaign_id: string | null
+  /** The refused binding; null for after close. */
+  binding_id: string | null
+  created_at: string
+}
+
+/**
+ * The refusal reasons of these transactions, by transaction id, oldest first
+ * (give.bank_transaction_refusal_reasons, DOS/Give#138). Finance and admin
+ * staff only: the database refuses anyone else. give.audit_log itself stays
+ * admin-only, so this is the only read finance has of these entries.
+ *
+ * An empty map when there is nothing to ask, or when the database does not
+ * have the function yet (an app deployed before the migration shows no
+ * reason; a server warning is logged). Any other error is thrown. Actions the app has no words for are
+ * left out.
+ */
+export async function refusalReasons(db: Db, transactionIds: readonly string[]): Promise<Map<string, RefusalReason[]>> {
+  const ids = [...new Set(transactionIds)]
+  const reasons = new Map<string, RefusalReason[]>()
+  if (ids.length === 0) return reasons
+  const { data, error } = await db.rpc("bank_transaction_refusal_reasons", { p_bank_transaction_ids: ids })
+  if (error?.code === "PGRST202" || error?.code === "42883") {
+    // Missing, or its signature drifted from this call: server log only.
+    console.warn("bank_transaction_refusal_reasons unavailable", error.code)
+    return reasons
+  }
+  if (error) throw error
+  for (const row of (data ?? []) as (Omit<RefusalReason, "action"> & {
+    bank_transaction_id: string
+    action: string
+  })[]) {
+    if (!Object.hasOwn(REFUSAL_REASON_LABELS, row.action)) continue
+    const list = reasons.get(row.bank_transaction_id) ?? []
+    list.push({
+      action: row.action as RefusalAction,
+      campaign_id: row.campaign_id,
+      binding_id: row.binding_id,
+      created_at: row.created_at,
+    })
+    reasons.set(row.bank_transaction_id, list)
+  }
+  return reasons
+}
+
 const SOURCE_LABELS: Record<string, string> = {
   webhook: "ngân hàng báo về",
   api_poll: "đọc từ ngân hàng",

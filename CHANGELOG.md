@@ -224,6 +224,14 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Money (M1)
 
+- Refusal reasons on `/admin/unmatched`: each transaction under "Tiền vào
+  không thuộc chiến dịch nào" shows why it was not given to a campaign
+  ("Tài khoản nhận không thuộc người tổ chức chiến dịch", or "Chiến dịch đã
+  đóng khi tiền về") with a link to that campaign, read with the staff
+  member's token through `give.bank_transaction_refusal_reasons`
+  (`refusalReasons` in `lib/reconciliation.ts`). Without the function (an
+  environment before DOS/DOS.Me#1757) or on a read error the rows show no
+  reason and the page no error (#138 / #230).
 - Follow-ups from #64 (`apps/web`): `approveCampaign` and `requestChanges`
   report a failed campaign pre-read instead of "not found";
   `checkSubmitAccount`, `loadEditorAccounts` and `/me/campaigns/[id]` load
@@ -379,6 +387,13 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Database (DOS.Me)
 
+- Finance can read why a bank transaction was refused:
+  `give.bank_transaction_refusal_reasons(uuid[])`, finance and admin only,
+  returns the `bank_transaction.account_owner_mismatch` and
+  `bank_transaction.after_close` audit entries of the given transactions with
+  their campaign and binding; every other `give.audit_log` entry stays
+  admin-only (#138 / DOS/DOS.Me#1757). Migration
+  `20261121160000_give_bank_transaction_refusal_reasons`.
 - Staff lock on the owner-or-staff RPC paths: a role change and the
   owner-or-staff actions no longer race (#120 / DOS/DOS.Me#1652). Migration
   `20261112060000_give_owner_or_staff_role_revoke_lock`.
