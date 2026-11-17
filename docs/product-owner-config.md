@@ -118,8 +118,9 @@ the Qwen Code PO, and Platform by the Give Product Owner.
   (project `give`, team `metados`) builds `main` and serves it at
   https://give.vn. It is a Production step: only the Give Product Owner
   runs it, after JOY approves it, and only once every DOS.Me migration the
-  app code needs is on DOS.Me `main`. First Production deploy through this
-  path: #224 (2026-11-17).
+  app code needs is on DOS.Me `main`. give.vn already served `main` before
+  this was recorded; #224 (2026-11-17) is the first promotion run as a
+  Production step.
 - test_environment: Vercel preview deployments of the `give` project; PR
   previews are linked as https://beta.give.vn, behind Vercel login (seen on
   #224, 2026-11-17). Planned against the DOS Supabase beta project; not yet
