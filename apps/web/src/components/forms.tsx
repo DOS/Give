@@ -2,6 +2,7 @@
 
 import { createContext, startTransition, useActionState, useContext, useEffect, useRef, type ReactNode } from "react"
 
+import { ContactText } from "@/components/ContactText"
 import type { ActionResult } from "@/lib/errors"
 
 type FormAction = (state: ActionResult, formData: FormData) => Promise<ActionResult>
@@ -58,11 +59,8 @@ export function ActionForm({
     >
       <PendingContext.Provider value={pending}>{children}</PendingContext.Provider>
       {state?.message && (
-        <p
-          role={state.ok ? "status" : "alert"}
-          className={`mt-2 text-sm ${state.ok ? "text-green-700" : "text-red-700"}`}
-        >
-          {state.message}
+        <p role={state.ok ? "status" : "alert"} className={`mt-2 text-sm ${state.ok ? "text-primary" : "text-danger"}`}>
+          <ContactText text={state.message} />
         </p>
       )}
     </form>

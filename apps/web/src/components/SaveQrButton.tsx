@@ -43,11 +43,11 @@ export function SaveQrButton({ svg, filename }: { svg: string; filename: string 
       {!failed && (
         <svg
           viewBox="0 0 24 24"
-          width={18}
-          height={18}
+          width={20}
+          height={20}
           fill="none"
           stroke="currentColor"
-          strokeWidth={1.75}
+          strokeWidth={1.5}
           strokeLinecap="round"
           strokeLinejoin="round"
           aria-hidden

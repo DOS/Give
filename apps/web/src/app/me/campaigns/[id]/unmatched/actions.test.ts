@@ -11,6 +11,7 @@ const OTHER = "99999999-9999-4999-8999-999999999999"
 
 const state = vi.hoisted(() => ({
   userId: "11111111-1111-4111-8111-111111111111",
+  email: null as string | null,
   responses: {} as Record<string, Result>,
   ledger: [] as Result[],
   serviceHandler: (() => undefined) as Handler,
@@ -20,7 +21,7 @@ const state = vi.hoisted(() => ({
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
 vi.mock("@/lib/auth/session", () => ({
-  getSession: vi.fn(async () => ({ user: { id: state.userId, email: null, name: null }, accessToken: "token" })),
+  getSession: vi.fn(async () => ({ user: { id: state.userId, email: state.email, name: null }, accessToken: "token" })),
 }))
 vi.mock("@/lib/supabase", () => ({
   dbAs: () =>
@@ -84,6 +85,7 @@ const AFTER = { received_amount: 700000, unmatched_amount: 0, other_amount: 0, p
 beforeEach(() => {
   vi.mocked(revalidatePath).mockClear()
   state.userId = ORGANIZER
+  state.email = null
   state.userCalls.length = 0
   state.serviceCalls.length = 0
   state.responses = {
@@ -199,10 +201,31 @@ describe("matchTransaction", () => {
       "Chỉ khớp được các khoản tiền vào."
     )
     state.responses.bank_transactions = { data: { ...tx().data, campaign_id: null } }
-    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toContain(
-      "chưa thuộc chiến dịch nào"
+    // The causes of a transaction with no campaign (DOS/Give#148).
+    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toBe(
+      "Giao dịch này không thuộc chiến dịch nào, nên không khớp được. Lý do có thể là: khoản chuyển thử để xác minh tài khoản; tiền vào khi tài khoản chưa gắn với chiến dịch nào hoặc khi chiến dịch chưa gửi duyệt; tiền vào tài khoản cũ sau khi chiến dịch đã đổi sang tài khoản khác; tiền vào sau khi tài khoản được nhả, hoặc tiền vào trước đó nhưng đến khi tài khoản đã được nhả mới được ghi nhận (ví dụ sao kê nhập muộn); hoặc tài khoản không thuộc về người tổ chức của chiến dịch được gắn."
     )
     expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("matches money whose explanation an admin returned to unmatched (DOS/Give#196)", async () => {
+    state.responses.bank_transactions = {
+      data: {
+        ...tx().data,
+        inbound_explanations: {
+          kind: "organizer_top_up",
+          inbound_explanation_corrections: null,
+          inbound_explanation_returns: { returned_at: "2026-11-15T00:00:00Z" },
+        },
+      },
+    }
+    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.ok).toBe(true)
+    expect(op(state.serviceCalls[0], "args")).toEqual([
+      { p_bank_transaction_id: TX, p_contribution_id: CONTRIBUTION, p_actor_id: ORGANIZER },
+    ])
+    // By a typed reference code too.
+    expect((await matchTransaction(TX, null, form({ reference_code: "GV7K2M9QX" })))?.ok).toBe(true)
+    expect(state.serviceCalls).toHaveLength(2)
   })
 
   it("refuses a transaction explained as not a donation (DOS/Give#49)", async () => {
@@ -218,5 +241,102 @@ describe("matchTransaction", () => {
     expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toContain(
       "không khớp được nữa"
     )
+  })
+
+  it("refuses a transaction linked as money a bank returned, from a stale page (DOS/Give#72)", async () => {
+    state.responses.bank_transactions = {
+      data: { ...tx().data, returned_transfers: { original_transaction_id: "o1" } },
+    }
+    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toBe(
+      "Giao dịch này đã được nhân viên tài chính ghi nhận là tiền bị ngân hàng trả lại, nên không khớp được nữa. Hãy tải lại trang."
+    )
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("says why when the account's owner is not the campaign's organizer (DOS/Give#136)", async () => {
+    const happened =
+      "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được."
+    state.serviceHandler = () => ({ error: { code: "23514", message: "GIVE_ACCOUNT_OWNER_MISMATCH" } })
+    const result = await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION }))
+    expect(result).toEqual({
+      ok: false,
+      message: `${happened} Hãy liên hệ đội ngũ Give qua email help@dos.me để kiểm tra lại tài khoản nhận và chiến dịch.`,
+    })
+    expect(result?.message).not.toContain("GIVE_")
+    expect(state.serviceCalls).toHaveLength(1)
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("sends finance staff to an admin for the same refusal (DOS/Give#136)", async () => {
+    state.userId = OTHER
+    state.responses["rpc:is_admin"] = { data: true }
+    state.serviceHandler = () => ({ error: { code: "23514", message: "GIVE_ACCOUNT_OWNER_MISMATCH" } })
+    const result = await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION }))
+    expect(result).toEqual({
+      ok: false,
+      message:
+        "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy báo quản trị viên kiểm tra lại tài khoản nhận và người tổ chức của chiến dịch trước khi xử lý giao dịch này.",
+    })
+    expect(result?.message).not.toContain("GIVE_")
+    expect(state.serviceCalls).toHaveLength(1)
+    expect(revalidatePath).not.toHaveBeenCalled()
+
+    // The other refusals read the same for staff as for the organizer.
+    state.serviceHandler = () => ({ error: { code: "23505", message: "GIVE_TRANSACTION_ALREADY_MATCHED" } })
+    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.message).toContain(
+      "Mỗi giao dịch chỉ được khớp một lần"
+    )
+  })
+})
+
+describe("matchTransaction: nobody matches money to their own contribution (DOS/Give#199)", () => {
+  const STAFF = "66666666-6666-4666-8666-666666666666"
+
+  it("refuses the organizer's own guest contribution (same email, other case and spaces) before calling the database", async () => {
+    state.email = "To.Chuc@Example.vn"
+    state.responses.contributions = contribution({ contributor_user_id: null, guest_email: " to.chuc@EXAMPLE.vn " })
+    const result = await matchTransaction(TX, null, form({ reference_code: "GV7K2M9QX" }))
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toContain("Bạn không khớp được tiền với lượt ủng hộ của chính mình")
+    expect(result?.message).toContain("tự khớp khi nội dung chuyển khoản có đúng mã ủng hộ")
+    expect(state.serviceCalls).toHaveLength(0)
+    // The lookup reads the guest email with the organizer's own token.
+    const lookup = state.userCalls.find((c) => c.target === "contributions")
+    expect(String(op(lookup, "select")?.[0])).toContain("guest_email")
+  })
+
+  it("refuses the organizer's own signed-in contribution", async () => {
+    state.responses.contributions = contribution({ contributor_user_id: ORGANIZER, guest_email: null })
+    const result = await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION }))
+    expect(result?.message).toContain("tự khớp khi nội dung chuyển khoản có đúng mã ủng hộ")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("words the refusal for finance staff matching their own guest contribution", async () => {
+    state.userId = STAFF
+    state.email = "tai.chinh@give.vn"
+    state.responses["rpc:is_admin"] = { data: true }
+    state.responses.contributions = contribution({ contributor_user_id: null, guest_email: "Tai.Chinh@Give.vn" })
+    const result = await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION }))
+    expect(result?.message).toContain("Nhờ một nhân viên tài chính khác khớp khoản này")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("matches another guest's contribution", async () => {
+    state.email = "to.chuc@example.vn"
+    state.responses.contributions = contribution({ contributor_user_id: null, guest_email: "lan@example.vn" })
+    expect((await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION })))?.ok).toBe(true)
+  })
+
+  it("words the database's GIVE_SELF_REVIEW for the organizer and for staff", async () => {
+    state.serviceHandler = () => ({ error: { code: "42501", message: "GIVE_SELF_REVIEW" } })
+    const organizer = await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION }))
+    expect(organizer?.message).toContain("nhân viên tài chính của Give (qua email help@dos.me) khớp giúp")
+    expect(organizer?.message).not.toContain("tài khoản nhận")
+    state.userId = STAFF
+    state.responses["rpc:is_admin"] = { data: true }
+    state.ledger = [{ data: BEFORE }, { data: AFTER }]
+    const staff = await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION }))
+    expect(staff?.message).toContain("Nhờ một nhân viên tài chính khác")
   })
 })

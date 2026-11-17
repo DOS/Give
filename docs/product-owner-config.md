@@ -52,15 +52,25 @@ Ready. WIP limit: In progress per line never exceeds `sub_sessions_max`.
 
 Lines follow risk and ownership, not campaign type: give (charity) and back
 (rewards) share most screens and code, while money handling needs its own
-stricter review and legal track. One PO session, `Give Product Owner`, runs
-all three lines (JOY, 2026-10-31), because the owner approves in one chat
-and approvals do not carry between PO sessions.
+stricter review and legal track.
 
-| Line                                                   | Label            | Product Line option id | PO session                           |
-| ------------------------------------------------------ | ---------------- | ---------------------- | ------------------------------------ |
-| Campaigns                                              | `line:campaigns` | `ef952ffb`             | `Give Product Owner`                 |
-| Money                                                  | `line:money`     | `2640fb7c`             | none; the Give Product Owner decides |
-| Platform (CI, release, auth, infra, DOS.Me migrations) | `line:platform`  | `9a434f49`             | none; the Give Product Owner decides |
+Two POs work this repository (JOY, 2026-11-14). JOY's Qwen Code sessions run
+Campaigns; the Claude Code PO session `Give Product Owner` runs Money and
+Platform, which hold every Production and DOS.Me migration step, so the
+owner still approves Production in one chat. Each PO dispatches only issues
+of its own lines and runs the acceptance gate of its own PRs. Before taking
+an issue, a PO checks its latest protocol comment for another session's
+claim. Neither PO merges, accepts or posts an acceptance on the other's PR.
+A Production or DOS.Me migration step is Platform's, even when a Campaigns PR
+needs it: only the Give Product Owner runs it, with JOY's approval. In the
+table, "none" means no PO session in this desktop app: Campaigns is owned by
+the Qwen Code PO, and Platform by the Give Product Owner.
+
+| Line                                                   | Label            | Product Line option id | PO session                                                |
+| ------------------------------------------------------ | ---------------- | ---------------------- | --------------------------------------------------------- |
+| Campaigns                                              | `line:campaigns` | `ef952ffb`             | none (JOY's Qwen Code sessions; outside this desktop app) |
+| Money                                                  | `line:money`     | `2640fb7c`             | `Give Product Owner`                                      |
+| Platform (CI, release, auth, infra, DOS.Me migrations) | `line:platform`  | `9a434f49`             | none (covered by `Give Product Owner`)                    |
 
 - Campaigns: organizer onboarding, campaign editor and review, discovery,
   campaign pages, updates, milestones, reward tiers and fulfillment status,
@@ -133,8 +143,34 @@ and approvals do not carry between PO sessions.
 - JOY (2026-10-29): "Làm liên tục đi"
 - JOY (2026-10-31): "setup sao cho nó có scrumban đi, có time box á"
 - JOY (2026-10-31), on PO lines: "Nếu như chia gặp vấn đề thì 1 PO thôi"
+  (superseded 2026-11-14, below)
 - JOY (2026-10-31), on branches: "DOS.Me lên main là lên prod mà. Chỉ là
   phải PR dev thôi. Hiện chưa có gì thì làm trên dev rồi PR main luôn nhỉ?"
+- JOY (2026-11-11), on archiving: "Mấy cái lưu trữ các phiên xong rồi không
+  cần hỏi tao". The PO archives finished sub-sessions without asking.
+- JOY (2026-11-12): "Tao sắp migrate qua Mac nên xong các task hiện tại thì
+  dừng và update docs, changelog cần thiết nhé". The line paused after
+  #123 and #120; the next PO session starts from the board and
+  `CHANGELOG.md`.
+- JOY (2026-11-14), on Qwen Code sessions: "tao xài Qwen Code để làm thêm
+  vì Acc này sắp hết limit"; "Qwen tự nghiệm thu"; "Coi như 2 PO làm cùng 1
+  project đi. Việc của ai người đó nghiệm thu."; and, on the PO's proposal
+  to split by line (Qwen: Campaigns; Claude Code: Money and Platform):
+  "Chia như vậy". A `PO acceptance:` comment counts only from the PO that
+  owns the PR's line.
+- JOY (2026-11-16), on empty-site discovery links: "Giữ nguyeyen" — with no
+  live campaign, keep the header, "Hai cách" and footer "Khám phá" links to
+  `/campaigns` (its empty state) as they are.
+
+Screenshot branches (`assets/pr-<n>-screenshots`): every commit on them adds
+`apps/web/vercel.json` with `{"git":{"deploymentEnabled":false}}`, so Vercel
+skips the failing preview build. Never delete or rewrite these branches; PR
+images link to them.
+
+The PO's check-in file and memory live on the machine, outside this
+repository (`~/.claude/po-state/` and `~/.claude/projects/`). They are not
+moved with the repository; GitHub (issues, PR comments, the board) is the
+record a new machine starts from.
 
 Notes: the board's WIP column limits are a GitHub UI setting the API cannot
 set; the PO enforces the WIP limit above. `default_branch` is still `main`;

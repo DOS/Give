@@ -31,23 +31,8 @@ export const PLEDGE_STATUS_LABELS: Record<PledgeStatus, string> = {
   refunded: "Đã hoàn tiền",
 }
 
-export const PLEDGE_STATUS_COLORS: Record<PledgeStatus, string> = {
-  pledged: "bg-blue-100 text-blue-800",
-  payment_due: "bg-amber-100 text-amber-800",
-  partially_paid: "bg-amber-100 text-amber-800",
-  paid: "bg-green-100 text-green-800",
-  cancelled: "bg-gray-100 text-gray-700",
-  lapsed: "bg-gray-100 text-gray-700",
-  refund_due: "bg-red-100 text-red-800",
-  refunded: "bg-gray-100 text-gray-700",
-}
-
 export function pledgeStatusLabel(status: string): string {
   return PLEDGE_STATUS_LABELS[status as PledgeStatus] ?? status
-}
-
-export function pledgeStatusColor(status: string): string {
-  return PLEDGE_STATUS_COLORS[status as PledgeStatus] ?? "bg-gray-100 text-gray-700"
 }
 
 /** What a paid pledge received beyond its amount, which the creator owes back (give.public_campaigns counts it). */

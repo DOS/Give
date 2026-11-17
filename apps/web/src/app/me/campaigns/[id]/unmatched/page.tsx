@@ -9,7 +9,14 @@ import { PageHeader } from "@/components/ui/PageHeader"
 import { requireSession } from "@/lib/auth/session"
 import { getCampaignById } from "@/lib/campaigns"
 import { isUuid } from "@/lib/ids"
-import { listManualMatches, listMatchCandidates, listUnmatched, paidBreakdown } from "@/lib/reconciliation"
+import { OWN_CONTRIBUTION_SCOPE } from "@/lib/own-contribution"
+import {
+  listManualMatches,
+  listMatchCandidates,
+  listUnmatched,
+  ownerMismatchNotice,
+  paidBreakdown,
+} from "@/lib/reconciliation"
 import { dbAs } from "@/lib/supabase"
 
 import { MeDetail } from "../../../_components/MePage"
@@ -30,7 +37,7 @@ export default async function UnmatchedPage({ params }: { params: Promise<{ id: 
     listUnmatched(db, { campaignId: campaign.id }),
     paidBreakdown(db, campaign.id),
     listManualMatches(db, { campaignId: campaign.id }),
-    listMatchCandidates(db, campaign.id),
+    listMatchCandidates(db, campaign.id, session.user),
   ])
 
   return (
@@ -39,35 +46,44 @@ export default async function UnmatchedPage({ params }: { params: Promise<{ id: 
         Tiền đã vào tài khoản nhận nhưng nội dung chuyển khoản không có mã ủng hộ hợp lệ. Nếu bạn biết khoản này của
         lượt ủng hộ nào (người ủng hộ báo lại, hoặc đúng tên và số tiền), hãy khớp tay. Khớp tay chỉ chuyển khoản tiền
         từ &quot;chưa khớp&quot; sang &quot;đã khớp&quot;: tổng đã thanh toán không đổi. Mọi lần khớp tay được ghi vào
-        nhật ký kiểm toán.
+        nhật ký kiểm toán. Không ai khớp tay tiền vào lượt ủng hộ của chính mình ({OWN_CONTRIBUTION_SCOPE}), nên các
+        lượt đó không có trong danh sách: khoản tiền cho lượt ủng hộ của bạn tự khớp khi nội dung chuyển khoản có đúng
+        mã ủng hộ; nếu không, nhân viên tài chính của Give sẽ khớp giúp.
       </PageHeader>
 
-      {breakdown && <PaidBreakdownCard breakdown={breakdown} />}
+      {/* One 8-column reading column (DESIGN.md 2.2). */}
+      <div className="lg:grid lg:grid-cols-12 lg:gap-x-6">
+        <div className="min-w-0 space-y-12 lg:col-span-8">
+          {breakdown && <PaidBreakdownCard breakdown={breakdown} />}
 
-      <section aria-labelledby="unmatched-heading">
-        <h2 id="unmatched-heading" className="mb-4 flex items-center gap-2 text-xl font-semibold tracking-tight">
-          Chờ khớp
-          <Badge tone={total > 0 ? "warning" : "neutral"}>
-            {total > unmatched.length ? `${unmatched.length} mới nhất / ${total}` : total}
-          </Badge>
-        </h2>
-        {unmatched.length === 0 ? (
-          <EmptyState title="Không có giao dịch nào chờ khớp." />
-        ) : (
-          <ul className="space-y-4">
-            {unmatched.map((tx) => (
-              <UnmatchedTransactionCard
-                key={tx.id}
-                tx={tx}
-                candidates={candidates}
-                action={matchTransaction.bind(null, tx.id)}
-              />
-            ))}
-          </ul>
-        )}
-      </section>
+          <section aria-labelledby="unmatched-heading">
+            <h2 id="unmatched-heading" className="mb-6 flex flex-wrap items-center gap-3 text-h2">
+              Chờ khớp
+              <Badge tone={total > 0 ? "warning" : "neutral"}>
+                {total > unmatched.length ? `${unmatched.length} mới nhất / ${total}` : total}
+              </Badge>
+            </h2>
+            {unmatched.length === 0 ? (
+              <EmptyState title="Không có giao dịch nào chờ khớp." />
+            ) : (
+              <ul className="space-y-4">
+                {unmatched.map((tx) => (
+                  <UnmatchedTransactionCard
+                    key={tx.id}
+                    tx={tx}
+                    candidates={candidates}
+                    action={matchTransaction.bind(null, tx.id)}
+                    matchBlocked={ownerMismatchNotice(tx, campaign.organizer_id, session.user.id)}
+                    returnedExplanation={tx.returned_explanation}
+                  />
+                ))}
+              </ul>
+            )}
+          </section>
 
-      <ManualMatchList matches={matches} />
+          <ManualMatchList matches={matches} />
+        </div>
+      </div>
     </MeDetail>
   )
 }

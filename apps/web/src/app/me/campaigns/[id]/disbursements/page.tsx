@@ -1,7 +1,9 @@
 import type { Metadata } from "next"
 import Link from "next/link"
+import type { ReactNode } from "react"
 import { notFound } from "next/navigation"
 
+import { ContactEmailLink, ContactText } from "@/components/ContactText"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { Badge } from "@/components/ui/Badge"
 import { buttonClass } from "@/components/ui/Button"
@@ -12,6 +14,7 @@ import { requireSession } from "@/lib/auth/session"
 import { getCampaignById, isPublicStatus } from "@/lib/campaigns"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
+import { OWN_CONTRIBUTION_SCOPE } from "@/lib/own-contribution"
 import {
   categoryLabel,
   DISBURSEMENT_CATEGORIES,
@@ -21,12 +24,14 @@ import {
   EXPLAINED_PAGE_LIMIT,
   explanationOverdue,
   listExplainedOutgoing,
-  listPendingOutgoing,
+  listUnexplainedOutgoing,
   listReferenceCodes,
   listRefundable,
   MAX_EVIDENCE_FILES,
   MAX_EVIDENCE_PER_TRANSACTION,
   refundOptionLabel,
+  returnedOutgoingText,
+  returnedUnexplainedText,
   statementHref,
   type Disbursement,
   type OutgoingTransaction,
@@ -39,6 +44,7 @@ import { MeDetail } from "../../../_components/MePage"
 import { fileInputClass } from "../../../_components/Panel"
 
 import { addEvidence, explainDisbursement } from "./actions"
+import { RefCode } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Giải trình khoản chi", robots: { index: false } }
 
@@ -55,10 +61,12 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
   const campaign = await getCampaignById(db, id)
   if (!campaign || campaign.organizer_id !== session.user.id) notFound()
 
-  const [pending, done, refundable] = await Promise.all([
-    listPendingOutgoing(db, campaign.id),
+  // A transfer the bank returned is not spending to explain (DOS/Give#194):
+  // it is listed apart and never counts as "chưa giải trình".
+  const [{ pending, returned }, done, refundable] = await Promise.all([
+    listUnexplainedOutgoing(db, campaign.id),
     listExplainedOutgoing(db, campaign.id),
-    listRefundable(db, campaign.id),
+    listRefundable(db, campaign.id, session.user),
   ])
   const [refundCodes, hiddenEvidence] = await Promise.all([
     listReferenceCodes(
@@ -73,87 +81,142 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
     <MeDetail>
       <PageHeader back={{ href: `/me/campaigns/${campaign.id}`, label: campaign.title }} title="Giải trình khoản chi">
         <p>
-          Mỗi khoản tiền ra khỏi tài khoản nhận cần được giải trình trong {EXPLAIN_WITHIN_DAYS} ngày. Mục đích, loại
-          khoản chi, người nhận và ảnh chứng từ sẽ hiện công khai trên sao kê; số khoản chưa giải trình cũng được công
-          khai. Giải trình đã gửi thì không sửa được, nhưng có thể thêm chứng từ.
+          Mỗi khoản tiền ra khỏi tài khoản nhận (trừ khoản bị ngân hàng trả lại) cần được giải trình trong{" "}
+          {EXPLAIN_WITHIN_DAYS} ngày. Mục đích, loại khoản chi, người nhận và ảnh chứng từ sẽ hiện công khai trên sao
+          kê; số khoản chưa giải trình cũng được công khai. Giải trình đã gửi thì không sửa được, nhưng có thể thêm
+          chứng từ.
         </p>
         {isPublicStatus(campaign.status) && (
-          <Link href={statementHref(campaign.slug, "all")} className="mt-1 inline-flex min-h-11 items-center link">
+          <Link href={statementHref(campaign.slug, "all")} className="inline-flex min-h-11 items-center link">
             Xem sao kê công khai →
           </Link>
         )}
       </PageHeader>
 
-      <section aria-labelledby="pending-heading">
-        <h2 id="pending-heading" className="mb-4 flex items-center gap-2 text-xl font-semibold tracking-tight">
-          Chưa giải trình
-          <Badge tone={pending.length > 0 ? "warning" : "neutral"}>{pending.length}</Badge>
-        </h2>
-        {pending.length === 0 ? (
-          <EmptyState title="Không có khoản chi nào đang chờ giải trình." />
-        ) : (
-          <ol className="space-y-6">
-            {pending.map((tx) => (
-              <li key={tx.id} className="card p-5 sm:p-6">
-                <TransactionHeader tx={tx} />
-                {explanationOverdue(tx.booked_at) && (
-                  <Callout tone="warning" className="mt-4">
-                    Đã quá {EXPLAIN_WITHIN_DAYS} ngày, hãy giải trình ngay.
-                  </Callout>
-                )}
-                <ExplainForm campaignId={campaign.id} tx={tx} refundable={refundable} />
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+      {/* One 8-column reading column (DESIGN.md 2.2): the explain forms stay within 640px. */}
+      <div className="lg:grid lg:grid-cols-12 lg:gap-x-6">
+        <div className="min-w-0 space-y-12 lg:col-span-8">
+          <section aria-labelledby="pending-heading">
+            <h2 id="pending-heading" className="mb-6 flex flex-wrap items-center gap-3 text-h2">
+              Chưa giải trình
+              <Badge tone={pending.length > 0 ? "warning" : "neutral"}>{pending.length}</Badge>
+            </h2>
+            {pending.length === 0 ? (
+              <EmptyState title="Không có khoản chi nào đang chờ giải trình." />
+            ) : (
+              <ol className="space-y-6">
+                {pending.map((tx) => (
+                  <li key={tx.id} className="min-w-0 card p-4 sm:p-6">
+                    <TransactionHeader tx={tx} />
+                    {explanationOverdue(tx.booked_at) && (
+                      <Callout tone="warning" className="mt-4">
+                        Đã quá {EXPLAIN_WITHIN_DAYS} ngày, hãy giải trình ngay.
+                      </Callout>
+                    )}
+                    <ExplainForm campaignId={campaign.id} tx={tx} refundable={refundable} />
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
 
-      <section aria-labelledby="done-heading">
-        <h2 id="done-heading" className="mb-4 flex items-center gap-2 text-xl font-semibold tracking-tight">
-          Đã giải trình
-          {done.length < EXPLAINED_PAGE_LIMIT && <Badge>{done.length}</Badge>}
-        </h2>
-        {done.length >= EXPLAINED_PAGE_LIMIT && (
-          <p className="mb-4 text-muted">
-            Hiện {EXPLAINED_PAGE_LIMIT} khoản gần nhất. Xem toàn bộ trên sao kê công khai.
-          </p>
-        )}
-        {done.length === 0 ? (
-          <EmptyState title="Chưa có khoản chi nào được giải trình." />
-        ) : (
-          <ol className="space-y-6">
-            {done.map((tx) => (
-              <li key={tx.id} className="card p-5 sm:p-6">
-                <TransactionHeader tx={tx} />
-                <Explanation
-                  disbursement={tx.disbursement}
-                  refundCode={refundCodes.get(tx.disbursement.refund_contribution_id ?? "")}
-                  hidden={hiddenEvidence}
-                />
-                {/* Hidden images do not count, so a redacted copy can always be uploaded. */}
-                {tx.disbursement.evidence.filter((e) => !hiddenEvidence.has(e.id)).length <
-                  MAX_EVIDENCE_PER_TRANSACTION && (
-                  <ActionForm
-                    action={addEvidence.bind(null, campaign.id, tx.id)}
-                    className="mt-5 border-t border-line pt-5"
-                    resetOnSuccess
-                  >
-                    <EvidenceFields
-                      idPrefix={`add-${tx.id}`}
-                      label="Thêm chứng từ"
-                      refund={tx.disbursement.is_refund}
+          {returned.length > 0 && (
+            <section aria-labelledby="returned-heading">
+              <h2 id="returned-heading" className="mb-6 flex flex-wrap items-center gap-3 text-h2">
+                Bị ngân hàng trả lại
+                <Badge>{returned.length}</Badge>
+              </h2>
+              <ol className="space-y-6">
+                {returned.map((tx) => (
+                  <li key={tx.id} className="min-w-0 card p-4 sm:p-6">
+                    <TransactionHeader tx={tx} />
+                    <ReturnedNotice title="Give sẽ xử lý khoản này">
+                      <ContactText text={returnedUnexplainedText(tx, tx.returned, tx.linked_at)} />
+                    </ReturnedNotice>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+
+          <section aria-labelledby="done-heading">
+            <h2 id="done-heading" className="mb-6 flex flex-wrap items-center gap-3 text-h2">
+              Đã giải trình
+              {done.length < EXPLAINED_PAGE_LIMIT && <Badge>{done.length}</Badge>}
+            </h2>
+            {done.length >= EXPLAINED_PAGE_LIMIT && (
+              <p className="mb-6 text-muted">
+                Hiện {EXPLAINED_PAGE_LIMIT} khoản gần nhất. Xem toàn bộ trên sao kê công khai.
+              </p>
+            )}
+            {done.length === 0 ? (
+              <EmptyState title="Chưa có khoản chi nào được giải trình." />
+            ) : (
+              <ol className="space-y-6">
+                {done.map((tx) => (
+                  <li key={tx.id} className="min-w-0 card p-4 sm:p-6">
+                    <TransactionHeader tx={tx} />
+                    {tx.returned && (
+                      // A transfer a bank sent back (DOS/Give#72), with the fee it kept (DOS/Give#195).
+                      <ReturnedNotice
+                        tone={tx.disbursement.is_refund ? "danger" : "info"}
+                        title={
+                          tx.disbursement.is_refund ? "Khoản hoàn tiền bị ngân hàng trả lại" : "Bị ngân hàng trả lại"
+                        }
+                      >
+                        {returnedOutgoingText(tx, tx.disbursement, tx.returned)}
+                      </ReturnedNotice>
+                    )}
+                    <Explanation
+                      disbursement={tx.disbursement}
+                      refundCode={refundCodes.get(tx.disbursement.refund_contribution_id ?? "")}
+                      hidden={hiddenEvidence}
                     />
-                    <SubmitButton className={buttonClass({ variant: "secondary", className: "mt-4" })}>
-                      Tải chứng từ lên
-                    </SubmitButton>
-                  </ActionForm>
-                )}
-              </li>
-            ))}
-          </ol>
-        )}
-      </section>
+                    {/* Hidden images do not count, so a redacted copy can always be uploaded. */}
+                    {tx.disbursement.evidence.filter((e) => !hiddenEvidence.has(e.id)).length <
+                      MAX_EVIDENCE_PER_TRANSACTION && (
+                      <ActionForm
+                        action={addEvidence.bind(null, campaign.id, tx.id)}
+                        className="mt-6 border-t border-border pt-6"
+                        resetOnSuccess
+                      >
+                        <EvidenceFields
+                          idPrefix={`add-${tx.id}`}
+                          label="Thêm chứng từ"
+                          refund={tx.disbursement.is_refund}
+                        />
+                        <SubmitButton className={buttonClass({ variant: "secondary", className: "mt-4" })}>
+                          Tải chứng từ lên
+                        </SubmitButton>
+                      </ActionForm>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
+        </div>
+      </div>
     </MeDetail>
+  )
+}
+
+/** The marker on a transfer out that a bank sent back, explained or not. */
+function ReturnedNotice({
+  tone = "info",
+  title,
+  children,
+}: {
+  tone?: "info" | "danger"
+  title: string
+  children: ReactNode
+}) {
+  return (
+    <div data-notice="returned" role="note" className="mt-4">
+      <Callout tone={tone} title={title}>
+        <p>{children}</p>
+      </Callout>
+    </div>
   )
 }
 
@@ -164,15 +227,15 @@ function TransactionHeader({ tx }: { tx: OutgoingTransaction }) {
         <p className="text-sm text-muted">
           {tx.booked_date_only ? formatDate(tx.booked_at) : formatDateTime(tx.booked_at)}
         </p>
-        <p className="mt-0.5 font-semibold break-words text-ink">
+        <p className="mt-1 font-semibold break-words text-fg">
           {tx.counterparty_name ?? "Không rõ người nhận"}
           {tx.counterparty_account_masked && (
             <span className="ml-2 font-normal text-muted">TK {tx.counterparty_account_masked}</span>
           )}
         </p>
-        {tx.description && <p className="mt-1 break-words text-body">Nội dung: {tx.description}</p>}
+        {tx.description && <p className="mt-1 break-words text-fg">Nội dung: {tx.description}</p>}
       </div>
-      <p className="shrink-0 text-xl font-bold text-ink tabular-nums">−{formatVnd(tx.amount)}</p>
+      <p className="shrink-0 text-h3 font-bold text-fg tabular-nums">−{formatVnd(tx.amount)}</p>
     </div>
   )
 }
@@ -190,7 +253,7 @@ function ExplainForm({
   return (
     <ActionForm
       action={explainDisbursement.bind(null, campaignId, tx.id)}
-      className="mt-5 space-y-5 border-t border-line pt-5"
+      className="mt-6 space-y-6 border-t border-border pt-6 [&>*]:max-w-160"
       confirm="Giải trình sẽ được công khai và không sửa được. Gửi giải trình?"
     >
       <div>
@@ -210,7 +273,7 @@ function ExplainForm({
           Ví dụ: Mua 200 bộ sách giáo khoa lớp 3 cho trường tiểu học A.
         </p>
       </div>
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-6 sm:grid-cols-2 [&>*]:min-w-0">
         <div>
           <label htmlFor={`${p}-category`} className="label">
             Loại khoản chi
@@ -263,7 +326,9 @@ function ExplainForm({
         </select>
         <p id={`${p}-refund-hint`} className="hint">
           Chỉ chọn khi loại khoản chi là “Hoàn tiền cho người ủng hộ”. Khoản đó được tính vào “đã hoàn lại” thay vì “đã
-          chi”.
+          chi”. Lượt ủng hộ của chính bạn ({OWN_CONTRIBUTION_SCOPE}) không có trong danh sách. Nếu khoản chuyển này là
+          hoàn tiền cho lượt đó, đừng giải trình ở đây: hãy báo bộ phận tài chính của Give qua email{" "}
+          <ContactEmailLink />, họ sẽ ghi nó là hoàn tiền cho lượt của bạn.
         </p>
       </div>
       <EvidenceFields idPrefix={p} label="Ảnh chứng từ (hóa đơn, biên nhận, ảnh trao tặng)" />
@@ -278,7 +343,7 @@ function ExplainForm({
  */
 function EvidenceFields({ idPrefix, label, refund }: { idPrefix: string; label: string; refund?: boolean }) {
   return (
-    <div className="grid gap-5 sm:grid-cols-3">
+    <div className="grid gap-6 sm:grid-cols-3 [&>*]:min-w-0">
       <div className="space-y-2 sm:col-span-2">
         <div>
           <label htmlFor={`${idPrefix}-evidence`} className="label">
@@ -340,10 +405,19 @@ function Explanation({
   const category = categoryLabel(disbursement.category)
   const evidence = disbursement.evidence
   return (
-    <div className="mt-5 space-y-3 border-t border-line pt-5">
-      <p className="break-words text-ink">{disbursement.purpose}</p>
+    <div className="mt-6 space-y-3 border-t border-border pt-6">
+      <p className="max-w-[68ch] break-words text-fg">{disbursement.purpose}</p>
       <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted">
-        {disbursement.is_refund && <Badge tone="info">Hoàn tiền{refundCode ? ` cho ${refundCode}` : ""}</Badge>}
+        {disbursement.is_refund && (
+          <span className="inline-flex flex-wrap items-center gap-x-2">
+            <Badge tone="info">Hoàn tiền</Badge>
+            {refundCode && (
+              <span>
+                cho lượt <RefCode>{refundCode}</RefCode>
+              </span>
+            )}
+          </span>
+        )}
         {category && <span>{category}</span>}
         {disbursement.recipient && <span className="break-words">Người nhận: {disbursement.recipient}</span>}
         <span>Giải trình lúc {formatDateTime(disbursement.explained_at)}</span>
@@ -361,7 +435,7 @@ function Explanation({
                 {EVIDENCE_KINDS[e.kind] ?? e.kind} ({formatDate(e.created_at)})
               </a>
               {hidden.has(e.id) && (
-                <span className="rounded bg-red-50 px-2 py-0.5 text-sm break-words text-red-800">
+                <span className="min-w-0 rounded-md bg-danger-soft px-2 py-1 text-sm break-words text-fg">
                   Give đã ẩn khỏi sao kê
                   {hidden.get(e.id)?.reason ? `: ${hidden.get(e.id)?.reason}` : ""}. Hãy tải lên bản đã che thông tin cá
                   nhân.
@@ -371,7 +445,7 @@ function Explanation({
           ))}
         </ul>
       ) : (
-        <p className="text-sm font-medium text-amber-800">Chưa có ảnh chứng từ.</p>
+        <p className="text-sm font-medium text-warning">Chưa có ảnh chứng từ.</p>
       )}
     </div>
   )

@@ -3,6 +3,7 @@ import { Be_Vietnam_Pro } from "next/font/google"
 import type { ReactNode } from "react"
 
 import { SiteFooter } from "@/components/layout/SiteFooter"
+import { RingBoxScroll } from "@/components/layout/RingBoxScroll"
 import { SiteHeader } from "@/components/layout/SiteHeader"
 import { siteOrigin } from "@/lib/auth/origin"
 import { getSession, type Session } from "@/lib/auth/session"
@@ -49,6 +50,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
           {children}
         </main>
         <SiteFooter />
+        <RingBoxScroll />
       </body>
     </html>
   )

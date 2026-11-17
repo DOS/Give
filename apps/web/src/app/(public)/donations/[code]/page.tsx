@@ -7,8 +7,10 @@ import { DonationStatus } from "@/components/DonationStatus"
 import { TransferDetails } from "@/components/TransferDetails"
 import { Callout } from "@/components/ui/Callout"
 import { Money } from "@/components/ui/Money"
+import { RefCode } from "@/components/ui/RefCode"
+import { siteOrigin } from "@/lib/auth/origin"
 import { getSession } from "@/lib/auth/session"
-import { qrExpiresAt } from "@/lib/contributions"
+import { donationTrackingPath, qrExpiresAt } from "@/lib/contributions"
 import { dbAs, dbService } from "@/lib/supabase"
 import {
   acceptsDonations,
@@ -23,6 +25,8 @@ import {
 } from "@/server/contributions"
 import { buildDonationPayload, isDonationCode, renderVietQrSvg } from "@/server/vietqr"
 
+import { TrackingLinkButton } from "./TrackingLinkButton"
+
 export const metadata: Metadata = { title: "Chuyển khoản ủng hộ", robots: { index: false, follow: false } }
 
 const timeFormat = new Intl.DateTimeFormat("vi-VN", {
@@ -36,17 +40,18 @@ const timeFormat = new Intl.DateTimeFormat("vi-VN", {
 
 /**
  * The donation, if the visitor may see it: a signed-in donor's own one, or a
- * guest's whose status token cookie (set by the donate action) matches. A
- * donor whose session ended is sent to sign in and back; anyone else gets
- * the not-found page, which explains where the page can be opened.
+ * guest's whose status token cookie (set by the donate action or a saved
+ * tracking link) matches. A donor whose session ended is sent to sign in and
+ * back; anyone else gets the not-found page, which explains where the page
+ * can be opened.
  */
-async function loadDonation(code: string): Promise<{ donation: PaymentContribution; guest: boolean }> {
+async function loadDonation(code: string): Promise<{ donation: PaymentContribution; guestToken: string | null }> {
   const session = await getSession()
   let sessionRejected = false
   if (session) {
     try {
       const own = await ownContribution(dbAs(session.accessToken), session.user.id, code)
-      if (own) return { donation: own, guest: false }
+      if (own) return { donation: own, guestToken: null }
     } catch (error) {
       if (!isSessionRejected(error)) throw error
       sessionRejected = true
@@ -54,7 +59,7 @@ async function loadDonation(code: string): Promise<{ donation: PaymentContributi
   }
   const token = donationCookieToken(await cookies(), code, hostnameFrom((await headers()).get("host")))
   const guest = token ? await guestContribution(dbService(), code, token) : null
-  if (guest) return { donation: guest, guest: true }
+  if (guest && token) return { donation: guest, guestToken: token }
   if (sessionRejected) redirect(`/auth/login?return_path=${encodeURIComponent(`/donations/${code}`)}`)
   notFound()
 }
@@ -62,7 +67,7 @@ async function loadDonation(code: string): Promise<{ donation: PaymentContributi
 export default async function DonationPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
   if (!isDonationCode(code)) notFound()
-  const { donation, guest } = await loadDonation(code)
+  const { donation, guestToken } = await loadDonation(code)
 
   const service = dbService()
   const campaign = await paymentCampaign(service, donation.campaign_id)
@@ -89,8 +94,8 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
     open && account ? (
       <Callout title="Mã QR của khoản này đã hết hạn hiển thị">
         <p>
-          Nếu bạn đã chuyển khoản với nội dung{" "}
-          <span className="font-mono font-semibold">{donation.reference_code}</span>, Give vẫn ghi nhận khi tiền về.
+          Nếu bạn đã chuyển khoản với nội dung <RefCode>{donation.reference_code}</RefCode>, Give vẫn ghi nhận khi tiền
+          về.
         </p>
         <p>
           <Link href={`/campaigns/${campaign.slug}`} className="link">
@@ -123,7 +128,12 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
         accountName={account.account_name}
         amount={donation.intended_amount}
         reference={donation.reference_code}
-        footnote={`Giữ nguyên nội dung ${donation.reference_code} để Give khớp khoản ủng hộ. Tiền đi thẳng vào tài khoản của chiến dịch; Give không giữ tiền.`}
+        footnote={
+          <>
+            Giữ nguyên nội dung <RefCode>{donation.reference_code}</RefCode> để Give khớp khoản ủng hộ. Tiền đi thẳng
+            vào tài khoản của chiến dịch; Give không giữ tiền.
+          </>
+        }
       />
     )
   } else if (!received && !qrExpired) {
@@ -131,41 +141,59 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
   }
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 px-4 py-8 sm:px-6 sm:py-12">
-      <header>
-        <p className="text-muted">Ủng hộ chiến dịch</p>
-        <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">
+    <div className="container-page pt-6 pb-16 sm:pt-8 lg:pb-24">
+      <header className="min-w-0">
+        <p className="text-sm text-muted">Ủng hộ chiến dịch</p>
+        <h1 className="mt-2 text-h1-phone tracking-tight break-words sm:text-h1">
           <Link href={`/campaigns/${campaign.slug}`} className="underline-offset-4 hover:underline">
             {campaign.title}
           </Link>
         </h1>
-        <dl className="mt-5 flex flex-wrap gap-x-10 gap-y-3 border-y border-line py-4">
-          <div>
-            <dt className="text-sm text-muted">Số tiền ủng hộ</dt>
-            <dd>
-              <Money amount={donation.intended_amount} size="lg" />
-            </dd>
-          </div>
-          <div>
-            <dt className="text-sm text-muted">Mã ủng hộ</dt>
-            <dd className="font-mono text-2xl font-semibold text-ink">{donation.reference_code}</dd>
-          </div>
-        </dl>
       </header>
-      <DonationStatus
-        code={donation.reference_code}
-        initial={{ status: donation.status, received_amount: Number(donation.received_amount) }}
-        qrExpired={qrExpired}
-        qrMsLeft={Math.max(0, expiresAt.getTime() - now.getTime())}
-        expiredNote={expiredNote}
-      >
-        {instructions}
-      </DonationStatus>
-      {guest && (
-        <p className="text-sm text-muted">
-          Trang này chỉ mở được trên trình duyệt bạn vừa dùng để ủng hộ, trong 7 ngày.
-        </p>
-      )}
+      <div className="mt-8 flex flex-col gap-8 lg:grid lg:grid-cols-12 lg:gap-x-6">
+        <aside
+          aria-label="Khoản ủng hộ"
+          className="min-w-0 lg:sticky lg:top-24 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:self-start"
+        >
+          <dl className="grid gap-4 card p-4 sm:grid-cols-2 sm:p-6 lg:grid-cols-1">
+            <div className="min-w-0">
+              <dt className="text-sm text-muted">Số tiền ủng hộ</dt>
+              <dd className="mt-1">
+                <Money amount={donation.intended_amount} size="xl" />
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="text-sm text-muted">Mã ủng hộ</dt>
+              <dd className="mt-1">
+                <RefCode size="lg">{donation.reference_code}</RefCode>
+              </dd>
+            </div>
+          </dl>
+          {guestToken && (
+            <div className="mt-4 space-y-3">
+              <p className="max-w-[68ch] text-sm text-fg">
+                Lưu đường dẫn theo dõi để xem trạng thái khoản ủng hộ này trên thiết bị khác trong 7 ngày. Đường dẫn
+                không chứa thông tin cá nhân.
+              </p>
+              <TrackingLinkButton
+                path={donationTrackingPath(donation.reference_code, guestToken)}
+                origin={siteOrigin()}
+              />
+            </div>
+          )}
+        </aside>
+        <div className="min-w-0 lg:col-span-8 lg:row-start-1">
+          <DonationStatus
+            code={donation.reference_code}
+            initial={{ status: donation.status, received_amount: Number(donation.received_amount) }}
+            qrExpired={qrExpired}
+            qrMsLeft={Math.max(0, expiresAt.getTime() - now.getTime())}
+            expiredNote={expiredNote}
+          >
+            {instructions}
+          </DonationStatus>
+        </div>
+      </div>
     </div>
   )
 }

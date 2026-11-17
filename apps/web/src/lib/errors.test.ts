@@ -1,6 +1,18 @@
 import { describe, expect, it } from "vitest"
 
-import { dbErrorMessage, giveErrorCode, OPEN_MESSAGES, REVIEW_MESSAGES, SUBMIT_MESSAGES } from "./errors"
+import {
+  CORRECT_EXPLANATION_MESSAGES,
+  dbErrorMessage,
+  giveErrorCode,
+  MODERATE_CAMPAIGN_REPORTS_MESSAGES,
+  OPEN_MESSAGES,
+  OWN_TRANSFER_MESSAGES,
+  REPORT_CAMPAIGN_MESSAGES,
+  RETURN_TO_UNMATCHED_MESSAGES,
+  REVIEW_MESSAGES,
+  SUBMIT_MESSAGES,
+  STATEMENT_ROW_MESSAGES,
+} from "./errors"
 
 describe("giveErrorCode", () => {
   it("reads the code at the start of the message", () => {
@@ -50,9 +62,264 @@ describe("dbErrorMessage", () => {
     )
   })
 
+  it("words the account owner refusal on paths other than the match action (DOS/Give#148)", () => {
+    expect(dbErrorMessage({ code: "23514", message: "GIVE_ACCOUNT_OWNER_MISMATCH" })).toBe(
+      "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch này không xử lý được cho chiến dịch đó. Hãy báo đội ngũ Give qua email help@dos.me để kiểm tra lại tài khoản nhận và chiến dịch."
+    )
+  })
+
+  it("words non-transaction statement row resolution refusals (DOS/Give#78)", () => {
+    expect(dbErrorMessage({ code: "23514", message: "GIVE_RESOLUTION_NOT_FOR_REASON: balance_break" })).toBe(
+      "Chỉ đánh dấu “không phải giao dịch thật” được cho dòng thuộc lần tải sao kê đã bị đội tài chính bỏ qua."
+    )
+    expect(dbErrorMessage({ code: "23514", message: "GIVE_ROW_HAS_ACTIVE_DUPLICATE" })).toContain(
+      "Một lần tải sao kê khác có dòng đã được bỏ qua vì trùng với dòng này"
+    )
+  })
+
   it("never echoes unknown internals", () => {
     const message = dbErrorMessage({ code: "XX000", message: "internal: relation give.secret" })
     expect(message).not.toContain("give.secret")
     expect(message).toBe("Có lỗi xảy ra. Hãy thử lại sau.")
+  })
+})
+
+describe("own-account transfer refusals (DOS/Give#84)", () => {
+  // Every code give.mark_own_account_transfer raises (DOS-Me 20261115120000), in its check order.
+  const CODES = [
+    "GIVE_NOT_ALLOWED",
+    "GIVE_REASON_REQUIRED",
+    "GIVE_REASON_TOO_LONG",
+    "GIVE_TRANSACTION_NOT_FOUND",
+    "GIVE_TRANSACTION_NOT_OUTBOUND",
+    "GIVE_TRANSACTION_NOT_INBOUND",
+    "GIVE_TRANSACTION_UNATTRIBUTED",
+    "GIVE_OWN_TRANSFER_CAMPAIGN_MISMATCH",
+    "GIVE_SELF_REVIEW",
+    "GIVE_TRANSACTION_ALREADY_TRANSFERRED",
+    "GIVE_OWN_TRANSFER_AMOUNT_MISMATCH",
+    "GIVE_OWN_TRANSFER_NOT_SWAPPED",
+    "GIVE_DISBURSEMENT_ALREADY_EXPLAINED",
+    "GIVE_TRANSACTION_ALREADY_MATCHED",
+    "GIVE_TRANSACTION_ALREADY_EXPLAINED",
+    "GIVE_LEDGER_POST_MISSING",
+  ]
+  const generic = dbErrorMessage(null)
+
+  it("words every code for finance, never the generic message", () => {
+    for (const code of CODES) {
+      const message = dbErrorMessage({ code: "23514", message: `${code}: detail` }, OWN_TRANSFER_MESSAGES)
+      expect(message, code).not.toBe(generic)
+      expect(message, code).toBe(OWN_TRANSFER_MESSAGES[code])
+    }
+    expect(Object.keys(OWN_TRANSFER_MESSAGES).sort()).toEqual([...CODES].sort())
+  })
+
+  it("words the pair-only codes outside the finance page too", () => {
+    for (const code of [
+      "GIVE_TRANSACTION_OWN_TRANSFER",
+      "GIVE_TRANSACTION_ALREADY_TRANSFERRED",
+      "GIVE_OWN_TRANSFER_CAMPAIGN_MISMATCH",
+      "GIVE_OWN_TRANSFER_AMOUNT_MISMATCH",
+      "GIVE_OWN_TRANSFER_NOT_SWAPPED",
+    ]) {
+      expect(dbErrorMessage({ code: "23514", message: code }), code).not.toBe(generic)
+    }
+    // An organizer explaining a paired outgoing leg learns why it is refused.
+    expect(dbErrorMessage({ code: "23514", message: "GIVE_TRANSACTION_OWN_TRANSFER" })).toContain("tài khoản mới")
+  })
+})
+
+describe("explanation correction refusals (DOS/Give#71)", () => {
+  // Every code give.correct_inbound_explanation raises (DOS-Me 20261116090000).
+  const CODES = [
+    "GIVE_NOT_ALLOWED",
+    "GIVE_CONTRIBUTION_REQUIRED",
+    "GIVE_REASON_REQUIRED",
+    "GIVE_REASON_TOO_LONG",
+    "GIVE_TRANSACTION_NOT_FOUND",
+    "GIVE_TRANSACTION_NOT_INBOUND",
+    "GIVE_TRANSACTION_UNATTRIBUTED",
+    "GIVE_SELF_REVIEW",
+    "GIVE_EXPLANATION_ALREADY_CORRECTED",
+    "GIVE_TRANSACTION_NOT_EXPLAINED",
+    "GIVE_TRANSACTION_ALREADY_MATCHED",
+    "GIVE_LEDGER_POST_MISSING",
+    "GIVE_ACCOUNT_OWNER_MISMATCH",
+    "GIVE_CONTRIBUTION_CAMPAIGN_MISMATCH",
+    "GIVE_CONTRIBUTION_NOT_MATCHABLE",
+    // Raised since DOS-Me 20261117090000 for a returned explanation (DOS/Give#196).
+    "GIVE_EXPLANATION_RETURNED",
+  ]
+  const generic = dbErrorMessage(null)
+
+  it("words every code for the admin, never the generic message", () => {
+    for (const code of CODES) {
+      const message = dbErrorMessage({ code: "23514", message: `${code}: detail` }, CORRECT_EXPLANATION_MESSAGES)
+      expect(message, code).not.toBe(generic)
+      expect(message, code).toBe(CORRECT_EXPLANATION_MESSAGES[code])
+    }
+    expect(Object.keys(CORRECT_EXPLANATION_MESSAGES).sort()).toEqual([...CODES].sort())
+  })
+
+  it("words self-review and the reason limit for this action, not for account verification", () => {
+    expect(dbErrorMessage({ message: "GIVE_SELF_REVIEW" }, CORRECT_EXPLANATION_MESSAGES)).toContain(
+      "Nhờ một quản trị viên khác"
+    )
+    expect(dbErrorMessage({ message: "GIVE_REASON_TOO_LONG" }, CORRECT_EXPLANATION_MESSAGES)).toBe(
+      "Lý do tối đa 1000 ký tự."
+    )
+  })
+})
+
+describe("returns of an explanation to unmatched (DOS/Give#196)", () => {
+  // Every code give.return_inbound_to_unmatched raises (DOS-Me 20261117090000).
+  const CODES = [
+    "GIVE_NOT_ALLOWED",
+    "GIVE_REASON_REQUIRED",
+    "GIVE_REASON_TOO_LONG",
+    "GIVE_TRANSACTION_NOT_FOUND",
+    "GIVE_TRANSACTION_NOT_INBOUND",
+    "GIVE_TRANSACTION_UNATTRIBUTED",
+    "GIVE_SELF_REVIEW",
+    "GIVE_EXPLANATION_ALREADY_RETURNED",
+    "GIVE_EXPLANATION_ALREADY_CORRECTED",
+    "GIVE_TRANSACTION_NOT_EXPLAINED",
+    "GIVE_TRANSACTION_ALREADY_MATCHED",
+    "GIVE_BINDING_RELEASED",
+    "GIVE_LEDGER_POST_MISSING",
+    "GIVE_ACCOUNT_OWNER_MISMATCH",
+  ]
+  const generic = dbErrorMessage(null)
+
+  it("words every code for the admin, never the generic message", () => {
+    for (const code of CODES) {
+      const message = dbErrorMessage({ code: "23514", message: `${code}: detail` }, RETURN_TO_UNMATCHED_MESSAGES)
+      expect(message, code).not.toBe(generic)
+      expect(message, code).toBe(RETURN_TO_UNMATCHED_MESSAGES[code])
+    }
+    expect(Object.keys(RETURN_TO_UNMATCHED_MESSAGES).sort()).toEqual([...CODES].sort())
+  })
+
+  it("words self-review for the return, not for account verification", () => {
+    const message = dbErrorMessage({ message: "GIVE_SELF_REVIEW" }, RETURN_TO_UNMATCHED_MESSAGES)
+    expect(message).toContain("đưa được khoản này về chưa khớp")
+    expect(message).toContain("Nhờ một quản trị viên khác")
+  })
+
+  it("words the codes the changed functions raise on any other path", () => {
+    for (const code of ["GIVE_EXPLANATION_RETURNED", "GIVE_EXPLANATION_ALREADY_RETURNED", "GIVE_BINDING_RELEASED"]) {
+      expect(dbErrorMessage({ code: "23514", message: code }), code).not.toBe(generic)
+    }
+    expect(dbErrorMessage({ message: "GIVE_EXPLANATION_RETURNED" })).toContain("không phải tiền ủng hộ")
+  })
+})
+
+describe("STATEMENT_ROW_MESSAGES (DOS/Give#78)", () => {
+  // Every code give.resolve_statement_import_row raises (DOS/DOS.Me
+  // 20261116120000), and those of recording an imported row that a stored
+  // row can reach (give.record_bank_transaction).
+  const CODES = [
+    "GIVE_NOT_ALLOWED",
+    "GIVE_RESOLUTION_INVALID",
+    "GIVE_RESOLUTION_NOTE_REQUIRED",
+    "GIVE_IMPORT_ROW_NOT_FOUND",
+    "GIVE_IMPORT_ROW_NOT_AMBIGUOUS",
+    "GIVE_SELF_REVIEW",
+    "GIVE_DUPLICATE_TARGET_INVALID",
+    "GIVE_RESOLUTION_CANDIDATE",
+    "GIVE_RESOLUTION_NOT_FOR_REASON",
+    "GIVE_ROW_HAS_ACTIVE_DUPLICATE",
+    "GIVE_TRANSACTION_CONFLICT",
+    "GIVE_BINDING_CHANGED",
+    "GIVE_ACCOUNT_OWNER_MISMATCH",
+  ]
+
+  it("words every refusal of the resolution in Vietnamese", () => {
+    for (const code of CODES) {
+      const message = dbErrorMessage({ message: `${code}: detail` }, STATEMENT_ROW_MESSAGES)
+      expect(message, code).toBe(STATEMENT_ROW_MESSAGES[code])
+      expect(message, code).not.toBe("Có lỗi xảy ra. Hãy thử lại sau.")
+      expect(message, code).not.toMatch(/GIVE_|[a-z]+_[a-z]+/)
+    }
+  })
+
+  it("tells staff why their own money is refused and who can resolve it", () => {
+    expect(STATEMENT_ROW_MESSAGES.GIVE_SELF_REVIEW).toContain("tài khoản nhận là của bạn")
+    expect(STATEMENT_ROW_MESSAGES.GIVE_SELF_REVIEW).toContain("Một nhân viên tài chính khác cần xử lý")
+  })
+})
+
+describe("campaign reports and moderator queue refusals (DOS/Give#98)", () => {
+  const generic = dbErrorMessage(null)
+
+  const REPORT_CODES = [
+    "GIVE_NOT_ALLOWED",
+    "GIVE_REPORT_REASON_INVALID",
+    "GIVE_REPORT_DETAILS_REQUIRED",
+    "GIVE_REPORT_DETAILS_TOO_LONG",
+    "GIVE_CAMPAIGN_NOT_FOUND",
+    "GIVE_REPORT_LIMIT",
+  ]
+
+  const MODERATE_CODES = [
+    "GIVE_NOT_ADMIN",
+    "GIVE_MODERATION_INVALID",
+    "GIVE_REASON_REQUIRED",
+    "GIVE_REASON_TOO_LONG",
+    "GIVE_PUBLIC_NOTE_REQUIRED",
+    "GIVE_PUBLIC_NOTE_TOO_LONG",
+    "GIVE_CAMPAIGN_NOT_FOUND",
+    "GIVE_SELF_REVIEW",
+    "GIVE_TRANSITION_NOT_ALLOWED",
+    "GIVE_PAYMENT_REQUESTS_NOT_STOPPABLE",
+  ]
+
+  it("maps all new campaign report and moderation codes in global GIVE_MESSAGES", () => {
+    for (const code of [
+      "GIVE_REPORT_REASON_INVALID",
+      "GIVE_REPORT_DETAILS_REQUIRED",
+      "GIVE_REPORT_DETAILS_TOO_LONG",
+      "GIVE_REPORT_LIMIT",
+      "GIVE_MODERATION_INVALID",
+      "GIVE_REASON_TOO_LONG",
+      "GIVE_PUBLIC_NOTE_REQUIRED",
+      "GIVE_PUBLIC_NOTE_TOO_LONG",
+      "GIVE_PAYMENT_REQUESTS_NOT_STOPPABLE",
+    ]) {
+      const msg = dbErrorMessage({ code: "23514", message: `${code}: detail` })
+      expect(msg, code).not.toBe(generic)
+      expect(msg, code).not.toMatch(/GIVE_/)
+    }
+  })
+
+  it("words every give.report_campaign refusal, including GIVE_NOT_ALLOWED for self-report", () => {
+    for (const code of REPORT_CODES) {
+      const msg = dbErrorMessage({ code: "42501", message: code }, REPORT_CAMPAIGN_MESSAGES)
+      expect(msg, code).toBe(REPORT_CAMPAIGN_MESSAGES[code])
+      expect(msg, code).not.toBe(generic)
+    }
+    expect(Object.keys(REPORT_CAMPAIGN_MESSAGES).sort()).toEqual([...REPORT_CODES].sort())
+    expect(dbErrorMessage({ message: "GIVE_NOT_ALLOWED" }, REPORT_CAMPAIGN_MESSAGES)).toBe(
+      "Bạn không thể báo cáo chiến dịch của chính mình."
+    )
+  })
+
+  it("words every give.moderate_campaign_reports refusal, including GIVE_SELF_REVIEW for self-moderation", () => {
+    for (const code of MODERATE_CODES) {
+      const msg = dbErrorMessage(
+        { code: "42501", message: `${code}: closed -> suspended` },
+        MODERATE_CAMPAIGN_REPORTS_MESSAGES
+      )
+      expect(msg, code).toBe(MODERATE_CAMPAIGN_REPORTS_MESSAGES[code])
+      expect(msg, code).not.toBe(generic)
+    }
+    expect(Object.keys(MODERATE_CAMPAIGN_REPORTS_MESSAGES).sort()).toEqual([...MODERATE_CODES].sort())
+    expect(dbErrorMessage({ message: "GIVE_SELF_REVIEW" }, MODERATE_CAMPAIGN_REPORTS_MESSAGES)).toContain(
+      "chiến dịch do chính bạn tổ chức"
+    )
+    expect(dbErrorMessage({ message: "GIVE_SELF_REVIEW" }, MODERATE_CAMPAIGN_REPORTS_MESSAGES)).toContain(
+      "một kiểm duyệt viên khác"
+    )
   })
 })

@@ -2,6 +2,7 @@ import Link from "next/link"
 
 import { LedgerIcon } from "@/components/ui/icons"
 import { MoneyRow } from "@/components/ui/Money"
+import { OwnTransferNote } from "@/components/OwnTransferNote"
 import { formatVnd } from "@/lib/format"
 import { explainedOutAmount, remainingAmount, type MoneyTotals as Totals } from "@/lib/statement"
 
@@ -17,13 +18,13 @@ export function MoneyTotals({ totals, statementHref }: { totals: Totals; stateme
   const unexplained = totals.unexplained_out_count > 0
 
   return (
-    <section className="space-y-4 card p-5 sm:p-6" aria-labelledby="money-totals-heading">
+    <section className="min-w-0 space-y-4 card p-4 sm:p-6" aria-labelledby="money-totals-heading">
       <div className="flex gap-3">
-        <span className="inline-flex size-10 shrink-0 items-center justify-center rounded bg-brand-50 text-brand-700">
+        <span className="inline-flex size-10 shrink-0 items-center justify-center rounded bg-primary-soft text-primary">
           <LedgerIcon />
         </span>
-        <div>
-          <h2 id="money-totals-heading" className="text-lg font-semibold">
+        <div className="min-w-0">
+          <h2 id="money-totals-heading" className="text-h3">
             Minh bạch tài chính
           </h2>
           <p className="mt-1 text-sm text-muted">
@@ -32,7 +33,7 @@ export function MoneyTotals({ totals, statementHref }: { totals: Totals; stateme
           </p>
         </div>
       </div>
-      <dl className="border-t border-dashed border-gray-300 pt-3">
+      <dl className="border-t border-dashed border-border pt-3">
         <MoneyRow label="Tổng đã nhận vào tài khoản" amount={totals.paid_amount} figure="paid" strong />
         <MoneyRow label="Đã hoàn lại người ủng hộ" amount={totals.refunded_amount} figure="refunded" />
         <MoneyRow label="Còn lại trong tài khoản" amount={remainingAmount(totals)} figure="remaining" />
@@ -43,7 +44,8 @@ export function MoneyTotals({ totals, statementHref }: { totals: Totals; stateme
           tổ chức nạp thêm, ngân hàng hoàn phí hoặc trả lãi), đã được Give giải trình trên sao kê.
         </p>
       )}
-      <dl className="border-t border-line pt-3">
+      {totals.own_transfer_amount > 0 && <OwnTransferNote amount={totals.own_transfer_amount} />}
+      <dl className="border-t border-border pt-3">
         {isBack && <MoneyRow label="Đã cam kết" amount={totals.pledged_amount} figure="pledged" />}
         <MoneyRow label="Đã chi" amount={totals.disbursed_amount} figure="disbursed" />
         <MoneyRow
@@ -57,7 +59,7 @@ export function MoneyTotals({ totals, statementHref }: { totals: Totals; stateme
       <p className="text-sm text-muted">Còn lại = đã nhận − đã chi − đã hoàn lại, theo sao kê đã ghi nhận.</p>
       {totals.disbursed_amount > 0 && (
         <p className="text-sm text-muted">
-          Trong số đã chi, {formatVnd(explainedOutAmount(totals))} đã được người tổ chức giải trình.
+          Trong số đã chi, {formatVnd(explainedOutAmount(totals))} đã được giải trình.
         </p>
       )}
       {statementHref && (

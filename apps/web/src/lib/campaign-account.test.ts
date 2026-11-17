@@ -6,6 +6,7 @@ import {
   accountChoices,
   boundAccountOf,
   canPickAccount,
+  checkSubmitAccount,
   openingBlock,
   loadEditorAccounts,
   SUBMIT_NO_ACCOUNT,
@@ -203,16 +204,33 @@ describe("loadEditorAccounts", () => {
     ).toEqual(["campaign_id", CAMPAIGN])
   })
 
-  it("skips the swap reads where no swap can happen", async () => {
+  it("skips swap and transaction reads where neither early release nor swap applies", async () => {
     const calls: Call[] = []
     const db = fakeDb((call) => {
       if (call.target === "receiving_accounts") return { data: [account("here", { bindings: bound(CAMPAIGN) })] }
       if (call.target === "organizers") return { data: organizer }
       return undefined
     }, calls)
-    await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft", "give")
+    await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "in_review", "give")
     expect(calls.map((c) => c.target)).not.toContain("bank_transactions")
     expect(calls.map((c) => c.target)).not.toContain("account_swap_requests")
+  })
+
+  it("reads draft money history without reading swap requests, and blocks without offering a swap (DOS/Give#77)", async () => {
+    const calls: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "receiving_accounts")
+        return { data: [account("here", { verification_status: "disabled", bindings: bound(CAMPAIGN) })] }
+      if (call.target === "organizers") return { data: organizer }
+      if (call.target === "bank_transactions") return { data: [{ id: "t" }] }
+      return undefined
+    }, calls)
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft", "give")
+    expect(view.boundHasTransactions).toBe(true)
+    expect(view.swaps).toEqual([])
+    expect(calls.map((c) => c.target)).toContain("bank_transactions")
+    expect(calls.map((c) => c.target)).not.toContain("account_swap_requests")
+    expect(view.submitBlocked).toBe(submitUnusableAccount("Tài khoản chưa được xác minh.", true, false))
   })
 
   it("keeps the account section when the swap reads fail", async () => {
@@ -223,10 +241,13 @@ describe("loadEditorAccounts", () => {
         return { error: { code: "42P01", message: "relation does not exist" } }
       return undefined
     })
-    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "changes_requested", "give")
-    expect(view.bound?.id).toBe("here")
-    expect(view.boundHasTransactions).toBe(true) // unknown history: offer the swap, not a release
-    expect(view.swaps).toEqual([])
+    const sentBack = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "changes_requested", "give")
+    expect(sentBack.bound?.id).toBe("here")
+    expect(sentBack.boundHasTransactions).toBe(true) // unknown history where swap exists: offer the swap, not a release
+    expect(sentBack.swaps).toEqual([])
+
+    const draft = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "draft", "give")
+    expect(draft.boundHasTransactions).toBe(false) // no swap exists on draft: leave release visible
   })
 
   it("shows a back campaign's account and blocks its submission without one (DOS/Give#85)", async () => {
@@ -269,11 +290,99 @@ describe("canPickAccount", () => {
   })
 })
 
+describe("checkSubmitAccount", () => {
+  const OWNER = "11111111-1111-4111-8111-111111111111"
+
+  it("refuses a campaign with no active binding", async () => {
+    const db = fakeDb((call) => {
+      if (call.target === "account_bindings") return { data: [] }
+      if (call.target === "organizers") return { data: organizer }
+      return undefined
+    })
+    expect(await checkSubmitAccount(db as unknown as Db, CAMPAIGN, OWNER, "give", "draft")).toBe(SUBMIT_NO_ACCOUNT)
+  })
+
+  it("skips bank_transactions when the bound account is usable", async () => {
+    const calls: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "account_bindings") return { data: [{ id: "b-1", receiving_account_id: "a" }] }
+      if (call.target === "receiving_accounts") return { data: account("a") }
+      if (call.target === "organizers") return { data: organizer }
+      return undefined
+    }, calls)
+    expect(await checkSubmitAccount(db as unknown as Db, CAMPAIGN, OWNER, "give", "changes_requested")).toBeNull()
+    expect(calls.map((c) => c.target)).not.toContain("bank_transactions")
+  })
+
+  it("points a sent-back give campaign to the finance-approved swap when its unusable account recorded a transaction (DOS/Give#77)", async () => {
+    const calls: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "account_bindings") return { data: [{ id: "b-1", receiving_account_id: "a" }] }
+      if (call.target === "receiving_accounts") return { data: account("a", { verification_status: "disabled" }) }
+      if (call.target === "organizers") return { data: organizer }
+      if (call.target === "bank_transactions") return { data: [{ id: "tx-1" }] }
+      return undefined
+    }, calls)
+    expect(await checkSubmitAccount(db as unknown as Db, CAMPAIGN, OWNER, "give", "changes_requested")).toBe(
+      submitUnusableAccount("Tài khoản chưa được xác minh.", true, true)
+    )
+    expect(
+      op(
+        calls.find((c) => c.target === "bank_transactions"),
+        "eq"
+      )
+    ).toEqual(["binding_id", "b-1"])
+  })
+
+  it("tells drafts and back campaigns with money history to contact Give instead of swapping (DOS/Give#77)", async () => {
+    const db = fakeDb((call) => {
+      if (call.target === "account_bindings") return { data: [{ id: "b-1", receiving_account_id: "a" }] }
+      if (call.target === "receiving_accounts") return { data: account("a", { verification_status: "disabled" }) }
+      if (call.target === "organizers") return { data: organizer }
+      if (call.target === "bank_transactions") return { data: [{ id: "tx-1" }] }
+      return undefined
+    })
+    expect(await checkSubmitAccount(db as unknown as Db, CAMPAIGN, OWNER, "give", "draft")).toBe(
+      submitUnusableAccount("Tài khoản chưa được xác minh.", true, false)
+    )
+    expect(await checkSubmitAccount(db as unknown as Db, CAMPAIGN, OWNER, "back", "changes_requested")).toBe(
+      submitUnusableAccount("Tài khoản chưa được xác minh.", true, false)
+    )
+  })
+
+  it("treats a binding to an account the organizer does not own as missing without checking transactions", async () => {
+    const calls: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "account_bindings") return { data: [{ id: "b-1", receiving_account_id: "foreign" }] }
+      if (call.target === "receiving_accounts")
+        return { data: account("foreign", { owner_user_id: "99999999-9999-4999-8999-999999999999" }) }
+      if (call.target === "organizers") return { data: organizer }
+      return undefined
+    }, calls)
+    expect(await checkSubmitAccount(db as unknown as Db, CAMPAIGN, OWNER, "give", "changes_requested")).toBe(
+      SUBMIT_NO_ACCOUNT
+    )
+    expect(calls.map((c) => c.target)).not.toContain("bank_transactions")
+  })
+})
+
 describe("openingBlock", () => {
   it("says why an approved campaign cannot open, and nothing when usable or unknown", () => {
     expect(openingBlock({ bound: null, boundUnusable: null })).toBe("no_account")
     expect(openingBlock({ bound: account("a"), boundUnusable: "Tài khoản chưa được xác minh." })).toBe("unusable")
     expect(openingBlock({ bound: account("a"), boundUnusable: null })).toBeNull()
     expect(openingBlock(null)).toBeNull()
+  })
+
+  it("reports no_account when a data-defect binding points outside the organizer's own accounts (DOS/Give#77)", async () => {
+    const db = fakeDb((call) => {
+      // listMyAccounts filters by owner_user_id, so a foreign bound account is absent from the editor's list.
+      if (call.target === "receiving_accounts") return { data: [account("own-free")] }
+      if (call.target === "organizers") return { data: organizer }
+      return undefined
+    })
+    const view = await loadEditorAccounts(db as unknown as Db, "owner", CAMPAIGN, "approved", "give")
+    expect(view.bound).toBeNull()
+    expect(openingBlock(view)).toBe("no_account")
   })
 })

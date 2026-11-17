@@ -19,14 +19,6 @@ export const FULFILLMENT_LABELS: Record<FulfillmentStatus, string> = {
   issue: "Có vấn đề",
 }
 
-export const FULFILLMENT_COLORS: Record<FulfillmentStatus, string> = {
-  pending: "bg-gray-100 text-gray-700",
-  in_progress: "bg-sky-100 text-sky-800",
-  shipped: "bg-indigo-100 text-indigo-800",
-  delivered: "bg-green-100 text-green-800",
-  issue: "bg-red-100 text-red-800",
-}
-
 /** The database's limits on one call (GIVE_FULFILLMENT_BATCH_INVALID, GIVE_FULFILLMENT_NOTE_TOO_LONG). */
 export const FULFILLMENT_BATCH_MAX = 500
 export const FULFILLMENT_NOTE_MAX = 500

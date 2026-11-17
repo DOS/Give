@@ -1,8 +1,8 @@
 import clsx from "clsx"
 
-/** A grey placeholder block while a section streams in; size it with classes. */
+/** A placeholder block while a section streams in; size it with classes. */
 export function Skeleton({ className }: { className?: string }) {
-  return <div aria-hidden className={clsx("animate-pulse rounded bg-gray-200/70", className)} />
+  return <div aria-hidden className={clsx("animate-pulse rounded bg-surface", className)} />
 }
 
 /**
@@ -11,10 +11,10 @@ export function Skeleton({ className }: { className?: string }) {
  */
 export function SkeletonList({ rows = 3, label = "Đang tải…" }: { rows?: number; label?: string }) {
   return (
-    <div role="status" className="divide-y divide-line card">
+    <div role="status" className="divide-y divide-border card">
       <span className="sr-only">{label}</span>
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="flex items-center gap-4 p-4 sm:p-5">
+        <div key={i} className="flex items-center gap-4 p-4 sm:p-6">
           <div className="min-w-0 flex-1 space-y-2">
             <Skeleton className="h-5 w-32" />
             <Skeleton className="h-5 w-3/4" />

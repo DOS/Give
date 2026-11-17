@@ -12,10 +12,12 @@ is in [docs/Give-Technical-Design.md](docs/Give-Technical-Design.md).
 
 ## Status
 
-Milestone **M0** (foundation): DOS.Me login, organizer profiles, campaign
-drafts with milestones and a cover image, submission, moderator review and
-organizer verification, discovery and public campaign pages. No money flows
-yet; contributions, VietQR and statements arrive in M1.
+On `dev`: M0 (DOS.Me login, organizer profiles, campaign drafts, review,
+discovery and campaign pages), M1 money for give campaigns (VietQR
+donations, statement import and matching, public statements,
+disbursements), M3 back campaigns (pledges, reward tiers, fulfillment), and
+the redesign on [DESIGN.md](DESIGN.md). What changed is in
+[CHANGELOG.md](CHANGELOG.md). `main` has no Production deploy yet.
 
 ## Stack
 

@@ -4,11 +4,10 @@ import type { ReactNode } from "react"
 
 /**
  * DESIGN.md 6, Tag: 28px high, 10px padding, 14px text, a surface fill with
- * no border. The visible box stays 28px; the 44px touch target is an
- * invisible hit area around it.
+ * no border. The visible box stays 28px; the 44px touch target is the
+ * invisible `hit-area` utility (globals.css) centered on it.
  */
 const BASE = "relative inline-flex h-7 shrink-0 items-center gap-1 rounded px-2.5 text-sm font-medium whitespace-nowrap"
-const HIT_AREA = "before:absolute before:inset-x-0 before:-inset-y-2 before:content-['']"
 
 export function Tag({ className, children }: { className?: string; children: ReactNode }) {
   return <span className={clsx(BASE, "bg-surface text-fg", className)}>{children}</span>
@@ -35,7 +34,7 @@ export function TagLink({
       aria-label={ariaLabel}
       className={clsx(
         BASE,
-        HIT_AREA,
+        "hit-area",
         "transition-colors duration-150",
         current ? "bg-primary-soft text-primary" : "bg-surface text-fg hover:bg-border",
         className

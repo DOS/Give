@@ -16,7 +16,7 @@ import { ShareButtons } from "@/components/ShareButtons"
 import { Button, ButtonLink } from "@/components/ui/Button"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { EmptyState } from "@/components/ui/EmptyState"
-import { CheckIcon, FlagIcon, ShieldIcon } from "@/components/ui/icons"
+import { CheckIcon, ShieldIcon } from "@/components/ui/icons"
 import { Money } from "@/components/ui/Money"
 import { TabNav, type TabItem } from "@/components/ui/Tabs"
 import { listPublicAccountChanges } from "@/lib/account-swaps"
@@ -44,6 +44,7 @@ import { acceptsDonations, paymentAccount } from "@/server/contributions"
 import { listPublicTiers, organizesCampaign } from "@/server/pledges"
 
 import { DonateForm } from "./DonateForm"
+import { ReportCampaign } from "./ReportCampaign"
 
 /**
  * Public campaigns load as an anonymous visitor. If that finds nothing and
@@ -97,7 +98,8 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   const isGive = campaign.type === "give"
   const donationsOpen = !preview && acceptsDonations(campaign)
   const pledgesOpen = !preview && acceptsPledges(campaign)
-  const [milestones, updates, organizer, account, session, totals, accountChanges, tiers, statementRows] =
+  const sessionPromise = getSession()
+  const [milestones, updates, organizer, account, session, ownCampaign, totals, accountChanges, tiers, statementRows] =
     await Promise.all([
       listMilestones(db, campaign.id),
       listPublishedUpdates(db, campaign.id),
@@ -109,7 +111,13 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             return null
           })
         : Promise.resolve(null),
-      getSession(),
+      sessionPromise,
+      // The organizer cannot back or report their own campaign (the database refuses both).
+      preview
+        ? Promise.resolve(false)
+        : sessionPromise.then((s) =>
+            s ? organizesCampaign(dbAs(s.accessToken), campaign.id, s.user.id).catch(() => false) : false
+          ),
       // Public views only: a preview has no public totals yet.
       preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
       // A failed read hides the notice rather than the page; the statement shows it too.
@@ -137,9 +145,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             }),
     ])
   const canDonate = donationsOpen && account !== null
-  // The creator cannot back their own project (the database refuses it too).
-  const ownProject =
-    pledgesOpen && session ? await organizesCampaign(dbAs(session.accessToken), campaign.id, session.user.id) : false
+  const ownProject = pledgesOpen && ownCampaign
   const canPledge = pledgesOpen && !ownProject
   const closedNote = preview
     ? `Give sắp mở nhận ${isGive ? "ủng hộ" : "cam kết"}. Tiền sẽ đi thẳng vào tài khoản nhận của chiến dịch.`
@@ -251,7 +257,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               <div className="mt-4 flex items-start gap-3 text-sm">
                 {organizer && (
                   <span
-                    className="inline-flex size-9 shrink-0 items-center justify-center rounded-md bg-surface font-bold text-muted"
+                    className="inline-flex size-9 shrink-0 items-center justify-center rounded bg-surface font-bold text-muted"
                     aria-hidden
                   >
                     {organizer.display_name.trim().charAt(0).toUpperCase()}
@@ -365,14 +371,9 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 {!preview && (
                   <>
                     <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={siteOrigin()} />
-                    {/* No campaign report flow yet: the statement takes reports on evidence images (DOS/Give#58). */}
-                    <Link
-                      href={statementHref(campaign.slug, "out")}
-                      className="inline-flex min-h-11 w-full items-center justify-center gap-2 text-sm text-muted hover:text-fg hover:underline"
-                    >
-                      <FlagIcon width={16} height={16} />
-                      Báo cáo chứng từ có vấn đề
-                    </Link>
+                    {!ownCampaign && (
+                      <ReportCampaign campaignId={campaign.id} slug={campaign.slug} signedIn={!!session} />
+                    )}
                   </>
                 )}
               </div>
@@ -440,7 +441,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 <p className="mt-2 text-sm text-muted">
                   Góp từ {formatVnd(campaign.min_contribution)}. Tiền chuyển thẳng vào tài khoản nhận của chiến dịch.
                 </p>
-                <div className="mt-4 card p-4 sm:p-6">
+                <div className="mt-6 card p-4 sm:p-6">
                   <DonateForm campaignId={campaign.id} defaultName={session?.user.name ?? ""} signedIn={!!session} />
                 </div>
               </section>
@@ -451,7 +452,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 <h2 id="milestones-heading" className="text-h2">
                   Các mốc mục tiêu
                 </h2>
-                <ol className="mt-4">
+                <ol className="mt-6">
                   {milestones.map((milestone) => (
                     <li key={milestone.id} className="border-b border-border py-3">
                       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -475,7 +476,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 Cập nhật
               </h2>
               {updates.length > 0 ? (
-                <ol className="mt-4 space-y-4">
+                <ol className="mt-6 space-y-4">
                   {updates.map((update) => (
                     <li key={update.id} className="card p-4 sm:p-6">
                       <p className="text-sm text-muted">{formatDate(update.published_at)}</p>
@@ -487,7 +488,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                   ))}
                 </ol>
               ) : (
-                <p className="mt-2 text-muted">Chưa có cập nhật nào.</p>
+                <p className="mt-6 text-muted">Chưa có cập nhật nào.</p>
               )}
             </section>
           </div>
@@ -508,11 +509,13 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
 
 /**
  * Below 1024px the main action stays at the bottom of the screen (sticky, so
- * it settles above the footer at the end of the page).
+ * it settles above the footer at the end of the page). While it shows, a
+ * control focused from the keyboard is scrolled clear of it with its ring
+ * (`data-action-bar`, globals.css; DESIGN.md 6, Focus ring).
  */
 function MobileActionBar({ children }: { children: ReactNode }) {
   return (
-    <div className="sticky bottom-0 z-30 border-t border-border bg-bg lg:hidden">
+    <div data-action-bar className="sticky bottom-0 z-30 border-t border-border bg-bg lg:hidden">
       <div className="container-page flex gap-2 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]">{children}</div>
     </div>
   )

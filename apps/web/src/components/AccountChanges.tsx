@@ -12,7 +12,7 @@ export function AccountChanges({ changes }: { changes: readonly PublicAccountCha
       <h2 id="account-changes-heading" className="font-semibold">
         Chiến dịch đã đổi tài khoản nhận
       </h2>
-      <ul className="space-y-2">
+      <ul className="max-w-[68ch] space-y-2">
         {changes.map((change) => (
           <li key={change.id}>
             <p>{describeAccountChange(change)}</p>

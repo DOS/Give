@@ -1,13 +1,19 @@
 "use client"
 
+import { Button } from "@/components/ui/Button"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { ClockIcon } from "@/components/ui/icons"
+
+/** A page that failed to render: the whole-page empty state (DESIGN.md 6), what happened and a retry. */
 export default function ErrorPage({ retry }: { error: Error & { digest?: string }; retry: () => void }) {
   return (
-    <div className="mx-auto max-w-xl px-4 py-24 text-center">
-      <h1 className="text-2xl font-bold">Có lỗi xảy ra</h1>
-      <p className="mt-2 text-gray-600">Không tải được trang này. Hãy thử lại sau ít phút.</p>
-      <button type="button" onClick={() => retry()} className="mt-6 btn-primary">
-        Thử lại
-      </button>
-    </div>
+    <EmptyState
+      level={1}
+      title="Có lỗi xảy ra"
+      icon={<ClockIcon width={40} height={40} />}
+      action={<Button onClick={() => retry()}>Thử lại</Button>}
+    >
+      Không tải được trang này. Hãy thử lại sau ít phút.
+    </EmptyState>
   )
 }

@@ -1,7 +1,10 @@
 import { z } from "zod"
 
 import type { CampaignType, Db } from "./campaigns"
+import { VIA_CONTACT_EMAIL } from "./contact"
+import { formatDate, formatVnd } from "./format"
 import { isUuid } from "./ids"
+import { isOwnContribution, type Viewer } from "./own-contribution"
 
 /**
  * Money transparency (docs/Give-Technical-Design.md sections 2.4 and 4.1
@@ -32,7 +35,7 @@ export interface MoneyTotals {
   paid_amount: number
   /** Equal to paid_amount: the money is already the organizer's. Published, not enforced. */
   disbursable_amount: number
-  /** Every outgoing transaction that is not a refund, explained or not. */
+  /** Every outgoing transaction that is not a refund, explained or not, net of what a bank returned (DOS/Give#72). */
   disbursed_amount: number
   refunded_amount: number
   /** The part of disbursed_amount with no explanation yet. */
@@ -58,12 +61,18 @@ export interface MoneyTotals {
    */
   payments_stopped_at: string | null
   payments_stopped_note: string | null
+  /**
+   * Money moved from the campaign's old account to its new one after an
+   * account swap, as finance paired it (DOS/Give#84). Counted in neither
+   * paid_amount nor disbursed_amount: both legs' ledger posts are reversed.
+   */
+  own_transfer_amount: number
 }
 
 const TOTALS_COLUMNS =
   "id, type, asset, goal_amount, pledged_amount, paid_amount, disbursable_amount, disbursed_amount, " +
   "refunded_amount, unexplained_out_amount, unexplained_out_count, supporters_count, other_in_amount, " +
-  "refund_owed_amount, backers_count, payments_stopped_at, payments_stopped_note"
+  "refund_owed_amount, backers_count, payments_stopped_at, payments_stopped_note, own_transfer_amount"
 
 type TotalsRow = Omit<MoneyTotals, "campaign_id"> & { id: string }
 
@@ -92,6 +101,7 @@ function toTotals(row: TotalsRow): MoneyTotals {
     backers_count: num(row.backers_count),
     payments_stopped_at: row.payments_stopped_at ?? null,
     payments_stopped_note: row.payments_stopped_note ?? null,
+    own_transfer_amount: num(row.own_transfer_amount),
   }
 }
 
@@ -102,15 +112,23 @@ export async function getMoneyTotals(db: Db, campaignId: string): Promise<MoneyT
   return data ? toTotals(data as unknown as TotalsRow) : null
 }
 
+/** The id filter travels in the URL, so ids are asked for this many at a time. */
+const TOTALS_PER_REQUEST = 100
+
 /** Totals of several public campaigns, by campaign id (for discovery cards). */
 export async function listMoneyTotals(db: Db, campaignIds: readonly string[]): Promise<Map<string, MoneyTotals>> {
-  if (campaignIds.length === 0) return new Map()
-  const { data, error } = await db
-    .from("public_campaigns")
-    .select(TOTALS_COLUMNS)
-    .in("id", [...campaignIds])
-  if (error) throw error
-  return new Map(((data ?? []) as unknown as TotalsRow[]).map((row) => [row.id, toTotals(row)]))
+  const totals = new Map<string, MoneyTotals>()
+  const chunks: string[][] = []
+  for (let i = 0; i < campaignIds.length; i += TOTALS_PER_REQUEST)
+    chunks.push(campaignIds.slice(i, i + TOTALS_PER_REQUEST))
+  const reads = await Promise.all(
+    chunks.map((chunk) => db.from("public_campaigns").select(TOTALS_COLUMNS).in("id", chunk))
+  )
+  for (const { data, error } of reads) {
+    if (error) throw error
+    for (const row of (data ?? []) as unknown as TotalsRow[]) totals.set(row.id, toTotals(row))
+  }
+  return totals
 }
 
 /**
@@ -168,6 +186,28 @@ export interface StatementRow {
   /** For an incoming row explained as not a donation, its kind (INBOUND_EXPLANATION_KINDS); null otherwise. */
   in_explanation: string | null
   in_explained_at: string | null
+  /**
+   * Both legs of a transfer between the campaign's own accounts after a swap
+   * (DOS/Give#84): the pair id, when finance marked it, and the public label
+   * "Chuyển sang tài khoản mới"; null otherwise. A paired outgoing leg counts
+   * as explained.
+   */
+  own_transfer_id: string | null
+  own_transfer_at: string | null
+  own_transfer_label: string | null
+  /** On an incoming row a bank returned (DOS/Give#72): the outgoing row it returns; null otherwise. */
+  return_of: string | null
+  /** On an outgoing row a bank returned: the incoming row that brought the money back; null otherwise. */
+  returned_by: string | null
+  /** When Give recorded the return, on both rows; null otherwise. */
+  returned_at: string | null
+  /**
+   * On BOTH rows of a returned pair: what the bank kept (original minus
+   * returned; 0 when it returned everything); null on any other row
+   * (DOS/Give#195). A pair carries it twice, so never sum it across rows:
+   * read it from one row of the pair (returnedTransferText does).
+   */
+  return_bank_fee: number | null
 }
 
 // counterparty_name is left out on purpose: the bank's account-holder name is
@@ -175,7 +215,8 @@ export interface StatementRow {
 const STATEMENT_COLUMNS =
   "id, direction, asset, amount, booked_at, booked_date_only, after_close, matched, " +
   "counterparty_account_masked, explained, purpose, category, recipient, is_refund, explained_at, " +
-  "donor_name, donor_anonymous, in_explanation, in_explained_at"
+  "donor_name, donor_anonymous, in_explanation, in_explained_at, own_transfer_id, own_transfer_at, own_transfer_label, " +
+  "return_of, returned_by, returned_at, return_bank_fee"
 
 /**
  * Kinds of incoming money that is not a donation, as finance staff explain
@@ -193,6 +234,16 @@ export type InboundExplanationKind = keyof typeof INBOUND_EXPLANATION_KINDS
 
 export function isInboundExplanationKind(value: unknown): value is InboundExplanationKind {
   return typeof value === "string" && Object.hasOwn(INBOUND_EXPLANATION_KINDS, value)
+}
+
+/**
+ * An incoming row explained as not a donation. A corrected explanation
+ * (DOS/Give#71) is superseded by its match: give.public_statement then
+ * returns the row as matched with no in_explanation, and a matched row is
+ * never shown as "not a donation", so the money reads once, as a donation.
+ */
+export function explainedNotDonation(row: Pick<StatementRow, "direction" | "matched" | "in_explanation">): boolean {
+  return row.direction === "in" && !row.matched && !!row.in_explanation
 }
 
 /** Label of a stored kind; a kind this app does not know yet still reads as "not a donation". */
@@ -275,23 +326,147 @@ export async function listStatement(
     return { rows: [], total: counted.count ?? 0 }
   }
   if (error) throw error
-  const rows = ((data ?? []) as unknown as StatementRow[]).map((row) => ({ ...row, amount: num(row.amount) }))
+  const rows = ((data ?? []) as unknown as StatementRow[]).map((row) => ({
+    ...row,
+    amount: num(row.amount),
+    return_bank_fee: row.return_bank_fee == null ? null : num(row.return_bank_fee),
+  }))
   return { rows, total: count ?? rows.length }
 }
 
 export const ANONYMOUS_LABEL = "Ẩn danh"
+
+// ---------------------------------------------------------------------------
+// Returned transfers (DOS/Give#72)
+// ---------------------------------------------------------------------------
+
+/**
+ * The incoming row of a returned transfer: money a bank sent back from a
+ * transfer out of the campaign (a payment or a refund that did not go
+ * through). Who sent it is not public, as for any row that is not a matched
+ * donation; the reason and evidence stay private.
+ */
+export const RETURNED_IN_LABEL = "Ngân hàng trả lại tiền chuyển đi"
+
+/** The other row of a returned transfer, as the public statement shows it. */
+export interface StatementPair {
+  id: string
+  direction: Direction
+  /** On the outgoing row: whether it was a refund to a backer. */
+  is_refund: boolean | null
+  amount: number
+  booked_at: string
+}
+
+/**
+ * The other row of each returned transfer on this page (return_of or
+ * returned_by), read from give.public_statement, so a pair split across pages
+ * still names its amount and day. By the id of the row on the page.
+ */
+export async function listStatementPairs(
+  db: Db,
+  campaignId: string,
+  rows: readonly Pick<StatementRow, "id" | "return_of" | "returned_by">[]
+): Promise<Map<string, StatementPair>> {
+  const other = new Map<string, string>()
+  for (const row of rows) {
+    const id = row.return_of ?? row.returned_by
+    if (id) other.set(row.id, id)
+  }
+  if (other.size === 0) return new Map()
+  const { data, error } = await db
+    .from("public_statement")
+    .select("id, direction, is_refund, amount, booked_at")
+    .eq("campaign_id", campaignId)
+    .in("id", [...new Set(other.values())])
+  if (error) throw error
+  const byId = new Map(
+    ((data ?? []) as unknown as StatementPair[]).map((pair) => [pair.id, { ...pair, amount: num(pair.amount) }])
+  )
+  const pairs = new Map<string, StatementPair>()
+  for (const [rowId, otherId] of other) {
+    const pair = byId.get(otherId)
+    if (pair) pairs.set(rowId, pair)
+  }
+  return pairs
+}
+
+/**
+ * What the bank kept on a returned transfer, from the row's return_bank_fee,
+ * or from the pair's amounts when the column is missing; 0 when nothing was
+ * kept or the row is not part of a returned pair.
+ */
+export function returnBankFee(
+  row: Pick<StatementRow, "direction" | "amount" | "return_of" | "returned_by"> &
+    Partial<Pick<StatementRow, "return_bank_fee">>,
+  pair: Pick<StatementPair, "amount"> | null
+): number {
+  if (!row.return_of && !row.returned_by) return 0
+  if (row.return_bank_fee != null) return Math.max(0, row.return_bank_fee)
+  if (!pair) return 0
+  return Math.max(0, row.direction === "in" ? pair.amount - row.amount : row.amount - pair.amount)
+}
+
+/**
+ * The public note on either row of a returned transfer (DOS/Give#72): the
+ * transfer out and the money the bank sent back each name the other's amount
+ * and local day when it could be read; the reason and evidence are never
+ * public. A fee the bank kept is spent money of the campaign (a bank fee in
+ * "đã chi"), never money that reached a backer: on a returned refund the
+ * whole refund counts zero, fee included, and the organizer still owes the
+ * backer the full amount (DOS/Give#195). The fee is the same on both rows of
+ * the pair; each note names it once.
+ */
+export function returnedTransferText(
+  row: Pick<StatementRow, "direction" | "amount" | "is_refund" | "return_of" | "returned_by"> &
+    Partial<Pick<StatementRow, "return_bank_fee">>,
+  pair: StatementPair | null
+): string {
+  const fee = returnBankFee(row, pair)
+  if (row.direction === "in") {
+    // The return nets the original's bucket, so it is not money received.
+    const kind = pair?.is_refund ? "hoàn tiền" : "chi"
+    let text = pair
+      ? `Tiền của khoản ${kind} −${formatVnd(pair.amount)} ngày ${formatDate(pair.booked_at)} quay về, nên không tính vào tổng đã nhận.`
+      : "Tiền chiến dịch đã chuyển đi quay về, nên không tính vào tổng đã nhận."
+    if (fee > 0) {
+      text += ` Ngân hàng giữ lại ${formatVnd(fee)} phí: phần này là phí ngân hàng, tính vào tổng đã chi`
+      text += pair?.is_refund
+        ? ", không phải tiền người ủng hộ đã nhận. Người ủng hộ được hoàn đủ bằng một khoản chuyển mới; người tổ chức chịu phí."
+        : "."
+    }
+    return text
+  }
+  const back = pair ? ` +${formatVnd(pair.amount)} ngày ${formatDate(pair.booked_at)}` : ""
+  if (row.is_refund) {
+    let text = `Khoản hoàn tiền này không đến được người ủng hộ: ngân hàng đã trả lại${back}. Cả khoản −${formatVnd(row.amount)} không còn tính vào tổng đã hoàn lại`
+    text +=
+      fee > 0
+        ? `; ngân hàng giữ ${formatVnd(fee)} phí, tính là phí ngân hàng trong tổng đã chi. Người ủng hộ được hoàn đủ bằng một khoản chuyển mới; người tổ chức chịu phí.`
+        : ". Người ủng hộ được hoàn lại bằng một khoản chuyển mới."
+    return text
+  }
+  let text = pair
+    ? `Khoản này không chuyển được: ngân hàng trả lại${back}, số tiền về đó không còn tính vào tổng đã chi.`
+    : "Khoản này không chuyển được: ngân hàng đã trả tiền lại, số tiền về đó không còn tính vào tổng đã chi."
+  if (fee > 0) text += ` Ngân hàng giữ ${formatVnd(fee)} phí, phần này vẫn tính là đã chi.`
+  return text
+}
 
 /**
  * Who is on the other side of a statement row, as far as the public may
  * know (owner decision on DOS/Give#58): for money in, the donor's chosen
  * display name or "Ẩn danh", never the bank account-holder name; an
  * unmatched transfer has no name, and one explained as not a donation shows
- * its kind only.
+ * its kind only. Both legs of a transfer between the campaign's own accounts
+ * show the public label only ("Chuyển sang tài khoản mới", DOS/Give#84).
  */
 export function counterpartyLabel(
   row: Pick<StatementRow, "direction" | "matched" | "donor_name" | "donor_anonymous" | "recipient" | "explained"> &
-    Partial<Pick<StatementRow, "in_explanation">>
+    Partial<Pick<StatementRow, "in_explanation" | "own_transfer_label" | "return_of">>
 ): string {
+  if (row.own_transfer_label) return row.own_transfer_label
+  if (row.direction === "in" && row.return_of) return RETURNED_IN_LABEL
   if (row.direction === "out") {
     if (!row.explained) return "Chưa rõ người nhận"
     return row.recipient ?? "Không công khai"
@@ -464,8 +639,39 @@ export interface Disbursement {
   evidence: Evidence[]
 }
 
+/** The money a bank sent back from an explained transfer out (DOS/Give#72), as its organizer reads it. */
+export interface ReturnedBack {
+  /** The incoming amount: the original minus any fee the bank kept. */
+  amount: number
+  booked_at: string
+  linked_at: string
+}
+
+/**
+ * A transfer out that finance linked as returned by the bank but that has no
+ * explanation (DOS/Give#194). give.link_returned_transfer refuses an
+ * unexplained original today (GIVE_ORIGINAL_NOT_EXPLAINED), so this is a
+ * guard: such a transfer is not money spent and is never offered to explain.
+ */
+export interface ReturnedUnexplained extends OutgoingTransaction {
+  /** Null when the link is there but the money that came back could not be read. */
+  returned: ReturnedBack | null
+  /** When finance linked the return. */
+  linked_at: string
+}
+
+/** The organizer's outgoing transactions that have no explanation. */
+export interface UnexplainedOutgoing {
+  /** Still to explain: they count as unexplained. */
+  pending: OutgoingTransaction[]
+  /** Returned by the bank: shown with the marker, never offered to explain. */
+  returned: ReturnedUnexplained[]
+}
+
 export interface ExplainedTransaction extends OutgoingTransaction {
   disbursement: Disbursement
+  /** Set when finance linked money a bank returned to this transfer. */
+  returned: ReturnedBack | null
 }
 
 /** A contribution the organizer may still refund: it paid in more than was refunded. */
@@ -496,26 +702,69 @@ function toOutgoing<T extends OutgoingTransaction>(tx: T): T {
   return { ...tx, amount: num(tx.amount) }
 }
 
+type ReturnedBackRow = { linked_at: string; back: { amount: unknown; booked_at: string } | null }
+type ReturnedEmbed = ReturnedBackRow | ReturnedBackRow[] | null | undefined
+
+/**
+ * The link a bank return left on a transfer out (give.returned_transfers,
+ * DOS/Give#72), read under RLS as the organizer reads their campaign's
+ * transactions. Only the amount and day of the money that came back are read,
+ * never the link's private reason or evidence.
+ */
+const RETURNED_EMBED =
+  "returned:returned_transfers!original_transaction_id(linked_at, back:bank_transactions!bank_transaction_id(amount, booked_at))"
+
+/** Whether a return is linked, and the money that came back when it could be read. */
+function readReturned(
+  embed: ReturnedEmbed
+): { linked: false; back: null } | { linked: true; linked_at: string; back: ReturnedBack | null } {
+  const link = Array.isArray(embed) ? embed[0] : embed
+  if (!link) return { linked: false, back: null }
+  return {
+    linked: true,
+    linked_at: link.linked_at,
+    back: link.back
+      ? { amount: num(link.back.amount), booked_at: link.back.booked_at, linked_at: link.linked_at }
+      : null,
+  }
+}
+
 /**
  * Every unexplained outgoing transaction of a campaign, oldest first, so none
- * can hide behind a page limit while it counts publicly as unexplained.
+ * can hide behind a page limit while it counts publicly as unexplained. A
+ * transfer finance paired as moving the money to the campaign's new account
+ * (DOS/Give#84) is settled and cannot be explained, so it is left out. A
+ * transfer the bank returned (DOS/Give#194) is split off: it is not spending
+ * to explain.
  */
-export async function listPendingOutgoing(db: Db, campaignId: string): Promise<OutgoingTransaction[]> {
+export async function listUnexplainedOutgoing(db: Db, campaignId: string): Promise<UnexplainedOutgoing> {
   const { data, error } = await db
     .from("bank_transactions")
-    .select(`${OUTGOING_COLUMNS}, disbursements(bank_transaction_id)`)
+    .select(
+      `${OUTGOING_COLUMNS}, disbursements(bank_transaction_id), own_out:own_account_transfers!out_transaction_id(id), ${RETURNED_EMBED}`
+    )
     .eq("campaign_id", campaignId)
     .eq("direction", "out")
     .is("disbursements", null)
+    .is("own_out", null)
     .order("booked_at", { ascending: true })
   if (error) throw error
-  return ((data ?? []) as unknown as (OutgoingTransaction & { disbursements?: unknown })[]).map((row) => {
-    const { disbursements: _embed, ...tx } = row
-    return toOutgoing(tx)
-  })
+  type Row = OutgoingTransaction & { disbursements?: unknown; own_out?: unknown; returned?: ReturnedEmbed }
+  const result: UnexplainedOutgoing = { pending: [], returned: [] }
+  for (const { disbursements: _embed, own_out: _pair, returned, ...row } of (data ?? []) as unknown as Row[]) {
+    const tx = toOutgoing(row)
+    const link = readReturned(returned)
+    if (link.linked) result.returned.push({ ...tx, returned: link.back, linked_at: link.linked_at })
+    else result.pending.push(tx)
+  }
+  return result
 }
 
-/** Explained outgoing transactions with their explanation and evidence, newest first. */
+/**
+ * Explained outgoing transactions with their explanation and evidence, newest
+ * first, and the money a bank returned from each, if any (under RLS, as the
+ * organizer reads give.returned_transfers of their campaign).
+ */
 export async function listExplainedOutgoing(
   db: Db,
   campaignId: string,
@@ -523,36 +772,108 @@ export async function listExplainedOutgoing(
 ): Promise<ExplainedTransaction[]> {
   const { data, error } = await db
     .from("bank_transactions")
-    .select(`${OUTGOING_COLUMNS}, disbursement:disbursements!inner(${DISBURSEMENT_COLUMNS})`)
+    .select(`${OUTGOING_COLUMNS}, disbursement:disbursements!inner(${DISBURSEMENT_COLUMNS}), ${RETURNED_EMBED}`)
     .eq("campaign_id", campaignId)
     .eq("direction", "out")
     .order("booked_at", { ascending: false })
     .limit(limit)
   if (error) throw error
-  return ((data ?? []) as unknown as ExplainedTransaction[]).map(toOutgoing)
+  type Row = Omit<ExplainedTransaction, "returned"> & { returned?: ReturnedEmbed }
+  return ((data ?? []) as unknown as Row[]).map(({ returned, ...tx }) => ({
+    ...toOutgoing(tx),
+    returned: readReturned(returned).back,
+  }))
 }
 
-/** One outgoing transaction of the campaign with its explanation (null until explained), or null. */
+/**
+ * What the organizer reads on an explained transfer out that a bank returned
+ * (DOS/Give#72). A returned refund counts zero, fee included, so the backer
+ * is owed the full refund again and the fee the bank kept is the organizer's
+ * cost, a bank fee in "đã chi" (owner decision on DOS/Give#195). A returned
+ * payment no longer counts as spent, except the fee.
+ */
+export function returnedOutgoingText(
+  tx: Pick<OutgoingTransaction, "amount">,
+  disbursement: Pick<Disbursement, "is_refund">,
+  returned: ReturnedBack
+): string {
+  const fee = Math.max(0, tx.amount - returned.amount)
+  const back = `Ngân hàng đã trả lại +${formatVnd(returned.amount)} ngày ${formatDate(returned.booked_at)}`
+  if (disbursement.is_refund) {
+    if (fee === 0) {
+      return `${back}: khoản hoàn tiền này chưa đến được người ủng hộ, nên không còn tính là đã hoàn. Nếu bạn chưa chuyển lại, hãy kiểm tra số tài khoản với người ủng hộ, chuyển lại ${formatVnd(tx.amount)} rồi giải trình khoản chuyển mới là hoàn tiền. Nếu đã chuyển lại rồi, đừng chuyển thêm: số còn phải hoàn (nếu có) hiện trong danh sách chọn lượt ủng hộ khi giải trình hoàn tiền.`
+    }
+    return (
+      `${back} và giữ ${formatVnd(fee)} phí: khoản hoàn tiền này chưa đến được người ủng hộ. Cả khoản −${formatVnd(tx.amount)} không còn tính là đã hoàn, kể cả phần phí. ` +
+      `Phí ${formatVnd(fee)} do bạn chịu (tính là phí ngân hàng trong tổng đã chi), không trừ vào tiền hoàn. Nếu bạn chưa chuyển lại, hãy kiểm tra số tài khoản với người ủng hộ, chuyển lại đủ ${formatVnd(tx.amount)} rồi giải trình khoản chuyển mới là hoàn tiền. Nếu đã chuyển lại rồi, đừng chuyển thêm: số còn phải hoàn (nếu có) hiện trong danh sách chọn lượt ủng hộ khi giải trình hoàn tiền.`
+    )
+  }
+  return fee === 0
+    ? `${back}: khoản chi này không chuyển được, nên không còn tính vào tổng đã chi.`
+    : `${back} và giữ ${formatVnd(fee)} phí: khoản chi này không chuyển được. Số tiền về không còn tính vào tổng đã chi; phí ${formatVnd(fee)} vẫn tính là đã chi.`
+}
+
+/**
+ * What the organizer reads on a transfer out that a bank returned before it
+ * was explained (DOS/Give#194): it never left the campaign, so it is not
+ * spending to explain. Unreachable while give.link_returned_transfer refuses
+ * an unexplained original; kept so the page never offers it to explain.
+ */
+export function returnedUnexplainedText(
+  tx: Pick<OutgoingTransaction, "amount">,
+  returned: ReturnedBack | null,
+  linkedAt: string
+): string {
+  // The public totals still count such a transfer as unexplained until
+  // finance settles it, so no total is promised here (only finance can fix it).
+  const tail = `và sẽ xử lý khoản này trên sao kê công khai, nên bạn không giải trình nó như một khoản chi. Nếu sao kê vẫn tính khoản này là chưa giải trình, hãy liên hệ Give ${VIA_CONTACT_EMAIL}.`
+  if (!returned) {
+    return `Ngày ${formatDate(linkedAt)}, bộ phận tài chính của Give đã ghi nhận khoản chuyển này bị ngân hàng trả lại ${tail}`
+  }
+  const fee = Math.max(0, tx.amount - returned.amount)
+  const kept = fee > 0 ? ` và giữ ${formatVnd(fee)} phí ngân hàng` : ""
+  return `Ngân hàng đã trả lại +${formatVnd(returned.amount)} ngày ${formatDate(returned.booked_at)}${kept}. Bộ phận tài chính của Give đã ghi nhận ${tail}`
+}
+
+/** An outgoing transaction with its explanation (null until explained) and whether a bank return is linked. */
+export type OutgoingWithState = OutgoingTransaction & { disbursement: Disbursement | null; returned: boolean }
+
+/** One outgoing transaction of the campaign with its explanation and return state, or null. */
 export async function getOutgoing(
   db: Db,
   campaignId: string,
   transactionId: string
-): Promise<(OutgoingTransaction & { disbursement: Disbursement | null }) | null> {
+): Promise<OutgoingWithState | null> {
   const { data, error } = await db
     .from("bank_transactions")
-    .select(`${OUTGOING_COLUMNS}, disbursement:disbursements(${DISBURSEMENT_COLUMNS})`)
+    .select(`${OUTGOING_COLUMNS}, disbursement:disbursements(${DISBURSEMENT_COLUMNS}), ${RETURNED_EMBED}`)
     .eq("id", transactionId)
     .eq("campaign_id", campaignId)
     .eq("direction", "out")
     .maybeSingle()
   if (error) throw error
-  const tx = data as unknown as (OutgoingTransaction & { disbursement: Disbursement | null }) | null
-  return tx ? toOutgoing(tx) : null
+  const row = data as unknown as
+    (OutgoingTransaction & { disbursement: Disbursement | null; returned?: ReturnedEmbed }) | null
+  if (!row) return null
+  const { returned, ...tx } = row
+  return { ...toOutgoing(tx), returned: readReturned(returned).linked }
 }
 
 const REFUNDABLE_COLUMNS = "id, kind, reference_code, public_name, is_anonymous, received_amount"
+/** Read only to apply the own-contribution rule (DOS/Give#199), then dropped. */
+const OWNER_COLUMNS = "contributor_user_id, guest_email"
 
 type ContributionRow = Omit<RefundableContribution, "refundable_amount">
+type OwnedContributionRow = ContributionRow & { contributor_user_id: string | null; guest_email: string | null }
+
+/** The row without the columns read for the own-contribution rule. */
+function withoutOwner({
+  contributor_user_id: _user,
+  guest_email: _email,
+  ...row
+}: OwnedContributionRow): ContributionRow {
+  return row
+}
 
 /** Earlier refunds per contribution of the campaign (ledger 'refunded' posts and reversals). */
 async function refundedByContribution(db: Db, campaignId: string, ids?: string[]): Promise<Map<string, number>> {
@@ -580,12 +901,22 @@ function withRefundable(rows: ContributionRow[], refunded: Map<string, number>):
     .filter((x) => x.refundable_amount > 0)
 }
 
-/** Contributions of the campaign that can still be refunded, newest first (no guest name or email). */
-export async function listRefundable(db: Db, campaignId: string, limit = 1000): Promise<RefundableContribution[]> {
+/**
+ * Contributions of the campaign that can still be refunded, newest first (no
+ * guest name or email). The viewer's own, signed in or as a guest with their
+ * email, are left out: nobody books a refund to their own contribution
+ * (DOS/Give#199).
+ */
+export async function listRefundable(
+  db: Db,
+  campaignId: string,
+  viewer: Viewer,
+  limit = 1000
+): Promise<RefundableContribution[]> {
   const [{ data, error }, refunded] = await Promise.all([
     db
       .from("contributions")
-      .select(REFUNDABLE_COLUMNS)
+      .select(`${REFUNDABLE_COLUMNS}, ${OWNER_COLUMNS}`)
       .eq("campaign_id", campaignId)
       .gt("received_amount", 0)
       .order("created_at", { ascending: false })
@@ -593,19 +924,25 @@ export async function listRefundable(db: Db, campaignId: string, limit = 1000): 
     refundedByContribution(db, campaignId),
   ])
   if (error) throw error
-  return withRefundable((data ?? []) as unknown as ContributionRow[], refunded)
+  const rows = (data ?? []) as unknown as OwnedContributionRow[]
+  return withRefundable(rows.filter((x) => !isOwnContribution(x, viewer)).map(withoutOwner), refunded)
 }
 
-/** One contribution of the campaign that can still be refunded, or null. */
+/**
+ * One contribution of the campaign that can still be refunded, or null;
+ * `own` when it is the viewer's (DOS/Give#199), so the action words the
+ * refusal before the database raises it.
+ */
 export async function getRefundable(
   db: Db,
   campaignId: string,
-  contributionId: string
-): Promise<RefundableContribution | null> {
+  contributionId: string,
+  viewer: Viewer
+): Promise<(RefundableContribution & { own: boolean }) | null> {
   const [{ data, error }, refunded] = await Promise.all([
     db
       .from("contributions")
-      .select(REFUNDABLE_COLUMNS)
+      .select(`${REFUNDABLE_COLUMNS}, ${OWNER_COLUMNS}`)
       .eq("id", contributionId)
       .eq("campaign_id", campaignId)
       .gt("received_amount", 0)
@@ -613,7 +950,10 @@ export async function getRefundable(
     refundedByContribution(db, campaignId, [contributionId]),
   ])
   if (error) throw error
-  return data ? (withRefundable([data as unknown as ContributionRow], refunded)[0] ?? null) : null
+  if (!data) return null
+  const row = data as unknown as OwnedContributionRow
+  const refundable = withRefundable([withoutOwner(row)], refunded)[0]
+  return refundable ? { ...refundable, own: isOwnContribution(row, viewer) } : null
 }
 
 /** Reference codes of the campaign's contributions, by id (to label explained refunds). */

@@ -36,9 +36,21 @@ export const POLL_WINDOW_MS = 30 * 60 * 1000
 /** Header that carries a guest's status token to the status route, so it never sits in a URL. */
 export const STATUS_TOKEN_HEADER = "x-give-status-token"
 
+/** Query parameter on the guest tracking exchange route (DOS/Give#50). */
+export const TRACKING_TOKEN_PARAM = "t"
+
 /** create_donation returns the guest status token as 64 lowercase hex characters (32 random bytes). */
 export function isStatusToken(value: unknown): value is string {
   return typeof value === "string" && /^[0-9a-f]{64}$/.test(value)
+}
+
+/**
+ * Relative path of the cross-device tracking link for a guest donation
+ * (DOS/Give#50). Opening it exchanges the token for an httpOnly cookie and
+ * redirects to the clean `/donations/[code]` URL.
+ */
+export function donationTrackingPath(code: string, token: string): string {
+  return `/donations/${encodeURIComponent(code)}/track?${TRACKING_TOKEN_PARAM}=${encodeURIComponent(token)}`
 }
 
 export function qrExpiresAt(createdAt: string): Date {

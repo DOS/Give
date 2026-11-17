@@ -7,15 +7,19 @@ import { getCampaignById, isStaff } from "@/lib/campaigns"
 import { dbErrorMessage, done, fail, type ActionResult, type DbErrorLike } from "@/lib/errors"
 import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
+import { isOwnContribution, OWN_CONTRIBUTION_MESSAGES } from "@/lib/own-contribution"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import {
   findContribution,
   getIncoming,
   MATCHABLE_STATUSES,
   normalizeReferenceCode,
+  OWNER_MISMATCH_FOR_ORGANIZER,
+  OWNER_MISMATCH_FOR_STAFF,
   paidAfterMatch,
   paidBreakdown,
   REFERENCE_CODE,
+  UNATTRIBUTED_CAUSES,
 } from "@/lib/reconciliation"
 import { dbAs, dbService } from "@/lib/supabase"
 
@@ -41,8 +45,24 @@ const MATCH_MESSAGES: Record<string, string> = {
   GIVE_TRANSACTION_NOT_INBOUND: "Chỉ khớp được các khoản tiền vào.",
   GIVE_TRANSACTION_EXPLAINED:
     "Giao dịch này đã được nhân viên tài chính giải trình là không phải tiền ủng hộ, nên không khớp được nữa.",
-  GIVE_TRANSACTION_UNATTRIBUTED:
-    "Giao dịch này chưa thuộc chiến dịch nào (tài khoản không gắn với chiến dịch lúc nhận tiền), nên chưa khớp được.",
+  // Linked as money a bank returned (DOS/Give#72), possibly since the page loaded.
+  GIVE_TRANSACTION_RETURNED:
+    "Giao dịch này đã được nhân viên tài chính ghi nhận là tiền bị ngân hàng trả lại, nên không khớp được nữa. Hãy tải lại trang.",
+  GIVE_TRANSACTION_UNATTRIBUTED: `Giao dịch này không thuộc chiến dịch nào, nên không khớp được. Lý do có thể là: ${UNATTRIBUTED_CAUSES}.`,
+  // The account's owner is not the campaign's organizer (the database rule of
+  // DOS/Give#119, worded in #136). Only an admin data repair clears it, so the
+  // organizer is sent to the Give team.
+  GIVE_ACCOUNT_OWNER_MISMATCH: OWNER_MISMATCH_FOR_ORGANIZER,
+  // Nobody matches money to their own contribution, signed in or as a guest
+  // with their email (DOS/Give#199); the organizer is told how it still gets matched.
+  GIVE_SELF_REVIEW: OWN_CONTRIBUTION_MESSAGES.matchAsOrganizer,
+}
+
+/** The same code worded for finance staff, who are the Give team: it goes to an admin. */
+const STAFF_MATCH_MESSAGES: Record<string, string> = {
+  ...MATCH_MESSAGES,
+  GIVE_ACCOUNT_OWNER_MISMATCH: OWNER_MISMATCH_FOR_STAFF,
+  GIVE_SELF_REVIEW: OWN_CONTRIBUTION_MESSAGES.matchAsStaff,
 }
 
 export async function matchTransaction(
@@ -76,6 +96,7 @@ export async function matchTransaction(
     contribution = await findContribution(db, campaign.id, picked ? { id: picked } : { referenceCode: typed })
     if (!contribution) return fail("Không tìm thấy lượt ủng hộ này trong chiến dịch của giao dịch.")
     if (tx.explained_as) return fail(MATCH_MESSAGES.GIVE_TRANSACTION_EXPLAINED)
+    if (tx.returned_of) return fail(MATCH_MESSAGES.GIVE_TRANSACTION_RETURNED)
     if (tx.matched_to) {
       return tx.matched_to === contribution.id
         ? done(`Giao dịch đã được khớp với lượt ủng hộ ${contribution.reference_code} từ trước.`)
@@ -83,6 +104,14 @@ export async function matchTransaction(
     }
     if (!(MATCHABLE_STATUSES as readonly string[]).includes(contribution.status)) {
       return fail(MATCH_MESSAGES.GIVE_CONTRIBUTION_NOT_MATCHABLE)
+    }
+    // The picker leaves the viewer's own contributions out; a typed code may still name one.
+    if (isOwnContribution(contribution, session.user)) {
+      return fail(
+        campaign.organizer_id === session.user.id
+          ? OWN_CONTRIBUTION_MESSAGES.matchAsOrganizer
+          : OWN_CONTRIBUTION_MESSAGES.matchAsStaff
+      )
     }
     before = await paidBreakdown(db, campaign.id)
   } catch (error) {
@@ -96,7 +125,10 @@ export async function matchTransaction(
       p_actor_id: session.user.id,
     })
     .single()
-  if (error) return fail(dbErrorMessage(error, MATCH_MESSAGES))
+  if (error) {
+    const asOrganizer = campaign.organizer_id === session.user.id
+    return fail(dbErrorMessage(error, asOrganizer ? MATCH_MESSAGES : STAFF_MATCH_MESSAGES))
+  }
 
   let after = null
   try {

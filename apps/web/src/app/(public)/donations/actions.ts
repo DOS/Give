@@ -98,7 +98,10 @@ export async function donate(campaignId: string, _state: ActionResult, form: For
     const cookie = donationCookie(created.reference_code, hostname)
     const jar = await cookies()
     // Expire with the same attributes, or the browser keeps a __Host- cookie.
-    for (const name of donationCookiesToDrop(jar.getAll().map((c) => c.name))) {
+    for (const name of donationCookiesToDrop(
+      jar.getAll().map((c) => c.name),
+      hostname
+    )) {
       jar.set(name, "", { ...cookie.options, maxAge: 0 })
     }
     jar.set(cookie.name, created.status_token, {

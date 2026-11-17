@@ -5,6 +5,7 @@ import { notFound } from "next/navigation"
 import type { ReactNode } from "react"
 
 import { AccountStatusBadge, StatusBadge, TypeBadge } from "@/components/badges"
+import { ContactEmailLink, ContactText } from "@/components/ContactText"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Callout, type CalloutTone } from "@/components/ui/Callout"
@@ -35,6 +36,7 @@ import {
   listMilestones,
   organizerCanCancel,
 } from "@/lib/campaigns"
+import { VIA_CONTACT_EMAIL } from "@/lib/contact"
 import { formatDate, formatDateTime, formatVnd, toVietnamLocalInput } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { privateCoverUrl } from "@/lib/cover-urls"
@@ -104,7 +106,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   ].filter((item): item is { id: string; label: string } => Boolean(item))
 
   return (
-    <MeDetail wide>
+    <MeDetail>
       <PageHeader
         back={{ href: "/me/campaigns", label: "Chiến dịch của tôi" }}
         eyebrow={
@@ -128,16 +130,19 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
         ended={campaign.ends_at !== null && new Date(campaign.ends_at) <= new Date()}
       />
 
-      <div className="grid gap-8 lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start lg:gap-10">
-        {/* The editor is long: on wide screens a sticky list of its sections; phones scroll. */}
-        <nav aria-label="Các mục của trình sửa" className="hidden lg:sticky lg:top-24 lg:block">
+      <div className="lg:grid lg:grid-cols-12 lg:gap-x-6">
+        {/* The editor is long: on wide screens a sticky list of its sections in the 4-column sidebar; phones scroll. */}
+        <nav
+          aria-label="Các mục của trình sửa"
+          className="hidden min-w-0 lg:sticky lg:top-24 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:block lg:self-start"
+        >
           <p className="px-3 text-sm font-semibold text-muted">Trên trang này</p>
-          <ul className="mt-2 space-y-0.5 border-l border-line">
+          <ul className="mt-2 space-y-1">
             {toc.map((item) => (
               <li key={item.id}>
                 <a
                   href={`#${item.id}`}
-                  className="-ml-px flex min-h-11 items-center border-l-2 border-transparent px-3 text-base text-body hover:border-gray-400 hover:text-ink"
+                  className="flex min-h-11 items-center rounded px-3 text-base text-fg transition-colors duration-150 hover:bg-surface focus-visible:-outline-offset-4"
                 >
                   {item.label}
                 </a>
@@ -146,7 +151,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
           </ul>
         </nav>
 
-        <div className="min-w-0 space-y-8">
+        <div className="min-w-0 space-y-12 lg:col-span-8 lg:row-start-1">
           {showFulfillment && <FulfillmentLink campaignId={campaign.id} />}
 
           {showMoney && (
@@ -155,7 +160,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               title="Sao kê và giải trình chi"
               description={
                 totals ? (
-                  <p className={totals.unexplained_out_count > 0 ? "font-medium text-amber-800" : undefined}>
+                  <p className={totals.unexplained_out_count > 0 ? "font-medium text-warning" : undefined}>
                     {totals.unexplained_out_count > 0
                       ? `${totals.unexplained_out_count} khoản chi chưa giải trình (công khai trên trang chiến dịch).`
                       : "Mọi khoản chi đã được giải trình."}
@@ -189,8 +194,8 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             }
           >
             <ActionForm action={saveContent.bind(null, campaign.id)}>
-              <fieldset disabled={!editable} className="space-y-8">
-                <div className="space-y-5">
+              <fieldset disabled={!editable} className="max-w-160 space-y-8">
+                <div className="space-y-6">
                   <div>
                     <label htmlFor="title" className="label">
                       Tiêu đề
@@ -260,9 +265,9 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                 </div>
 
                 {isGive && (
-                  <div className="space-y-4 border-t border-line pt-6">
-                    <h3 className="text-lg font-semibold">Người thụ hưởng</h3>
-                    <div className="grid gap-5 sm:grid-cols-2">
+                  <div className="space-y-4 border-t border-border pt-6">
+                    <h3 className="text-h3">Người thụ hưởng</h3>
+                    <div className="grid gap-6 sm:grid-cols-2 [&>*]:min-w-0">
                       <div>
                         <label htmlFor="beneficiary_name" className="label">
                           Người thụ hưởng
@@ -292,9 +297,9 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                   </div>
                 )}
 
-                <div className="space-y-4 border-t border-line pt-6">
-                  <h3 className="text-lg font-semibold">Mục tiêu và thời gian</h3>
-                  <div className="grid gap-5 sm:grid-cols-2">
+                <div className="space-y-4 border-t border-border pt-6">
+                  <h3 className="text-h3">Mục tiêu và thời gian</h3>
+                  <div className="grid gap-6 sm:grid-cols-2 [&>*]:min-w-0">
                     <div>
                       <label htmlFor="goal_amount" className="label">
                         Mục tiêu (₫)
@@ -388,10 +393,8 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                   </div>
                 </div>
 
-                <fieldset className="border-t border-line pt-6">
-                  <legend className="float-left w-full text-lg font-semibold text-ink">
-                    Hiển thị trên trang công khai
-                  </legend>
+                <fieldset className="border-t border-border pt-6">
+                  <legend className="float-left w-full text-h3 text-fg">Hiển thị trên trang công khai</legend>
                   <div className="clear-left flex flex-wrap gap-x-8 pt-2">
                     <label className={checkLabelClass}>
                       <input
@@ -424,7 +427,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                 </fieldset>
 
                 {editable && (
-                  <div className="border-t border-line pt-6">
+                  <div className="border-t border-border pt-6">
                     <SubmitButton className={buttonClass()}>Lưu nội dung</SubmitButton>
                   </div>
                 )}
@@ -434,8 +437,8 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
 
           <Panel id="cover-image" title="Ảnh bìa">
             <div className="grid gap-6 sm:grid-cols-2">
-              <figure>
-                <div className="relative aspect-[16/9] overflow-hidden rounded border border-line bg-surface">
+              <figure className="min-w-0">
+                <div className="relative aspect-[16/9] overflow-hidden rounded border border-border bg-surface">
                   {campaign.cover?.storage_path ? (
                     <Image
                       src={privateCoverUrl(campaign.cover.storage_path)}
@@ -454,7 +457,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                 )}
               </figure>
               {editable && (
-                <ActionForm action={uploadCover.bind(null, campaign.id)} resetOnSuccess className="space-y-5">
+                <ActionForm action={uploadCover.bind(null, campaign.id)} resetOnSuccess className="min-w-0 space-y-6">
                   <div>
                     <label htmlFor="cover" className="label">
                       Chọn ảnh
@@ -490,20 +493,18 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             description={milestones.length === 0 ? undefined : "Mốc giúp người ủng hộ thấy tiền sẽ làm được gì."}
           >
             {milestones.length > 0 ? (
-              <ol className="divide-y divide-line rounded-md border border-line">
+              <ol className="divide-y divide-border rounded-md border border-border">
                 {milestones.map((milestone) => (
                   <li key={milestone.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 p-4">
                     <div className="min-w-0 flex-1 basis-56">
-                      <p className="font-semibold break-words text-ink">{milestone.title}</p>
-                      {milestone.description && <p className="mt-0.5 break-words text-body">{milestone.description}</p>}
+                      <p className="font-semibold break-words text-fg">{milestone.title}</p>
+                      {milestone.description && <p className="mt-1 break-words text-fg">{milestone.description}</p>}
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="figure">{formatVnd(milestone.target_amount)}</span>
                       {editable && (
                         <ActionForm action={deleteMilestone.bind(null, campaign.id, milestone.id)}>
-                          <SubmitButton className={buttonClass({ variant: "danger", className: "px-3" })}>
-                            Xóa
-                          </SubmitButton>
+                          <SubmitButton className={buttonClass({ variant: "danger", size: "sm" })}>Xóa</SubmitButton>
                         </ActionForm>
                       )}
                     </div>
@@ -517,9 +518,9 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               <ActionForm
                 action={addMilestone.bind(null, campaign.id)}
                 resetOnSuccess
-                className="mt-6 grid gap-5 border-t border-line pt-6 sm:grid-cols-2"
+                className="mt-6 grid max-w-160 gap-6 border-t border-border pt-6 sm:grid-cols-2 [&>*]:min-w-0"
               >
-                <h3 className="text-lg font-semibold sm:col-span-2">Thêm mốc</h3>
+                <h3 className="text-h3 sm:col-span-2">Thêm mốc</h3>
                 <div>
                   <label htmlFor="milestone_title" className="label">
                     Tên mốc
@@ -569,7 +570,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               <ActionForm
                 action={postUpdate.bind(null, campaign.id)}
                 resetOnSuccess
-                className="space-y-5"
+                className="max-w-160 space-y-6"
                 confirm="Cập nhật sẽ công khai ngay và không sửa được. Đăng?"
               >
                 <div>
@@ -587,15 +588,15 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                 <SubmitButton className={buttonClass()}>Đăng cập nhật</SubmitButton>
               </ActionForm>
               {updates.length > 0 && (
-                <div className="mt-6 border-t border-line pt-6">
-                  <h3 className="text-lg font-semibold">Đã đăng ({updates.length})</h3>
+                <div className="mt-6 border-t border-border pt-6">
+                  <h3 className="text-h3">Đã đăng ({updates.length})</h3>
                   <ul className="mt-3 space-y-2">
                     {updates.map((update) => (
                       <li key={update.id} className="flex flex-wrap gap-x-3">
                         <span className="text-muted tabular-nums">
                           {formatDate(update.published_at ?? update.created_at)}
                         </span>
-                        <span className="min-w-0 break-words text-ink">{update.title}</span>
+                        <span className="min-w-0 break-words text-fg">{update.title}</span>
                       </li>
                     ))}
                   </ul>
@@ -628,8 +629,8 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
           <Panel id="status" title="Trạng thái">
             <div className="space-y-6">
               {editable && (
-                <ActionForm action={submitForReview.bind(null, campaign.id)} className="space-y-4">
-                  <p className="text-body">
+                <ActionForm action={submitForReview.bind(null, campaign.id)} className="max-w-160 space-y-4">
+                  <p className="text-fg">
                     Khi gửi duyệt, bạn không sửa được nội dung cho tới khi kiểm duyệt viên trả lời. Cần có danh mục, tóm
                     tắt, câu chuyện ít nhất 100 ký tự, ngày kết thúc
                     {isGive ? " và người thụ hưởng" : ""}.
@@ -637,10 +638,12 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                   {submitBlocked && (
                     <Callout tone="warning" role="alert">
                       Chưa gửi duyệt được: chiến dịch cần gắn một tài khoản nhận tiền đã xác minh, đứng tên bạn.{" "}
-                      {accounts?.bound && accounts.boundHasTransactions && !isGive ? (
+                      {accounts?.bound &&
+                      accounts.boundHasTransactions &&
+                      !canAskSwap(campaign.status, campaign.type, accounts.boundHasTransactions) ? (
                         <>
                           Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: hãy liên hệ
-                          đội ngũ Give để được hỗ trợ.
+                          đội ngũ Give qua email <ContactEmailLink /> để được hỗ trợ.
                         </>
                       ) : (
                         <>
@@ -674,7 +677,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               {organizerCanCancel(campaign.status) && (
                 <ActionForm
                   action={cancelCampaign.bind(null, campaign.id)}
-                  className={editable ? "border-t border-line pt-6" : undefined}
+                  className={editable ? "max-w-160 border-t border-border pt-6" : "max-w-160"}
                   confirm="Hủy chiến dịch là vĩnh viễn. Tiếp tục?"
                 >
                   <label htmlFor="cancel_reason" className="label">
@@ -688,7 +691,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                       placeholder="Lý do (không bắt buộc)"
                       maxLength={500}
                     />
-                    <SubmitButton className={buttonClass({ variant: "danger", className: "sm:shrink-0" })}>
+                    <SubmitButton className={buttonClass({ variant: "danger", className: "shrink-0" })}>
                       Hủy chiến dịch
                     </SubmitButton>
                   </div>
@@ -723,10 +726,10 @@ function AccountRow({ account, aside }: { account: ReceivingAccount; aside?: Rea
         </span>
         <div className="min-w-0">
           {/* The owner's own page: the full number (RLS keeps other users out). */}
-          <p className="font-semibold break-words text-ink">
+          <p className="font-semibold break-words text-fg">
             {bankLabel(account.bank_bin)} · <span className="tabular-nums">{account.account_number}</span>
           </p>
-          <p className="text-body">{account.account_name}</p>
+          <p className="break-words text-fg">{account.account_name}</p>
         </div>
       </div>
       {aside}
@@ -750,8 +753,8 @@ function ReceivingAccountSection({
   accounts: EditorAccounts
 }) {
   const { bound, boundUnusable, boundHasTransactions, choices, swaps } = accounts
-  // A binding that recorded money is never released early; it is swapped instead (DOS/Give#55).
-  const releasable = canAskRelease(status, type) && !(status === "changes_requested" && boundHasTransactions)
+  // A binding that recorded money is never released early; where eligible it is swapped instead (DOS/Give#55, #77).
+  const releasable = canAskRelease(status, type) && !(isEditableStatus(status) && boundHasTransactions)
   return (
     <Panel
       id="receiving-account"
@@ -771,14 +774,18 @@ function ReceivingAccountSection({
       }
     >
       {bound ? (
-        <div className="space-y-4 rounded-md border border-line p-4">
+        <div className="space-y-4">
           <AccountRow account={bound} aside={<AccountStatusBadge status={bound.verification_status} />} />
           {boundUnusable && (
             <Callout tone="warning">
               Tài khoản đang gắn tạm không dùng được: {boundUnusable} Chiến dịch không nhận được tiền qua tài khoản này.
-              {type === "back" && (status === "live" || status === "suspended")
-                ? " Dự án có quà tặng chưa đổi được tài khoản khi đang gây quỹ hoặc tạm dừng: hãy liên hệ đội ngũ Give."
-                : ""}
+              {type === "back" && (status === "live" || status === "suspended") && (
+                <>
+                  {" "}
+                  Dự án có quà tặng chưa đổi được tài khoản khi đang gây quỹ hoặc tạm dừng: hãy liên hệ đội ngũ Give qua
+                  email <ContactEmailLink />.
+                </>
+              )}
             </Callout>
           )}
           {releasable ? (
@@ -794,11 +801,15 @@ function ReceivingAccountSection({
             </ActionForm>
           ) : (
             <p className="text-sm text-muted">
-              {boundHasTransactions && status === "changes_requested"
-                ? type === "give"
-                  ? "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy đề nghị đổi tài khoản bên dưới."
-                  : "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give."
-                : "Khi chiến dịch đang chờ duyệt, đã duyệt hoặc đang chạy, tài khoản không nhả được; tài khoản được nhả khi chiến dịch đã xong hẳn phần tiền."}
+              <ContactText
+                text={
+                  boundHasTransactions && isEditableStatus(status)
+                    ? canAskSwap(status, type, boundHasTransactions)
+                      ? "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy đề nghị đổi tài khoản bên dưới."
+                      : `Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
+                    : "Khi chiến dịch đang chờ duyệt, đã duyệt hoặc đang chạy, tài khoản không nhả được; tài khoản được nhả khi chiến dịch đã xong hẳn phần tiền."
+                }
+              />
             </p>
           )}
           {canAskSwap(status, type, boundHasTransactions) && (
@@ -815,7 +826,7 @@ function ReceivingAccountSection({
           Khai báo tài khoản rồi chuyển khoản xác minh; khi tài khoản đã được xác minh, quay lại đây để gắn.
         </EmptyState>
       ) : (
-        <ul className="divide-y divide-line rounded-md border border-line">
+        <ul className="divide-y divide-border rounded-md border border-border">
           {choices.map(({ account, blockedReason }) => (
             <li key={account.id} className="space-y-2 p-4">
               <AccountRow
@@ -831,7 +842,7 @@ function ReceivingAccountSection({
                   )
                 }
               />
-              {blockedReason && <p className="text-amber-800 sm:pl-13">{blockedReason}</p>}
+              {blockedReason && <p className="text-warning sm:pl-13">{blockedReason}</p>}
             </li>
           ))}
         </ul>
@@ -860,9 +871,9 @@ function AccountSwapBlock({
   const requested = pending ? choices.find((c) => c.account.id === pending.new_receiving_account_id)?.account : null
 
   return (
-    <div className="space-y-4 border-t border-line pt-4">
-      <h3 className="text-lg font-semibold">Đổi tài khoản nhận</h3>
-      <p className="text-body">
+    <div className="space-y-4 border-t border-border pt-4">
+      <h3 className="text-h3">Đổi tài khoản nhận</h3>
+      <p className="max-w-[68ch] text-fg">
         Nếu tài khoản đang gắn không dùng được nữa (ngân hàng đóng tài khoản, tài khoản bị khóa khi kiểm tra gian lận,
         tên chủ tài khoản không còn trùng tên pháp lý), bạn có thể đề nghị đổi sang một tài khoản khác đã xác minh, đứng
         tên bạn. Bộ phận tài chính của Give xem xét; khi được duyệt, tài khoản cũ ngừng nhận cho chiến dịch và bị khóa,
@@ -913,7 +924,7 @@ function AccountSwapBlock({
         <ActionForm
           action={requestAccountSwap.bind(null, campaignId)}
           confirm="Gửi yêu cầu đổi tài khoản nhận cho bộ phận tài chính?"
-          className="space-y-5"
+          className="max-w-160 space-y-6"
         >
           <div>
             <label htmlFor="swap_account" className="label">
@@ -965,8 +976,8 @@ function StatusNotice({
     : ended
       ? "Đã duyệt, nhưng chiến dịch đã quá ngày kết thúc mà chưa mở được vì không có tài khoản nhận tiền dùng được. Kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn sửa ngày (và đổi tài khoản nếu được), hoặc bạn có thể hủy chiến dịch."
       : accountBlock === "no_account"
-        ? "Đã duyệt, nhưng chiến dịch chưa mở được vì chưa gắn tài khoản nhận tiền. Gắn một tài khoản đã xác minh ở mục Tài khoản nhận tiền bên dưới; chiến dịch tự mở khi tới ngày bắt đầu. Nếu không gắn được, hãy liên hệ đội ngũ Give."
-        : "Đã duyệt, nhưng chiến dịch chưa mở được vì tài khoản nhận tiền đang gắn không dùng được. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn đổi tài khoản. Cần hỗ trợ, hãy liên hệ đội ngũ Give."
+        ? `Đã duyệt, nhưng chiến dịch chưa mở được vì chưa gắn tài khoản nhận tiền. Gắn một tài khoản đã xác minh ở mục Tài khoản nhận tiền bên dưới; chiến dịch tự mở khi tới ngày bắt đầu. Nếu không gắn được, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
+        : `Đã duyệt, nhưng chiến dịch chưa mở được vì tài khoản nhận tiền đang gắn không dùng được. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn đổi tài khoản. Cần hỗ trợ, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
   const notices: Record<string, { tone: CalloutTone; text: string }> = {
     draft: { tone: "neutral", text: "Bản nháp: chỉ bạn thấy. Hoàn thiện nội dung rồi gửi duyệt." },
     in_review: { tone: "warning", text: "Đang chờ kiểm duyệt. Nội dung tạm khóa." },
@@ -988,7 +999,7 @@ function StatusNotice({
   if (!notice) return null
   return (
     <Callout tone={notice.tone} className="break-words">
-      {notice.text}
+      <ContactText text={notice.text} />
     </Callout>
   )
 }

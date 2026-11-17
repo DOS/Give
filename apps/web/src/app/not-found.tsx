@@ -1,13 +1,17 @@
-import Link from "next/link"
+import { ButtonLink } from "@/components/ui/Button"
+import { EmptyState } from "@/components/ui/EmptyState"
+import { SearchIcon } from "@/components/ui/icons"
 
+/** A page that does not exist or is not public: the whole-page empty state (DESIGN.md 6). */
 export default function NotFound() {
   return (
-    <div className="mx-auto max-w-xl px-4 py-24 text-center">
-      <h1 className="text-2xl font-bold">Không tìm thấy trang</h1>
-      <p className="mt-2 text-gray-600">Trang này không tồn tại hoặc chưa được công khai.</p>
-      <Link href="/campaigns" className="mt-6 btn-primary">
-        Khám phá chiến dịch
-      </Link>
-    </div>
+    <EmptyState
+      level={1}
+      title="Không tìm thấy trang"
+      icon={<SearchIcon width={40} height={40} />}
+      action={<ButtonLink href="/campaigns">Khám phá chiến dịch</ButtonLink>}
+    >
+      Trang này không tồn tại hoặc chưa được công khai.
+    </EmptyState>
   )
 }

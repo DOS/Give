@@ -3,7 +3,7 @@ import Link from "next/link"
 import { TypeBadge } from "@/components/badges"
 import { ProgressBar } from "@/components/ProgressBar"
 import { MoneyRow } from "@/components/ui/Money"
-import type { PublicCampaign } from "@/lib/campaigns"
+import type { CardCampaign } from "@/lib/campaigns"
 import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
 import { raisedAmount, remainingAmount, statementHref, type MoneyTotals } from "@/lib/statement"
 
@@ -14,7 +14,7 @@ import { raisedAmount, remainingAmount, statementHref, type MoneyTotals } from "
  * (back). The figures are the same ones the campaign page and its statement
  * show. It floats, so it carries the floating shadow.
  */
-export function FeaturedReceipt({ campaign, totals }: { campaign: PublicCampaign; totals: MoneyTotals | undefined }) {
+export function FeaturedReceipt({ campaign, totals }: { campaign: CardCampaign; totals: MoneyTotals | undefined }) {
   const isGive = campaign.type === "give"
   const raised = raisedAmount(totals, campaign.type)
   const percent = progressPercent(raised, campaign.goal_amount)
@@ -30,8 +30,15 @@ export function FeaturedReceipt({ campaign, totals }: { campaign: PublicCampaign
     <article className="min-w-0 card shadow-float">
       <div className="border-b border-dashed border-border p-4 sm:p-6">
         <TypeBadge type={campaign.type} />
-        <h2 className="mt-3 line-clamp-2 text-h3 break-words">
-          <Link href={`/campaigns/${campaign.slug}`} className="hover:underline hover:underline-offset-4">
+        {/* The clamp sits on the link, not the h2: an element's own outline is
+            not clipped by its own overflow, so the focus ring stays whole
+            (DESIGN.md 6, Focus ring). `w-fit` keeps a one-line title's ring on
+            its text. */}
+        <h2 className="mt-3 text-h3 break-words">
+          <Link
+            href={`/campaigns/${campaign.slug}`}
+            className="line-clamp-2 w-fit max-w-full hover:underline hover:underline-offset-4"
+          >
             {campaign.title}
           </Link>
         </h2>

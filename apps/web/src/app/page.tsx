@@ -6,7 +6,7 @@ import { FeaturedReceipt } from "@/components/home/FeaturedReceipt"
 import { ButtonLink } from "@/components/ui/Button"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { EyeIcon, HeartIcon, LedgerIcon, ShieldIcon, SparkIcon } from "@/components/ui/icons"
-import { discoveryHref, listCategories, listPublicCampaigns } from "@/lib/campaigns"
+import { DEFAULT_DISCOVERY, discoveryHref, listCategories, listPublicCampaigns } from "@/lib/campaigns"
 import { homeSections } from "@/lib/home"
 import { listMoneyTotals, raisedAmount } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
@@ -34,7 +34,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const { login_error: loginError } = await searchParams
   const db = dbAs()
   const categories = await listCategories(db)
-  const campaigns = await listPublicCampaigns(db, { type: null, category: null, q: null }, categories, HOME_CAMPAIGNS)
+  const { campaigns } = await listPublicCampaigns(
+    db,
+    { ...DEFAULT_DISCOVERY, sort: "newest" },
+    categories,
+    HOME_CAMPAIGNS
+  )
   const totals = await listMoneyTotals(
     db,
     campaigns.map((c) => c.id)
@@ -54,9 +59,13 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       )}
 
       <section className="border-b border-border">
-        <div className="container-page grid-page items-center gap-y-8 py-12 sm:py-16 lg:py-24">
-          <div className="col-span-full min-w-0 lg:col-span-7">
-            <h1 className="max-w-[14ch] text-display-phone tracking-tight sm:text-display">
+        {/* The bottom is a gap between page sections, 64px on phones and 96px from 1024px (DESIGN.md 2.4), as
+            the top of the next section is; the top under the header keeps 48px on phones. */}
+        <div className="container-page grid-page items-center gap-y-8 pt-12 pb-16 sm:pt-16 lg:py-24">
+          {/* Eight columns from 1024px (the receipt card keeps 9 to 12), so the headline's second line, about
+              560px at 48px, fits from 1024px; the 18ch and 52ch measures still cap the headline and paragraph. */}
+          <div className="col-span-full min-w-0 lg:col-span-8">
+            <h1 className="max-w-[18ch] text-display-phone tracking-tight sm:text-display">
               Gây quỹ minh&nbsp;bạch, từng đồng đều có sao kê
             </h1>
             <p className="mt-4 max-w-[52ch] text-lg text-muted sm:mt-6">
@@ -64,12 +73,21 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               xem.
             </p>
             <div className="mt-6 flex flex-col gap-2 sm:mt-8 sm:flex-row sm:items-center sm:gap-6">
-              <ButtonLink href="/campaigns" size="lg" className="max-sm:w-full">
-                Khám phá chiến dịch
-              </ButtonLink>
-              <Link href="/start" className="inline-flex min-h-11 items-center justify-center link">
-                Tạo chiến dịch của bạn
-              </Link>
+              {/* With no live campaign, discovery would open an empty list: the one action is to create one. */}
+              {campaigns.length === 0 ? (
+                <ButtonLink href="/start" size="lg" className="max-sm:w-full">
+                  Tạo chiến dịch của bạn
+                </ButtonLink>
+              ) : (
+                <>
+                  <ButtonLink href="/campaigns" size="lg" className="max-sm:w-full">
+                    Khám phá chiến dịch
+                  </ButtonLink>
+                  <Link href="/start" className="inline-flex min-h-11 items-center justify-center link">
+                    Tạo chiến dịch của bạn
+                  </Link>
+                </>
+              )}
             </div>
           </div>
           {featured && (
@@ -82,21 +100,24 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       {campaigns.length === 0 ? (
         <section className="container-page pt-16 lg:pt-24">
-          <EmptyState
-            title="Chưa có chiến dịch nào đang gây quỹ"
-            action={<ButtonLink href="/start">Tạo chiến dịch đầu tiên</ButtonLink>}
-          >
+          {/* No button of its own: the hero above already offers "Tạo chiến dịch của bạn" (DESIGN.md 8). */}
+          <EmptyState title="Chưa có chiến dịch nào đang gây quỹ" level={2} flush>
             Chiến dịch hiện ở đây ngay khi được duyệt.
           </EmptyState>
         </section>
       ) : (
         interesting.length > 0 && (
           <section aria-labelledby="quan-tam-heading" className="container-page pt-16 lg:pt-24">
-            <div className="flex items-baseline justify-between gap-4">
+            {/* Phones get the 14px link from the HomeMobile mockup, so the heading keeps one line beside it
+                from 375px. Below that the link wraps under the heading instead of breaking the heading.
+                The link is one line of text with an invisible 44px hit area, so from 375px the row is as
+                tall as the heading and the cards sit 24px below it; below 375px the wrapped link sits 8px
+                under the heading and the cards 24px below the link. */}
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
               <h2 id="quan-tam-heading" className="text-h2">
                 Đang được quan tâm
               </h2>
-              <Link href="/campaigns" className="inline-flex min-h-11 shrink-0 items-center link whitespace-nowrap">
+              <Link href="/campaigns" className="hit-area shrink-0 text-sm link whitespace-nowrap sm:text-base">
                 Xem tất cả
               </Link>
             </div>
@@ -172,7 +193,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       </section>
 
       <section aria-labelledby="to-chuc-heading" className="border-t border-border bg-surface">
-        <div className="container-page flex flex-col gap-6 py-12 sm:py-16 md:flex-row md:items-center md:justify-between md:gap-8">
+        <div className="container-page flex flex-col gap-6 py-16 md:flex-row md:items-center md:justify-between md:gap-8">
           <div className="min-w-0">
             <h2 id="to-chuc-heading" className="text-h2">
               Bạn có một việc cần gây quỹ?

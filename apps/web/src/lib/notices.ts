@@ -1,5 +1,8 @@
 import type { Db } from "@/lib/campaigns"
+import { VIA_CONTACT_EMAIL } from "@/lib/contact"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
+import { isUuid } from "@/lib/ids"
+import { paymentRequestsStopped } from "@/lib/payment-requests"
 import { SLUG_PATTERN } from "@/lib/slug"
 
 /**
@@ -30,6 +33,11 @@ export interface NoticeView {
   linkLabel: string | null
 }
 
+export interface NoticeRenderOptions {
+  /** True while a moderator has stopped the campaign's payment requests (DOS/Give#93). */
+  paymentRequestsStopped?: boolean
+}
+
 function text(payload: Notice["payload"], key: string): string | null {
   const value = payload?.[key]
   return typeof value === "string" && value.trim() !== "" ? value : null
@@ -57,8 +65,13 @@ function pledgeLink(payload: Notice["payload"], label: string): Pick<NoticeView,
     : { href: null, linkLabel: null }
 }
 
+function asksForPayment(notice: Pick<Notice, "kind" | "payload">): boolean {
+  if (notice.kind === "payment_due" || notice.kind === "payment_reminder") return true
+  return notice.kind === "payment_requests_resumed" && text(notice.payload, "reference_code") !== null
+}
+
 /** Vietnamese title, body and link of a notice, from its kind and payload. */
-export function describeNotice(notice: Notice): NoticeView {
+export function describeNotice(notice: Notice, options?: NoticeRenderOptions): NoticeView {
   const p = notice.payload
   switch (notice.kind) {
     case "explain_spending": {
@@ -78,6 +91,14 @@ export function describeNotice(notice: Notice): NoticeView {
     }
     case "payment_due":
     case "payment_reminder": {
+      if (options?.paymentRequestsStopped) {
+        const which = notice.kind === "payment_due" ? "đến hạn thanh toán" : "nhắc thanh toán"
+        return {
+          title: "Yêu cầu thanh toán đang tạm dừng",
+          body: `Give đang tạm dừng yêu cầu thanh toán của ${campaignName(p, "dự án")}. Thông báo ${which} này được gửi trước khi tạm dừng; đừng chuyển tiền cho cam kết của bạn trong lúc tạm dừng.`,
+          ...pledgeLink(p, "Xem cam kết"),
+        }
+      }
       // Payload of give.pledge_notice_payload (DOS/Give#30); reminders add amount_due and day.
       // Net of refunds (DOS/Give#89): older payloads have no refunded_amount.
       const intended = count(p, "intended_amount")
@@ -128,9 +149,17 @@ export function describeNotice(notice: Notice): NoticeView {
       // refund_amount: what is still owed, net of refunds (DOS/Give#89); older payloads only have received_amount.
       const received = count(p, "refund_amount") ?? count(p, "received_amount")
       const by = text(p, "refund_due_at")
-      let body = `Cam kết ủng hộ ${campaignName(p, "dự án")} không còn hiệu lực (chưa được thanh toán đủ trước hạn, hoặc tiền đến sau khi cam kết đã hết hiệu lực). Người tạo dự án phải hoàn lại`
-      body += received ? ` ${formatVnd(received)} bạn đã chuyển` : " số tiền bạn đã chuyển"
+      // A refund the bank sent back (DOS/Give#72): the pledge is owed a refund again.
+      const returned = text(p, "reason") === "refund_returned"
+      let body = returned
+        ? `Khoản hoàn tiền cho cam kết ủng hộ ${campaignName(p, "dự án")} chưa đến được tài khoản của bạn: ngân hàng đã trả lại. Nếu số tài khoản nhận tiền của bạn đã đổi, hãy báo người tạo dự án. Người tạo dự án phải hoàn lại`
+        : `Cam kết ủng hộ ${campaignName(p, "dự án")} không còn hiệu lực (chưa được thanh toán đủ trước hạn, hoặc tiền đến sau khi cam kết đã hết hiệu lực). Người tạo dự án phải hoàn lại`
+      if (returned) body += received ? ` ${formatVnd(received)}` : " số tiền còn nợ bạn"
+      else body += received ? ` ${formatVnd(received)} bạn đã chuyển` : " số tiền bạn đã chuyển"
       body += by ? ` trước ${formatDate(by)}.` : "."
+      // The fee the bank kept is the organizer's to bear (DOS/Give#195): refund_amount already includes it.
+      const fee = returned ? count(p, "bank_fee") : null
+      if (fee) body += ` Ngân hàng đã giữ ${formatVnd(fee)} phí; người tạo dự án chịu phí này, bạn vẫn được hoàn đủ.`
       return { title: "Bạn sẽ được hoàn tiền", body: capitalize(body), ...pledgeLink(p, "Xem cam kết") }
     }
     case "refund_owed": {
@@ -139,7 +168,18 @@ export function describeNotice(notice: Notice): NoticeView {
       const code = text(p, "reference_code")
       let body = `Một người ủng hộ ${campaignName(p, "dự án")}`
       if (code) body += ` (mã ${code})`
-      if (text(p, "reason") === "overpaid") {
+      if (text(p, "reason") === "refund_returned") {
+        // The refund was explained, but the bank sent it back (DOS/Give#72).
+        // A fee the bank kept is the organizer's (DOS/Give#195): the earlier
+        // refund counts zero, fee included, and refund_amount already holds
+        // the full amount owed, so nothing is added or taken off here.
+        const fee = count(p, "bank_fee")
+        body += fee
+          ? ` chưa nhận được khoản hoàn tiền bạn đã chuyển: ngân hàng đã trả lại nhưng giữ ${formatVnd(fee)} phí. Cả khoản bạn đã chuyển trước đó, kể cả phần phí, không còn được tính là đã hoàn; phí này do bạn chịu, không trừ vào tiền hoàn. Hãy kiểm tra lại số tài khoản với người ủng hộ và chuyển lại đủ`
+          : " chưa nhận được khoản hoàn tiền bạn đã chuyển: ngân hàng đã trả lại. Hãy kiểm tra lại số tài khoản với người ủng hộ và hoàn lại"
+        body += owed ? ` ${formatVnd(owed)}` : " số tiền còn nợ họ"
+        body += by ? ` trước ${formatDate(by)}` : ""
+      } else if (text(p, "reason") === "overpaid") {
         // A paid pledge that received more than it pledged (DOS/Give#89).
         body += " đã chuyển nhiều hơn số cam kết. Bạn cần hoàn lại phần thừa"
         body += owed ? ` ${formatVnd(owed)}` : ""
@@ -194,6 +234,13 @@ export function describeNotice(notice: Notice): NoticeView {
             : { href: null, linkLabel: null }),
         }
       }
+      if (options?.paymentRequestsStopped) {
+        return {
+          title: "Yêu cầu thanh toán đang tạm dừng",
+          body: `Give đang tạm dừng yêu cầu thanh toán của ${campaignName(p, "dự án")}. Thông báo mở lại thanh toán này được gửi trước đợt tạm dừng hiện tại; đừng chuyển tiền cho cam kết của bạn trong lúc tạm dừng.`,
+          ...pledgeLink(p, "Xem cam kết"),
+        }
+      }
       let body = `Give đã mở lại yêu cầu thanh toán của ${campaignName(p, "dự án")}. Hãy thanh toán cam kết của bạn`
       body += dueAt ? ` trước ${formatDateTime(dueAt)} (hạn đã được lùi thêm đúng thời gian tạm dừng).` : "."
       body += " Quá hạn mà chưa trả đủ, cam kết hết hiệu lực."
@@ -217,6 +264,24 @@ export function describeNotice(notice: Notice): NoticeView {
         linkLabel: "Xem tài khoản nhận",
       }
     }
+    case "moderator_inquiry": {
+      const note = text(p, "note")
+      const slug = text(p, "campaign_slug")
+      let body = `Đội kiểm duyệt Give cần bạn làm rõ thêm về ${campaignName(p)}.`
+      if (note) body += ` Nội dung: ${note}`
+      body += ` Bạn có thể bổ sung cập nhật hoặc chứng từ trên trang quản lý chiến dịch, hoặc phản hồi đội ngũ Give ${VIA_CONTACT_EMAIL}.`
+      const link =
+        notice.campaign_id && isUuid(notice.campaign_id)
+          ? { href: `/me/campaigns/${notice.campaign_id}`, linkLabel: "Quản lý chiến dịch" }
+          : slug && SLUG_PATTERN.test(slug)
+            ? { href: `/campaigns/${slug}`, linkLabel: "Xem chiến dịch" }
+            : { href: null, linkLabel: null }
+      return {
+        title: "Cần làm rõ thông tin chiến dịch",
+        body,
+        ...link,
+      }
+    }
     default:
       return { title: "Thông báo", body: "Bạn có một thông báo mới.", href: null, linkLabel: null }
   }
@@ -232,6 +297,45 @@ export async function listNotices(db: Db, userId: string): Promise<Notice[]> {
     .limit(NOTICE_PAGE_SIZE)
   if (error) throw error
   return (data ?? []) as Notice[]
+}
+
+const CAMPAIGNS_PER_REQUEST = 100
+
+/**
+ * Campaign ids among the user's payment notices whose payment requests a
+ * moderator currently has stopped (campaigns.payments_stopped_at non-null,
+ * public on give.campaigns since DOS/Give#89). Skips the query when no notice
+ * asks the user to pay; throws on a database error so an older payment notice
+ * never falls back to "Hãy thanh toán" when the check fails (DOS/Give#93).
+ */
+export async function stoppedNoticeCampaigns(
+  db: Db,
+  notices: readonly Pick<Notice, "kind" | "campaign_id" | "payload">[]
+): Promise<Set<string>> {
+  const ids = [
+    ...new Set(
+      notices
+        .filter(
+          (n): n is Pick<Notice, "kind" | "payload"> & { campaign_id: string } =>
+            Boolean(n.campaign_id && isUuid(n.campaign_id)) && asksForPayment(n)
+        )
+        .map((n) => n.campaign_id)
+    ),
+  ]
+  if (ids.length === 0) return new Set()
+  const chunks: string[][] = []
+  for (let i = 0; i < ids.length; i += CAMPAIGNS_PER_REQUEST) chunks.push(ids.slice(i, i + CAMPAIGNS_PER_REQUEST))
+  const reads = await Promise.all(
+    chunks.map((chunk) => db.from("campaigns").select("id, payments_stopped_at").in("id", chunk))
+  )
+  const stopped = new Set<string>()
+  for (const { data, error } of reads) {
+    if (error) throw error
+    for (const row of (data ?? []) as { id: string; payments_stopped_at: string | null }[]) {
+      if (paymentRequestsStopped(row)) stopped.add(row.id)
+    }
+  }
+  return stopped
 }
 
 /**

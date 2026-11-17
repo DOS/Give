@@ -1,11 +1,20 @@
 import Link from "next/link"
 
 import { SummaryCells } from "@/components/campaign/SummaryCells"
+import { OwnTransferNote } from "@/components/OwnTransferNote"
 import { PledgeTotals } from "@/components/PledgeTotals"
 import { Badge } from "@/components/ui/Badge"
 import { Callout } from "@/components/ui/Callout"
 import { formatDate, formatVnd } from "@/lib/format"
-import { counterpartyLabel, remainingAmount, statementHref, type MoneyTotals, type StatementRow } from "@/lib/statement"
+import {
+  counterpartyLabel,
+  explainedNotDonation,
+  remainingAmount,
+  returnBankFee,
+  statementHref,
+  type MoneyTotals,
+  type StatementRow,
+} from "@/lib/statement"
 
 /** How many of the newest statement rows the campaign page shows. */
 export const PREVIEW_ROWS = 5
@@ -16,7 +25,23 @@ function rowText(row: StatementRow): string {
 }
 
 function RowNote({ row }: { row: StatementRow }) {
-  if (row.direction === "in") return row.in_explanation ? <Badge>Không phải tiền ủng hộ</Badge> : null
+  // A transfer between the campaign's own accounts after a swap (DOS/Give#84).
+  if (row.own_transfer_label) return <Badge tone="info">Chuyển tài khoản</Badge>
+  if (row.direction === "in") {
+    if (!explainedNotDonation(row) && !row.return_of) return null
+    // A fee the bank kept on a returned transfer (DOS/Give#195), named once
+    // per pair: on the money that came back, not again on the transfer out.
+    const fee = row.return_of ? returnBankFee(row, null) : 0
+    if (fee === 0) return <Badge>Không phải tiền ủng hộ</Badge>
+    return (
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <Badge>Không phải tiền ủng hộ</Badge>
+        <span className="text-sm text-muted">Ngân hàng giữ {formatVnd(fee)} phí</span>
+      </span>
+    )
+  }
+  // A transfer out that a bank returned (DOS/Give#72).
+  if (row.returned_by) return <Badge tone="info">Bị ngân hàng trả lại</Badge>
   if (row.is_refund) return <Badge>Hoàn tiền</Badge>
   return row.explained ? <Badge tone="brand">Đã giải trình</Badge> : <Badge tone="warning">Chưa giải trình</Badge>
 }
@@ -24,7 +49,9 @@ function RowNote({ row }: { row: StatementRow }) {
 function Amount({ row }: { row: StatementRow }) {
   const incoming = row.direction === "in"
   return (
-    <span className={`font-semibold whitespace-nowrap tabular-nums ${incoming ? "text-primary" : "text-fg"}`}>
+    <span
+      className={`font-semibold whitespace-nowrap tabular-nums ${incoming && !row.own_transfer_label ? "text-primary" : "text-fg"}`}
+    >
       {incoming ? "+" : "−"}
       {formatVnd(row.amount)}
     </span>
@@ -56,13 +83,13 @@ export function StatementPreview({
         <h2 id="sao-ke-heading" className="text-h2">
           Sao kê
         </h2>
-        <Link href={statementHref(slug, "all")} className="inline-flex min-h-11 shrink-0 items-center text-sm link">
+        <Link href={statementHref(slug, "all")} className="hit-area shrink-0 text-sm link">
           Xem toàn bộ sao kê
         </Link>
       </div>
-      <p className="text-sm text-muted">Đối chiếu với sao kê ngân hàng của tài khoản nhận.</p>
+      <p className="mt-2 text-sm text-muted">Đối chiếu với sao kê ngân hàng của tài khoản nhận.</p>
 
-      <div className="mt-4 space-y-4">
+      <div className="mt-6 space-y-4">
         {isBack ? (
           <PledgeTotals totals={totals} />
         ) : (
@@ -82,6 +109,7 @@ export function StatementPreview({
             phí hoặc trả lãi), đã được Give giải trình trên sao kê.
           </p>
         )}
+        {totals.own_transfer_amount > 0 && <OwnTransferNote amount={totals.own_transfer_amount} />}
         {totals.unexplained_out_count > 0 && (
           <Callout tone="warning">
             <p>

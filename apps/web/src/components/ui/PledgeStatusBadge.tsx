@@ -12,7 +12,7 @@ const TONES: Record<PledgeStatus, BadgeTone> = {
   refunded: "neutral",
 }
 
-/** A pledge's status as a kit badge (DOS/Give#96), toned like the old `pledgeStatusColor` pill. */
+/** A pledge's status as a kit badge, toned from the semantic soft colors (DESIGN.md 6). */
 export function PledgeStatusBadge({ status, className }: { status: string; className?: string }) {
   return (
     <Badge tone={TONES[status as PledgeStatus] ?? "neutral"} className={className}>

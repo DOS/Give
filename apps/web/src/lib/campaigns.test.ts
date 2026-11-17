@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
@@ -6,16 +6,18 @@ import {
   accountProblemLabel,
   canPostUpdate,
   categoriesFor,
+  DEFAULT_DISCOVERY,
+  DISCOVERY_MAX_PAGE,
   discoveryHref,
   fundingModelFor,
   isEditableStatus,
   isPublicStatus,
+  listPublicCampaigns,
   listWaitingForAccount,
   waitingAdvice,
   normalizeSearch,
   organizerCanCancel,
   parseDiscoveryFilters,
-  searchFilter,
   STATUS_LABELS,
   type CampaignStatus,
   type Category,
@@ -90,44 +92,299 @@ describe("normalizeSearch", () => {
   })
 })
 
-describe("searchFilter", () => {
-  it("quotes both ilike values", () => {
-    expect(searchFilter("lũ lụt")).toBe('title.ilike."%lũ lụt%",summary.ilike."%lũ lụt%"')
-  })
-})
-
 describe("parseDiscoveryFilters", () => {
-  it("reads valid filters", () => {
-    expect(parseDiscoveryFilters({ type: "back", category: "film-video", q: "phim" })).toEqual({
-      type: "back",
-      category: "film-video",
-      q: "phim",
-    })
-  })
-
-  it("drops invalid values", () => {
-    expect(parseDiscoveryFilters({ type: "equity", category: "Bad Slug!", q: "*" })).toEqual({
+  it("defaults to live campaigns, featured first, page 1", () => {
+    expect(parseDiscoveryFilters({})).toEqual(DEFAULT_DISCOVERY)
+    expect(DEFAULT_DISCOVERY).toEqual({
       type: null,
       category: null,
       q: null,
+      status: "live",
+      sort: "featured",
+      page: 1,
     })
   })
 
+  it("reads valid filters", () => {
+    expect(
+      parseDiscoveryFilters({
+        type: "back",
+        category: "film-video",
+        q: "phim",
+        status: "ended",
+        sort: "near_goal",
+        page: "3",
+      })
+    ).toEqual({ type: "back", category: "film-video", q: "phim", status: "ended", sort: "near_goal", page: 3 })
+  })
+
+  it("reads every status and sort", () => {
+    for (const status of ["live", "ended", "all"] as const)
+      expect(parseDiscoveryFilters({ status }).status).toBe(status)
+    for (const sort of ["featured", "newest", "ending", "near_goal"] as const)
+      expect(parseDiscoveryFilters({ sort }).sort).toBe(sort)
+  })
+
+  it("drops invalid values to their defaults", () => {
+    expect(
+      parseDiscoveryFilters({
+        type: "equity",
+        category: "Bad Slug!",
+        q: "*",
+        status: "soon",
+        sort: "random",
+        page: "abc",
+      })
+    ).toEqual(DEFAULT_DISCOVERY)
+  })
+
+  it("is strict about case and spelling", () => {
+    expect(parseDiscoveryFilters({ status: "LIVE", sort: "Newest" })).toMatchObject({
+      status: "live",
+      sort: "featured",
+    })
+    expect(parseDiscoveryFilters({ sort: "near-goal" }).sort).toBe("featured")
+    expect(parseDiscoveryFilters({ status: "", sort: "" })).toMatchObject({ status: "live", sort: "featured" })
+  })
+
+  it("reads only positive whole page numbers and caps them", () => {
+    const page = (value: string) => parseDiscoveryFilters({ page: value }).page
+    expect(page("2")).toBe(2)
+    expect(page(String(DISCOVERY_MAX_PAGE))).toBe(DISCOVERY_MAX_PAGE)
+    expect(page(String(DISCOVERY_MAX_PAGE + 1))).toBe(DISCOVERY_MAX_PAGE)
+    expect(page("99999999999999999999999")).toBe(DISCOVERY_MAX_PAGE)
+    for (const bad of ["0", "-1", "1.5", "1e3", "02", " 2", "2 ", "", "Infinity", "0x10"]) expect(page(bad)).toBe(1)
+  })
+
   it("takes the first of repeated params", () => {
-    expect(parseDiscoveryFilters({ type: ["give", "back"] }).type).toBe("give")
+    expect(
+      parseDiscoveryFilters({
+        type: ["give", "back"],
+        status: ["all", "ended"],
+        sort: ["ending", "newest"],
+        page: ["2", "5"],
+      })
+    ).toMatchObject({ type: "give", status: "all", sort: "ending", page: 2 })
   })
 })
 
 describe("discoveryHref", () => {
-  it("omits empty filters", () => {
+  it("omits empty and default filters", () => {
     expect(discoveryHref({})).toBe("/campaigns")
     expect(discoveryHref({ type: null, category: null, q: null })).toBe("/campaigns")
+    expect(discoveryHref(DEFAULT_DISCOVERY)).toBe("/campaigns")
   })
 
   it("encodes the query", () => {
     expect(discoveryHref({ type: "give", category: "healthcare", q: "lũ lụt" })).toBe(
       "/campaigns?type=give&category=healthcare&q=l%C5%A9+l%E1%BB%A5t"
     )
+  })
+
+  it("keeps status, sort and page when they are not the defaults, and appends a hash", () => {
+    expect(discoveryHref({ ...DEFAULT_DISCOVERY, status: "ended", sort: "ending", page: 2 }, "chien-dich-25")).toBe(
+      "/campaigns?status=ended&sort=ending&page=2#chien-dich-25"
+    )
+  })
+
+  it("round-trips through parseDiscoveryFilters", () => {
+    const filters = {
+      type: "back",
+      category: "film-video",
+      q: "phim ngắn",
+      status: "all",
+      sort: "near_goal",
+      page: 4,
+    } as const
+    const query = new URL(discoveryHref(filters), "https://give.test").searchParams
+    expect(parseDiscoveryFilters(Object.fromEntries(query))).toEqual(filters)
+  })
+})
+
+describe("listPublicCampaigns", () => {
+  const A = "1060c000-0000-4000-8000-000000000001"
+  const B = "1060c000-0000-4000-8000-000000000002"
+  // The database returns B before A: the page must keep that order.
+  const found = (call: Call) =>
+    call.target === "rpc:discover_campaigns"
+      ? {
+          data: [
+            { campaign_id: B, total_count: "7" },
+            { campaign_id: A, total_count: "7" },
+          ],
+        }
+      : call.target === "campaigns"
+        ? {
+            data: [
+              { id: A, title: "A" },
+              { id: B, title: "B" },
+            ],
+          }
+        : undefined
+
+  it("passes the filters, sort and limit to give.discover_campaigns", async () => {
+    const log: Call[] = []
+    const category = { id: "cat-1", slug: "healthcare" } as Category
+    await listPublicCampaigns(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      fakeDb(found, log) as any,
+      { type: "give", category: "healthcare", q: "tim", status: "ended", sort: "near_goal" },
+      [category],
+      48
+    )
+    expect(log[0].target).toBe("rpc:discover_campaigns")
+    expect(op(log[0], "args")).toEqual([
+      {
+        p_status: "ended",
+        p_type: "give",
+        p_category_id: "cat-1",
+        p_search: "tim",
+        p_sort: "near_goal",
+        p_limit: 48,
+      },
+    ])
+  })
+
+  it("reads 24 by default, with nulls for the filters not set", async () => {
+    const log: Call[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await listPublicCampaigns(fakeDb(found, log) as any, DEFAULT_DISCOVERY, [])
+    expect(op(log[0], "args")).toEqual([
+      { p_status: "live", p_type: null, p_category_id: null, p_search: null, p_sort: "featured", p_limit: 24 },
+    ])
+  })
+
+  it("returns nothing for an unknown category without asking the database", async () => {
+    const log: Call[] = []
+    expect(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await listPublicCampaigns(fakeDb(found, log) as any, { ...DEFAULT_DISCOVERY, category: "no-such" }, [])
+    ).toEqual({ campaigns: [], total: 0 })
+    expect(log).toHaveLength(0)
+  })
+
+  it("reads only the card columns of the returned ids and keeps the database's order and count", async () => {
+    const log: Call[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const page = await listPublicCampaigns(fakeDb(found, log) as any, DEFAULT_DISCOVERY, [])
+    const read = log.find((c) => c.target === "campaigns")
+    const columns = String(op(read, "select")?.[0])
+    expect(columns).not.toMatch(/\*|organizer_id|review_note|organizers|story|summary/)
+    expect(op(read, "in")).toEqual(["id", [B, A]])
+    expect(page.total).toBe(7)
+    expect(page.campaigns.map((c) => c.id)).toEqual([B, A])
+  })
+
+  it("drops an id whose row is no longer readable", async () => {
+    const db = fakeDb((call) => (call.target === "campaigns" ? { data: [{ id: A, title: "A" }] } : found(call)))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const page = await listPublicCampaigns(db as any, DEFAULT_DISCOVERY, [])
+    expect(page.campaigns.map((c) => c.id)).toEqual([A])
+    expect(page.total).toBe(7)
+  })
+
+  it("adds each campaign's organizer from one public_campaign_organizers call, with the public card fields only", async () => {
+    const log: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "rpc:public_campaign_organizers")
+        return {
+          data: [
+            {
+              campaign_id: A,
+              display_name: "Quỹ Ánh Sáng",
+              kind: "organization",
+              verification_status: "verified",
+              // Anything else the RPC might return must not reach the page.
+              legal_name: "Pháp nhân",
+              phone: "0900000001",
+              user_id: "u-1",
+            },
+          ],
+        }
+      return found(call)
+    }, log)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const page = await listPublicCampaigns(db as any, DEFAULT_DISCOVERY, [])
+    expect(log.map((c) => c.target)).toEqual(["rpc:discover_campaigns", "campaigns", "rpc:public_campaign_organizers"])
+    expect(op(log[2], "args")).toEqual([{ p_campaign_ids: [B, A] }])
+    expect(page.campaigns).toEqual([
+      { id: B, title: "B", organizer: null },
+      {
+        id: A,
+        title: "A",
+        organizer: { display_name: "Quỹ Ánh Sáng", kind: "organization", verification_status: "verified" },
+      },
+    ])
+  })
+
+  it("reads rows and organizers 100 ids at a time", async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `1060d000-0000-4000-8000-${String(i).padStart(12, "0")}`)
+    const log: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "rpc:discover_campaigns")
+        return { data: ids.map((id) => ({ campaign_id: id, total_count: 101 })) }
+      if (call.target === "campaigns") return { data: (op(call, "in")?.[1] as string[]).map((id) => ({ id })) }
+      const asked = (op(call, "args")?.[0] as { p_campaign_ids: string[] }).p_campaign_ids
+      return {
+        data: asked.map((id) => ({
+          campaign_id: id,
+          display_name: "X",
+          kind: "individual",
+          verification_status: "verified",
+        })),
+      }
+    }, log)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const page = await listPublicCampaigns(db as any, DEFAULT_DISCOVERY, [], 101)
+    expect(log.filter((c) => c.target === "campaigns").map((c) => op(c, "in")?.[1])).toEqual([
+      ids.slice(0, 100),
+      ids.slice(100),
+    ])
+    const calls = log.filter((c) => c.target === "rpc:public_campaign_organizers")
+    expect(calls.map((c) => (op(c, "args")?.[0] as { p_campaign_ids: string[] }).p_campaign_ids)).toEqual([
+      ids.slice(0, 100),
+      ids.slice(100),
+    ])
+    expect(page.campaigns.map((c) => c.id)).toEqual(ids)
+    expect(page.campaigns.every((c) => c.organizer?.display_name === "X")).toBe(true)
+  })
+
+  it("skips the other reads when nothing matches", async () => {
+    const log: Call[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(await listPublicCampaigns(fakeDb(() => ({ data: [] }), log) as any, DEFAULT_DISCOVERY, [])).toEqual({
+      campaigns: [],
+      total: 0,
+    })
+    expect(log).toHaveLength(1)
+  })
+
+  it("keeps the cards without organizers when the organizer lookup fails, and throws when a list read fails", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const db = fakeDb((call) =>
+      call.target === "rpc:public_campaign_organizers"
+        ? { error: { code: "PGRST202", message: "function not found" } }
+        : found(call)
+    )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const page = await listPublicCampaigns(db as any, DEFAULT_DISCOVERY, [])
+    expect(page.campaigns.map((c) => [c.id, c.organizer])).toEqual([
+      [B, null],
+      [A, null],
+    ])
+    expect(error).toHaveBeenCalledOnce()
+    error.mockRestore()
+
+    const refused = fakeDb(() => ({ error: { code: "42501", message: "permission denied" } }))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(listPublicCampaigns(refused as any, DEFAULT_DISCOVERY, [])).rejects.toMatchObject({ code: "42501" })
+    const rowsRefused = fakeDb((call) =>
+      call.target === "campaigns" ? { error: { code: "42501", message: "permission denied" } } : found(call)
+    )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(listPublicCampaigns(rowsRefused as any, DEFAULT_DISCOVERY, [])).rejects.toMatchObject({
+      code: "42501",
+    })
   })
 })
 
@@ -198,7 +455,7 @@ describe("waitingAdvice", () => {
     const disabled = advise("account_not_verified")
     expect(disabled.note).toBeNull()
     expect(disabled.sendBackReason).toBe(
-      "Tài khoản nhận tiền đang gắn không còn dùng được. Hãy nhả tài khoản đang gắn, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại của bạn rồi gửi duyệt lại. Nếu không nhả được tài khoản, hãy liên hệ đội ngũ Give."
+      "Tài khoản nhận tiền đang gắn không còn dùng được. Hãy nhả tài khoản đang gắn, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại của bạn rồi gửi duyệt lại. Nếu không nhả được tài khoản, hãy liên hệ đội ngũ Give qua email help@dos.me."
     )
     expect(advise("name_mismatch").sendBackReason).toMatch(/^Tên chủ tài khoản nhận tiền đang gắn không còn trùng/)
     expect(advise("something_new").sendBackReason).toContain("Hãy nhả tài khoản đang gắn")

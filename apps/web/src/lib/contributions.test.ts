@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { donationSchema, isStatusToken, MAX_DONATION, qrExpiresAt } from "./contributions"
+import { donationSchema, donationTrackingPath, isStatusToken, MAX_DONATION, qrExpiresAt } from "./contributions"
 
 function parse(overrides: Partial<Record<"amount" | "anonymous" | "public_name" | "message", string>> = {}) {
   return donationSchema.safeParse({ amount: "200.000", anonymous: "", public_name: "Lan", message: "", ...overrides })
@@ -53,5 +53,12 @@ describe("isStatusToken", () => {
 describe("qrExpiresAt", () => {
   it("is 24 hours after the donation was created", () => {
     expect(qrExpiresAt("2026-11-01T00:00:00.000Z").toISOString()).toBe("2026-11-02T00:00:00.000Z")
+  })
+})
+
+describe("donationTrackingPath", () => {
+  it("points at the guest cookie-exchange route for that code", () => {
+    const token = "0123456789abcdef".repeat(4)
+    expect(donationTrackingPath("GVABCDEFG", token)).toBe(`/donations/GVABCDEFG/track?t=${token}`)
   })
 })

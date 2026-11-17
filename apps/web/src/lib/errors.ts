@@ -1,3 +1,5 @@
+import { VIA_CONTACT_EMAIL } from "./contact"
+
 /**
  * Turns database errors into messages for people. The give schema raises
  * errors whose message starts with a stable GIVE_* code; anything else gets a
@@ -49,8 +51,7 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ACCOUNT_ALREADY_BOUND:
     "Tài khoản này đang gắn với một chiến dịch khác. Hãy nhả tài khoản khỏi chiến dịch đó trước: bản nháp, hay chiến dịch được yêu cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào, nhả được ngay; các chiến dịch khác đã gửi duyệt chỉ nhả được khi đã xong hẳn phần tiền.",
   GIVE_BINDING_NOT_FOUND: "Tài khoản này hiện không gắn với chiến dịch nào.",
-  GIVE_BINDING_NOT_RELEASABLE:
-    "Chưa nhả được tài khoản: chiến dịch phải là bản nháp, được yêu cầu chỉnh sửa, hoặc đã hủy, mà tài khoản chưa nhận giao dịch nào; hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày). Giao dịch đã vào tài khoản là lịch sử tiền của chiến dịch nên tài khoản không nhả sớm được. Nếu tài khoản không dùng được nữa khi chiến dịch từ thiện đang gây quỹ, tạm dừng hoặc cần chỉnh sửa, hãy gửi yêu cầu đổi tài khoản ở mục Tài khoản nhận tiền của chiến dịch; với dự án có quà tặng, hãy liên hệ đội ngũ Give.",
+  GIVE_BINDING_NOT_RELEASABLE: `Chưa nhả được tài khoản: chiến dịch phải là bản nháp, được yêu cầu chỉnh sửa, hoặc đã hủy, mà tài khoản chưa nhận giao dịch nào; hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày). Giao dịch đã vào tài khoản là lịch sử tiền của chiến dịch nên tài khoản không nhả sớm được. Nếu tài khoản không dùng được nữa khi chiến dịch từ thiện đang gây quỹ, tạm dừng hoặc cần chỉnh sửa, hãy gửi yêu cầu đổi tài khoản ở mục Tài khoản nhận tiền của chiến dịch; với dự án có quà tặng, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`,
   GIVE_BINDING_HAS_OPEN_TRANSACTIONS:
     "Chưa nhả được tài khoản: còn giao dịch của chiến dịch chưa được đối chiếu hoặc chưa được giải trình.",
   GIVE_CAMPAIGN_ALREADY_BOUND: "Chiến dịch này đã có tài khoản nhận khác.",
@@ -59,13 +60,21 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_AMOUNT_BELOW_MINIMUM: "Số tiền thấp hơn mức ủng hộ tối thiểu của chiến dịch.",
   GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau.",
   GIVE_RATE_LIMITED: "Có nhiều lượt ủng hộ trong thời gian ngắn. Hãy thử lại sau ít phút.",
-  // Evidence reports and moderation (DOS/Give#58).
+  // Evidence and campaign reports and moderation (DOS/Give#58, #98).
   GIVE_EVIDENCE_NOT_FOUND: "Không tìm thấy ảnh chứng từ này, hoặc ảnh đã bị ẩn.",
+  GIVE_REPORT_REASON_INVALID: "Chọn lý do báo cáo.",
   GIVE_REPORT_REASON_TOO_LONG: "Lý do tối đa 500 ký tự.",
+  GIVE_REPORT_DETAILS_REQUIRED: "Ghi chi tiết khi chọn lý do “Lý do khác”.",
+  GIVE_REPORT_DETAILS_TOO_LONG: "Chi tiết báo cáo tối đa 1000 ký tự.",
   GIVE_REPORT_LIMIT: "Bạn đã gửi nhiều báo cáo trong 24 giờ qua. Hãy thử lại sau.",
   GIVE_MODERATION_REASON_REQUIRED: "Ghi lý do ẩn ảnh (ví dụ: lộ số CCCD của người nhận).",
   GIVE_MODERATION_REASON_TOO_LONG: "Lý do tối đa 500 ký tự.",
   GIVE_MODERATION_INVALID: "Thao tác không hợp lệ.",
+  GIVE_PUBLIC_NOTE_REQUIRED:
+    "Ghi chú công khai là bắt buộc khi tạm dừng yêu cầu thanh toán; người ủng hộ và trang dự án sẽ thấy.",
+  GIVE_PUBLIC_NOTE_TOO_LONG: "Ghi chú công khai tối đa 500 ký tự.",
+  GIVE_PAYMENT_REQUESTS_NOT_STOPPABLE:
+    "Chỉ dừng được yêu cầu thanh toán của dự án có quà tặng đã đạt mục tiêu. Chiến dịch đang gây quỹ thì tạm dừng chiến dịch.",
   GIVE_CONTRIBUTION_TYPE_MISMATCH: "Chiến dịch này không nhận ủng hộ trực tiếp.",
   // Disbursement explanations (money core part 2).
   GIVE_NOT_ALLOWED: "Bạn không có quyền thực hiện thao tác này.",
@@ -99,8 +108,51 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_SWAP_DECISION_INVALID: "Thao tác không hợp lệ.",
   GIVE_SWAP_REQUEST_IMMUTABLE: "Yêu cầu đã được xử lý nên không sửa được.",
   GIVE_REASON_TOO_LONG: "Lý do hoặc ghi chú quá dài (lý do tối đa 1000 ký tự, ghi chú công khai tối đa 300 ký tự).",
+  // The account's owner is not the organizer of the campaign it is bound to
+  // (DOS/Give#119). Only give.match_transaction raises it today, and the match
+  // action words it itself (#136); this wording covers any other path, such
+  // as a statement upload or a parked event, if one raises it later (#148).
+  GIVE_ACCOUNT_OWNER_MISMATCH: `Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch này không xử lý được cho chiến dịch đó. Hãy báo đội ngũ Give ${VIA_CONTACT_EMAIL} để kiểm tra lại tài khoản nhận và chiến dịch.`,
+  // Money a bank returned from a transfer out (DOS/Give#72): give.link_returned_transfer.
+  GIVE_ORIGINAL_TRANSACTION_NOT_FOUND: "Không tìm thấy khoản chuyển đi gốc, hoặc bạn không có quyền với giao dịch đó.",
+  GIVE_ORIGINAL_NOT_EXPLAINED:
+    "Khoản chuyển đi gốc chưa được giải trình. Người tổ chức cần giải trình khoản đó trước (là khoản chi hay khoản hoàn tiền), rồi mới ghi nhận được tiền bị trả lại.",
+  GIVE_RETURN_CAMPAIGN_MISMATCH:
+    "Khoản chuyển đi gốc thuộc chiến dịch khác. Tiền bị trả lại phải cùng chiến dịch với khoản chuyển đi gốc.",
+  GIVE_RETURN_ACCOUNT_MISMATCH:
+    "Khoản chuyển đi gốc đi từ một tài khoản nhận khác. Ngân hàng trả tiền về đúng tài khoản đã chuyển đi.",
+  GIVE_RETURN_ASSET_MISMATCH: "Khoản chuyển đi gốc dùng loại tiền khác với khoản tiền bị trả lại.",
+  GIVE_RETURN_EXCEEDS_ORIGINAL:
+    "Số tiền bị trả lại lớn hơn khoản chuyển đi gốc, nên không phải tiền của khoản đó. Hãy chọn đúng khoản chuyển đi gốc.",
+  GIVE_RETURN_BEFORE_ORIGINAL:
+    "Tiền bị trả lại được ghi trước ngày của khoản chuyển đi gốc, nên không phải tiền của khoản đó. Hãy chọn đúng khoản chuyển đi gốc.",
+  GIVE_TRANSACTION_ALREADY_RETURNED:
+    "Khoản tiền vào này đã được ghi nhận là tiền bị trả lại, với khoản chuyển đi gốc, lý do hoặc bằng chứng khác. Ghi nhận đã lưu thì không sửa được.",
+  GIVE_ORIGINAL_ALREADY_RETURNED: "Khoản chuyển đi gốc này đã được ghi nhận là bị trả lại bởi một khoản tiền vào khác.",
   GIVE_ACCOUNT_HISTORY_OPEN:
     "Tài khoản này đã được đổi ra khỏi một chiến dịch mà phần tiền chưa xong (chiến dịch chưa kết thúc đủ 30 ngày, hoặc còn giao dịch chưa đối chiếu, chưa giải trình, hoặc còn dòng sao kê chưa ghi nhận), nên chưa dùng cho chiến dịch khác được.",
+  // Transfers between a campaign's own accounts after a swap (DOS/Give#84);
+  // the finance action words them for its context (OWN_TRANSFER_MESSAGES).
+  GIVE_TRANSACTION_OWN_TRANSFER:
+    "Giao dịch này đã được đánh dấu là tiền chuyển từ tài khoản cũ sang tài khoản mới của chính chiến dịch, nên không giải trình, khớp hay hoàn tiền trên nó được nữa.",
+  GIVE_TRANSACTION_ALREADY_TRANSFERRED:
+    "Một trong hai giao dịch đã nằm trong một cặp chuyển tài khoản khác. Hãy tải lại trang.",
+  GIVE_OWN_TRANSFER_CAMPAIGN_MISMATCH: "Hai giao dịch thuộc hai chiến dịch khác nhau.",
+  GIVE_OWN_TRANSFER_AMOUNT_MISMATCH: "Hai giao dịch phải cùng số tiền và cùng loại tiền.",
+  GIVE_OWN_TRANSFER_NOT_SWAPPED: "Hai tài khoản không nối với nhau bằng một lần đổi tài khoản đã duyệt của chiến dịch.",
+  // A mistaken explanation returned to unmatched (DOS/Give#196); the admin
+  // action words them for its context (RETURN_TO_UNMATCHED_MESSAGES).
+  GIVE_EXPLANATION_RETURNED:
+    'Giải trình của khoản tiền này đã được đưa về chưa khớp. Khoản tiền chỉ còn khớp được với một lượt ủng hộ; không giải trình lại được là "không phải tiền ủng hộ" và không sửa giải trình được nữa.',
+  GIVE_EXPLANATION_ALREADY_RETURNED:
+    "Giải trình của khoản tiền này đã được đưa về chưa khớp từ trước, với lý do khác. Mỗi giao dịch chỉ đưa về được một lần.",
+  GIVE_BINDING_RELEASED:
+    "Tài khoản nhận của giao dịch này đã được nhả khỏi chiến dịch, nên khoản tiền không đưa về chưa khớp được nữa.",
+  // Statement row resolution for non-transactions (DOS/Give#78).
+  GIVE_RESOLUTION_NOT_FOR_REASON:
+    "Chỉ đánh dấu “không phải giao dịch thật” được cho dòng thuộc lần tải sao kê đã bị đội tài chính bỏ qua.",
+  GIVE_ROW_HAS_ACTIVE_DUPLICATE:
+    "Một lần tải sao kê khác có dòng đã được bỏ qua vì trùng với dòng này, nên không thể đánh dấu dòng này là không phải giao dịch thật. Hãy kiểm tra lại với sao kê ngân hàng: nếu đây là giao dịch thật, hãy nhập hoặc đánh dấu là giao dịch đã ghi.",
   // Reward tiers and fulfillment of back campaigns (DOS/Give#30, #83).
   GIVE_REWARD_TIERS_BACK_ONLY: "Chỉ dự án có quà tặng mới có các mức phần thưởng.",
   GIVE_REWARD_TIER_INVALID: "Thông tin phần thưởng không hợp lệ.",
@@ -167,8 +219,7 @@ export function dbErrorMessage(error: DbErrorLike | null | undefined, overrides:
  * organizer's own name.
  */
 export const SUBMIT_MESSAGES: Record<string, string> = {
-  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT:
-    "Chưa gửi duyệt được: chiến dịch cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác (tài khoản đã nhận giao dịch thì không nhả được: với chiến dịch từ thiện, gửi yêu cầu đổi tài khoản trong cùng mục; với dự án có quà tặng, liên hệ đội ngũ Give). Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại, và tài khoản nhận tiền phải đứng tên pháp lý mới.",
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: `Chưa gửi duyệt được: chiến dịch cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác (tài khoản đã nhận giao dịch thì không nhả được: với chiến dịch từ thiện, gửi yêu cầu đổi tài khoản trong cùng mục; với dự án có quà tặng, liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}). Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại, và tài khoản nhận tiền phải đứng tên pháp lý mới.`,
 }
 
 /** The same code worded for a moderator approving or opening a campaign. */
@@ -194,6 +245,168 @@ export const OPEN_MESSAGES: Record<string, string> = {
 export const SEND_BACK_MESSAGES: Record<string, string> = {
   GIVE_TRANSITION_NOT_ALLOWED:
     "Không yêu cầu chỉnh sửa được: chiến dịch vừa đổi trạng thái (có thể đã được mở công khai). Hãy tải lại trang.",
+}
+
+/**
+ * Every refusal of give.mark_own_account_transfer (DOS/Give#84), worded for
+ * finance pairing money out of a campaign's old account with the same money
+ * into its new account after a swap.
+ */
+export const OWN_TRANSFER_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED:
+    "Chỉ nhân viên tài chính hoặc quản trị viên mới đánh dấu được tiền chuyển giữa các tài khoản của chiến dịch.",
+  GIVE_REASON_REQUIRED: "Ghi căn cứ đã kiểm tra (ví dụ: dòng sao kê của cả hai tài khoản, tin nhắn của người tổ chức).",
+  GIVE_REASON_TOO_LONG: "Căn cứ tối đa 1000 ký tự.",
+  GIVE_TRANSACTION_NOT_FOUND: "Không tìm thấy một trong hai giao dịch. Hãy tải lại trang.",
+  GIVE_TRANSACTION_NOT_OUTBOUND: "Khoản ở tài khoản cũ phải là tiền ra.",
+  GIVE_TRANSACTION_NOT_INBOUND: "Khoản ở tài khoản mới phải là tiền vào.",
+  GIVE_TRANSACTION_UNATTRIBUTED: "Một trong hai giao dịch không thuộc chiến dịch nào, nên không đánh dấu được.",
+  GIVE_OWN_TRANSFER_CAMPAIGN_MISMATCH:
+    "Hai giao dịch thuộc hai chiến dịch khác nhau, nên không phải tiền chuyển nội bộ.",
+  GIVE_SELF_REVIEW: "Không thể đánh dấu tiền của chiến dịch do chính bạn tổ chức; một nhân viên khác cần xử lý.",
+  GIVE_TRANSACTION_ALREADY_TRANSFERRED:
+    "Một trong hai giao dịch đã nằm trong một cặp chuyển tài khoản khác. Hãy tải lại trang.",
+  GIVE_OWN_TRANSFER_AMOUNT_MISMATCH: "Hai giao dịch phải cùng số tiền và cùng loại tiền.",
+  GIVE_OWN_TRANSFER_NOT_SWAPPED:
+    "Hai tài khoản không nối với nhau bằng một lần đổi tài khoản đã duyệt của chiến dịch: khoản tiền ra phải ở tài khoản cũ đã được đổi đi, khoản tiền vào phải ở tài khoản mới được gắn từ lúc đổi trở đi.",
+  GIVE_DISBURSEMENT_ALREADY_EXPLAINED:
+    "Người tổ chức đã giải trình khoản tiền ra này là một khoản chi. Giải trình đã công khai thì không đổi được.",
+  GIVE_TRANSACTION_ALREADY_MATCHED: "Khoản tiền vào này đã được khớp với một lượt ủng hộ.",
+  GIVE_TRANSACTION_ALREADY_EXPLAINED: "Khoản tiền vào này đã được giải trình là tiền không phải ủng hộ.",
+  GIVE_LEDGER_POST_MISSING:
+    "Một trong hai giao dịch không còn chờ xử lý trong sổ: chưa được ghi sổ, hoặc đã được xử lý theo cách khác (ví dụ đã ghi là tiền bị trả lại). Hãy tải lại trang; nếu vẫn lỗi, báo đội ngũ kỹ thuật.",
+}
+
+/**
+ * Every refusal of give.correct_inbound_explanation (DOS/Give#71), worded for
+ * an admin correcting an explanation of incoming money "not a donation" that
+ * was a donation after all. Codes shared with other actions are worded for
+ * this one here.
+ */
+export const CORRECT_EXPLANATION_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Chỉ quản trị viên mới sửa được giải trình tiền vào.",
+  GIVE_CONTRIBUTION_REQUIRED: "Chọn lượt ủng hộ mà khoản tiền này thực ra thuộc về.",
+  GIVE_REASON_REQUIRED: "Ghi lý do vì sao giải trình trước là nhầm và bạn đã kiểm tra những gì.",
+  GIVE_REASON_TOO_LONG: "Lý do tối đa 1000 ký tự.",
+  GIVE_TRANSACTION_NOT_FOUND: "Không tìm thấy giao dịch. Hãy tải lại trang.",
+  GIVE_TRANSACTION_NOT_INBOUND: "Chỉ sửa được giải trình của khoản tiền vào.",
+  GIVE_TRANSACTION_UNATTRIBUTED: "Giao dịch này không thuộc chiến dịch nào, nên không có lượt ủng hộ nào để ghi nhận.",
+  GIVE_SELF_REVIEW:
+    "Bạn không sửa được giải trình này: bạn là người tổ chức chiến dịch, người đã giải trình khoản này, hoặc người ủng hộ của lượt đã chọn (kể cả lượt ủng hộ không đăng nhập dùng email của bạn). Nhờ một quản trị viên khác.",
+  GIVE_EXPLANATION_ALREADY_CORRECTED:
+    "Giải trình này đã được sửa rồi (với lượt ủng hộ hoặc lý do khác). Mỗi giải trình chỉ sửa được một lần. Hãy tải lại trang.",
+  GIVE_TRANSACTION_NOT_EXPLAINED:
+    "Giao dịch này chưa được giải trình là không phải tiền ủng hộ, nên không có gì để sửa.",
+  GIVE_TRANSACTION_ALREADY_MATCHED: "Giao dịch này đã được khớp với một lượt ủng hộ.",
+  GIVE_LEDGER_POST_MISSING:
+    "Sổ của giao dịch không còn ở trạng thái đã giải trình (có thể vừa được xử lý ở nơi khác). Hãy tải lại trang; nếu vẫn lỗi, báo đội ngũ kỹ thuật.",
+  GIVE_ACCOUNT_OWNER_MISMATCH:
+    "Tài khoản nhận không thuộc về người tổ chức của chiến dịch, nên tiền không ghi nhận được cho lượt ủng hộ nào của chiến dịch đó. Cần sửa dữ liệu tài khoản nhận trước.",
+  GIVE_CONTRIBUTION_CAMPAIGN_MISMATCH:
+    "Lượt ủng hộ đã chọn thuộc chiến dịch khác. Chỉ chọn được lượt ủng hộ của cùng chiến dịch.",
+  GIVE_CONTRIBUTION_NOT_MATCHABLE:
+    "Lượt ủng hộ này không nhận thêm tiền được (đã hủy, đã hoàn tiền, hoặc khác loại tiền). Hãy chọn lượt khác.",
+  // The explanation was returned to unmatched (DOS/Give#196): the money is matched, not corrected.
+  GIVE_EXPLANATION_RETURNED:
+    'Giải trình này đã được đưa về chưa khớp, nên không sửa được nữa. Khoản tiền đang ở mục "Chờ khớp": hãy khớp với lượt ủng hộ ở đó.',
+}
+
+/**
+ * Every refusal of give.return_inbound_to_unmatched (DOS/Give#196, DOS-Me
+ * 20261117090000), worded for an admin sending a mistaken explanation of
+ * incoming money back to unmatched. Codes shared with other actions are
+ * worded for this one here.
+ */
+export const RETURN_TO_UNMATCHED_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Chỉ quản trị viên mới đưa được giải trình tiền vào về chưa khớp.",
+  GIVE_REASON_REQUIRED: "Ghi lý do vì sao giải trình là nhầm và bạn đã kiểm tra những gì.",
+  GIVE_REASON_TOO_LONG: "Lý do tối đa 1000 ký tự.",
+  GIVE_TRANSACTION_NOT_FOUND: "Không tìm thấy giao dịch. Hãy tải lại trang.",
+  GIVE_TRANSACTION_NOT_INBOUND: "Chỉ đưa về chưa khớp được khoản tiền vào.",
+  GIVE_TRANSACTION_UNATTRIBUTED: "Giao dịch này không thuộc chiến dịch nào, nên không đưa về chưa khớp được.",
+  GIVE_SELF_REVIEW:
+    "Bạn không đưa được khoản này về chưa khớp: bạn là người tổ chức chiến dịch, hoặc người đã giải trình khoản này. Nhờ một quản trị viên khác.",
+  GIVE_EXPLANATION_ALREADY_RETURNED:
+    "Giải trình này đã được đưa về chưa khớp từ trước, với lý do khác. Mỗi giao dịch chỉ đưa về được một lần. Hãy tải lại trang.",
+  GIVE_EXPLANATION_ALREADY_CORRECTED:
+    "Giải trình này đã được sửa thành tiền của một lượt ủng hộ, nên không đưa về chưa khớp được. Hãy tải lại trang.",
+  GIVE_TRANSACTION_NOT_EXPLAINED:
+    "Giao dịch này chưa được giải trình là không phải tiền ủng hộ, nên không có gì để đưa về.",
+  GIVE_TRANSACTION_ALREADY_MATCHED: "Giao dịch này đã được khớp với một lượt ủng hộ.",
+  GIVE_BINDING_RELEASED:
+    'Tài khoản nhận đã được nhả khỏi chiến dịch, nên khoản này không đưa về chưa khớp được nữa. Nếu đây là tiền ủng hộ của một lượt đã biết, dùng "Sửa giải trình".',
+  GIVE_LEDGER_POST_MISSING:
+    "Sổ của giao dịch không còn ở trạng thái đã giải trình (có thể vừa được xử lý ở nơi khác). Hãy tải lại trang; nếu vẫn lỗi, báo đội ngũ kỹ thuật.",
+  GIVE_ACCOUNT_OWNER_MISMATCH:
+    "Tài khoản nhận không thuộc về người tổ chức của chiến dịch, nên sau khi đưa về sẽ không khớp được với lượt ủng hộ nào. Cần sửa dữ liệu tài khoản nhận trước.",
+}
+
+/**
+ * Every refusal of give.resolve_statement_import_row (design section 5.2,
+ * DOS/Give#78), worded for finance staff resolving a statement row on
+ * /admin/statements: its own checks, and the recording of an imported row
+ * (give.record_bank_transaction). Codes shared with other actions are worded
+ * for this one here.
+ */
+export const STATEMENT_ROW_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Chỉ nhân viên tài chính hoặc quản trị viên được xử lý dòng sao kê.",
+  GIVE_RESOLUTION_INVALID: "Cách xử lý không hợp lệ.",
+  GIVE_RESOLUTION_NOTE_REQUIRED: "Ghi chú là bắt buộc: ghi bạn đã đối chiếu với nguồn nào.",
+  GIVE_IMPORT_ROW_NOT_FOUND: "Không tìm thấy dòng sao kê này.",
+  GIVE_IMPORT_ROW_NOT_AMBIGUOUS:
+    "Dòng này đã được xử lý theo cách khác (có thể bởi người khác). Hãy tải lại trang để xem kết quả.",
+  GIVE_SELF_REVIEW:
+    "Bạn không xử lý được dòng này: tài khoản nhận là của bạn, hoặc dòng thuộc thời gian tài khoản gắn với chiến dịch do bạn tổ chức. Một nhân viên tài chính khác cần xử lý.",
+  GIVE_RESOLUTION_CANDIDATE:
+    "Dòng này khớp với một dòng sao kê đã tải trước. Hãy đánh dấu là giao dịch đã ghi, hoặc tích xác nhận đây là giao dịch khác rồi mới nhập.",
+  GIVE_DUPLICATE_TARGET_INVALID:
+    "Giao dịch đã chọn không cùng tài khoản, chiều hoặc số tiền với dòng này, hoặc một dòng khác trong cùng file đã ứng với nó.",
+  GIVE_RESOLUTION_NOT_FOR_REASON:
+    "Chỉ đánh dấu “không phải giao dịch thật” được cho dòng thuộc lần tải sao kê đã bị đội tài chính bỏ qua.",
+  GIVE_ROW_HAS_ACTIVE_DUPLICATE:
+    "Một lần tải sao kê khác có dòng đã được bỏ qua vì trùng với dòng này, nên không thể đánh dấu dòng này là không phải giao dịch thật. Hãy kiểm tra lại với sao kê ngân hàng: nếu đây là giao dịch thật, hãy nhập hoặc đánh dấu là giao dịch đã ghi.",
+  GIVE_TRANSACTION_CONFLICT:
+    "Mã giao dịch của dòng này đã được ghi với số tiền, chiều hoặc ngày khác, nên không nhập được. Hãy đối chiếu với sao kê ngân hàng; nếu đúng là giao dịch đã ghi, hãy đánh dấu là giao dịch đã ghi.",
+  GIVE_BINDING_CHANGED: "Tài khoản vừa được gắn hoặc đổi chiến dịch trong lúc nhập. Hãy tải lại trang và thử lại.",
+  GIVE_ACCOUNT_OWNER_MISMATCH:
+    "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên dòng này không nhập được cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch.",
+}
+
+/**
+ * Every refusal of give.report_campaign (DOS/Give#98, DOS-Me
+ * 20261120090000_give_campaign_reports.sql), worded for a signed-in visitor
+ * reporting a public campaign. GIVE_NOT_ALLOWED here is a self-report.
+ */
+export const REPORT_CAMPAIGN_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Bạn không thể báo cáo chiến dịch của chính mình.",
+  GIVE_REPORT_REASON_INVALID: "Chọn lý do báo cáo.",
+  GIVE_REPORT_DETAILS_REQUIRED: "Ghi chi tiết khi chọn lý do “Lý do khác”.",
+  GIVE_REPORT_DETAILS_TOO_LONG: "Chi tiết báo cáo tối đa 1000 ký tự.",
+  GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch công khai này.",
+  GIVE_REPORT_LIMIT: "Bạn đã gửi nhiều báo cáo trong 24 giờ qua. Hãy thử lại sau.",
+}
+
+/**
+ * Every refusal of give.moderate_campaign_reports (and
+ * give.set_payment_requests_stopped when stopping payment requests from the
+ * report queue; DOS/Give#98, DOS-Me 20261120090000_give_campaign_reports.sql),
+ * worded for a moderator or admin on /admin/reports.
+ */
+export const MODERATE_CAMPAIGN_REPORTS_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ADMIN: "Chỉ kiểm duyệt viên hoặc quản trị viên được xử lý báo cáo chiến dịch.",
+  GIVE_MODERATION_INVALID: "Thao tác không hợp lệ.",
+  GIVE_REASON_REQUIRED:
+    "Ghi ghi chú xử lý (câu hỏi gửi người tổ chức, lý do tạm dừng hoặc lý do lưu vào nhật ký kiểm toán).",
+  GIVE_REASON_TOO_LONG: "Ghi chú quá dài (tối đa 1000 ký tự).",
+  GIVE_PUBLIC_NOTE_REQUIRED:
+    "Ghi chú công khai là bắt buộc khi tạm dừng yêu cầu thanh toán; người ủng hộ và trang dự án sẽ thấy.",
+  GIVE_PUBLIC_NOTE_TOO_LONG: "Ghi chú công khai tối đa 500 ký tự.",
+  GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch. Hãy tải lại trang.",
+  GIVE_SELF_REVIEW: "Không thể xử lý báo cáo về chiến dịch do chính bạn tổ chức; một kiểm duyệt viên khác cần xử lý.",
+  GIVE_TRANSITION_NOT_ALLOWED:
+    "Chỉ tạm dừng được chiến dịch đã duyệt hoặc đang gây quỹ. Với dự án có quà tặng đã đạt mục tiêu, dùng “Tạm dừng yêu cầu thanh toán”.",
+  GIVE_PAYMENT_REQUESTS_NOT_STOPPABLE:
+    "Chỉ dừng được yêu cầu thanh toán của dự án có quà tặng đã đạt mục tiêu. Chiến dịch đang gây quỹ thì tạm dừng chiến dịch.",
 }
 
 /** Result shape that form actions return to useActionState. */

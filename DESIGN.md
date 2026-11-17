@@ -33,7 +33,7 @@ There is exactly one page container, used by the header, every page body and the
 | Gutter, 640 to 1023px | 24px   |
 | Gutter, 1024px and up | 32px   |
 
-1200px is the content width; the gutter sits outside it, so at 1440px the content starts at x = 120. In code this is `container-page`. No page sets its own `max-w-*` on the outer wrapper. Inner text blocks may be narrower (see 2.3), but they start at the container's left edge, never centered on their own.
+1200px is the content width; the gutter sits outside it, so at 1440px the content starts at x = 120. In code this is `container-page`. No page sets its own `max-w-*` on the outer wrapper. Inner text blocks may be narrower (see 2.3), but they start at the container's left edge, never centered on their own, except an empty state (6) and the discovery pagination (8), which are centered in their region.
 
 ### 2.2 Grid
 
@@ -53,13 +53,14 @@ Spacing uses a 4px base. These are the only values allowed:
 
 `4, 8, 12, 16, 24, 32, 48, 64, 96`
 
-| Where                            | Space                         |
-| -------------------------------- | ----------------------------- |
-| Between page sections            | 96px desktop, 64px phone      |
-| Section heading to its content   | 24px                          |
-| Between related items in a group | 12 or 16px                    |
-| Inside a card                    | 24px padding (16px on phones) |
-| Between form fields              | 24px                          |
+| Where                                | Space                                  |
+| ------------------------------------ | -------------------------------------- |
+| Between page sections                | 96px desktop, 64px phone               |
+| Section heading to its content       | 24px                                   |
+| Section heading to one-line subtitle | 8px; subtitle to section content: 24px |
+| Between related items in a group     | 12 or 16px                             |
+| Inside a card                        | 24px padding (16px on phones)          |
+| Between form fields                  | 24px                                   |
 
 ## 3. Type
 
@@ -82,6 +83,26 @@ Rules:
 - At most 3 sizes on one card, not counting the Badge.
 - Muted text is for metadata only, never for content a donor needs to act on.
 
+### Reference codes
+
+Give's reference codes (`GV…` for donations and pledges, `XM…` for account verification, such as `GVA7K3M9P`) are copied by hand into banking apps, so they are set in mono, one character at a time. In code this is the `RefCode` component (and `MachineId` for the other strings below); pages never set `font-mono` themselves.
+
+| Style        | Size / line height                                                | Weight | Use                                                                                                                               |
+| ------------ | ----------------------------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| Code, large  | 24 / 32                                                           | 600    | The code a person types into a bank app (the transfer content, the verification code) and the "Mã ủng hộ" / "Mã cam kết" key fact |
+| Code, inline | One step above the line: 16px in a 14px line, 18px in a 16px line | 600    | A code inside a sentence, a list row or a meta line                                                                               |
+
+Rules:
+
+- **Font:** the system mono stack (`font-mono`: SF Mono on Apple, Consolas on Windows, the system monospace on Android and Linux), 0.025em letter spacing, `text` color, never muted. Give loads no mono web font.
+- **Minimum 16px:** mono reads a step smaller than Be Vietnam Pro at the same px (its capitals are about 14% shorter, so a 16px code looks like 14px text). So an inline code is set one step above its line, and a code is never below 16px.
+- **No look-alike characters:** codes use only `23456789ABCDEFGHJKMNPQRSTUVWXYZ`, with no 0/O or 1/I/L, so no system mono font can make a code ambiguous. A new kind of code uses the same alphabet.
+- **Shown as stored:** no spaces, dashes or grouping inside a code, and no lowercase. What a person copies must match the transfer content exactly.
+- **Copy button:** every code a person must type into another app has a "Sao chép" button next to it.
+- **Not inside a Badge:** a Badge holds only its status word; a code that goes with it sits next to the Badge as an inline code. Text the page cannot style (select options, toasts, notification text) shows codes in the text font.
+- **Inputs:** a field where a person types a code is `font-mono` and uppercase, and the campaign story editor (Markdown source) is `font-mono`, both at the field's 16px.
+- **Other strings:** bank account numbers are numbers, set in Be Vietnam Pro with tabular numbers like money, not mono. Machine strings on staff screens (bank transaction ids, raw transfer descriptions, record ids, error codes, parser names) use `MachineId`: mono, weight 400, the line's size but at least 16px, in `text` or `text-muted`.
+
 ## 4. Color
 
 Colors are **semantic tokens**, and every component uses the tokens, never raw palette classes like `gray-500`. Both themes are designed. The site declares `color-scheme: light dark` and follows the visitor's system setting, so browsers never apply their own forced dark mode.
@@ -98,7 +119,7 @@ Colors are **semantic tokens**, and every component uses the tokens, never raw p
 | `primary-fg`     | #FFFFFF        | #052E22        | Text on primary                            |
 | `primary-soft`   | #ECFDF5        | #0B2A21        | Selected chip, info background             |
 | `accent`         | #C2410C        | #FB923C        | "Dự án sáng tạo" label and icon only       |
-| `accent-soft`    | #FFF7ED        | #2A1A0E        | Background of the "Dự án" label            |
+| `accent-soft`    | #FFF7ED        | #2A1A0E        | Fill of "Dự án" labels and icon tiles      |
 | `danger`         | #B42318        | #F97066        | Errors, destructive actions                |
 | `warning`        | #B54708        | #FDB022        | Deadlines, attention                       |
 | `primary-hover`  | #065F46        | #6EE7B7        | Hover state of primary buttons             |
@@ -110,13 +131,29 @@ Contrast: body text >= 4.5:1, large text and icons >= 3:1, in both themes.
 
 ## 5. Shape, borders, elevation
 
-- Radius: 4px for buttons, inputs, chips, images and badges; 6px for cards and dialogs. Nothing larger, and no pills.
+- Radius: 4px for buttons, inputs, chips, images and badges; 6px for cards, dialogs and panels with a fill and no border (`surface` or a soft color, such as the "Hai cách" panels and notices). Nothing larger, and no pills.
+- Some `surface` or soft fills are not panels and keep 4px: icon tiles (9), skeletons, the filter bar's segmented strip (6, Type control), and the hover (`surface`) or selected (soft color) fill of a row in a list.
 - Borders are 1px `border`. A screen has at most two levels: page and card.
 - Shadow appears only on floating things (menus, dialogs, the sticky funding box on scroll): `0 8px 24px rgb(0 0 0 / 0.08)`. Cards in a grid have a border and no shadow.
 
 ## 6. Components
 
 Each component lives in `apps/web/src/components/ui` and is built on shadcn/ui (Radix) primitives, restyled with the tokens above. Pages never restyle a component inline. If a page needs a variant, it is added to the component and listed here.
+
+### Focus ring
+
+- **Site-wide:** an element focused from the keyboard (`:focus-visible`) shows a 2px `primary` ring 2px outside its box, so the ring reaches 4px beyond the element.
+- **Whole, everywhere:** the ring of a control that receives keyboard focus is whole: not cut off by its container, not over the control's own text, and not touching another control's box. The exceptions are the skip link ("Chuyển tới nội dung chính"), which shows over the start of the header only while it has focus, and a footer link that wraps (see Room instead).
+- **Inside instead:** where those 4px are not free, or the whole box is one link, the ring is drawn inside the element, 2px wide:
+  - On the element's edge:
+    - Tabs: inside the tab, which reaches 4px past its label on each side, so the ring clears the label.
+    - The segmented control (filter bar): inside the item, because the items sit 4px apart and 4px from the strip's edge.
+    - A campaign card and a reward tier that can be chosen, where the whole box is one link: inside the box's edge.
+  - 2px in from the edge, where the element's box meets the next control's or sits 4px from it: the items of a menu sheet or popover and the sheet's "Đóng", the header's menu links, the header's icon buttons ("Tìm kiếm", "Thông báo", "Mở menu"; on "Thông báo" the ring is drawn above the unread badge), and the side lists of `/me`, `/admin` and `/me/campaigns/[id]` from 1024px.
+- **Room instead:** bare text links stacked in a list (the footer columns): each link is a 28px box centred in its 36px row, and the row is its hit area, so the site-wide ring stays 4px clear of the next link. A link that wraps onto two lines fills its row; its ring then meets the edge of the next link's box, 4px clear of that link's text.
+- **Scrolled clear:** a control focused from the keyboard is scrolled into view with its whole ring: at least 70px below the top of the screen (the 65px sticky header, the 4px of the ring and 1px for scroll rounding), 5px above the bottom, and below 1024px on a campaign page clear of the support bar (its height plus the same 5px).
+- **In the filter bar, a tag row and a tab row** the ring is also never under an edge fade. A control wider than the space between the fades starts at the left fade. With scripting turned off the row cannot bring a partly visible control into view, so this holds for a control that is fully in view, in a browser that reports scripting as off; an older one keeps the right-edge fade.
+- **Fields** (input, select, textarea) differ: the 2px ring sits on the field's own edge with no offset and shows on every focus, pointer included.
 
 ### Button
 
@@ -133,7 +170,7 @@ Each component lives in `apps/web/src/components/ui` and is built on shadcn/ui (
 ### Input, select, textarea
 
 - Height 44px, 1px `border` on a `surface` fill.
-- Focus: 2px `primary` ring.
+- Focus: a 2px `primary` ring on the field's edge, with no offset (see Focus ring).
 - The label is 14px, weight 500, and sits 8px above the input.
 - Helper text and errors go 8px below the input, in 14px.
 
@@ -144,13 +181,19 @@ A tag is **not** a button-sized box.
 - Size: 28px high, 10px horizontal padding, 14px text, radius 4px.
 - Look: a `surface` fill with no border.
 - Interactive tags: hover goes to `border`; the selected state is a `primary-soft` fill with `primary` text.
-- The 44px touch target comes from an invisible hit area (padding or `::after`), not from a bigger visible box.
+- The 44px touch target comes from an invisible hit area (`::before`, `hit-area`), not from a bigger visible box.
+- Focus: the site-wide ring (see Focus ring) is whole on every tag, also at the ends of a row that scrolls sideways (see Filter bar, focus room).
 
 ### Filter bar (discovery)
 
-- **Layout:** one row only. The type tabs ("Tất cả / Từ thiện / Dự án sáng tạo") sit on the left and a "Danh mục" dropdown on the right.
-- **Phones:** the row scrolls sideways with edge fade, with no wrapping onto a second line. Up to 768px the "Danh mục" menu opens as a sheet fixed to the bottom of the screen.
-- **Type control:** a segmented control on a `surface` strip, 36px items, the current item on `surface-raised`.
+- **Layout:** one row only. On the left: the type tabs ("Tất cả / Từ thiện / Dự án sáng tạo"), the "Danh mục" menu and the "Trạng thái" menu (Đang gây quỹ / Đã kết thúc / Tất cả). On the right: the result count ("128 chiến dịch") and the "Sắp xếp" menu (Nổi bật / Mới nhất / Sắp kết thúc / Gần đạt mục tiêu).
+- **Menu labels:** a menu button reads "Name: value" ("Sắp xếp: Nổi bật"). Where the row is tight it shows only the value; the name stays in the accessible name. If the longest values still do not fit from 768px, only the "Danh mục" button shrinks and ends in an ellipsis (the chosen category also shows under "Đang lọc"). The row never wraps and never pushes the page sideways.
+- **Phones:** the row scrolls sideways, with no wrapping onto a second line. An edge fades only on the side that still has more to scroll to; with scripting turned off the page cannot tell, so no edge fades. Below 768px the menus open as a sheet fixed to the bottom of the screen; from 768px, where the row no longer scrolls, they open as a popover under their button.
+- **State:** every control is a link; filters, order and page live in the URL. Changing a filter or the order goes back to the first page.
+- **Type control:** a segmented control on a `surface` strip with a 4px radius, 36px items, the current item on `surface-raised` with a 1px `border` line drawn inside it and no shadow. Its focus ring is drawn inside the item (see Focus ring).
+- **Menus and keyboard focus:** keyboard focus never sits outside an open menu: focus that leaves the menu closes it. On phones, opening the sheet moves focus to the checked item, and Tab past the last item or Shift+Tab back to the menu button closes the sheet; from 768px the popover closes when focus moves before its button (Shift+Tab) or past its last item. Closing with Escape, "Đóng" or the dimmed page, or choosing an item with the keyboard, gives focus back to the menu button. With scripting turned off the menu button opens and closes the menu; the sheet then shows without the dimmed page and without "Đóng", which need JavaScript.
+- **Focus room:** a row that scrolls sideways clips at its edge, so the filter bar, the statement's tag row and a tab row keep room for the focus ring just outside the container: 5px at each end (the 4px of the ring plus 1px for scroll rounding), and on the filter bar 4px above and below. This room is not layout spacing and shows nothing but a ring: items still start at the container edge (on a tab row the labels do, and each tab reaches 4px into the room), the fades cover the same 24px inside it, and anything scrolled past an end is covered in the room. An item focused from the keyboard is scrolled clear of the fade together with its ring: 29px from the edge (the 24px fade plus these 5px). Focus inside an open menu sheet does not move the row behind it.
+- **Statement tag row:** the same one row of tags at every width. It can overflow at any width (a longer label, a larger count), so its edge fades are not limited to phones.
 - **No chip wall:** never show every category as a wall of chips.
 
 ### Card (campaign)
@@ -174,13 +217,18 @@ A tag is **not** a button-sized box.
 
 ### Tabs
 
-- Text tabs with a 2px `primary` underline on the active tab.
-- 44px high, 24px apart, on a 1px `border` baseline that spans the container.
+- Text tabs with a 2px `primary` underline on the active tab, as wide as the label.
+- 44px high, labels 24px apart, on a 1px `border` baseline that spans the container. Each tab reaches 4px past its label on each side, as room for its focus ring; the first label stays on the container edge.
+- **When the row does not fit** (phones, and `/admin` up to 1024px): it scrolls sideways, with no wrapping. While it overflows, a 24px edge fades into `bg` only on the side that still has more tabs (an overlay, as on the filter bar, not a mask); the baseline stays whole under the fade. A tab focused from the keyboard is scrolled clear of the fade with its ring, 29px from the edge (see Filter bar, Focus room); its focus ring is drawn inside the tab (see Focus ring). A row that fits has no fade; before JavaScript runs, the right edge fades as a fallback, and with scripting turned off no edge fades.
 
 ### Empty state
 
-- An icon (40px, `text-muted`), an H3, one line of text and at most one button.
+- An icon (40px, `text-muted`), an H3, one short sentence of text, which may wrap to two balanced lines on phones, and at most one button. A whole page differs (below).
+- The title looks like an H3, except on a whole page. In the page outline it is an H3 under a section's H2, and an H2 where the empty state stands directly under the page's H1.
 - Centered inside its region, no dashed border.
+- It keeps 48px above and below and 16px at the sides inside its region (a panel, a list, a tab).
+- Where the page section that holds it already carries the "Between page sections" padding of 2.4 and has no other content (home with no campaign), it adds no space of its own (`flush` on the component): that distance is the whole gap to the section above and below, and the container gutter is its side margin.
+- **Whole page** (not found, an error, a donation the visitor may not open): the empty state is the page body, centered in the container with 64px above and below (96px from 640px). Its title is the page's H1 and looks like one, 12px above its text; the text is in `text`, balanced, at most two sentences, and a secondary button may come before the primary: side by side from 640px, stacked at full width below.
 
 ### Badge (status)
 
@@ -192,12 +240,13 @@ A tag is **not** a button-sized box.
 - **Header:**
   - 64px high, `bg` with a 1px bottom `border`, sticky.
   - Left: the logo, 28px.
-  - Center: search, at most 480px wide, which opens a full-width sheet on phones.
+  - Center: search, a 44px field (6.Input) at most 480px wide, which opens a full-width sheet on phones.
   - Right: "Khám phá", "Tạo chiến dịch" (secondary button sm) and the account menu (or "Đăng nhập" ghost).
   - All aligned to the container.
 - **Footer:**
   - `bg` band with a 1px top `border`, 64px top padding (48px on phones), as in the approved mockups, so it stays apart from the `surface` organizer band above it.
   - 4 columns from 1024px, 2 below, real links only.
+  - Each link is a 28px box centred in a 36px row, which is its hit area (see 6.Focus ring).
   - Bottom line in Small.
 
 ## 8. Page templates
@@ -205,16 +254,22 @@ A tag is **not** a button-sized box.
 | Page               | Template                                                                                                                                                                                                                                                                                                                                                  |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Home               | Hero (headline, one paragraph, one primary + one text link, statement receipt card on the right) · "Đang được quan tâm" (3 cards) · "Hai cách gây quỹ" (two columns on a `surface` fill with no border: icon, H3, 3 short lines, one link each; categories are NOT listed here) · trust strip (3 columns, icon + H3 + one line) · organizer band · footer |
-| Discovery          | H1 + one line · filter bar (6.Filter bar) · result count · card grid (2.2) · pagination                                                                                                                                                                                                                                                                   |
+| Discovery          | H1 + one line · filter bar with result count (6.Filter bar) · active filters · card grid (2.2) · pagination: "Đang xem X trên Y chiến dịch" and a secondary "Xem thêm" button, centered, 48px under the grid                                                                                                                                              |
 | Campaign / project | Breadcrumb · H1 + organizer line · 8/4 grid: media + tabs (Câu chuyện / Sao kê / Người ủng hộ) in main, funding box + reward tiers (project) in sidebar                                                                                                                                                                                                   |
 | Donate / pledge    | Form template (2.2), with a campaign summary strip on top                                                                                                                                                                                                                                                                                                 |
 | /me, /admin        | Same container. Page header (H1 + one action), then content tables or forms. Side navigation from 1024px, top tabs below.                                                                                                                                                                                                                                 |
+
+- **Home hero:** from 1024px the text spans 8 columns and the statement receipt card 4 (columns 9 to 12). With no live campaign the hero has no receipt card and the right columns stay empty; its one action is "Tạo chiến dịch của bạn", a primary button, in place of the primary button and text link, and the empty state under the hero has no button of its own.
+- **"Hai cách gây quỹ" panels:** the two panels are not cards: no border, radius 6px, 24px padding, 32px from 1024px.
 
 ## 9. Imagery and icons
 
 - Covers are real photos supplied by organizers.
 - Placeholders are a flat `surface` fill with the type icon, never illustrations that look like content.
-- Icons come from lucide (outline, 1.5px stroke): 20px in text, 24px in navigation, 40px in empty states.
+- Icons come from lucide (outline, 1.5px stroke): 16px inside a line of text (meta lines, links, labels), 20px in buttons (6.Button), 24px in navigation, 40px in empty states and on a cover placeholder.
+- The stroke is 1.5px at 24px; icons drawn larger keep a 1.5px rendered stroke, and smaller icons scale it down (1px at 16px).
+- 24px also for the home's feature icons (trust strip, "Hai cách").
+- An icon tile is a small square fill behind one icon or initial, radius 4px. Filled `primary-soft` or `accent-soft` with the icon in the matching color, it is 44px with a 24px icon on the "Hai cách" panels, 44px with a 20px icon on a `/me/contributions` row (from 640px), and 40px with a 20px icon on the statement totals ("Minh bạch tài chính"). Filled `surface` in `text-muted`, it is 44px with a 20px icon on a `/me/accounts` row (from 640px), 40px with a 20px icon on a receiving-account row in `/me/campaigns/[id]`, and 36px with the organizer's bold 14px initial on the campaign page.
 
 ## 10. Motion
 
