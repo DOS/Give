@@ -260,7 +260,7 @@ describe("matchTransaction", () => {
     const result = await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION }))
     expect(result).toEqual({
       ok: false,
-      message: `${happened} Hãy liên hệ đội ngũ Give qua email help@dos.me để kiểm tra lại tài khoản nhận và chiến dịch.`,
+      message: `${happened} Hãy liên hệ đội ngũ Give qua email hi@give.vn để kiểm tra lại tài khoản nhận và chiến dịch.`,
     })
     expect(result?.message).not.toContain("GIVE_")
     expect(state.serviceCalls).toHaveLength(1)
@@ -331,7 +331,7 @@ describe("matchTransaction: nobody matches money to their own contribution (DOS/
   it("words the database's GIVE_SELF_REVIEW for the organizer and for staff", async () => {
     state.serviceHandler = () => ({ error: { code: "42501", message: "GIVE_SELF_REVIEW" } })
     const organizer = await matchTransaction(TX, null, form({ contribution_id: CONTRIBUTION }))
-    expect(organizer?.message).toContain("nhân viên tài chính của Give (qua email help@dos.me) khớp giúp")
+    expect(organizer?.message).toContain("nhân viên tài chính của Give (qua email hi@give.vn) khớp giúp")
     expect(organizer?.message).not.toContain("tài khoản nhận")
     state.userId = STAFF
     state.responses["rpc:is_admin"] = { data: true }

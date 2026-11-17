@@ -335,7 +335,7 @@ describe("accountOwnerMismatch and ownerMismatchNotice (DOS/Give#148)", () => {
 
   it("words the notice like the match action's refusal (DOS/Give#136)", () => {
     expect(OWNER_MISMATCH_FOR_ORGANIZER).toBe(
-      "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy liên hệ đội ngũ Give qua email help@dos.me để kiểm tra lại tài khoản nhận và chiến dịch."
+      "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy liên hệ đội ngũ Give qua email hi@give.vn để kiểm tra lại tài khoản nhận và chiến dịch."
     )
     expect(OWNER_MISMATCH_FOR_STAFF).toBe(
       "Tài khoản nhận khoản tiền này không thuộc về người tổ chức của chiến dịch, nên giao dịch không khớp được. Hãy báo quản trị viên kiểm tra lại tài khoản nhận và người tổ chức của chiến dịch trước khi xử lý giao dịch này."

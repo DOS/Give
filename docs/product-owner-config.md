@@ -114,12 +114,19 @@ the Qwen Code PO, and Platform by the Give Product Owner.
 - draft_pr_first: no
 - production_branch: main
 - production_merge: merge commit
-- production_effect: no deployment is wired yet, so a merge into `main`
-  only runs CI today. Once the Vercel project is connected, a merge into
-  `main` deploys Production and becomes a Production step; record the
-  deploy details here when that happens.
-- test_environment: none yet; planned as Vercel previews per PR against the
-  DOS Supabase beta project.
+- production_effect: a merge into `main` deploys Production: Vercel
+  (project `give`, team `metados`) builds `main` and serves it at
+  https://give.vn. It is a Production step: only the Give Product Owner
+  runs it, after JOY approves it, and only once every DOS.Me migration the
+  app code needs is on DOS.Me `main`. give.vn already served `main` before
+  this was recorded; #224 (2026-11-17) is the first promotion run as a
+  Production step.
+- test_environment: Vercel preview deployments of the `give` project. The
+  `dev` branch is served at https://beta.give.vn and each PR branch gets its
+  own `give-git-<branch>-metados.vercel.app` preview, both behind Vercel
+  login (seen on #224 and #225, 2026-11-17). Planned against the DOS
+  Supabase beta project; not yet verified which Supabase project the
+  previews use.
 
 ## Checks and review
 

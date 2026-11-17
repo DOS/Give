@@ -12,14 +12,14 @@ import { uploadErrorMessage } from "@/lib/statement-import"
 
 import { ContactText } from "./ContactText"
 
-const LINK = '<a href="mailto:help@dos.me" class="font-medium underline">help@dos.me</a>'
+const LINK = '<a href="mailto:hi@give.vn" class="font-medium underline">hi@give.vn</a>'
 const html = (text: string) => renderToStaticMarkup(createElement(ContactText, { text }))
 
 describe("Give's contact address (DOS/Give#205)", () => {
-  it("is help@dos.me, in one place", () => {
-    expect(GIVE_CONTACT_EMAIL).toBe("help@dos.me")
-    expect(GIVE_CONTACT_HREF).toBe("mailto:help@dos.me")
-    expect(VIA_CONTACT_EMAIL).toBe("qua email help@dos.me")
+  it("is hi@give.vn, in one place", () => {
+    expect(GIVE_CONTACT_EMAIL).toBe("hi@give.vn")
+    expect(GIVE_CONTACT_HREF).toBe("mailto:hi@give.vn")
+    expect(VIA_CONTACT_EMAIL).toBe("qua email hi@give.vn")
   })
 })
 
