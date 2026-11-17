@@ -436,7 +436,7 @@ describe("describeNotice", () => {
     expect(view.title).toBe("Cần làm rõ thông tin chiến dịch")
     expect(view.body).toContain("chiến dịch “Quỹ học bổng”")
     expect(view.body).toContain("Nội dung: Đề nghị bổ sung giấy xác nhận của trường.")
-    expect(view.body).toContain("help@dos.me")
+    expect(view.body).toContain("hi@give.vn")
     expect(view.href).toBe(`/me/campaigns/${CAMPAIGN}`)
     expect(view.linkLabel).toBe("Quản lý chiến dịch")
 

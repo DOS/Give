@@ -54,7 +54,7 @@ describe("UnmatchedTransactionCard (DOS/Give#148)", () => {
   it("links Give's contact address in the organizer's notice (DOS/Give#205)", () => {
     const html = render({ matchBlocked: OWNER_MISMATCH_FOR_ORGANIZER, explainAction: action })
     expect(html).toContain(
-      'Hãy liên hệ đội ngũ Give qua email <a href="mailto:help@dos.me" class="font-medium underline">help@dos.me</a> để kiểm tra lại'
+      'Hãy liên hệ đội ngũ Give qua email <a href="mailto:hi@give.vn" class="font-medium underline">hi@give.vn</a> để kiểm tra lại'
     )
   })
 

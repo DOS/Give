@@ -7,7 +7,7 @@ import { fakeDb, type Call, type Handler } from "@/test/fake-db"
 const USER = "11111111-1111-4111-8111-111111111111"
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
 /** Give's contact address as the page renders it (DOS/Give#205). */
-const LINK = '<a href="mailto:help@dos.me" class="font-medium underline">help@dos.me</a>'
+const LINK = '<a href="mailto:hi@give.vn" class="font-medium underline">hi@give.vn</a>'
 
 const state = vi.hoisted(() => ({
   handler: (() => undefined) as Handler,

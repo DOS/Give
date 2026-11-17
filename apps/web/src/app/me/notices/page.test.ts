@@ -157,7 +157,7 @@ describe("MyNoticesPage (DOS/Give#93)", () => {
     expect(state.calls.map((c) => c.target)).toEqual(["notices", "notices"])
     expect(html).toContain("Cần làm rõ thông tin chiến dịch")
     expect(html).toContain("Cần đối chiếu hóa đơn đặt linh kiện.")
-    expect(html).toContain('href="mailto:help@dos.me"')
+    expect(html).toContain('href="mailto:hi@give.vn"')
     expect(html).toContain(`href="/me/campaigns/${ACTIVE_CAMPAIGN}"`)
     expect(html).toContain(">Quản lý chiến dịch<")
   })

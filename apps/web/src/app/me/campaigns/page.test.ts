@@ -156,7 +156,7 @@ describe("MyCampaignsPage (DOS/Give#217)", () => {
               title: "Sách ảnh thiếu nhi",
               type: "back",
               status: "changes_requested",
-              review_note: "Bổ sung dự toán in ấn, cần hỏi viết cho help@dos.me",
+              review_note: "Bổ sung dự toán in ấn, cần hỏi viết cho hi@give.vn",
               cover: null,
             }),
             makeCampaign({
@@ -199,7 +199,7 @@ describe("MyCampaignsPage (DOS/Give#217)", () => {
     expect(items[1]).toContain("<svg")
     expect(items[1]).toContain("Cần sửa:")
     expect(items[1]).toContain("Bổ sung dự toán in ấn")
-    expect(items[1]).toContain('href="mailto:help@dos.me"')
+    expect(items[1]).toContain('href="mailto:hi@give.vn"')
     expect(items[1]).not.toContain(">Xem trang<")
     expect(items[1]).toContain(`href="/me/campaigns/${CAMPAIGN_B}"`)
     expect(items[1]).toContain(">Quản lý<")

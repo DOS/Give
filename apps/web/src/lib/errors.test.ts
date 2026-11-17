@@ -64,7 +64,7 @@ describe("dbErrorMessage", () => {
 
   it("words the account owner refusal on paths other than the match action (DOS/Give#148)", () => {
     expect(dbErrorMessage({ code: "23514", message: "GIVE_ACCOUNT_OWNER_MISMATCH" })).toBe(
-      "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch này không xử lý được cho chiến dịch đó. Hãy báo đội ngũ Give qua email help@dos.me để kiểm tra lại tài khoản nhận và chiến dịch."
+      "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên giao dịch này không xử lý được cho chiến dịch đó. Hãy báo đội ngũ Give qua email hi@give.vn để kiểm tra lại tài khoản nhận và chiến dịch."
     )
   })
 
