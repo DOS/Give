@@ -1,3 +1,4 @@
+import { Window } from "happy-dom"
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -125,5 +126,21 @@ describe("EditCampaignPage unusable bound account with recorded transactions (DO
     expect(html).not.toContain("Đổi tài khoản nhận")
     expect(html).toContain(`nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give qua email ${LINK}.`)
     expect(html).toContain(`hãy liên hệ đội ngũ Give qua email ${LINK} để được hỗ trợ.`)
+  })
+})
+
+// The summary is shown in the campaign story, while cards omit descriptions.
+describe("EditCampaignPage summary guidance (DOS/Give#228)", () => {
+  it("describes the summary's actual placement and keeps its accessible hint", async () => {
+    setupUnusableWithTransactions("draft", "give")
+    const doc = new Window().document
+    doc.body.innerHTML = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+    const summary = doc.querySelector('textarea[name="summary"]')!
+    const hintId = summary.getAttribute("aria-describedby")!
+    const hints = doc.querySelectorAll(`[id="${hintId}"]`)
+
+    expect(summary.getAttribute("maxlength")).toBe("200")
+    expect(hints).toHaveLength(1)
+    expect(hints[0].textContent).toBe("Tối đa 200 ký tự, hiện ở đầu phần Câu chuyện trên trang chiến dịch.")
   })
 })

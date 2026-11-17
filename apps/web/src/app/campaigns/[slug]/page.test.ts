@@ -183,6 +183,25 @@ describe("CampaignPage report flow (DOS/Give#98)", () => {
     expect(submit?.className).not.toContain("btn-primary")
   })
 
+  it("associates report details with unique character-limit and privacy guidance (DOS/Give#228)", async () => {
+    state.session = {
+      user: { id: VIEWER, email: "viewer@dos.me", name: "Người xem" },
+      accessToken: "viewer-token",
+    }
+    const doc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const textarea = doc.querySelector('textarea[name="details"]')!
+    const descriptionIds = textarea.getAttribute("aria-describedby")?.split(/\s+/)
+
+    expect(descriptionIds).toEqual(["report-details-hint"])
+    for (const id of descriptionIds!) {
+      const matches = doc.querySelectorAll(`[id="${id}"]`)
+      expect(matches).toHaveLength(1)
+      expect(matches[0].textContent).toBe(
+        "Tối đa 1000 ký tự. Báo cáo được giữ kín; người tổ chức không biết ai báo cáo."
+      )
+    }
+  })
+
   it("hides 'Báo cáo chiến dịch' from the campaign's own organizer", async () => {
     state.session = {
       user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
