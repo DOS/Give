@@ -153,7 +153,8 @@ describe("AdminUnmatchedPage: refusal reasons of unattributed transactions (DOS/
     const mismatch = row("FT-MISMATCH")
     expect(mismatch?.textContent).toContain("Lý do: Tài khoản nhận không thuộc người tổ chức chiến dịch.")
     const link = mismatch?.querySelector('a[href="/campaigns/quy-bi-tu-choi"]')
-    expect(link?.textContent).toBe("Quỹ bị từ chối")
+    expect(link?.textContent).toBe("Quỹ bị từ chối (mở thẻ mới)")
+    expect(link?.querySelector(".sr-only")?.textContent).toBe(" (mở thẻ mới)")
     expect(link?.getAttribute("target")).toBe("_blank")
 
     const plain = row("FT-PLAIN")
@@ -207,6 +208,7 @@ describe("AdminUnmatchedPage: refusal reasons of unattributed transactions (DOS/
       call.target === "rpc:bank_transaction_refusal_reasons" ? { error } : undefined
     )
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {})
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {})
 
     const { section, row } = unattributedSection(renderToStaticMarkup(await AdminUnmatchedPage()))
 
@@ -215,6 +217,8 @@ describe("AdminUnmatchedPage: refusal reasons of unattributed transactions (DOS/
     expect(section.textContent).not.toContain("Lý do:")
     expect(section.textContent).not.toContain("Chưa tải được danh sách này.")
     expect(consoleError.mock.calls.some(([msg]) => msg === "bank_transaction_refusal_reasons failed")).toBe(logged)
+    expect(consoleWarn.mock.calls.some(([msg]) => msg === "bank_transaction_refusal_reasons unavailable")).toBe(!logged)
     consoleError.mockRestore()
+    consoleWarn.mockRestore()
   })
 })

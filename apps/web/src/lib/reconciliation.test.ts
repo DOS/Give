@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
@@ -408,11 +408,14 @@ describe("refusalReasons (DOS/Give#138)", () => {
     expect(calls).toHaveLength(0)
   })
 
-  it("is empty while the database does not have the function yet", async () => {
+  it("is empty, with a server warning, while the database does not have the function yet", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
     for (const code of ["PGRST202", "42883"]) {
       const missing = fakeDb(() => ({ error: { code, message: "Could not find the function" } })) as unknown as Db
       expect((await refusalReasons(missing, [TX_A])).size).toBe(0)
+      expect(warn).toHaveBeenLastCalledWith("bank_transaction_refusal_reasons unavailable", code)
     }
+    warn.mockRestore()
   })
 
   it("throws any other database error, including a refusal", async () => {

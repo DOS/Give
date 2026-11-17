@@ -445,11 +445,6 @@ export function ReturnedTransferList({
   )
 }
 
-/**
- * Incoming money recorded with no campaign, read only (DOS/Give#148): what
- * came in, when, to which account and from whom. Why it has no campaign is
- * for DOS/Give#138, since give.audit_log is readable by admins only.
- */
 /** One refusal reason: what happened, in words, and a link to the campaign it names. */
 function RefusalReasonLine({
   reason,
@@ -469,6 +464,7 @@ function RefusalReasonLine({
           {campaign ? (
             <Link href={`/campaigns/${campaign.slug}`} className="link" target="_blank">
               {campaign.title}
+              <span className="sr-only"> (mở thẻ mới)</span>
             </Link>
           ) : (
             <MachineId>{reason.campaign_id}</MachineId>
@@ -479,6 +475,12 @@ function RefusalReasonLine({
   )
 }
 
+/**
+ * Incoming money recorded with no campaign, read only (DOS/Give#148): what
+ * came in, when, to which account and from whom, and why it has no campaign
+ * when the database recorded a reason (give.bank_transaction_refusal_reasons,
+ * DOS/Give#138).
+ */
 export function UnattributedList({
   transactions,
   total,
@@ -528,8 +530,8 @@ export function UnattributedList({
             <p className="text-sm break-words text-muted">
               Mã giao dịch: <MachineId>{tx.provider_tx_id}</MachineId>
             </p>
-            {reasons.get(tx.id)?.map((reason, i) => (
-              <RefusalReasonLine key={i} reason={reason} campaigns={campaigns} />
+            {reasons.get(tx.id)?.map((reason) => (
+              <RefusalReasonLine key={`${reason.action}:${reason.created_at}`} reason={reason} campaigns={campaigns} />
             ))}
           </li>
         ))}

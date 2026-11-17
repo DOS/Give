@@ -325,7 +325,7 @@ export interface RefusalReason {
  *
  * An empty map when there is nothing to ask, or when the database does not
  * have the function yet (an app deployed before the migration shows no
- * reason). Any other error is thrown. Actions the app has no words for are
+ * reason; a server warning is logged). Any other error is thrown. Actions the app has no words for are
  * left out.
  */
 export async function refusalReasons(db: Db, transactionIds: readonly string[]): Promise<Map<string, RefusalReason[]>> {
@@ -333,7 +333,11 @@ export async function refusalReasons(db: Db, transactionIds: readonly string[]):
   const reasons = new Map<string, RefusalReason[]>()
   if (ids.length === 0) return reasons
   const { data, error } = await db.rpc("bank_transaction_refusal_reasons", { p_bank_transaction_ids: ids })
-  if (error?.code === "PGRST202" || error?.code === "42883") return reasons
+  if (error?.code === "PGRST202" || error?.code === "42883") {
+    // Missing, or its signature drifted from this call: server log only.
+    console.warn("bank_transaction_refusal_reasons unavailable", error.code)
+    return reasons
+  }
   if (error) throw error
   for (const row of (data ?? []) as (Omit<RefusalReason, "action"> & {
     bank_transaction_id: string
