@@ -105,20 +105,22 @@ everything when it is not set.
 
 ## Routes
 
-| Route                                           | Who                | What                                                                                     |
-| ----------------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------- |
-| `/`                                             | everyone           | New campaigns and categories.                                                            |
-| `/campaigns`                                    | everyone           | Discovery: filter by type and category, search title and summary.                        |
-| `/campaigns/[slug]`                             | everyone           | Public campaign page; the organizer and staff also see a preview before it is published. |
-| `/start`                                        | signed in          | Organizer profile, then a new draft.                                                     |
-| `/me/campaigns`                                 | signed in          | The organizer's campaigns.                                                               |
-| `/me/campaigns/[id]`                            | the organizer      | Editor: content, milestones, cover, submit, cancel, delete draft, updates.               |
-| `/admin`                                        | moderators, admins | Review queue (approve, request changes) and organizer verification.                      |
-| `/api/cron/activate`                            | Vercel Cron        | Activates scheduled campaigns.                                                           |
-| `/api/cron/finalize-ended`                      | Vercel Cron        | Closes ended give campaigns.                                                             |
-| `/api/cron/reprocess-inbound`                   | Vercel Cron        | Retries pending inbound events.                                                          |
-| `/media/public/...`, `/media/private/...`       | –                  | Cover images from the private `give-media` bucket, after a visibility check.             |
-| `/auth/login`, `/auth/callback`, `/auth/logout` | –                  | DOS.Me login flow.                                                                       |
+| Route                                           | Who                  | What                                                                                                                                                                                 |
+| ----------------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/`                                             | everyone             | New campaigns and categories.                                                                                                                                                        |
+| `/campaigns`                                    | everyone             | Discovery: filter by type and category, search title and summary.                                                                                                                    |
+| `/campaigns/[slug]`                             | everyone             | Public campaign page with reporting for signed-in visitors (hidden on previews and the organizer’s own campaign); the organizer and staff also see a preview before it is published. |
+| `/start`                                        | signed in            | Organizer profile, then a new draft.                                                                                                                                                 |
+| `/me/campaigns`                                 | signed in            | The organizer's campaigns.                                                                                                                                                           |
+| `/me/campaigns/[id]`                            | the organizer        | Editor: content, milestones, cover, submit, cancel, delete draft, updates.                                                                                                           |
+| `/me/campaigns/[id]/fulfillment`                | the owning organizer | Fulfillment for back projects; paid pledges and delivery updates are available only after the project has succeeded.                                                                 |
+| `/admin`                                        | moderators, admins   | Review queue (approve, request changes) and organizer verification.                                                                                                                  |
+| `/admin/reports`                                | moderators, admins   | Campaign report queue: ask the organizer, dismiss reports, suspend campaigns or stop payment requests; no self-review.                                                               |
+| `/api/cron/activate`                            | Vercel Cron          | Activates scheduled campaigns.                                                                                                                                                       |
+| `/api/cron/finalize-ended`                      | Vercel Cron          | Closes ended give campaigns.                                                                                                                                                         |
+| `/api/cron/reprocess-inbound`                   | Vercel Cron          | Retries pending inbound events.                                                                                                                                                      |
+| `/media/public/...`, `/media/private/...`       | –                    | Cover images from the private `give-media` bucket, after a visibility check.                                                                                                         |
+| `/auth/login`, `/auth/callback`, `/auth/logout` | –                    | DOS.Me login flow.                                                                                                                                                                   |
 
 ## Security model
 

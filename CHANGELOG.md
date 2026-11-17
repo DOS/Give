@@ -13,6 +13,11 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Campaigns cleanup: associate report-details guidance with its textarea via
+  `aria-describedby`, with an optional hint id on `Field` that preserves caller
+  descriptions. Correct the editor summary hint to name the campaign story,
+  and document reporting, the moderator report queue and organizer fulfillment
+  routes with their access guards (#228).
 - Report a campaign and moderator queue: public `/campaigns/[slug]` pages offer
   a `"Báo cáo chiến dịch"` disclosure (signed-in callers submit one of six
   structured reasons and optional details, required for `"Lý do khác"`, after
