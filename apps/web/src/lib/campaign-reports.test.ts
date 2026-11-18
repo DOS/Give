@@ -7,6 +7,7 @@ import {
   canStopReportedPaymentRequests,
   canSuspendReportedCampaign,
   listCampaignReportQueue,
+  MAX_REPORTS_PAGE,
   moderateCampaignReportsSchema,
   parseReportsPage,
   reportCampaignSchema,
@@ -190,6 +191,15 @@ describe("listCampaignReportQueue", () => {
       expect(cols).not.toMatch(/reporter_id|handled_by/)
     }
 
+    const resolvedRead = reportReads.find((read) => {
+      const statusIn = read.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
+      return statusIn?.includes("dismissed")
+    })
+    expect(resolvedRead?.ops.filter(([n]) => n === "order")).toEqual([
+      ["order", "handled_at", { ascending: false }],
+      ["order", "id", { ascending: false }],
+    ])
+
     expect(queue.totalUnresolvedCampaigns).toBe(3)
     expect(queue.page).toBe(1)
     expect(queue.totalPages).toBe(1)
@@ -252,10 +262,19 @@ describe("listCampaignReportQueue", () => {
       return undefined
     }, calls)
 
-    // Page 1 with pageSize 110 forces two chunks of managed_campaigns (100 + 6).
+    // Page 1 with pageSize 110 forces two chunks (100 + 6) for BOTH loadUnresolvedForCampaigns and managed_campaigns.
     const p1 = await listCampaignReportQueue(db as never, 1, 110)
     expect(p1.unresolved[0].campaign_id).toBe(freshOpenId)
     expect(p1.unresolved[0].open_count).toBe(1)
+    expect(p1.unresolved).toHaveLength(106)
+
+    const unresolvedBatchCalls = calls.filter(
+      (c) => c.target === "campaign_reports" && c.ops.some(([n, col]) => n === "in" && col === "campaign_id")
+    )
+    expect(unresolvedBatchCalls).toHaveLength(2)
+    expect((op(unresolvedBatchCalls[0], "in")?.[1] as string[]).length).toBe(CAMPAIGNS_PER_REQUEST)
+    expect((op(unresolvedBatchCalls[1], "in")?.[1] as string[]).length).toBe(6)
+
     const managedCalls = calls.filter((c) => c.target === "rpc:managed_campaigns")
     expect(managedCalls).toHaveLength(2)
     expect((op(managedCalls[0], "in")?.[1] as string[]).length).toBe(CAMPAIGNS_PER_REQUEST)
@@ -327,15 +346,221 @@ describe("listCampaignReportQueue", () => {
     })
     expect(calls.map((c) => c.target)).toEqual(["campaign_reports", "campaign_reports", "campaign_reports"])
   })
+
+  it("clamps and reloads the new last page when the sole campaign on page N > 1 is resolved concurrently", async () => {
+    // Scan sees C1, C2 on page 1 and C3 on page 2 (pageSize = 2), but C3 is resolved before loadUnresolvedForCampaigns runs.
+    const initialOpenRows = [
+      { id: "r-c1", campaign_id: C1, created_at: "2026-11-15T08:00:00Z" },
+      { id: "r-c2", campaign_id: C2, created_at: "2026-11-15T09:00:00Z" },
+      { id: "r-c3", campaign_id: C3, created_at: "2026-11-15T10:00:00Z" },
+    ]
+    const liveUnresolvedRows = [
+      {
+        id: "r-c1",
+        campaign_id: C1,
+        reason_code: "fraud_or_impersonation" as const,
+        details: "C1",
+        status: "open" as const,
+        action_taken: null,
+        resolution_note: null,
+        handled_at: null,
+        created_at: "2026-11-15T08:00:00Z",
+        updated_at: "2026-11-15T08:00:00Z",
+      },
+      {
+        id: "r-c2",
+        campaign_id: C2,
+        reason_code: "misuse_of_funds" as const,
+        details: "C2",
+        status: "open" as const,
+        action_taken: null,
+        resolution_note: null,
+        handled_at: null,
+        created_at: "2026-11-15T09:00:00Z",
+        updated_at: "2026-11-15T09:00:00Z",
+      },
+    ]
+
+    const calls: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "campaign_reports") {
+        const eqStatus = call.ops.find(([n, col]) => n === "eq" && col === "status")?.[2] as string | undefined
+        if (eqStatus === "open") return { data: initialOpenRows }
+        if (eqStatus === "awaiting_organizer") return { data: [] }
+        const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
+        const campaignFilter = call.ops.find(([n, col]) => n === "in" && col === "campaign_id")?.[2] as
+          string[] | undefined
+        if (statusFilter?.includes("open")) {
+          return {
+            data: liveUnresolvedRows.filter((r) => !campaignFilter || campaignFilter.includes(r.campaign_id)),
+          }
+        }
+        return { data: [] }
+      }
+      if (call.target === "rpc:managed_campaigns") {
+        const ids = (op(call, "in")?.[1] as string[] | undefined) ?? []
+        return {
+          data: ids.map((id) => ({
+            id,
+            slug: `slug-${id.slice(0, 4)}`,
+            type: "give",
+            status: "live",
+            title: `Campaign ${id.slice(0, 4)}`,
+            organizer_id: ORG,
+            review_note: null,
+            payments_stopped_at: null,
+            payments_stopped_note: null,
+            organizer: null,
+          })),
+        }
+      }
+      return undefined
+    }, calls)
+
+    const queue = await listCampaignReportQueue(db as never, 2, 2)
+    expect(queue.totalUnresolvedCampaigns).toBe(2)
+    expect(queue.totalPages).toBe(1)
+    expect(queue.page).toBe(1)
+    expect(queue.unresolved.map((u) => [u.campaign_id, u.campaign?.slug])).toEqual([
+      [C1, "slug-1111"],
+      [C2, "slug-2222"],
+    ])
+  })
+
+  it("shifts and loads replacement campaigns on partial concurrent resolution, and settles cleanly if all resolve", async () => {
+    // Page 1 (pageSize = 2) starts with [C1, C2] and C3 on page 2; C1 resolves concurrently -> C3 shifts onto page 1.
+    const initialOpenRows = [
+      { id: "r-c1", campaign_id: C1, created_at: "2026-11-15T08:00:00Z" },
+      { id: "r-c2", campaign_id: C2, created_at: "2026-11-15T09:00:00Z" },
+      { id: "r-c3", campaign_id: C3, created_at: "2026-11-15T10:00:00Z" },
+    ]
+    let remainingIds = new Set([C2, C3])
+    const db = fakeDb((call) => {
+      if (call.target === "campaign_reports") {
+        const eqStatus = call.ops.find(([n, col]) => n === "eq" && col === "status")?.[2] as string | undefined
+        if (eqStatus === "open") return { data: initialOpenRows }
+        if (eqStatus === "awaiting_organizer") return { data: [] }
+        const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
+        const campaignFilter = call.ops.find(([n, col]) => n === "in" && col === "campaign_id")?.[2] as
+          string[] | undefined
+        if (statusFilter?.includes("open")) {
+          return {
+            data: initialOpenRows
+              .filter(
+                (r) => remainingIds.has(r.campaign_id) && (!campaignFilter || campaignFilter.includes(r.campaign_id))
+              )
+              .map((r) => ({
+                ...r,
+                reason_code: "other",
+                details: "d",
+                status: "open",
+                action_taken: null,
+                resolution_note: null,
+                handled_at: null,
+                updated_at: r.created_at,
+              })),
+          }
+        }
+        return { data: [] }
+      }
+      if (call.target === "rpc:managed_campaigns") return { data: [] }
+      return undefined
+    })
+
+    const partial = await listCampaignReportQueue(db as never, 1, 2)
+    expect(partial.totalUnresolvedCampaigns).toBe(2)
+    expect(partial.totalPages).toBe(1)
+    expect(partial.page).toBe(1)
+    expect(partial.unresolved.map((u) => u.campaign_id)).toEqual([C2, C3])
+
+    // If every campaign resolves concurrently between scan and load, queue settles to 0 unresolved on page 1.
+    remainingIds = new Set()
+    const allGone = await listCampaignReportQueue(db as never, 2, 2)
+    expect(allGone).toEqual({
+      unresolved: [],
+      totalUnresolvedCampaigns: 0,
+      page: 1,
+      totalPages: 1,
+      resolved: [],
+    })
+  })
+
+  it("breaks handled_at ties deterministically by id descending on resolved reports", async () => {
+    const tied = [
+      {
+        id: "00000000-0000-4000-8000-000000000001",
+        campaign_id: C3,
+        reason_code: "other" as const,
+        details: "older id",
+        status: "dismissed" as const,
+        action_taken: "dismissed" as const,
+        resolution_note: "Cùng giao dịch",
+        handled_at: "2026-11-16T05:00:00Z",
+        created_at: "2026-11-14T07:00:00Z",
+        updated_at: "2026-11-16T05:00:00Z",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000009",
+        campaign_id: C3,
+        reason_code: "false_or_misleading" as const,
+        details: "newer id",
+        status: "dismissed" as const,
+        action_taken: "dismissed" as const,
+        resolution_note: "Cùng giao dịch",
+        handled_at: "2026-11-16T05:00:00Z",
+        created_at: "2026-11-14T08:00:00Z",
+        updated_at: "2026-11-16T05:00:00Z",
+      },
+    ]
+
+    const db = fakeDb((call) => {
+      if (call.target === "campaign_reports") {
+        const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
+        if (statusFilter?.includes("dismissed")) {
+          const orders = call.ops.filter(([n]) => n === "order") as [
+            "order",
+            keyof (typeof tied)[number],
+            { ascending: boolean },
+          ][]
+          const sorted = [...tied].sort((a, b) => {
+            for (const [, col, opts] of orders) {
+              const av = String(a[col] ?? "")
+              const bv = String(b[col] ?? "")
+              if (av !== bv) return opts.ascending ? av.localeCompare(bv) : bv.localeCompare(av)
+            }
+            return 0
+          })
+          return { data: sorted }
+        }
+        return { data: [] }
+      }
+      return { data: [] }
+    })
+
+    const queue = await listCampaignReportQueue(db as never)
+    expect(queue.resolved[0].reports.map((r) => r.id)).toEqual([
+      "00000000-0000-4000-8000-000000000009",
+      "00000000-0000-4000-8000-000000000001",
+    ])
+    expect(queue.resolved[0].latest.id).toBe("00000000-0000-4000-8000-000000000009")
+  })
 })
 
 describe("parseReportsPage and reportsPageHref", () => {
-  it("normalizes page query parameters and omits ?page=1", () => {
+  it("accepts only canonical positive integers bounded by MAX_REPORTS_PAGE and omits ?page=1", () => {
     expect(parseReportsPage({})).toBe(1)
+    expect(parseReportsPage({ page: "" })).toBe(1)
     expect(parseReportsPage({ page: "0" })).toBe(1)
+    expect(parseReportsPage({ page: "01" })).toBe(1)
     expect(parseReportsPage({ page: "-3" })).toBe(1)
+    expect(parseReportsPage({ page: "1.5" })).toBe(1)
+    expect(parseReportsPage({ page: "1e2" })).toBe(1)
+    expect(parseReportsPage({ page: "0x10" })).toBe(1)
+    expect(parseReportsPage({ page: " 2 " })).toBe(1)
     expect(parseReportsPage({ page: "abc" })).toBe(1)
     expect(parseReportsPage({ page: ["3", "4"] })).toBe(3)
+    expect(parseReportsPage({ page: "10000" })).toBe(MAX_REPORTS_PAGE)
+    expect(parseReportsPage({ page: "999999" })).toBe(MAX_REPORTS_PAGE)
     expect(reportsPageHref(1)).toBe("/admin/reports")
     expect(reportsPageHref(2)).toBe("/admin/reports?page=2")
   })

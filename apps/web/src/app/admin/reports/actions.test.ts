@@ -67,7 +67,7 @@ describe("moderateCampaignReports (DOS/Give#98)", () => {
       p_reason: "Đã xác minh",
       p_public_note: null,
     })
-    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/reports")
+    expect(revalidatePathMock.mock.calls).toEqual([["/admin/reports"]])
   })
 
   it("supports ask_organizer, distinguishing sent inquiries from zero-open-report replays", async () => {
@@ -78,7 +78,7 @@ describe("moderateCampaignReports (DOS/Give#98)", () => {
     )
     expect(sent?.ok).toBe(true)
     expect(sent?.message).toContain("Đã gửi câu hỏi cho người tổ chức")
-    expect(revalidatePathMock).toHaveBeenCalledWith("/me/notices")
+    expect(revalidatePathMock.mock.calls).toEqual([["/admin/reports"], ["/me/notices"]])
 
     state.serviceHandler = () => ({ data: 0 })
     const replay = await moderateCampaignReports(
@@ -90,7 +90,7 @@ describe("moderateCampaignReports (DOS/Give#98)", () => {
     expect(replay?.message).toContain("Không còn báo cáo mới nào")
   })
 
-  it("supports suspend and revalidates public campaign and admin pages", async () => {
+  it("supports suspend and revalidates organizer, public campaign, pledge, statement, and admin pages", async () => {
     const res = await moderateCampaignReports(
       CAMPAIGN,
       null,
@@ -102,14 +102,22 @@ describe("moderateCampaignReports (DOS/Give#98)", () => {
       p_reason: "Chưa xác minh được người thụ hưởng.",
       p_public_note: null,
     })
-    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/reports")
-    expect(revalidatePathMock).toHaveBeenCalledWith("/admin")
-    expect(revalidatePathMock).toHaveBeenCalledWith("/campaigns/[slug]", "page")
-    expect(revalidatePathMock).toHaveBeenCalledWith("/campaigns")
-    expect(revalidatePathMock).toHaveBeenCalledWith("/")
+    expect(revalidatePathMock.mock.calls).toEqual([
+      ["/admin/reports"],
+      ["/admin"],
+      [`/me/campaigns/${CAMPAIGN}`],
+      ["/me/campaigns"],
+      ["/me/notices"],
+      ["/campaigns/[slug]", "page"],
+      ["/campaigns/[slug]/pledge", "page"],
+      ["/campaigns/[slug]/statement", "page"],
+      ["/me/pledges/[code]", "page"],
+      ["/campaigns"],
+      ["/"],
+    ])
   })
 
-  it("supports stop_payment_requests with a required public_note and revalidates pledge payment pages", async () => {
+  it("supports stop_payment_requests with a required public_note and revalidates organizer, contribution, notice, and pledge pages", async () => {
     const res = await moderateCampaignReports(
       CAMPAIGN,
       null,
@@ -127,9 +135,15 @@ describe("moderateCampaignReports (DOS/Give#98)", () => {
       p_reason: "Nghi vấn gian lận hậu gây quỹ.",
       p_public_note: "Give đang xác minh dự án này.",
     })
-    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/payment-requests")
-    expect(revalidatePathMock).toHaveBeenCalledWith("/campaigns/[slug]", "page")
-    expect(revalidatePathMock).toHaveBeenCalledWith("/me/pledges/[code]", "page")
+    expect(revalidatePathMock.mock.calls).toEqual([
+      ["/admin/reports"],
+      ["/admin/payment-requests"],
+      [`/me/campaigns/${CAMPAIGN}`],
+      ["/me/contributions"],
+      ["/me/notices"],
+      ["/campaigns/[slug]", "page"],
+      ["/me/pledges/[code]", "page"],
+    ])
   })
 
   it("validates inputs and refuses public_note on actions that publish none before touching the DB", async () => {
@@ -207,5 +221,6 @@ describe("moderateCampaignReports (DOS/Give#98)", () => {
         )
       )?.message
     ).toContain("dự án có quà tặng đã đạt mục tiêu")
+    expect(revalidatePathMock).not.toHaveBeenCalled()
   })
 })
