@@ -448,7 +448,7 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   one-click `List-Unsubscribe`). No images or tracking pixels. Outside
   Production a log transport mails nobody unless `EMAIL_DELIVERY=smtp`, and
   then only `EMAIL_ALLOWLIST`; in Production sending waits for the SES
-  credentials (#254 / #PR_GIVE).
+  credentials (#254 / #257).
 - Contact: Give staff are reached at `hi@give.vn` (Give's own domain; it
   replaced the first choice, DOS.Me's `help@dos.me`), kept in one constant
   (`apps/web/src/lib/contact.ts`). The site footer shows
