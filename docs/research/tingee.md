@@ -72,25 +72,25 @@ trọng" page [t-notes], the create-VA page [t-create-va], the dynamic-QR page
 [t-qr-dyn], the debit page [t-create-debit] and the deep-link bank table
 [t-deeplink].
 
-| Bank (BIN)               | Webhook on money in                                 | Donor pays into                                     | Dynamic QR by API        | Notes                                                                                                                    |
-| ------------------------ | --------------------------------------------------- | --------------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------ |
-| ACB (970416)             | Yes, all types; **also money out** (`create-debit`) | Real account number, all types, or a VA             | No                       | Separate `register-notify` OTP step. DN and HKD need ACB config and `acbUserId`.                                         |
-| TPBank (970423)          | Yes                                                 | Real account number, all types. VA only for DN      | No                       | Link result arrives by `bank-link` webhook, not `confirm-va`.                                                            |
-| VPBank (970432)          | Yes                                                 | Real account number for DN only. Otherwise VA       | DN only                  | DN and HKD need config.                                                                                                  |
-| OCB (970448)             | Yes                                                 | Real account number for DN and HKD. Otherwise VA    | Personal and DN          | DN config through Tingee.                                                                                                |
-| VietinBank (970415)      | Yes, but **without transfer content**               | Real account number for personal and HKD. VA for DN | DN only                  | Reference-code matching impossible (section 6.3).                                                                        |
-| PGBank (970430)          | Yes                                                 | Real account number only (no VA)                    | No                       |                                                                                                                          |
-| Co-opBank                | Yes                                                 | Real account number only (no VA)                    | No                       | BIN not given by Tingee.                                                                                                 |
-| Vietcombank (970436)     | Yes                                                 | VA only                                             | Not for personal         | Personal linking goes through VCB Digibank; the result arrives by webhook. DN and HKD need config.                       |
-| BIDV (970418)            | Yes                                                 | VA only                                             | DN only                  | DN needs config. The VA display name must start with the registered company name.                                        |
-| MB (970422)              | Yes                                                 | VA only                                             | Yes                      | DN config through Tingee. Whether an MB Thiện Nguyện charity account (bank-statements 4.1) can be linked is **unknown**. |
-| Agribank (970405)        | Yes                                                 | VA only                                             | No (not in the API list) | The QR table marks dynamic QR as supported, but the API's bank list does not include Agribank.                           |
-| Sacombank (970403)       | Yes                                                 | VA only                                             | No                       | No QR support for DN accounts.                                                                                           |
-| VIB (970441)             | Yes                                                 | VA only                                             | No                       | The owner must first register "nhận loa" in VIB iBusiness. DN config through Tingee.                                     |
-| MSB (970426)             | Yes                                                 | An existing VA declared at MSB                      | No                       | Config for all types.                                                                                                    |
-| HDBank (970437)          | Yes                                                 | VA only                                             | No                       | Tingee QR only for DN (dynamic).                                                                                         |
-| Shinhan (970424)         | Yes                                                 | VA only                                             | No                       | Missing from the QR table.                                                                                               |
-| **Techcombank (970407)** | **No**                                              | Not supported                                       | No                       | Deep link only [t-deeplink]. Missing from the 16 banks on tingee.vn [t-home] _(Tingee site)_.                            |
+| Bank (BIN)               | Webhook on money in                                 | Donor pays into                                     | Dynamic QR by API                           | Notes                                                                                                                    |
+| ------------------------ | --------------------------------------------------- | --------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| ACB (970416)             | Yes, all types; **also money out** (`create-debit`) | Real account number, all types, or a VA             | No                                          | Separate `register-notify` OTP step. DN and HKD need ACB config and `acbUserId`.                                         |
+| TPBank (970423)          | Yes                                                 | Real account number, all types. VA only for DN      | No                                          | Link result arrives by `bank-link` webhook, not `confirm-va`.                                                            |
+| VPBank (970432)          | Yes                                                 | Real account number for DN only. Otherwise VA       | DN only by API; the QR table also marks HKD | DN and HKD need config.                                                                                                  |
+| OCB (970448)             | Yes                                                 | Real account number for DN and HKD. Otherwise VA    | Personal and DN                             | DN config through Tingee.                                                                                                |
+| VietinBank (970415)      | Yes, but **without transfer content**               | Real account number for personal and HKD. VA for DN | DN only                                     | Reference-code matching impossible (section 6.3).                                                                        |
+| PGBank (970430)          | Yes                                                 | Real account number only (no VA)                    | No                                          |                                                                                                                          |
+| Co-opBank                | Yes                                                 | Real account number only (no VA)                    | No                                          | BIN not given by Tingee.                                                                                                 |
+| Vietcombank (970436)     | Yes                                                 | VA only                                             | Not for personal                            | Personal linking goes through VCB Digibank; the result arrives by webhook. DN and HKD need config.                       |
+| BIDV (970418)            | Yes                                                 | VA only                                             | DN only                                     | DN needs config. The VA display name must start with the registered company name.                                        |
+| MB (970422)              | Yes                                                 | VA only                                             | Yes                                         | DN config through Tingee. Whether an MB Thiện Nguyện charity account (bank-statements 4.1) can be linked is **unknown**. |
+| Agribank (970405)        | Yes                                                 | VA only                                             | No (not in the API list)                    | The QR table marks dynamic QR as supported, but the API's bank list does not include Agribank.                           |
+| Sacombank (970403)       | Yes                                                 | VA only                                             | No                                          | No QR support for DN accounts.                                                                                           |
+| VIB (970441)             | Yes                                                 | VA only                                             | No                                          | The owner must first register "nhận loa" in VIB iBusiness. DN config through Tingee.                                     |
+| MSB (970426)             | Yes                                                 | An existing VA declared at MSB                      | No                                          | Config for all types.                                                                                                    |
+| HDBank (970437)          | Yes                                                 | VA only                                             | No by API; the QR table marks DN            | Tingee QR only for DN (dynamic).                                                                                         |
+| Shinhan (970424)         | Yes                                                 | VA only                                             | No                                          | Missing from the QR table.                                                                                               |
+| **Techcombank (970407)** | **No**                                              | Not supported                                       | No                                          | Deep link only [t-deeplink]. Missing from the 16 banks on tingee.vn [t-home] _(Tingee site)_.                            |
 
 "VA only" means a transfer into the organizer's real account number produces
 **no webhook**: the donor must pay into the VA [t-notes] [t-pay-cb]. A VA is
@@ -120,6 +120,10 @@ Consequences:
 - **Master Merchant**: "không hỗ trợ đăng ký tự động", set up by contacting
   Tingee [t-mm]. `merchant/create` needs only a name and a phone number, and
   reuses an existing Tingee merchant with the same phone number [t-mm-create].
+  Without a `password`, Tingee sets a default one, so every sub-merchant has
+  its own Tingee login and can change its links outside Give. Give should
+  verify the organizer's phone by OTP before calling it, and expect links it
+  did not make.
 - **Who can be a customer**: the terms define customers as businesses,
   organisations, household businesses and "cá nhân kinh doanh" (individuals
   doing business). The registrant warrants that their information is true
@@ -130,8 +134,10 @@ Consequences:
   (**unknown**). Identity is enforced by the **bank** when linking:
   `create-va` takes the account number, the holder's name in upper case
   without diacritics, `identity` (CCCD or tax code) and the phone number
-  registered at the bank, and the bank sends an OTP to the holder. Business
-  accounts often need a prior bank-side configuration [t-create-va]
+  registered at the bank, and the bank usually sends an OTP to the holder.
+  Some links complete without an OTP: MSB, and business accounts already
+  configured at the bank. Business accounts often need that prior bank-side
+  configuration [t-create-va]
   [t-notes]. Some banks attach their own VA terms, for example BIDV's VA
   terms PDF in `get-banks` [t-get-banks].
 - **Fees**: **unknown**. Plans are prepaid per cycle, priced on the plan
@@ -258,16 +264,18 @@ alternative [t-webhook].
 - There is **no running balance** and **no counterparty** name or account.
   The expected reply is HTTP 200 with `{"code":"00","message":"Success"}`.
 - **Signature**: `HMAC_SHA512(x-request-timestamp + ":" +
-JSON.stringify(body), secretKey)` [t-pay-cb] [t-ipn]. Tingee's own
-  examples re-serialise the parsed body, and its Python example uses compact
-  separators [t-ipn]. Give should verify against the raw body first and
-  compare in constant time. Which secret signs payment webhooks under each
+JSON.stringify(body), secretKey)` [t-pay-cb] [t-ipn]. The examples differ:
+  the C#, Java and PHP examples on the payment-callback page sign the raw
+  body string, while the NestJS and Node.js examples and the backend library
+  re-serialise the parsed body [t-pay-cb] [t-ipn] [t-sdk-wh]. Give should
+  verify against the raw body first and compare in constant time. Which secret signs payment webhooks under each
   authentication type is not stated precisely: "Secret Token" of the
   endpoint or of the API credential [t-bank-link-wh]. **To verify in UAT.**
   No timestamp tolerance is documented for webhooks.
-- **Retries**: the documentation says it three ways. The IPN page lists 5
+- **Retries**: the documentation says it four ways. The IPN page lists 5
   retries at 30 s, 2 min, 10 min, 1 h and 6 h [t-ipn]. The payment-callback
-  page says 5 retries 1 minute apart [t-pay-cb]. The portal makes it
+  page says 5 retries 1 minute apart [t-pay-cb]. The webhook overview diagram
+  shows waits of 1, 2, 3, 4 and 5 minutes [t-webhook]. The portal makes it
   configurable per endpoint [t-config]. Give must stay correct with any of
   them: late (up to hours) and repeated deliveries.
 - **Late and duplicate payments**: for static VietQR, Tingee still sends the
@@ -277,8 +285,9 @@ JSON.stringify(body), secretKey)` [t-pay-cb] [t-ipn]. Tingee's own
 
 ### 6.5 Ids and idempotency
 
-- Tingee tells partners to deduplicate webhooks by `transactionCode`
-  [t-pay-cb] [t-ipn]. Retries reuse the payload. Whether they keep
+- The payment-callback page says to deduplicate by `transactionCode`
+  [t-pay-cb]; the IPN page says "`transactionId` hoặc `orderId`" [t-ipn],
+  but the payment webhook carries neither. Give uses `transactionCode`. Retries reuse the payload. Whether they keep
   `x-request-id` is **unknown**, so it is not a dedupe key.
 - The transaction list gives two ids: `transactionId` (Tingee's UUID) and
   `code` ("mã giao dịch phía ngân hàng", the bank's reference) [t-tx]. The
@@ -364,15 +373,15 @@ Tingee fits `PaymentChannel` (design 5.1,
 
 The webhook maps to a `NormalizedTx` like this:
 
-| `NormalizedTx`               | From the webhook                                                                        |
-| ---------------------------- | --------------------------------------------------------------------------------------- |
-| `providerTxId`               | `transactionCode`. For a poll row, `code`. Same value expected (6.5)                    |
-| `direction`                  | `type`: `credit` → `in`, `debit` → `out`. A missing `type` means `in`                   |
-| `asset`, `amount`            | `"VND"`, `BigInt(amount)`. Refuse a non-integer or non-positive amount as a final error |
-| `bookedAt`, `bookedDateOnly` | `transactionDate` read as Asia/Ho_Chi_Minh; `false`                                     |
-| `description`                | `content`, or `null` (VietinBank)                                                       |
-| counterparty, `balanceAfter` | Not provided                                                                            |
-| `raw`                        | The payload without `clientId`                                                          |
+| `NormalizedTx`               | From the webhook                                                                                                                                                       |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `providerTxId`               | `transactionCode`. For a poll row, `code`. Same value expected (6.5). Missing → final error for staff: `provider_tx_id` is NOT NULL and webhooks have no staging queue |
+| `direction`                  | `type`: `credit` → `in`, `debit` → `out`. A missing `type` means `in`                                                                                                  |
+| `asset`, `amount`            | `"VND"`, `BigInt(amount)`. Refuse a non-integer or non-positive amount as a final error                                                                                |
+| `bookedAt`, `bookedDateOnly` | `transactionDate` read as Asia/Ho_Chi_Minh; `false`                                                                                                                    |
+| `description`                | `content`, or `null` (VietinBank)                                                                                                                                      |
+| counterparty, `balanceAfter` | Not provided                                                                                                                                                           |
+| `raw`                        | The payload without `clientId`                                                                                                                                         |
 
 ### 8.2 Credentials and where they live
 
@@ -425,10 +434,18 @@ UNIQUE (receiving_account_id) WHERE status IN ('pending','active')
 - Writes go only through `SECURITY DEFINER` functions granted to
   `service_role`. The organizer reads their own row.
 - The link's `account_number` and `bank_bin` must equal the verified
-  receiving account's. Otherwise the link is refused, so a Tingee link can
-  never point Give at an account that is not the organizer's.
-- The Bank Link webhook (`type: bank-link`) activates a `pending` row found
-  by its `metadata` nonce. It is idempotent on `merchantAccountNumberId`.
+  receiving account's, and its holder name must match the organizer's
+  `legal_name`. Otherwise the link is refused, so a Tingee link can never
+  point Give at an account that is not the organizer's.
+- The Bank Link SDK cannot be restricted to one account number, only to a
+  bank and an account type [t-bank-link-session], and its `bank-link`
+  webhook carries `bankBin`, `vaAccountNumber` and `metadata` but **no
+  account number or holder name** [t-bank-link-wh]. So the webhook only
+  marks the `pending` row (found by its `metadata` nonce, idempotent on
+  `merchantAccountNumberId`) as ready for checking. Give then reads the
+  account with `get-va-paging`, which returns `accountNumber` and
+  `accountName` [t-banking], and activates the link only if both match.
+  A mismatch leaves the link `failed` and asks the organizer to unlink it.
 - A successful bank-OTP link could also count as account-ownership evidence
   (design 2.2: "Khi có API ngân hàng thì bước này tự động"). That is a later
   product decision; DOS/Give#46 keeps the test transfer.
@@ -446,8 +463,11 @@ pipeline:
    Give's.
 4. Record `give.inbound_events` with `channel = 'tingee'`,
    `signature_valid`, the payload, and
-   `dedupe_key = 'pay:' || vaAccountNumber-or-accountNumber || ':' || transactionCode`.
-   When `transactionCode` is missing, use the hash of the raw body.
+   `dedupe_key = 'pay:' || bin || ':' || vaAccountNumber-or-accountNumber || ':' || transactionCode`,
+   where `bin` comes from the webhook's bank name through the `get-banks`
+   list (the webhook has no BIN). When `transactionCode` is missing, use
+   the hash of the raw body as the key; the processor then ends the event as
+   a final error for staff (8.1).
    - An invalid signature is recorded with `signature_valid = false` and
      never processed (design test 12).
    - `UNIQUE (channel, dedupe_key)` makes retries a no-op.
@@ -455,12 +475,19 @@ pipeline:
    stored, well inside Tingee's 5–10 s timeout. Processing failures never
    reach Tingee; the `reprocess-inbound` cron retries them (design 5.1).
 6. The processor (inline, and from the cron):
-   - Resolve the link by `vaAccountNumber`, then `accountNumber`. Unknown or
-     unlinked → final error `TINGEE_UNKNOWN_ACCOUNT`, kept for staff.
-   - **Confirm** the transaction through `fetchTransactions`: the same `code`
-     in the link's VA around `transactionDate`. This keeps the payOS design's
+   - Resolve the link by (BIN, `vaAccountNumber`), then (BIN,
+     `accountNumber`). Account numbers are unique only within a bank, and
+     banks sell chosen numbers, so a number alone is never enough. An
+     unknown BIN, no link, or more than one link → final error
+     `TINGEE_UNKNOWN_ACCOUNT`, kept for staff.
+   - **Confirm** the transaction through `fetchTransactions`: find the same
+     `code` in the link's VA around `transactionDate`, and **build the
+     `NormalizedTx` from that API row**, not from the webhook body. If the
+     row's amount, `type`, account or content differ from the webhook, end
+     the event as a final error for staff. This keeps the payOS design's
      "confirm through the API before recording", so a forged but signed
-     webhook (leaked secret) cannot add money.
+     webhook (leaked secret) cannot add money or change an amount.
+   - Refuse rows with `cashFlowSource` other than `bank-transfer`.
    - If the API fails or the row is not there yet, the attempt fails and is
      retried.
    - After 10 attempts the event parks for finance staff, per the existing
@@ -492,7 +519,13 @@ which must change for `tingee` accounts once this rule exists:
   and nothing new is needed. This must be shown per bank with a real webhook
   and statement row of the same transfer. The `tcb-business` parser has
   `providerTxId: null`, but Techcombank is not a Tingee bank.
-- **No common id**, so statement rows stage without one:
+- **No common id**, so statement rows stage without one. The rule below
+  pairs by amount, day and content, which is the fingerprinting that design
+  5.2 forbids as a transaction identity ("Fingerprint không được dùng làm
+  danh tính giao dịch"), and design test 2 assumes a shared transaction
+  number. It is therefore a **design change that needs a PO decision**. It
+  never creates or drops a transaction by itself: a unique pair only links
+  two sightings, and anything else goes to staff.
   - An `in` row of a Tingee-linked account that matches **exactly one**
     not-yet-paired Tingee transaction (same account, amount and direction;
     booking day within ±1 day; the statement description contains the
@@ -550,8 +583,12 @@ account's outflows wait for a parser of its bank.
 - Tingee gives no balances, so "báo lệch khi số dư không khớp" (design 5.3)
   has to come from statement imports. For Tingee, the job reports
   transactions Tingee lists that Give lacks, and the reverse, per day.
-- A lapsed Tingee plan pauses notifications (section 5). The reconcile job
-  and the per-merchant error report are how Give notices.
+- A lapsed Tingee plan pauses notifications (section 5). `get-paging` can
+  only list what Tingee received, so the reconcile job cannot find transfers
+  Tingee never got. Give notices a lapse only through API errors, links that
+  stop being `active`, or later statement imports.
+- Poll rows with `cashFlowSource: card` (gateway card payments) are refused
+  and reported.
 - Realtime "Đã nhận" is unchanged: Supabase Realtime on the donor's own
   contribution, and the guest status token (design 4.1).
 
@@ -571,8 +608,9 @@ account's outflows wait for a parser of its bank.
 3. **VA-only banks** (VCB, BIDV, MB, Agribank, Sacombank, VIB, MSB, HDBank,
    Shinhan): donors must pay the VA, not the account number they see on the
    organizer's bank card or charity page. A transfer to the real number is
-   real money in the organizer's account but produces no webhook. It is only
-   recorded later, by statement import.
+   real money in the organizer's account but produces no webhook. It can
+   only be recorded by statement import, and Give has no parser yet for any
+   of these banks, so today it would not be recorded at all.
 4. **VietinBank** sends no transfer content, so no automatic matching.
 5. **Master Merchant** needs a contract with Tingee. Several facts are
    unconfirmed until then: payment-webhook routing for sub-merchants,
