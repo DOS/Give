@@ -439,13 +439,16 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   tracking link for guests), pledge `payment_due`, `payment_reminder` and
   `pledge_lapsed` notices, and campaign approved, changes requested,
   suspended and ended (organizer). `/api/cron/send-outbox` (every minute)
-  leases due rows, sends them through AWS SES over SMTP (DOS.Me's provider),
-  retries after 1, 5, 15, 60, 180 and 360 minutes and marks a row dead after
-  7 attempts; `/admin/emails` (admins) lists dead and retrying emails and
-  sends a dead one again (audited). The campaign end summary is the only
+  leases due rows, sends them through AWS SES over SMTP (DOS.Me's provider,
+  `nodemailer` 10.3.1, server-only) from `Give <no-reply@give.vn>`, retries
+  after 1, 5, 15, 60, 180 and 360 minutes and marks a row dead after 7
+  attempts; `/admin/emails` (admins) lists dead and retrying emails and sends
+  a dead one again (audited). The campaign end summary is the only
   notification email: it carries an unsubscribe link (`/email/unsubscribe`,
-  one-click `List-Unsubscribe`). No images or tracking pixels. Sending stays
-  off until the SES credentials and `EMAIL_FROM` are set (#254 / #PR_GIVE).
+  one-click `List-Unsubscribe`). No images or tracking pixels. Outside
+  Production a log transport mails nobody unless `EMAIL_DELIVERY=smtp`, and
+  then only `EMAIL_ALLOWLIST`; in Production sending waits for the SES
+  credentials (#254 / #PR_GIVE).
 - Contact: Give staff are reached at `hi@give.vn` (Give's own domain; it
   replaced the first choice, DOS.Me's `help@dos.me`), kept in one constant
   (`apps/web/src/lib/contact.ts`). The site footer shows

@@ -1,34 +1,45 @@
 import "server-only"
 
 import { siteOrigin } from "@/lib/auth/origin"
-import { GIVE_CONTACT_EMAIL } from "@/lib/contact"
 
+import { allowlistTransport, createLogTransport } from "./log-transport"
 import type { OutboxRunOptions } from "./outbox"
 import { createSmtpTransport } from "./smtp"
 import type { EmailTransport } from "./transport"
 
 /**
  * Email settings from the environment (DOS/Give#254). Give reuses DOS.Me's
- * provider, AWS SES (ap-southeast-1), over SMTP. Server-only variables:
+ * provider, AWS SES (ap-southeast-1), over SMTP, with its own sender.
+ * Server-only variables:
  *
+ * - EMAIL_DELIVERY: `smtp` sends real mail; `log` mails nobody (log
+ *   transport). Production defaults to `smtp`; everything else (beta,
+ *   previews, local) to `log`.
+ * - EMAIL_ALLOWLIST: outside Production, `smtp` reaches only these
+ *   recipients (comma-separated addresses or `@domain`); everyone else gets
+ *   the log transport. With no allowlist outside Production, nobody is mailed.
  * - SMTP_USER, SMTP_PASS: SES SMTP credentials (secrets; owner step).
  * - SMTP_HOST, SMTP_PORT: default email-smtp.ap-southeast-1.amazonaws.com:587.
- * - EMAIL_FROM: the sender, e.g. `Give <no-reply@give.vn>` (give.vn verified in SES).
- * - EMAIL_REPLY_TO: default hi@give.vn.
+ * - EMAIL_FROM: default `Give <no-reply@give.vn>` (give.vn verified in SES).
  * - EMAIL_LINK_ORIGIN: origin of the links in emails, e.g. https://beta.give.vn
  *   on beta. Defaults to NEXT_PUBLIC_SITE_URL, then https://give.vn in Production.
  *
- * Anything missing turns sending off: the job then claims nothing.
+ * In Production with `smtp` and missing credentials, sending is off: the job
+ * claims nothing, so queued emails wait instead of being marked sent.
  */
 
 export const DEFAULT_SMTP_HOST = "email-smtp.ap-southeast-1.amazonaws.com"
 export const DEFAULT_SMTP_PORT = 587
+export const DEFAULT_EMAIL_FROM = "Give <no-reply@give.vn>"
 const PRODUCTION_ORIGIN = "https://give.vn"
 
 type Env = Record<string, string | undefined>
 
+export type EmailDelivery = "smtp" | "log"
+
 export type EmailSettings =
-  { ok: true; transport: EmailTransport; options: OutboxRunOptions } | { ok: false; missing: string[] }
+  | { ok: true; delivery: EmailDelivery; transport: EmailTransport; options: OutboxRunOptions }
+  | { ok: false; missing: string[] }
 
 /** `Name <local@domain>` or `local@domain`, on one line. */
 export function isSenderAddress(value: string): boolean {
@@ -44,24 +55,37 @@ export function emailLinkOrigin(env: Env = process.env): string | null {
   )
 }
 
+export function emailDelivery(env: Env = process.env): EmailDelivery {
+  const value = env.EMAIL_DELIVERY?.trim().toLowerCase()
+  if (value === "smtp" || value === "log") return value
+  return env.VERCEL_ENV === "production" ? "smtp" : "log"
+}
+
 export function emailSettingsFromEnv(env: Env = process.env): EmailSettings {
   const missing: string[] = []
-  const user = env.SMTP_USER?.trim()
-  const pass = env.SMTP_PASS?.trim()
-  const from = env.EMAIL_FROM?.trim()
+  const production = env.VERCEL_ENV === "production"
+  const delivery = emailDelivery(env)
+  const from = env.EMAIL_FROM?.trim() || DEFAULT_EMAIL_FROM
   const origin = emailLinkOrigin(env)
-  const port = env.SMTP_PORT ? Number(env.SMTP_PORT) : DEFAULT_SMTP_PORT
-  if (!user) missing.push("SMTP_USER")
-  if (!pass) missing.push("SMTP_PASS")
-  if (!from || !isSenderAddress(from)) missing.push("EMAIL_FROM")
+  if (!isSenderAddress(from)) missing.push("EMAIL_FROM")
   if (!origin) missing.push("EMAIL_LINK_ORIGIN")
-  if (!Number.isInteger(port) || port < 1 || port > 65535) missing.push("SMTP_PORT")
-  const replyTo = env.EMAIL_REPLY_TO?.trim() || GIVE_CONTACT_EMAIL
-  if (!isSenderAddress(replyTo)) missing.push("EMAIL_REPLY_TO")
-  if (missing.length > 0 || !user || !pass || !from || !origin) return { ok: false, missing }
-  return {
-    ok: true,
-    transport: createSmtpTransport({ host: env.SMTP_HOST?.trim() || DEFAULT_SMTP_HOST, port, user, pass }),
-    options: { origin, from, replyTo },
+
+  let transport: EmailTransport | null = createLogTransport()
+  if (delivery === "smtp") {
+    const user = env.SMTP_USER?.trim()
+    const pass = env.SMTP_PASS?.trim()
+    const port = env.SMTP_PORT ? Number(env.SMTP_PORT) : DEFAULT_SMTP_PORT
+    if (!user) missing.push("SMTP_USER")
+    if (!pass) missing.push("SMTP_PASS")
+    if (!Number.isInteger(port) || port < 1 || port > 65535) missing.push("SMTP_PORT")
+    if (user && pass && missing.length === 0) {
+      const smtp = createSmtpTransport({ host: env.SMTP_HOST?.trim() || DEFAULT_SMTP_HOST, port, user, pass })
+      const allowlist = (env.EMAIL_ALLOWLIST ?? "").split(",")
+      transport = production ? smtp : allowlistTransport(allowlist, smtp, createLogTransport())
+    } else {
+      transport = null
+    }
   }
+  if (missing.length > 0 || !transport || !origin) return { ok: false, missing }
+  return { ok: true, delivery, transport, options: { origin, from } }
 }

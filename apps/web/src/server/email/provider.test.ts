@@ -1,60 +1,100 @@
 import { describe, expect, it, vi } from "vitest"
 
-const created = vi.hoisted(() => [] as unknown[])
+import type { OutgoingEmail } from "./transport"
+
+const smtp = vi.hoisted(() => ({
+  configs: [] as unknown[],
+  send: vi.fn(async (_email: unknown) => ({ ok: true, messageId: "ses" })),
+}))
 
 vi.mock("./smtp", () => ({
   createSmtpTransport: (config: unknown) => {
-    created.push(config)
-    return { send: vi.fn() }
+    smtp.configs.push(config)
+    return { send: smtp.send }
   },
 }))
 
-const { emailLinkOrigin, emailSettingsFromEnv, isSenderAddress } = await import("./provider")
+const { emailDelivery, emailLinkOrigin, emailSettingsFromEnv, isSenderAddress } = await import("./provider")
 
-const COMPLETE = {
-  SMTP_USER: "AKIAEXAMPLE",
-  SMTP_PASS: "not-a-real-password",
-  EMAIL_FROM: "Give <no-reply@give.vn>",
-  EMAIL_LINK_ORIGIN: "https://beta.give.vn/some/path",
+const CREDS = { SMTP_USER: "AKIAEXAMPLE", SMTP_PASS: "not-a-real-password" }
+const BETA = { VERCEL_ENV: "preview", EMAIL_LINK_ORIGIN: "https://beta.give.vn/some/path" }
+const PROD = { VERCEL_ENV: "production" }
+
+function message(to: string): OutgoingEmail {
+  return { from: "x@give.vn", to, subject: "s", text: "t", html: "h", headers: {}, idempotencyKey: "k" }
 }
 
+describe("emailDelivery", () => {
+  it("sends real mail by default in Production only", () => {
+    expect(emailDelivery(PROD)).toBe("smtp")
+    expect(emailDelivery({ VERCEL_ENV: "preview" })).toBe("log")
+    expect(emailDelivery({})).toBe("log")
+    expect(emailDelivery({ VERCEL_ENV: "preview", EMAIL_DELIVERY: "SMTP" })).toBe("smtp")
+    expect(emailDelivery({ ...PROD, EMAIL_DELIVERY: "log" })).toBe("log")
+  })
+})
+
 describe("emailSettingsFromEnv", () => {
-  it("is off and names what is missing", () => {
-    expect(emailSettingsFromEnv({})).toEqual({
-      ok: false,
-      missing: ["SMTP_USER", "SMTP_PASS", "EMAIL_FROM", "EMAIL_LINK_ORIGIN"],
+  it("mails nobody on beta by default, with Give's own sender and no Reply-To", async () => {
+    smtp.configs.length = 0
+    smtp.send.mockClear()
+    const settings = emailSettingsFromEnv({ ...BETA, ...CREDS })
+    expect(settings).toMatchObject({
+      ok: true,
+      delivery: "log",
+      options: { origin: "https://beta.give.vn", from: "Give <no-reply@give.vn>" },
     })
+    if (!settings.ok) return
+    expect(settings.options).not.toHaveProperty("replyTo")
+    expect(smtp.configs).toHaveLength(0)
+    expect(await settings.transport.send(message("mai@example.com"))).toMatchObject({ ok: true })
+    expect(smtp.send).not.toHaveBeenCalled()
   })
 
-  it("uses DOS.Me's SES SMTP endpoint by default", () => {
-    created.length = 0
-    const settings = emailSettingsFromEnv(COMPLETE)
+  it("outside Production, real sending reaches the allowlist only", async () => {
+    smtp.send.mockClear()
+    const settings = emailSettingsFromEnv({
+      ...BETA,
+      ...CREDS,
+      EMAIL_DELIVERY: "smtp",
+      EMAIL_ALLOWLIST: " qa@give.vn, @team.give.vn ",
+    })
     expect(settings.ok).toBe(true)
     if (!settings.ok) return
-    expect(settings.options).toEqual({
-      origin: "https://beta.give.vn",
-      from: "Give <no-reply@give.vn>",
-      replyTo: "hi@give.vn",
-    })
-    expect(created).toEqual([
-      { host: "email-smtp.ap-southeast-1.amazonaws.com", port: 587, user: "AKIAEXAMPLE", pass: "not-a-real-password" },
-    ])
+    await settings.transport.send(message("QA@give.vn"))
+    await settings.transport.send(message("lan@team.give.vn"))
+    await settings.transport.send(message("mai@example.com"))
+    expect(smtp.send.mock.calls.map(([m]) => (m as OutgoingEmail).to)).toEqual(["QA@give.vn", "lan@team.give.vn"])
   })
 
-  it("refuses a sender with a line break or without an address", () => {
-    expect(emailSettingsFromEnv({ ...COMPLETE, EMAIL_FROM: "Give <a@give.vn>\r\nBcc: x@y.z" })).toMatchObject({
+  it("in Production sends through SES with the default endpoint", async () => {
+    smtp.configs.length = 0
+    smtp.send.mockClear()
+    const settings = emailSettingsFromEnv({ ...PROD, ...CREDS })
+    expect(settings).toMatchObject({ ok: true, delivery: "smtp", options: { origin: "https://give.vn" } })
+    expect(smtp.configs).toEqual([
+      { host: "email-smtp.ap-southeast-1.amazonaws.com", port: 587, user: "AKIAEXAMPLE", pass: "not-a-real-password" },
+    ])
+    if (settings.ok) await settings.transport.send(message("mai@example.com"))
+    expect(smtp.send).toHaveBeenCalledTimes(1)
+  })
+
+  it("in Production without credentials is off, so emails wait instead of being marked sent", () => {
+    expect(emailSettingsFromEnv(PROD)).toEqual({ ok: false, missing: ["SMTP_USER", "SMTP_PASS"] })
+  })
+
+  it("refuses a sender with a line break, a bad port, and a missing link origin", () => {
+    expect(emailSettingsFromEnv({ ...BETA, EMAIL_FROM: "Give <a@give.vn>\r\nBcc: x@y.z" })).toMatchObject({
       ok: false,
       missing: ["EMAIL_FROM"],
     })
-    expect(isSenderAddress("Give")).toBe(false)
-    expect(isSenderAddress("no-reply@give.vn")).toBe(true)
-  })
-
-  it("refuses a bad port", () => {
-    expect(emailSettingsFromEnv({ ...COMPLETE, SMTP_PORT: "smtp" })).toMatchObject({
+    expect(emailSettingsFromEnv({ ...PROD, ...CREDS, SMTP_PORT: "smtp" })).toMatchObject({
       ok: false,
       missing: ["SMTP_PORT"],
     })
+    expect(emailSettingsFromEnv({ VERCEL_ENV: "preview" })).toEqual({ ok: false, missing: ["EMAIL_LINK_ORIGIN"] })
+    expect(isSenderAddress("Give")).toBe(false)
+    expect(isSenderAddress("no-reply@give.vn")).toBe(true)
   })
 })
 
@@ -64,7 +104,7 @@ describe("emailLinkOrigin", () => {
       "https://beta.give.vn"
     )
     expect(emailLinkOrigin({ NEXT_PUBLIC_SITE_URL: "https://give.vn/" })).toBe("https://give.vn")
-    expect(emailLinkOrigin({ VERCEL_ENV: "production" })).toBe("https://give.vn")
+    expect(emailLinkOrigin(PROD)).toBe("https://give.vn")
     expect(emailLinkOrigin({ VERCEL_ENV: "preview" })).toBeNull()
   })
 })

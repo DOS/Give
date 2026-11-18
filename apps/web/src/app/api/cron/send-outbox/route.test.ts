@@ -50,11 +50,11 @@ describe("GET /api/cron/send-outbox", () => {
   it("runs the sender with the configured transport and reports the counts", async () => {
     const transport = { send: vi.fn() }
     const options = { origin: "https://give.vn", from: "Give <no-reply@give.vn>" }
-    state.settings = { ok: true, transport, options }
+    state.settings = { ok: true, delivery: "smtp", transport, options }
     state.run.mockResolvedValue({ claimed: 2, sent: 1, retrying: 1, dead: 0, stale: 0 })
     const response = await GET(request(`Bearer ${SECRET}`))
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ claimed: 2, sent: 1, retrying: 1, dead: 0, stale: 0 })
+    expect(await response.json()).toEqual({ delivery: "smtp", claimed: 2, sent: 1, retrying: 1, dead: 0, stale: 0 })
     expect(state.run).toHaveBeenCalledWith(state.db, transport, options)
   })
 
