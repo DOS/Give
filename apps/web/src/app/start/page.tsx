@@ -38,7 +38,7 @@ export default async function StartPage() {
                 Chiến dịch mới
               </h2>
               <ActionForm action={createCampaign} className="mt-6 space-y-6">
-                <fieldset>
+                <fieldset aria-describedby="campaign_type_hint">
                   <legend className="label">Loại chiến dịch</legend>
                   <div className="grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
                     <label className={TYPE_CHOICE}>
@@ -72,7 +72,9 @@ export default async function StartPage() {
                       </span>
                     </label>
                   </div>
-                  <p className="hint">Không đổi được loại sau khi gửi duyệt.</p>
+                  <p id="campaign_type_hint" className="hint">
+                    Không đổi được loại sau khi gửi duyệt.
+                  </p>
                 </fieldset>
                 <div>
                   <label htmlFor="title" className="label">
@@ -123,9 +125,10 @@ export default async function StartPage() {
 }
 
 function OrganizerForm({ organizer }: { organizer: Organizer | null }) {
+  const warnsReverify = organizer?.verification_status === "verified" || organizer?.verification_status === "pending"
   return (
     <ActionForm action={saveOrganizer} className="space-y-6">
-      <fieldset>
+      <fieldset aria-describedby={warnsReverify ? "organizer_reverify_hint" : undefined}>
         <legend className="label">Bạn gây quỹ với tư cách</legend>
         <div className="flex flex-wrap gap-x-8">
           <label className="flex min-h-11 cursor-pointer items-center gap-3 text-fg">
@@ -162,8 +165,11 @@ function OrganizerForm({ organizer }: { organizer: Organizer | null }) {
           required
           minLength={2}
           maxLength={120}
+          aria-describedby={warnsReverify ? "legal_name_hint organizer_reverify_hint" : "legal_name_hint"}
         />
-        <p className="hint">Không công khai. Phải khớp tên chủ tài khoản nhận tiền.</p>
+        <p id="legal_name_hint" className="hint">
+          Không công khai. Phải khớp tên chủ tài khoản nhận tiền.
+        </p>
       </div>
       <div>
         <label htmlFor="display_name" className="label">
@@ -177,18 +183,33 @@ function OrganizerForm({ organizer }: { organizer: Organizer | null }) {
           required
           minLength={2}
           maxLength={80}
+          aria-describedby={warnsReverify ? "display_name_hint organizer_reverify_hint" : "display_name_hint"}
         />
-        <p className="hint">Hiện trên trang chiến dịch.</p>
+        <p id="display_name_hint" className="hint">
+          Hiện trên trang chiến dịch.
+        </p>
       </div>
       <div>
         <label htmlFor="phone" className="label">
           Số điện thoại (không bắt buộc)
         </label>
-        <input id="phone" name="phone" type="tel" className="field" defaultValue={organizer?.phone ?? ""} />
-        <p className="hint">Không công khai. Kiểm duyệt viên dùng để liên hệ khi cần.</p>
+        <input
+          id="phone"
+          name="phone"
+          type="tel"
+          className="field"
+          maxLength={20}
+          aria-describedby="phone_hint"
+          defaultValue={organizer?.phone ?? ""}
+        />
+        <p id="phone_hint" className="hint">
+          Không công khai. Kiểm duyệt viên dùng để liên hệ khi cần.
+        </p>
       </div>
-      {(organizer?.verification_status === "verified" || organizer?.verification_status === "pending") && (
-        <p className="text-sm text-warning">Đổi tên hoặc loại hồ sơ sẽ cần xác minh lại.</p>
+      {warnsReverify && (
+        <p id="organizer_reverify_hint" className="text-sm text-warning">
+          Đổi tên hoặc loại hồ sơ sẽ cần xác minh lại.
+        </p>
       )}
       <SubmitButton>{organizer ? "Lưu hồ sơ" : "Tạo hồ sơ"}</SubmitButton>
     </ActionForm>

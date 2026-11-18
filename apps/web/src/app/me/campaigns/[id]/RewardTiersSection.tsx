@@ -74,13 +74,15 @@ export function RewardTiersSection({
                   <div className="flex flex-wrap gap-2">
                     {index > 0 && (
                       <ActionForm action={moveRewardTier.bind(null, campaignId, tier.id, "up")}>
-                        <SubmitButton className={buttonClass({ variant: "secondary", size: "sm" })}>↑ Lên</SubmitButton>
+                        <SubmitButton className={buttonClass({ variant: "secondary", size: "sm" })}>
+                          ↑ Lên<span className="sr-only">: {tier.title}</span>
+                        </SubmitButton>
                       </ActionForm>
                     )}
                     {index < ordered.length - 1 && (
                       <ActionForm action={moveRewardTier.bind(null, campaignId, tier.id, "down")}>
                         <SubmitButton className={buttonClass({ variant: "secondary", size: "sm" })}>
-                          ↓ Xuống
+                          ↓ Xuống<span className="sr-only">: {tier.title}</span>
                         </SubmitButton>
                       </ActionForm>
                     )}
@@ -88,11 +90,16 @@ export function RewardTiersSection({
                       action={deleteRewardTier.bind(null, campaignId, tier.id)}
                       confirm={`Xóa mức “${tier.title}”?`}
                     >
-                      <SubmitButton className={buttonClass({ variant: "danger", size: "sm" })}>Xóa</SubmitButton>
+                      <SubmitButton className={buttonClass({ variant: "danger", size: "sm" })}>
+                        Xóa<span className="sr-only"> mức {tier.title}</span>
+                      </SubmitButton>
                     </ActionForm>
                   </div>
                   <details className="group">
-                    <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 link [&::-webkit-details-marker]:hidden">
+                    <summary
+                      aria-label={`Sửa mức này: ${tier.title}`}
+                      className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 link [&::-webkit-details-marker]:hidden"
+                    >
                       Sửa mức này
                       <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
                     </summary>
@@ -101,7 +108,9 @@ export function RewardTiersSection({
                       className="mt-3 max-w-160 space-y-6"
                     >
                       <TierFields prefix={`tier_${tier.id}`} tier={tier} />
-                      <SubmitButton className={buttonClass({ variant: "secondary" })}>Lưu phần thưởng</SubmitButton>
+                      <SubmitButton className={buttonClass({ variant: "secondary" })}>
+                        Lưu phần thưởng<span className="sr-only">: {tier.title}</span>
+                      </SubmitButton>
                     </ActionForm>
                   </details>
                 </div>
@@ -110,7 +119,9 @@ export function RewardTiersSection({
                   action={retireRewardTier.bind(null, campaignId, tier.id)}
                   confirm={`Ngừng nhận cam kết mới cho mức “${tier.title}”? Mức này sẽ ẩn khỏi trang dự án và không mở lại được.`}
                 >
-                  <SubmitButton className={buttonClass({ variant: "secondary" })}>Ngừng nhận mức này</SubmitButton>
+                  <SubmitButton className={buttonClass({ variant: "secondary" })}>
+                    Ngừng nhận mức này<span className="sr-only">: {tier.title}</span>
+                  </SubmitButton>
                 </ActionForm>
               ) : (
                 RETIRABLE_STATUSES.includes(status) &&
@@ -148,7 +159,7 @@ function TierSummary({ tier }: { tier: RewardTier }) {
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="min-w-0 text-h3 break-words text-fg">{tier.title}</p>
+        <h3 className="min-w-0 text-h3 break-words text-fg">{tier.title}</h3>
         <span className="font-semibold text-fg tabular-nums">{minAmountLabel(tier.min_amount)}</span>
       </div>
       {tier.description && <p className="max-w-[68ch] break-words whitespace-pre-line text-fg">{tier.description}</p>}
