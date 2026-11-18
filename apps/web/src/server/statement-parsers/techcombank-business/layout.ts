@@ -2,7 +2,7 @@ import type { NormalizedTx } from "@/server/channels/types"
 
 import type { Cell, Grid } from "../sheet/read"
 import { bankDate, label, vnd, vnInstant, wholeNumber, type LocalDate } from "../sheet/text"
-import type { ParsedStatement } from "../types"
+import type { ParsedStatement, StatementCoverage } from "../types"
 
 /**
  * The layout of a Techcombank Business transaction export ("Tải sao kê" /
@@ -61,8 +61,19 @@ const HEADERS: Record<Column, readonly string[]> = {
 const REQUIRED: readonly Column[] = ["date", "description", "debit", "credit", "balance"]
 
 const DATE_TEXT = "(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}/\\d{4})"
-/** "Từ ngày/From 2025-09-01 Đến ngày/To 2025-09-30" (Techcombank Business web guide, 31/10/2025, p.32). */
-const PERIOD = new RegExp(`tu ngay(?: ?/ ?from)?:? ?${DATE_TEXT}.*?den ngay(?: ?/ ?to)?:? ?${DATE_TEXT}`)
+/** A time of day after a date of the period line ("01/11/2026 08:00", "2026-11-01t08:00:00" once folded). */
+const TIME_TEXT = "(?:(?: |t)(\\d{1,2}:\\d{2}(?::\\d{2})?))?"
+/**
+ * "Từ ngày/From 2025-09-01 Đến ngày/To 2025-09-30" (Techcombank Business web
+ * guide, 31/10/2025, p.32). A time after either date is read too: the guide
+ * shows none, and an export bounded by times holds only part of a day
+ * (DOS/Give#57).
+ */
+const PERIOD = new RegExp(
+  `tu ngay(?: ?/ ?from)?:? ?${DATE_TEXT}${TIME_TEXT}.*?den ngay(?: ?/ ?to)?:? ?${DATE_TEXT}${TIME_TEXT}`
+)
+const START_OF_DAY = /^0?0:00(:00)?$/
+const END_OF_DAY = /^23:59(:59)?$/
 /** "Số dư đầu ngày/Opening balance" in the download; "Số dư đầu kỳ" in the monthly statement. */
 const OPENING = /^(so du dau ngay|so du dau ky|opening balance)$/
 /** "Số dư cuối ngày/ Closing balance" in the download; "Số dư cuối kỳ/Ending balance" in the statement. */
@@ -187,12 +198,39 @@ function balanceAt(rows: Grid, pattern: RegExp): bigint | null {
   }
 }
 
-function headerPeriod(rows: Grid): { from: string; to: string } | null {
+interface HeaderPeriod {
+  from: string
+  to: string
+  /** The time stated after each date, if any ("08:00"). */
+  fromTime: string | null
+  toTime: string | null
+}
+
+function headerPeriod(rows: Grid): HeaderPeriod | null {
   for (const row of rows) {
     const match = PERIOD.exec(label(row.map(cellText).join(" ").slice(0, PERIOD_SCAN_CHARS)))
-    if (match) return { from: bankDate(match[1]).day, to: bankDate(match[2]).day }
+    if (match) {
+      return {
+        from: bankDate(match[1]).day,
+        fromTime: match[2] ?? null,
+        to: bankDate(match[3]).day,
+        toTime: match[4] ?? null,
+      }
+    }
   }
   return null
+}
+
+/**
+ * What the file says it holds (DOS/Give#57). Without a period line it may be
+ * a list of recent transactions; a period starting after midnight leaves out
+ * the start of its first day; one ending before 23:59 cuts its last day.
+ */
+function coverage(period: HeaderPeriod | null): StatementCoverage {
+  if (period === null) return "partial"
+  if (period.fromTime !== null && !START_OF_DAY.test(period.fromTime)) return "partial"
+  if (period.toTime !== null && !END_OF_DAY.test(period.toTime)) return "ends_early"
+  return "full"
 }
 
 function printedAt(rows: Grid): Date | null {
@@ -355,7 +393,7 @@ export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
   const opening = balanceAt(outside, OPENING)
   const closing = balanceAt(outside, CLOSING)
   if (opening === null || closing === null) throw new TcbLayoutError("no opening or closing balance")
-  let period: { from: string; to: string } | null
+  let period: HeaderPeriod | null
   try {
     period = headerPeriod(above)
   } catch {
@@ -373,6 +411,7 @@ export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
   }
 
   return {
+    coverage: coverage(period),
     periodFrom: period?.from ?? null,
     periodTo: period?.to ?? null,
     openingBalance: opening,

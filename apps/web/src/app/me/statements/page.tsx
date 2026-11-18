@@ -7,12 +7,13 @@ import { EmptyState } from "@/components/ui/EmptyState"
 import { PageHeader } from "@/components/ui/PageHeader"
 import { requireSession } from "@/lib/auth/session"
 import { isStaff } from "@/lib/campaigns"
-import { formatDate, formatDateTime } from "@/lib/format"
+import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import {
   accountLabel,
   accountLabels,
   countWaitingRows,
+  getReviewThreshold,
   listBatches,
   listUploadAccounts,
   MAX_UPLOAD_BYTES,
@@ -36,7 +37,11 @@ export default async function StatementsPage() {
   const session = await requireSession("/me/statements")
   const db = dbAs(session.accessToken)
   const staff = await isStaff(db, FINANCE_ROLES)
-  const [accounts, batches] = await Promise.all([listUploadAccounts(db, session.user.id, staff), listBatches(db)])
+  const [accounts, batches, threshold] = await Promise.all([
+    listUploadAccounts(db, session.user.id, staff),
+    listBatches(db),
+    getReviewThreshold(db),
+  ])
   const [waiting, labels] = await Promise.all([
     countWaitingRows(
       db,
@@ -71,7 +76,16 @@ export default async function StatementsPage() {
             action={<ButtonLink href="/me/accounts">Khai báo tài khoản</ButtonLink>}
           />
         ) : (
-          <UploadForm action={uploadStatement} accounts={choices} maxBytes={MAX_UPLOAD_BYTES} />
+          <>
+            {threshold !== null && (
+              <p className="mb-4 text-sm text-muted">
+                Sao kê bạn tải cho tài khoản của mình: lần tải đầu tiên của mỗi chiến dịch, và mọi giao dịch từ{" "}
+                <span className="font-semibold text-fg tabular-nums">{formatVnd(threshold)}</span> trở lên, chờ đội tài
+                chính của Give đối chiếu với ngân hàng rồi mới được ghi.
+              </p>
+            )}
+            <UploadForm action={uploadStatement} accounts={choices} maxBytes={MAX_UPLOAD_BYTES} />
+          </>
         )}
       </Panel>
 

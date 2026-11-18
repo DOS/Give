@@ -10,6 +10,7 @@ import type { ParsedStatement, StatementParser } from "@/server/statement-parser
  *   opening_balance,100000
  *   closing_balance,150000
  *   exported_at,2026-10-03T08:00:00+07:00
+ *   coverage,full                   (full when left out; or ends_early, partial)
  *   booked_at,direction,amount,balance_after,ref,description,counterparty_name,counterparty_account
  *   2026-10-01T09:15:00+07:00,in,50000,150000,FT001,MBVCB.1.GVABCDEF.CT,NGUYEN VAN A,0123456789
  *   2026-10-02,out,1100,148900,,PHI SMS,,
@@ -59,7 +60,10 @@ export function parseCsvStatement(text: string): ParsedStatement {
       raw: { line },
     }
   })
+  const coverage = meta.get("coverage") ?? "full"
+  if (coverage !== "full" && coverage !== "ends_early" && coverage !== "partial") throw new Error("bad coverage")
   return {
+    coverage,
     periodFrom: meta.get("period_from") ?? null,
     periodTo: meta.get("period_to") ?? null,
     openingBalance: optionalBigint(meta.get("opening_balance")),

@@ -191,6 +191,24 @@ function period(parsed: ParsedStatement, now: Date) {
 }
 
 /**
+ * DOS/Give#57: only full statements ("from D1 to D2") are imported. The
+ * database takes every day of a period as holding all of that day's rows
+ * (the last one up to the export time, when exported that day), so a
+ * partial export of a past day would be taken as the whole day. An export
+ * that ends early is accepted when its last day is today; any other partial
+ * export only when it covers today alone. A parser that states no coverage
+ * is refused.
+ */
+function assertFullStatement(parsed: ParsedStatement, from: string | null, to: string | null, now: Date): void {
+  const today = vnDay(now)
+  const coverage: unknown = parsed.coverage
+  if (coverage === "full") return
+  if (coverage === "ends_early" && to === today) return
+  if (coverage === "partial" && from === today && to === today) return
+  throw new StatementImportError("STATEMENT_PARTIAL_EXPORT")
+}
+
+/**
  * Validates a parsed statement against its format and the staging rules and
  * returns the RPC arguments. Throws StatementImportError (with the row number
  * when one row is at fault).
@@ -204,6 +222,7 @@ export function normalizeStatement(
   assertSupportedFormat(format)
   const stable = format.hasStableRowId
   const { from, to, exportedAt } = period(parsed, now)
+  assertFullStatement(parsed, from, to, now)
   if (!stable && (from === null || to === null)) throw new StatementImportError("STATEMENT_PERIOD_REQUIRED")
   if (!Array.isArray(parsed.rows) || parsed.rows.length === 0 || parsed.rows.length > MAX_ROWS) {
     throw new StatementImportError("STATEMENT_ROWS_INVALID")

@@ -18,8 +18,28 @@ export interface StatementFormat {
   hasRunningBalance: boolean
 }
 
+/**
+ * How much of the account's rows a file holds, as the file itself states it
+ * (its period line, title or filter lines), never guessed from the rows
+ * (DOS/Give#57). The import cannot tell a partial export from a full one by
+ * its rows, so a parser that cannot tell says "partial".
+ *
+ * - "full": a statement "from D1 to D2": every row from the start of D1 to
+ *   the end of D2. Its last day may still end early when the file was
+ *   produced that day; exportedAt tells the database so.
+ * - "ends_early": the same, but the file states a time on D2 before its end
+ *   (an export "to D2 14:00"). Accepted only when D2 is today.
+ * - "partial": anything else that holds part of a day: a period starting
+ *   after midnight, the last N transactions, rows filtered by direction,
+ *   amount or text, or no stated period at all. Accepted only for an export
+ *   of today alone (D1 = D2 = today).
+ */
+export type StatementCoverage = "full" | "ends_early" | "partial"
+
 /** A statement file as a parser reads it. */
 export interface ParsedStatement {
+  /** See StatementCoverage. The pipeline refuses partial exports of past days. */
+  coverage: StatementCoverage
   /**
    * The period the file states, as local (Asia/Ho_Chi_Minh) dates
    * "YYYY-MM-DD". Required for formats without row ids. The file must hold
@@ -43,7 +63,8 @@ export interface StatementParser extends StatementFormat {
   bankBins: readonly string[]
   /**
    * Reads the file. Throws on a file it does not recognise; never returns
-   * a partial statement.
+   * a statement with rows left out. A file the bank marks as a partial
+   * export is returned with its coverage, and the pipeline decides.
    */
   parse(file: Uint8Array): ParsedStatement | Promise<ParsedStatement>
 }

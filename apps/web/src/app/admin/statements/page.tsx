@@ -19,6 +19,7 @@ import {
   AUDIT_ACTION_LABELS,
   DUPLICATE_WINDOW_DAYS,
   getCandidateRows,
+  getReviewThreshold,
   isOwnStatementRow,
   listAccountBindings,
   listAmbiguousRows,
@@ -38,7 +39,7 @@ import {
 import { dbAs } from "@/lib/supabase"
 
 import { AdminPage, AdminSection, DataTable, ItemActions, ItemCard, ItemList } from "../_components/ui"
-import { resolveStatementRow } from "./actions"
+import { resolveStatementRow, setReviewThreshold } from "./actions"
 import { MachineId } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Đối soát sao kê", robots: { index: false } }
@@ -53,10 +54,11 @@ export default async function AdminStatementsPage() {
   // Finance and admin staff only; others get a 404.
   if (!(await isStaff(db, FINANCE_ROLES))) notFound()
 
-  const [{ rows: queue, total }, resolved, isAdmin] = await Promise.all([
+  const [{ rows: queue, total }, resolved, isAdmin, threshold] = await Promise.all([
     listAmbiguousRows(db),
     listResolvedRows(db),
     isStaff(db, ["admin"]),
+    getReviewThreshold(db),
   ])
   const accountIds = queue.map((row) => row.batch.receiving_account_id)
   // Void candidates (not_a_transaction rows) are never offered (DOS/Give#78).
@@ -101,7 +103,8 @@ export default async function AdminStatementsPage() {
         <p>
           Các dòng sao kê dưới đây chưa được ghi thành giao dịch vì Give không chắc chúng là giao dịch mới hay lặp lại
           một giao dịch đã ghi. Đối chiếu với sao kê trên trang của chính ngân hàng rồi chọn một cách xử lý. Ghi chú là
-          bắt buộc; mỗi lần xử lý được ghi vào nhật ký kiểm toán và không đổi được.
+          bắt buộc; mỗi lần xử lý được ghi vào nhật ký kiểm toán và không đổi được. Sao kê do người tổ chức tự tải lên
+          còn chờ đội tài chính duyệt ở lần tải đầu tiên của mỗi chiến dịch và ở mọi dòng từ ngưỡng duyệt trở lên.
         </p>
       }
     >
@@ -130,6 +133,8 @@ export default async function AdminStatementsPage() {
           </ItemList>
         )}
       </AdminSection>
+
+      <ReviewThreshold threshold={threshold} />
 
       <AdminSection id="resolved" title="Đã xử lý gần đây" count={resolved.length}>
         {resolved.length === 0 ? (
@@ -321,11 +326,17 @@ function QueueCard({
               <input type="hidden" name="resolution" value="not_a_transaction" />
               <p className="label">{RESOLUTION_LABELS.not_a_transaction}</p>
               <p className="text-sm text-muted">
-                Chỉ chọn khi dòng này không có trên sao kê thật của tài khoản (ví dụ file thử, tải nhầm tài khoản).
+                {row.ambiguous_reason === "finance_review"
+                  ? "Từ chối: chỉ chọn khi dòng này không có trên sao kê của tài khoản trên trang ngân hàng (sao kê bị sửa hoặc không phải của tài khoản này)."
+                  : "Chỉ chọn khi dòng này không có trên sao kê thật của tài khoản (ví dụ file thử, tải nhầm tài khoản)."}
               </p>
               <NoteField
                 id={`not-tx-note-${row.id}`}
-                placeholder="Ghi chú bắt buộc: vì sao không phải giao dịch thật và đã đối chiếu với nguồn nào (ví dụ: file thử, tải nhầm tài khoản)"
+                placeholder={
+                  row.ambiguous_reason === "finance_review"
+                    ? "Ghi chú bắt buộc: đã đối chiếu với nguồn nào và thấy gì khác (ngày giờ, số tiền, mã giao dịch)"
+                    : "Ghi chú bắt buộc: vì sao không phải giao dịch thật và đã đối chiếu với nguồn nào (ví dụ: file thử, tải nhầm tài khoản)"
+                }
               />
               <SubmitButton className="btn-secondary">Không phải giao dịch thật</SubmitButton>
             </ActionForm>
@@ -333,6 +344,43 @@ function QueueCard({
         </ItemActions>
       )}
     </ItemCard>
+  )
+}
+
+/** The finance review threshold of organizer uploads (DOS/Give#57), with the form to change it. */
+function ReviewThreshold({ threshold }: { threshold: number | null }) {
+  return (
+    <AdminSection
+      id="review-threshold"
+      title="Ngưỡng duyệt sao kê"
+      lead="Dòng sao kê do người tổ chức tự tải lên có số tiền (vào hoặc ra) từ ngưỡng này trở lên chờ đội tài chính duyệt trước khi được ghi. Lần tải đầu tiên của mỗi chiến dịch luôn chờ duyệt, dù số tiền nhỏ."
+    >
+      {threshold === null ? (
+        <Callout tone="warning">Chưa đọc được ngưỡng duyệt. Hãy tải lại trang sau.</Callout>
+      ) : (
+        <ActionForm action={setReviewThreshold} className="max-w-xl space-y-4" confirm="Đổi ngưỡng duyệt sao kê?">
+          <p className="text-sm">
+            Ngưỡng hiện tại: <span className="font-semibold text-fg tabular-nums">{formatVnd(threshold)}</span>
+          </p>
+          <div className="space-y-1">
+            <label htmlFor="review-threshold-amount" className="label">
+              Ngưỡng mới (VND)
+            </label>
+            <input
+              id="review-threshold-amount"
+              name="threshold"
+              className="field tabular-nums"
+              inputMode="numeric"
+              required
+              maxLength={20}
+              defaultValue={threshold}
+            />
+          </div>
+          <NoteField id="review-threshold-note" placeholder="Ghi chú bắt buộc: lý do đổi ngưỡng" />
+          <SubmitButton className="btn-secondary">Lưu ngưỡng</SubmitButton>
+        </ActionForm>
+      )}
+    </AdminSection>
   )
 }
 
@@ -374,7 +422,7 @@ function AuditTrail({ entries, names }: { entries: AuditEntry[]; names: Map<stri
               <td className="px-4 py-3 font-medium text-fg">{AUDIT_ACTION_LABELS[entry.action] ?? entry.action}</td>
               <td className="max-w-md px-4 py-3 break-words">{auditSummary(entry)}</td>
               <td className="px-4 py-3 break-all">
-                {entry.actor_id ? (names.get(entry.actor_id) ?? entry.actor_id) : "—"}
+                {entry.actor_id ? (names.get(entry.actor_id) ?? entry.actor_id) : "Hệ thống"}
               </td>
               <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDateTime(entry.created_at)}</td>
             </tr>

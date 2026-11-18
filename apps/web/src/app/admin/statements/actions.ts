@@ -3,9 +3,18 @@
 import { revalidatePath } from "next/cache"
 
 import { getSession } from "@/lib/auth/session"
-import { dbErrorMessage, done, fail, STATEMENT_ROW_MESSAGES, type ActionResult } from "@/lib/errors"
+import {
+  dbErrorMessage,
+  done,
+  fail,
+  REVIEW_THRESHOLD_MESSAGES,
+  STATEMENT_ROW_MESSAGES,
+  type ActionResult,
+} from "@/lib/errors"
+import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
+import { parseThresholdVnd } from "@/lib/statement-import"
 import { dbAs, dbService } from "@/lib/supabase"
 
 /**
@@ -78,5 +87,39 @@ export async function resolveStatementRow(rowId: string, _state: ActionResult, f
   }
   return done(
     "Đã nhập dòng thành giao dịch. Tiền vào của chiến dịch mà không có mã ủng hộ hợp lệ sẽ nằm trong danh sách giao dịch chưa khớp; giao dịch ngoài thời gian tài khoản gắn với chiến dịch thì không thuộc chiến dịch nào."
+  )
+}
+
+/**
+ * Finance/admin staff change the amount at or above which a row an organizer
+ * uploads waits for finance review (DOS/Give#57). As for resolutions, the
+ * role is checked with the reviewer's own token first, then
+ * give.set_statement_review_threshold checks it again, requires the note and
+ * writes the audit row.
+ */
+export async function setReviewThreshold(_state: ActionResult, form: FormData): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  const threshold = parseThresholdVnd(String(form.get("threshold") ?? ""))
+  if (threshold === null) return fail(REVIEW_THRESHOLD_MESSAGES.GIVE_THRESHOLD_INVALID)
+  const note = String(form.get("note") ?? "").trim()
+  if (!note) return fail(REVIEW_THRESHOLD_MESSAGES.GIVE_SETTING_NOTE_REQUIRED)
+  if (note.length > 1000) return fail("Ghi chú tối đa 1.000 ký tự.")
+
+  const role = await dbAs(session.accessToken).rpc("is_admin", { p_roles: FINANCE_ROLES })
+  if (role.error) return fail(dbErrorMessage(role.error))
+  if (role.data !== true) return fail(REVIEW_THRESHOLD_MESSAGES.GIVE_NOT_ALLOWED)
+
+  const { data, error } = await dbService()
+    .rpc("set_statement_review_threshold", { p_actor_id: session.user.id, p_threshold_vnd: threshold, p_note: note })
+    .single()
+  if (error) return fail(dbErrorMessage(error, REVIEW_THRESHOLD_MESSAGES))
+
+  revalidatePath("/admin/statements")
+  revalidatePath("/me/statements")
+  const result = data as { replayed?: boolean } | null
+  if (result?.replayed === true) return done(`Ngưỡng duyệt đã là ${formatVnd(threshold)}; không có gì thay đổi.`)
+  return done(
+    `Đã đổi ngưỡng duyệt thành ${formatVnd(threshold)}. Các lần tải sao kê sau của người tổ chức dùng ngưỡng mới; dòng đã tải giữ nguyên.`
   )
 }

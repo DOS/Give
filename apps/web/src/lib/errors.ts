@@ -362,7 +362,7 @@ export const STATEMENT_ROW_MESSAGES: Record<string, string> = {
   GIVE_DUPLICATE_TARGET_INVALID:
     "Giao dịch đã chọn không cùng tài khoản, chiều hoặc số tiền với dòng này, hoặc một dòng khác trong cùng file đã ứng với nó.",
   GIVE_RESOLUTION_NOT_FOR_REASON:
-    "Chỉ đánh dấu “không phải giao dịch thật” được cho dòng thuộc lần tải sao kê đã bị đội tài chính bỏ qua.",
+    "Chỉ đánh dấu “không phải giao dịch thật” được cho dòng thuộc lần tải sao kê đã bị đội tài chính bỏ qua, hoặc dòng đang chờ đội tài chính duyệt.",
   GIVE_ROW_HAS_ACTIVE_DUPLICATE:
     "Một lần tải sao kê khác có dòng đã được bỏ qua vì trùng với dòng này, nên không thể đánh dấu dòng này là không phải giao dịch thật. Hãy kiểm tra lại với sao kê ngân hàng: nếu đây là giao dịch thật, hãy nhập hoặc đánh dấu là giao dịch đã ghi.",
   GIVE_TRANSACTION_CONFLICT:
@@ -370,6 +370,13 @@ export const STATEMENT_ROW_MESSAGES: Record<string, string> = {
   GIVE_BINDING_CHANGED: "Tài khoản vừa được gắn hoặc đổi chiến dịch trong lúc nhập. Hãy tải lại trang và thử lại.",
   GIVE_ACCOUNT_OWNER_MISMATCH:
     "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên dòng này không nhập được cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch.",
+}
+
+/** Refusals of give.set_statement_review_threshold (DOS/Give#57). */
+export const REVIEW_THRESHOLD_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Chỉ nhân viên tài chính hoặc quản trị viên được đổi ngưỡng duyệt.",
+  GIVE_THRESHOLD_INVALID: "Ngưỡng duyệt là một số tiền VND nguyên, lớn hơn 0.",
+  GIVE_SETTING_NOTE_REQUIRED: "Ghi chú là bắt buộc: ghi lý do đổi ngưỡng.",
 }
 
 /**

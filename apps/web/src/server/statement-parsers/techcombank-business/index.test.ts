@@ -54,6 +54,7 @@ describe.each(Object.keys(FILES))("tcbBusinessParser on %s", (name) => {
 
   it("reads the period and balances of the header block", async () => {
     expect(await read()).toMatchObject({
+      coverage: "full",
       periodFrom: PERIOD.from,
       periodTo: PERIOD.to,
       openingBalance: BigInt(OPENING),
@@ -279,10 +280,46 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     expect(JSON.stringify(parsed.rows[0].raw)).not.toContain("0123456789012")
   })
 
-  it("leaves the period empty when the file does not state it, which the pipeline then refuses", async () => {
+  it("leaves the period empty when the file does not state it, a partial export the pipeline refuses", async () => {
     const parsed = await tcbBusinessParser.parse(statement({ top: withBalances("10,000", "11,000").slice(1) }))
-    expect([parsed.periodFrom, parsed.periodTo]).toEqual([null, null])
-    expect(() => normalizeStatement(tcbBusinessParser, parsed, NOW)).toThrow("STATEMENT_PERIOD_REQUIRED")
+    expect([parsed.periodFrom, parsed.periodTo, parsed.coverage]).toEqual([null, null, "partial"])
+    expect(() => normalizeStatement(tcbBusinessParser, parsed, NOW)).toThrow("STATEMENT_PARTIAL_EXPORT")
+  })
+
+  // DOS/Give#57: an export bounded by times holds part of a day.
+  const period = (from: XlsxCell, to: XlsxCell) => [
+    ["Từ ngày/From", from, "Đến ngày/To", to],
+    ...withBalances("10,000", "11,000").slice(1),
+  ]
+
+  it.each<[string, XlsxCell, XlsxCell, string]>([
+    ["dates alone", "2026-11-01", "2026-11-15", "full"],
+    ["whole days with times", "01/11/2026 00:00", "15/11/2026 23:59:59", "full"],
+    ["a start after midnight", "01/11/2026 08:00", "15/11/2026", "partial"],
+    ["an ISO start after midnight", "2026-11-01T08:00:00", "2026-11-15", "partial"],
+    ["an end before the day ends", "01/11/2026", "15/11/2026 14:30", "ends_early"],
+  ])("reads %s on the period line as a %s export", async (_, from, to, coverage) => {
+    const parsed = await tcbBusinessParser.parse(statement({ top: period(from, to) }))
+    expect([parsed.periodFrom, parsed.periodTo, parsed.coverage]).toEqual(["2026-11-01", "2026-11-15", coverage])
+  })
+
+  it("refuses a partial export of past days in the pipeline", async () => {
+    const parsed = await tcbBusinessParser.parse(statement({ top: period("01/11/2026 08:00", "15/11/2026") }))
+    expect(() => normalizeStatement(tcbBusinessParser, parsed, NOW)).toThrow("STATEMENT_PARTIAL_EXPORT")
+  })
+
+  it("accepts an export of today that ends early", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "18/11/2026", "Đến ngày/To", "18/11/2026 09:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+        rows: [["18/11/2026", "UNG HO", null, "1,000", null, "11,000"]],
+      })
+    )
+    expect(parsed.coverage).toBe("ends_early")
+    expect(normalizeStatement(tcbBusinessParser, parsed, NOW).period_to).toBe("2026-11-18")
   })
 
   it("never puts file contents in its errors", async () => {

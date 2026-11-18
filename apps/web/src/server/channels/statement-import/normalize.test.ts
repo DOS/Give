@@ -26,7 +26,7 @@ function tx(overrides: Partial<NormalizedTx> = {}): NormalizedTx {
 }
 
 function statement(rows: NormalizedTx[], overrides: Partial<ParsedStatement> = {}): ParsedStatement {
-  return { periodFrom: "2026-10-01", periodTo: "2026-10-02", rows, ...overrides }
+  return { coverage: "full", periodFrom: "2026-10-01", periodTo: "2026-10-02", rows, ...overrides }
 }
 
 function refusal(fn: () => unknown): { code: string; row?: number } {
@@ -170,6 +170,27 @@ describe("normalizeStatement", () => {
         code: "STATEMENT_FORMAT_UNSUPPORTED",
         row: undefined,
       })
+    })
+
+    // DOS/Give#57: only full statements; a partial export of today only.
+    it.each<[string, Partial<ParsedStatement>]>([
+      ["a partial export of a past day", { coverage: "partial", periodFrom: "2026-10-02", periodTo: "2026-10-02" }],
+      ["a partial export reaching today from an earlier day", { coverage: "partial", periodTo: "2026-10-05" }],
+      ["a partial export without a period", { coverage: "partial", periodFrom: null, periodTo: null }],
+      ["an export that ends early on a past day", { coverage: "ends_early" }],
+      ["a parser that states no coverage", { coverage: undefined }],
+      ["a coverage the contract does not know", { coverage: "most" as never }],
+    ])("%s", (_name, overrides) => {
+      const parsed = statement([tx()], overrides as Partial<ParsedStatement>)
+      expect(refusal(() => normalizeStatement(IDS, parsed, NOW)).code).toBe("STATEMENT_PARTIAL_EXPORT")
+    })
+
+    it.each<[string, Partial<ParsedStatement>]>([
+      ["a partial export of today alone", { coverage: "partial", periodFrom: "2026-10-05", periodTo: "2026-10-05" }],
+      ["an export that ends early today", { coverage: "ends_early", periodTo: "2026-10-05" }],
+    ])("accepts %s", (_name, overrides) => {
+      const parsed = statement([tx({ bookedAt: new Date("2026-10-05T09:00:00+07:00") })], overrides)
+      expect(normalizeStatement(IDS, parsed, NOW).rows).toHaveLength(1)
     })
 
     it("a format without ids that states no period", () => {
