@@ -229,6 +229,19 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Money (M1)
 
+- First bank statement parser: Techcombank Business transaction export,
+  CSV or XLSX (`tcb-business`, decision P3 of 2026-11-18). Built
+  from Techcombank's public guides with synthetic fixtures; the export's
+  table header and both format flags stay unconfirmed until JOY's
+  anonymized samples arrive. `hasRunningBalance` is set and checked on
+  every file (opening and closing balances required, every row's balance
+  must follow from the one before), `hasStableRowId` is not. Shared
+  spreadsheet reading in `statement-parsers/sheet`: XLSX unpacked under a
+  32 MB inflate cap, its sheet XML checked (at most 20,000 rows and 100
+  columns, no text-date or error cells) and rebuilt before the
+  `read-excel-file` package reads it; CSV in-house. P3 marked decided in
+  the design doc. ACB research is kept in
+  `docs/research/bank-statements.md` 6.1; no ACB parser yet (#17 / #231).
 - Refusal reasons on `/admin/unmatched`: each transaction under "Tiền vào
   không thuộc chiến dịch nào" shows why it was not given to a campaign
   ("Tài khoản nhận không thuộc người tổ chức chiến dịch", or "Chiến dịch đã
