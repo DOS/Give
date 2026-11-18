@@ -503,9 +503,9 @@ type.
    retry over the re-serialised body, as Tingee's own library does. Use a
    constant-time comparison. `x-client-id` (and, for payments, `clientId`)
    must be a client id Give expects: the platform's, or the organizer's own
-   under per-organizer credentials (8.2), which also selects the secret. For
-   a payment, it must be the client id of the link it resolves to. This
-   applies to URL challenges too.
+   under per-organizer credentials (8.2), which also selects the secret.
+   This applies to URL challenges too. Whether the client id belongs to the
+   right link is checked later, in step 6, once the link is resolved.
 3. If `webhook-type: url-validation` and the signature is valid, answer the
    challenge (6.4) and stop.
 4. Record `give.inbound_events` with `channel = 'tingee'`,
@@ -523,11 +523,17 @@ type.
    stored, well inside Tingee's 5–10 s timeout. Processing failures never
    reach Tingee; the `reprocess-inbound` cron retries them (design 5.1).
 6. The processor runs inline **after** the reply is sent (for example with
-   Next's `after()`), and again from the `reprocess-inbound` cron. Tingee's
-   list may lag the webhook, so the inline run retries the lookup a few times
-   within about a minute before leaving it to the cron, which can be
-   several minutes later. The M2 goal of "within 1 minute" therefore
-   depends on that lag; **to measure in UAT**.
+   Next's `after()`), and again from the `reprocess-inbound` cron. It works
+   within the existing inbound rules (`apps/web/src/server/inbound/index.ts`).
+   An attempt is cut off after 15 s (`PROCESSOR_TIMEOUT_MS`). Every attempt
+   counts toward the 10 before parking. A second attempt within 2 minutes of
+   the first reports `busy`. So Tingee's list may lag the webhook, but the
+   lookup waits briefly **inside one attempt**, a few tries within about
+   10 s, rather than spending attempts. If the row is still missing, the
+   attempt fails and the cron retries it minutes later. The M2 goal of
+   "within 1 minute" therefore depends on that lag; **to measure in UAT**.
+   If the lag is long, #25 may need a longer timeout for Tingee, or a
+   "not listed yet" result that does not count toward parking.
    - **Candidate link**: (BIN, `vaAccountNumber`), then (BIN,
      `accountNumber`). Account numbers are unique only within a bank, and
      banks sell chosen numbers, so a number alone is never enough. An
@@ -540,8 +546,9 @@ type.
      finance staff. More than one: final error for staff.
    - **Resolve the account from the confirmed row**, not from the webhook:
      the row's `bankBin` and `vaAccountNumber` must be the link's, and the
-     row's `merchantId` must equal the link's `tingee_merchant_id`.
-     Otherwise final error for staff.
+     row's `merchantId` must equal the link's `tingee_merchant_id`. The
+     webhook's client id must be the one expected for that link (the
+     platform's, or the organizer's own). Otherwise final error for staff.
    - **Build the `NormalizedTx` from the row** (8.1). If the row's amount,
      `type`, account or content differ from the webhook, end the event as a
      final error for staff. This keeps the payOS design's "confirm through
@@ -553,8 +560,10 @@ type.
 
 **Recording a Tingee record** (webhook and reconcile poll alike). One
 `SECURITY DEFINER` function does the following in one transaction, holding a
-lock on the receiving account so a webhook and a poll of the same transfer
-cannot race:
+lock on the receiving account. The statement-import commit (8.4) takes the
+**same account lock** before it pairs or records. Without it, a webhook, a
+poll and a statement row of the same transfer, committed at the same moment,
+could each see no counterpart and each post a transaction:
 
 1. **Already known?** If `give.bank_transaction_sources` has (account,
    source `tingee`, `transactionId`), stop: nothing changes. This is the
