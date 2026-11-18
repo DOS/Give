@@ -75,11 +75,17 @@ const PERIOD = new RegExp(
 /** A date of the period line, with the time this parser reads after it. */
 const PERIOD_DATE = new RegExp(`${DATE_TEXT}${TIME_TEXT}`, "g")
 /**
- * Anything else on the period line that reads as a time ("08h00", "lúc
- * 14:30", "- 14:30", a "Giờ/Time" cell, AM/PM): the export may be bounded by
- * a time this parser does not read, so it counts as partial (fail closed).
+ * Anything else in the period's own cells that reads as a time ("08h00",
+ * "14g30", "14.30", "lúc 14:30", "- 14:30", "8 SA", a following "Giờ/Time"
+ * cell): the export may be bounded by a time this parser does not read, so
+ * it counts as partial (fail closed).
  */
-const TIME_LIKE = /\d{1,2} ?(?::|h|gio) ?\d{2}|\b(?:am|pm|sa|ch|gio|time|luc)\b/
+const TIME_LIKE = /\d{1,2} ?(?::|h|g|gio|\.) ?\d{2}|\d ?(?:am|pm|sa|ch)\b|\b(?:gio|time|luc)\b/
+/** A cell that is only a time, or only a time label ("14:30", "8 SA", "Giờ/Time"). */
+const TIME_CELL =
+  /^(?:\d{1,2} ?(?::|h|g|gio|\.) ?\d{2}(?::\d{2})?(?: ?(?:am|pm|sa|ch))?|\d{1,2} ?(?:am|pm|sa|ch)|(?:gio|time|luc)(?: ?\/ ?(?:gio|time))?)$/
+/** A label of a time range on another row above the table ("Từ giờ/From time 08:00"). */
+const TIME_RANGE = /\b(tu gio|den gio|from time|to time|gio bat dau|gio ket thuc|start time|end time)\b/
 const START_OF_DAY = /^0?0:00(:00)?$/
 const END_OF_DAY = /^23:59(:59)?$/
 /** "Số dư đầu ngày/Opening balance" in the download; "Số dư đầu kỳ" in the monthly statement. */
@@ -217,17 +223,36 @@ interface HeaderPeriod {
 }
 
 function headerPeriod(rows: Grid): HeaderPeriod | null {
-  for (const row of rows) {
-    const text = label(row.map(cellText).join(" ").slice(0, PERIOD_SCAN_CHARS))
+  for (const [index, row] of rows.entries()) {
+    // Cell by cell, so the period's own cells can be told from the rest of
+    // the row (a print time, an account name).
+    const cells = row.map((cell) => label(cellText(cell)))
+    const text = cells.join(" ").slice(0, PERIOD_SCAN_CHARS)
     const match = PERIOD.exec(text)
-    if (match) {
-      return {
-        otherTime: TIME_LIKE.test(text.replace(PERIOD_DATE, " ")),
-        from: bankDate(match[1]).day,
-        fromTime: match[2] ?? null,
-        to: bankDate(match[3]).day,
-        toTime: match[4] ?? null,
+    if (!match) continue
+    // The period's stretch: from "tu ngay" to the end of the to-date's cell,
+    // and the next non-empty cell when it is a time or a time label.
+    const end = match.index + match[0].length
+    let stretch = text.slice(match.index, end)
+    let offset = 0
+    for (const [i, cell] of cells.entries()) {
+      const cellEnd = offset + cell.length
+      if (end <= cellEnd) {
+        stretch += text.slice(end, Math.min(cellEnd, text.length))
+        const next = cells.slice(i + 1).find((c) => c !== "")
+        if (next !== undefined && TIME_CELL.test(next)) stretch += ` ${next}`
+        break
       }
+      offset = cellEnd + 1
+    }
+    return {
+      otherTime:
+        TIME_LIKE.test(stretch.replace(PERIOD_DATE, " ")) ||
+        rows.some((other, i) => i !== index && other.some((cell) => TIME_RANGE.test(label(cellText(cell))))),
+      from: bankDate(match[1]).day,
+      fromTime: match[2] ?? null,
+      to: bankDate(match[3]).day,
+      toTime: match[4] ?? null,
     }
   }
   return null

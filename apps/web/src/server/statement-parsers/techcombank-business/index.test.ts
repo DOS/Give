@@ -305,6 +305,8 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     ["an end after a dash", "01/11/2026", "15/11/2026 - 14:30", "partial"],
     ["a start after a comma", "01/11/2026, 08:00", "15/11/2026", "partial"],
     ["a 12-hour time", "01/11/2026 12:00 AM", "15/11/2026", "partial"],
+    ["an end written 14g30", "01/11/2026", "15/11/2026 14g30", "partial"],
+    ["an end written 14.30", "01/11/2026", "15/11/2026 14.30", "partial"],
   ])("reads %s on the period line as a %s export", async (_, from, to, coverage) => {
     const parsed = await tcbBusinessParser.parse(statement({ top: period(from, to) }))
     expect([parsed.periodFrom, parsed.periodTo, parsed.coverage]).toEqual(["2026-11-01", "2026-11-15", coverage])
@@ -320,6 +322,38 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
       })
     )
     expect(parsed.coverage).toBe("partial")
+  })
+
+  it("reads a time range on its own row above the table as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026"],
+          ["Từ giờ/From time", "08:00", "Đến giờ/To time", "14:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it.each<[string, XlsxCell[]]>([
+    ["a print time", ["Ngày giờ in/Printed on", "18/11/2026 08:45"]],
+    ["a period heading", ["Thời gian/Time period"]],
+    ["an account name with SA", ["QUY TU THIEN SA PA"]],
+    ["an account name with CH", ["CONG TY CH 3 MIEN"]],
+    ["an address with 12h45", ["12h45 Lê Lợi"]],
+    ["an amount with separators", ["1.000.000"]],
+  ])("keeps a full statement full when the period row also carries %s", async (_, extra) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", ...extra],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe("full")
   })
 
   it("refuses a partial export of past days in the pipeline", async () => {
