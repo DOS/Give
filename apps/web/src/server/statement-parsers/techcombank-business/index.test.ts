@@ -358,6 +358,37 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     expect(() => normalizeStatement(tcbBusinessParser, parsed, NOW)).toThrow("STATEMENT_PARTIAL_EXPORT")
   })
 
+  it("reads a time range in a cell after the period as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", "08:00 - 14:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it("reads a Thời gian/Time row with a time range above the table as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({ top: [...withBalances("10,000", "11,000"), ["Thời gian/Time", "08:00 - 14:30"]] })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it("reads date-typed period cells that end at 23:59 as a full statement", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", { date: "2026-11-01T00:00:00" }, "Đến ngày/To", { date: "2026-11-15T23:59:00" }],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect([parsed.periodFrom, parsed.periodTo, parsed.coverage]).toEqual(["2026-11-01", "2026-11-15", "full"])
+  })
+
   it("reads a period line with empty cells between its parts", async () => {
     const parsed = await tcbBusinessParser.parse(
       statement({

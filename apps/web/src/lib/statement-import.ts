@@ -94,7 +94,11 @@ export const DEFAULT_REVIEW_THRESHOLD_VND = 20_000_000
  */
 export async function getReviewThreshold(db: Db): Promise<number | null> {
   const { data, error } = await db.from("statement_review_settings").select("threshold_vnd").maybeSingle()
-  if (error || !data) return null
+  if (error) {
+    console.error("statement_review_settings read failed:", error.code ?? "unknown")
+    return null
+  }
+  if (!data) return null
   const value = Number((data as { threshold_vnd: unknown }).threshold_vnd)
   return Number.isSafeInteger(value) && value > 0 ? value : null
 }
@@ -152,7 +156,7 @@ const UPLOAD_MESSAGES: Record<string, string> = {
   STATEMENT_PERIOD_INVALID: "Khoảng thời gian của sao kê không hợp lệ (ngày kết thúc không được sau hôm nay).",
   STATEMENT_PERIOD_REQUIRED: "Sao kê của định dạng này cần ghi rõ từ ngày, đến ngày.",
   STATEMENT_PARTIAL_EXPORT:
-    "File chỉ có một phần giao dịch (lọc theo giờ, chỉ các giao dịch gần nhất, hoặc không ghi khoảng ngày). Hãy xuất sao kê đầy đủ theo khoảng ngày “Từ ngày … Đến ngày …”, không lọc theo giờ hay loại giao dịch. Chỉ sao kê của riêng ngày hôm nay mới được xuất một phần.",
+    "File chỉ có một phần giao dịch (lọc theo giờ, chỉ các giao dịch gần nhất, hoặc không ghi khoảng ngày). Hãy xuất sao kê đầy đủ theo khoảng ngày “Từ ngày … Đến ngày …”, từ đầu ngày, không lọc theo giờ hay loại giao dịch. Chỉ sao kê có ngày cuối là hôm nay mới được dừng ở giờ xuất file.",
   STATEMENT_BALANCE_INVALID: "Số dư ghi trên sao kê không hợp lệ.",
   GIVE_INBOUND_EVENT_DISMISSED: `Đội tài chính đã bỏ qua file này (hoặc một phần của nó), nên Give không nhập nữa. Nếu cần nhập lại, hãy liên hệ đội tài chính của Give ${VIA_CONTACT_EMAIL}.`,
   STATEMENT_PART_PREVIOUS_FAILED: "Phần trước của file không nhập được, nên phần này cũng không được nhập.",

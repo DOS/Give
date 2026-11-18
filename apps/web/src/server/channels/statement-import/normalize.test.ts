@@ -94,8 +94,33 @@ describe("normalizeStatement", () => {
     })
   })
 
-  it("takes the upload time as the export time when the file states none", () => {
-    expect(normalizeStatement(IDS, statement([tx()]), NOW).exported_at).toBe(NOW.toISOString())
+  it("stages the last day as unfinished when the file states no export time (DOS/Give#57)", () => {
+    // Period 1 to 2 Oct, uploaded on the 5th: the last second of the 2nd, Hanoi time.
+    expect(normalizeStatement(IDS, statement([tx()]), NOW).exported_at).toBe("2026-10-02T16:59:59.000Z")
+    // A period ending today: the upload time.
+    const today = statement([tx()], { periodTo: "2026-10-05" })
+    expect(normalizeStatement(IDS, today, NOW).exported_at).toBe(NOW.toISOString())
+    // Without a period (a stable-id format): the upload time.
+    const noPeriod = statement([tx()], { periodFrom: null, periodTo: null })
+    expect(normalizeStatement(IDS, noPeriod, NOW).exported_at).toBe(NOW.toISOString())
+  })
+
+  it("keeps a stated export time", () => {
+    const parsed = statement([tx()], { exportedAt: new Date("2026-10-03T08:00:00+07:00") })
+    expect(normalizeStatement(IDS, parsed, NOW).exported_at).toBe("2026-10-03T01:00:00.000Z")
+  })
+
+  it("compares with today in Hanoi, not UTC (DOS/Give#57)", () => {
+    // 00:30 on 6 Oct in Hanoi is still 5 Oct in UTC.
+    const late = new Date("2026-10-05T17:30:00Z")
+    const endsEarly = (to: string) =>
+      statement([tx({ bookedAt: new Date(`${to}T09:00:00+07:00`) })], {
+        coverage: "ends_early",
+        periodFrom: to,
+        periodTo: to,
+      })
+    expect(refusal(() => normalizeStatement(IDS, endsEarly("2026-10-05"), late)).code).toBe("STATEMENT_PARTIAL_EXPORT")
+    expect(normalizeStatement(IDS, endsEarly("2026-10-06"), late).period_to).toBe("2026-10-06")
   })
 
   it("masks the counterparty account wherever it appears in the raw cells", () => {
@@ -172,7 +197,7 @@ describe("normalizeStatement", () => {
       })
     })
 
-    // DOS/Give#57: only full statements; a partial export of today only.
+    // DOS/Give#57: only full statements; an export of today may end early.
     it.each<[string, Partial<ParsedStatement>]>([
       ["a partial export of a past day", { coverage: "partial", periodFrom: "2026-10-02", periodTo: "2026-10-02" }],
       ["a partial export reaching today from an earlier day", { coverage: "partial", periodTo: "2026-10-05" }],
@@ -180,10 +205,11 @@ describe("normalizeStatement", () => {
       ["an export that ends early on a past day", { coverage: "ends_early" }],
       ["a parser that states no coverage", { coverage: undefined }],
       ["a coverage the contract does not know", { coverage: "most" as never }],
+      ["a partial export of today alone", { coverage: "partial", periodFrom: "2026-10-05", periodTo: "2026-10-05" }],
       [
-        "a partial export of today printed after midnight",
+        "an export of today that ends early, printed after midnight",
         {
-          coverage: "partial",
+          coverage: "ends_early",
           periodFrom: "2026-10-05",
           periodTo: "2026-10-05",
           exportedAt: new Date("2026-10-06T00:10:00+07:00"),
@@ -195,7 +221,6 @@ describe("normalizeStatement", () => {
     })
 
     it.each<[string, Partial<ParsedStatement>]>([
-      ["a partial export of today alone", { coverage: "partial", periodFrom: "2026-10-05", periodTo: "2026-10-05" }],
       ["an export that ends early today", { coverage: "ends_early", periodTo: "2026-10-05" }],
     ])("accepts %s", (_name, overrides) => {
       const parsed = statement([tx({ bookedAt: new Date("2026-10-05T09:00:00+07:00") })], overrides)

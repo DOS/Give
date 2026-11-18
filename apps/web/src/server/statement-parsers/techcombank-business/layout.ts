@@ -81,17 +81,22 @@ const PERIOD_DATE = new RegExp(`${DATE_TEXT}${TIME_TEXT}`, "g")
  * it counts as partial (fail closed).
  */
 const TIME_LIKE = /\d{1,2} ?(?::|h|g|gio|\.) ?\d{2}|\d ?(?:am|pm|sa|ch)\b|\b(?:gio|time|luc)\b/
+/** One time of day ("14:30", "14h30", "14g30", "14.30", "2 PM", "8 SA"). */
+const ONE_TIME = "(?:\\d{1,2} ?(?::|h|g|gio|\\.) ?\\d{2}(?::\\d{2})?(?: ?(?:am|pm|sa|ch))?|\\d{1,2} ?(?:am|pm|sa|ch))"
 /**
- * A cell that is only a time or a time label, with an optional connector
- * before it and time zone after it ("14:30", "8 SA", "Giờ/Time", "lúc
- * 14:30", "- 14:30", "đến 14h30", "14:30 (GMT+7)").
+ * A cell that is only a time, a time range or a time label, with an optional
+ * connector before it and time zone after it ("14:30", "08:00 - 14:30",
+ * "Giờ/Time", "lúc 14:30", "- 14:30", "đến 14h30", "14:30 (GMT+7)").
  */
-const TIME_CELL =
-  /^(?:(?:luc|den|tu|-|–|—) ?)?(?:\d{1,2} ?(?::|h|g|gio|\.) ?\d{2}(?::\d{2})?(?: ?(?:am|pm|sa|ch))?|\d{1,2} ?(?:am|pm|sa|ch)|(?:gio|time|luc)(?: ?\/ ?(?:gio|time))?)(?: ?\(?(?:gmt|utc|ict)[^)]*\)?)?$/
+const TIME_CELL = new RegExp(
+  `^(?:(?:luc|den|tu|-|–|—) ?)?(?:${ONE_TIME}(?: ?(?:-|–|—|den) ?${ONE_TIME})?|(?:gio|time|luc)(?: ?/ ?(?:gio|time))?)(?: ?\\(?(?:gmt|utc|ict)[^)]*\\)?)?$`
+)
+/** A "Thời gian/Time" label cell, whose neighbour on its row may bound the export by time. */
+const TIME_LABEL = /^(?:thoi gian|time)(?: ?\/ ?(?:thoi gian|time))?$/
 /** A label of a time range on another row above the table ("Từ giờ/From time 08:00"). */
 const TIME_RANGE = /\b(tu gio|den gio|from time|to time|gio bat dau|gio ket thuc|start time|end time)\b/
 const START_OF_DAY = /^0?0:00(:00)?$/
-const END_OF_DAY = /^23:59(:59)?$/
+const END_OF_DAY = /^23:59(:\d{2})?$/
 /** "Số dư đầu ngày/Opening balance" in the download; "Số dư đầu kỳ" in the monthly statement. */
 const OPENING = /^(so du dau ngay|so du dau ky|opening balance)$/
 /** "Số dư cuối ngày/ Closing balance" in the download; "Số dư cuối kỳ/Ending balance" in the statement. */
@@ -226,6 +231,16 @@ interface HeaderPeriod {
   otherTime: boolean
 }
 
+/**
+ * Another row above the table that bounds the export by time: a time-range
+ * label ("Từ giờ/From time"), or a "Thời gian/Time" label with a time or
+ * time range on the same row.
+ */
+function timeBoundRow(cells: readonly string[]): boolean {
+  if (cells.some((cell) => TIME_RANGE.test(cell))) return true
+  return cells.some((cell) => TIME_LABEL.test(cell)) && cells.some((cell) => TIME_CELL.test(cell))
+}
+
 function headerPeriod(rows: Grid): HeaderPeriod | null {
   for (const [index, row] of rows.entries()) {
     // Non-empty cells, folded one by one, so the period's own cells can be
@@ -255,7 +270,7 @@ function headerPeriod(rows: Grid): HeaderPeriod | null {
       otherTime:
         TIME_LIKE.test(stretch.replace(PERIOD_DATE, " ")) ||
         following.some((cell) => TIME_CELL.test(cell) && !END_OF_DAY.test(cell)) ||
-        rows.some((other, i) => i !== index && other.some((cell) => TIME_RANGE.test(label(cellText(cell))))),
+        rows.some((other, i) => i !== index && timeBoundRow(other.map((cell) => label(cellText(cell))))),
       from: bankDate(match[1]).day,
       fromTime: match[2] ?? null,
       to: bankDate(match[3]).day,

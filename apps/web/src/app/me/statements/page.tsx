@@ -77,7 +77,8 @@ export default async function StatementsPage() {
           />
         ) : (
           <>
-            {threshold !== null && (
+            {/* Only the account's owner uploads as the organizer; staff uploads to others' accounts are not reviewed. */}
+            {threshold !== null && accounts.some((account) => account.owner_user_id === session.user.id) && (
               <p className="mb-4 text-sm text-muted">
                 Với tài khoản của bạn, các giao dịch sau chỉ được ghi khi đội tài chính của Give đã đối chiếu với ngân
                 hàng: mọi dòng khi chiến dịch chưa có dòng sao kê nào được duyệt, và mọi giao dịch từ{" "}

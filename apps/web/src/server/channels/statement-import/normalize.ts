@@ -193,31 +193,38 @@ function period(parsed: ParsedStatement, now: Date) {
 /**
  * DOS/Give#57: only full statements ("from D1 to D2") are imported. The
  * database takes every day of a period as holding all of that day's rows
- * (the last one up to the export time, when exported that day), so a
- * partial export of a past day would be taken as the whole day. An export
- * that ends early is accepted when its last day is today; any other partial
- * export only when it covers today alone. A parser that states no coverage
- * is refused.
+ * from its start (the last one up to the export time, when exported that
+ * day), so any export missing the start of a day, or the end of a past day,
+ * would be taken as whole days. A partial export is refused, today's
+ * included (PO decision 2026-11-18); an export that ends early only when its
+ * last day is today and it was printed that day. A parser that states no
+ * coverage is refused.
  */
-function assertFullStatement(
-  parsed: ParsedStatement,
-  from: string | null,
-  to: string | null,
-  exportedAt: Date | null,
-  now: Date
-): void {
-  const today = vnDay(now)
+function assertFullStatement(parsed: ParsedStatement, to: string | null, exportedAt: Date | null, now: Date): void {
   const coverage: unknown = parsed.coverage
   if (coverage === "full") return
-  // A partial export of today is staged as ending early only while it was
-  // produced that day: a print time after midnight would make the database
-  // take the day as complete.
-  if (to !== null && exportedAt !== null && exportedAt.getTime() >= vnMidnight(to) + DAY_MS) {
-    throw new StatementImportError("STATEMENT_PARTIAL_EXPORT")
+  if (
+    coverage === "ends_early" &&
+    to === vnDay(now) &&
+    (exportedAt === null || exportedAt.getTime() < vnMidnight(to) + DAY_MS)
+  ) {
+    return
   }
-  if (coverage === "ends_early" && to === today) return
-  if (coverage === "partial" && from === today && to === today) return
   throw new StatementImportError("STATEMENT_PARTIAL_EXPORT")
+}
+
+/**
+ * The export time sent to the database. A file that states when the bank
+ * produced it sends that. Without one the database cannot know whether the
+ * last day was finished when the file was downloaded (a file of the 17th
+ * downloaded at 15:00 and uploaded on the 18th), so the last day is staged
+ * as unfinished: the upload time, but never past the last second of the
+ * period's last day (PO decision 2026-11-18).
+ */
+function stagedExportTime(exportedAt: Date | null, to: string | null, now: Date): Date {
+  if (exportedAt !== null) return exportedAt
+  if (to === null) return now
+  return new Date(Math.min(now.getTime(), vnMidnight(to) + DAY_MS - 1000))
 }
 
 /**
@@ -234,7 +241,7 @@ export function normalizeStatement(
   assertSupportedFormat(format)
   const stable = format.hasStableRowId
   const { from, to, exportedAt } = period(parsed, now)
-  assertFullStatement(parsed, from, to, exportedAt, now)
+  assertFullStatement(parsed, to, exportedAt, now)
   if (!stable && (from === null || to === null)) throw new StatementImportError("STATEMENT_PERIOD_REQUIRED")
   if (!Array.isArray(parsed.rows) || parsed.rows.length === 0 || parsed.rows.length > MAX_ROWS) {
     throw new StatementImportError("STATEMENT_ROWS_INVALID")
@@ -316,10 +323,10 @@ export function normalizeStatement(
     period_to: to,
     opening_balance: balance(parsed.openingBalance),
     closing_balance: balance(parsed.closingBalance),
-    // Without an export time the database takes the time of staging, which
-    // can be a cron retry a day later, and would then count a day the file
-    // cut off as complete. The upload time is the latest the file can be from.
-    exported_at: (exportedAt ?? now).toISOString(),
+    // Never left to the database: it would take the time of staging, which
+    // can be a cron retry a day later, and count a day the file cut off as
+    // complete. See stagedExportTime.
+    exported_at: stagedExportTime(exportedAt, to, now).toISOString(),
     rows,
   }
 }
