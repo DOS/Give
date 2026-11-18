@@ -15,10 +15,17 @@ import type { EmailTransport, OutgoingEmail } from "./transport"
 
 /** Rows leased per claim; small, so a slow provider leaves few rows waiting on their lease. */
 export const CLAIM_BATCH = 10
-/** Stop claiming after this long, well inside the 60 s function limit and the 5-minute lease. */
-export const RUN_BUDGET_MS = 40_000
+/** Stop claiming after this long. */
+export const RUN_BUDGET_MS = 30_000
 /** One send may take this long before it counts as a failed attempt. */
 export const SEND_TIMEOUT_MS = 15_000
+/**
+ * No send starts unless it can time out by this point, well inside the 60 s
+ * function limit (route maxDuration). Rows the run cannot reach in time are
+ * given back uncounted (give.release_outbox) instead of waiting out their
+ * 5-minute lease and spending an attempt.
+ */
+export const SEND_DEADLINE_MS = 45_000
 
 export interface OutboxRunResult {
   claimed: number
@@ -26,6 +33,8 @@ export interface OutboxRunResult {
   retrying: number
   dead: number
   stale: number
+  /** Leased rows given back for the next run. */
+  released: number
 }
 
 export interface OutboxRunOptions {
@@ -120,7 +129,14 @@ async function complete(
   return typeof data === "string" ? data : null
 }
 
-async function sendOne(db: Db, transport: EmailTransport, row: OutboxEmail, options: OutboxRunOptions) {
+type SendOutcome = { status: string | null; timedOut: boolean }
+
+async function sendOne(
+  db: Db,
+  transport: EmailTransport,
+  row: OutboxEmail,
+  options: OutboxRunOptions
+): Promise<SendOutcome> {
   let email: OutgoingEmail
   try {
     if (!isEmailKind(row.kind)) throw new EmailRenderError(`unknown_kind:${row.kind.slice(0, 40)}`)
@@ -128,19 +144,39 @@ async function sendOne(db: Db, transport: EmailTransport, row: OutboxEmail, opti
   } catch (error) {
     const reason = error instanceof EmailRenderError ? error.message : "render_failed"
     console.error("outbox email could not be rendered", row.id, row.kind, reason)
-    return complete(db, row, { ok: false, permanent: true, error: `render: ${reason}` })
+    return {
+      status: await complete(db, row, { ok: false, permanent: true, error: `render: ${reason}` }),
+      timedOut: false,
+    }
   }
   let result: Awaited<ReturnType<EmailTransport["send"]>>
+  let timedOut = false
   try {
     result = await withTimeout(transport.send(email), SEND_TIMEOUT_MS)
   } catch (error) {
+    timedOut = error instanceof Error && error.message === "send_timeout"
     result = { ok: false, permanent: false, error: error instanceof Error ? error.message : "send_failed" }
   }
   if (!result.ok) console.warn("outbox send failed", row.id, row.kind, result.permanent ? "permanent" : "retry")
-  return complete(db, row, result)
+  return { status: await complete(db, row, result), timedOut }
 }
 
-/** One send-outbox run. Throws only when the first claim fails. */
+async function release(db: Db, rows: OutboxEmail[]): Promise<number> {
+  let released = 0
+  for (const row of rows) {
+    const { data, error } = await db.rpc("release_outbox", { p_id: row.id, p_attempt: row.attempt })
+    if (error) console.error("release_outbox failed", row.id, error.code, error.message)
+    else if (data === true) released += 1
+  }
+  return released
+}
+
+/**
+ * One send-outbox run. Throws only when the first claim fails. After a send
+ * times out the run stops and gives back the rest of its batch: the
+ * provider may be stuck, and the transport is closed so the timed-out
+ * connection is dropped rather than left to finish later.
+ */
 export async function sendDueEmails(
   db: Db,
   transport: EmailTransport,
@@ -149,31 +185,44 @@ export async function sendDueEmails(
   const now = options.now ?? Date.now
   const started = now()
   const budget = options.budgetMs ?? RUN_BUDGET_MS
-  const result: OutboxRunResult = { claimed: 0, sent: 0, retrying: 0, dead: 0, stale: 0 }
+  const result: OutboxRunResult = { claimed: 0, sent: 0, retrying: 0, dead: 0, stale: 0, released: 0 }
 
-  while (now() - started < budget) {
-    const { data, error } = await db.rpc("claim_outbox", { p_limit: CLAIM_BATCH })
-    if (error) {
-      if (result.claimed === 0) throw error
-      console.error("claim_outbox failed", error.code, error.message)
-      break
-    }
-    const rows = Array.isArray(data) ? data : []
-    if (rows.length === 0) break
-    result.claimed += rows.length
-    for (const raw of rows) {
-      const row = parseRow(raw)
-      if (!row) {
-        console.error("claim_outbox returned an unexpected row")
-        continue
+  try {
+    run: while (now() - started < budget) {
+      const { data, error } = await db.rpc("claim_outbox", { p_limit: CLAIM_BATCH })
+      if (error) {
+        if (result.claimed === 0) throw error
+        console.error("claim_outbox failed", error.code, error.message)
+        break
       }
-      const status = await sendOne(db, transport, row, options)
-      if (status === "sent") result.sent += 1
-      else if (status === "pending") result.retrying += 1
-      else if (status === "dead") result.dead += 1
-      else if (status === "stale") result.stale += 1
+      const raws = Array.isArray(data) ? data : []
+      if (raws.length === 0) break
+      result.claimed += raws.length
+      const rows: OutboxEmail[] = []
+      for (const raw of raws) {
+        const row = parseRow(raw)
+        if (row) rows.push(row)
+        else console.error("claim_outbox returned an unexpected row")
+      }
+      for (let i = 0; i < rows.length; i++) {
+        if (now() - started + SEND_TIMEOUT_MS > SEND_DEADLINE_MS) {
+          result.released += await release(db, rows.slice(i))
+          break run
+        }
+        const { status, timedOut } = await sendOne(db, transport, rows[i], options)
+        if (status === "sent") result.sent += 1
+        else if (status === "pending") result.retrying += 1
+        else if (status === "dead") result.dead += 1
+        else if (status === "stale") result.stale += 1
+        if (timedOut) {
+          result.released += await release(db, rows.slice(i + 1))
+          break run
+        }
+      }
+      if (raws.length < CLAIM_BATCH) break
     }
-    if (rows.length < CLAIM_BATCH) break
+  } finally {
+    transport.close?.()
   }
   return result
 }

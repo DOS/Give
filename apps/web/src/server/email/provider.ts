@@ -25,13 +25,17 @@ import type { EmailTransport } from "./transport"
  *   on beta. Defaults to NEXT_PUBLIC_SITE_URL, then https://give.vn in Production.
  *
  * In Production with `smtp` and missing credentials, sending is off: the job
- * claims nothing, so queued emails wait instead of being marked sent.
+ * claims nothing, so queued emails wait instead of being marked sent. A
+ * deployment outside Production that points at the Production database
+ * claims nothing either.
  */
 
 export const DEFAULT_SMTP_HOST = "email-smtp.ap-southeast-1.amazonaws.com"
 export const DEFAULT_SMTP_PORT = 587
 export const DEFAULT_EMAIL_FROM = "Give <no-reply@give.vn>"
 const PRODUCTION_ORIGIN = "https://give.vn"
+/** The Production DOS Supabase project (the shared `dos` project). */
+export const PRODUCTION_SUPABASE_REF = "gulptwduchsjcsbndmua"
 
 type Env = Record<string, string | undefined>
 
@@ -55,6 +59,14 @@ export function emailLinkOrigin(env: Env = process.env): string | null {
   )
 }
 
+export function usesProductionDatabase(env: Env = process.env): boolean {
+  try {
+    return new URL(env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname.split(".")[0] === PRODUCTION_SUPABASE_REF
+  } catch {
+    return false
+  }
+}
+
 export function emailDelivery(env: Env = process.env): EmailDelivery {
   const value = env.EMAIL_DELIVERY?.trim().toLowerCase()
   if (value === "smtp" || value === "log") return value
@@ -67,6 +79,9 @@ export function emailSettingsFromEnv(env: Env = process.env): EmailSettings {
   const delivery = emailDelivery(env)
   const from = env.EMAIL_FROM?.trim() || DEFAULT_EMAIL_FROM
   const origin = emailLinkOrigin(env)
+  // Outside Production the job must not settle Production's outbox: the
+  // log transport would mark real people's emails sent without sending them.
+  if (!production && usesProductionDatabase(env)) missing.push("NON_PRODUCTION_DEPLOYMENT_ON_PRODUCTION_DATABASE")
   if (!isSenderAddress(from)) missing.push("EMAIL_FROM")
   if (!origin) missing.push("EMAIL_LINK_ORIGIN")
 

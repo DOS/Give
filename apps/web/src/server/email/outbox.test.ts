@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
-import { CLAIM_BATCH, sendDueEmails } from "./outbox"
+import { CLAIM_BATCH, SEND_DEADLINE_MS, SEND_TIMEOUT_MS, sendDueEmails } from "./outbox"
 import type { EmailTransport, OutgoingEmail, SendResult } from "./transport"
 
 const OPTIONS = { origin: "https://give.vn", from: "Give <no-reply@give.vn>", replyTo: "hi@give.vn" }
@@ -31,6 +31,7 @@ let sent: OutgoingEmail[]
 let result: SendResult | Error
 
 const transport: EmailTransport = {
+  close: vi.fn(),
   send: vi.fn(async (email: OutgoingEmail) => {
     sent.push(email)
     if (result instanceof Error) throw result
@@ -41,6 +42,7 @@ const transport: EmailTransport = {
 const handler: Handler = (call) => {
   if (call.target === "rpc:claim_outbox") return { data: claims.shift() ?? [] }
   if (call.target === "rpc:complete_outbox") return { data: completeStatus }
+  if (call.target === "rpc:release_outbox") return { data: true }
   return undefined
 }
 
@@ -61,7 +63,7 @@ describe("sendDueEmails", () => {
     claims = [[row(1)]]
     const outcome = await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
 
-    expect(outcome).toEqual({ claimed: 1, sent: 1, retrying: 0, dead: 0, stale: 0 })
+    expect(outcome).toEqual({ claimed: 1, sent: 1, retrying: 0, dead: 0, stale: 0, released: 0 })
     expect(op(calls[0], "args")).toEqual([{ p_limit: CLAIM_BATCH }])
     expect(sent[0]).toMatchObject({
       from: OPTIONS.from,
@@ -142,7 +144,7 @@ describe("sendDueEmails", () => {
       return handler(call)
     }, calls)
     const outcome = await sendDueEmails(db as never, transport, OPTIONS)
-    expect(outcome).toEqual({ claimed: 2, sent: 0, retrying: 0, dead: 0, stale: 1 })
+    expect(outcome).toEqual({ claimed: 2, sent: 0, retrying: 0, dead: 0, stale: 1, released: 0 })
     expect(sent).toHaveLength(2)
   })
 
@@ -173,5 +175,41 @@ describe("sendDueEmails", () => {
     const outcome = await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
     expect(outcome.sent).toBe(1)
     expect(sent).toHaveLength(1)
+  })
+
+  it("gives back the rows it cannot send before its deadline, and closes the transport", async () => {
+    vi.mocked(transport.close!).mockClear()
+    claims = [[row(70), row(71, { attempt: 3 }), row(72)]]
+    // started at 0; the first send starts at 0, the second would start too late.
+    const clock = [0, 0, 0, SEND_DEADLINE_MS - SEND_TIMEOUT_MS + 1]
+    const outcome = await sendDueEmails(fakeDb(handler, calls) as never, transport, {
+      ...OPTIONS,
+      now: () => clock.shift() ?? SEND_DEADLINE_MS,
+    })
+    expect(outcome).toMatchObject({ claimed: 3, sent: 1, released: 2 })
+    expect(sent.map((e) => e.to)).toEqual(["org70@example.com"])
+    expect(calls.filter((c) => c.target === "rpc:release_outbox").map((c) => op(c, "args")?.[0])).toEqual([
+      { p_id: row(71).id, p_attempt: 3 },
+      { p_id: row(72).id, p_attempt: 1 },
+    ])
+    expect(transport.close).toHaveBeenCalledTimes(1)
+  })
+
+  it("stops after a send times out: that attempt fails, the rest of the batch goes back", async () => {
+    vi.useFakeTimers()
+    try {
+      const stuck: EmailTransport = { send: () => new Promise(() => {}), close: vi.fn() }
+      claims = [[row(80), row(81)]]
+      completeStatus = "pending"
+      const run = sendDueEmails(fakeDb(handler, calls) as never, stuck, { ...OPTIONS, now: () => 0 })
+      await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS)
+      const outcome = await run
+      expect(outcome).toMatchObject({ claimed: 2, retrying: 1, released: 1 })
+      expect(completes()[0]).toMatchObject({ p_id: row(80).id, p_ok: false, p_error: "send_timeout" })
+      expect(calls.filter((c) => c.target === "rpc:claim_outbox")).toHaveLength(1)
+      expect(stuck.close).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

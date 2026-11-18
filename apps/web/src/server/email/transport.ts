@@ -25,4 +25,6 @@ export type SendResult =
 
 export interface EmailTransport {
   send(email: OutgoingEmail): Promise<SendResult>
+  /** Drops open connections at the end of a run (or after a timed-out send). */
+  close?(): void
 }

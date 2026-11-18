@@ -49,6 +49,11 @@ export function sesMessageId(response: unknown, fallback: unknown): string | nul
 
 export function createSmtpTransport(config: SmtpConfig): EmailTransport {
   const transporter = nodemailer.createTransport({
+    // One connection reused for the whole run (closed by the job at its end):
+    // a new TLS + AUTH handshake per email to ap-southeast-1 is slow.
+    pool: true,
+    maxConnections: 1,
+    maxMessages: 100,
     host: config.host,
     port: config.port,
     secure: config.port === 465,
@@ -59,6 +64,7 @@ export function createSmtpTransport(config: SmtpConfig): EmailTransport {
     socketTimeout: 15_000,
   })
   return {
+    close: () => transporter.close(),
     async send(email: OutgoingEmail): Promise<SendResult> {
       const { "Message-ID": messageId, ...headers } = email.headers
       try {

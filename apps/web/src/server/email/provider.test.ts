@@ -108,3 +108,20 @@ describe("emailLinkOrigin", () => {
     expect(emailLinkOrigin({ VERCEL_ENV: "preview" })).toBeNull()
   })
 })
+
+describe("a deployment outside Production on the Production database", () => {
+  it("claims nothing, so it never marks real people's emails sent", () => {
+    const prodDb = { NEXT_PUBLIC_SUPABASE_URL: "https://gulptwduchsjcsbndmua.supabase.co" }
+    expect(emailSettingsFromEnv({ ...BETA, ...prodDb })).toEqual({
+      ok: false,
+      missing: ["NON_PRODUCTION_DEPLOYMENT_ON_PRODUCTION_DATABASE"],
+    })
+    expect(emailSettingsFromEnv({ ...prodDb, EMAIL_LINK_ORIGIN: "http://localhost:3000" })).toMatchObject({ ok: false })
+    expect(emailSettingsFromEnv({ ...PROD, ...CREDS, ...prodDb })).toMatchObject({ ok: true })
+    expect(
+      emailSettingsFromEnv({ ...BETA, NEXT_PUBLIC_SUPABASE_URL: "https://oyajkbadsykigtfrpdpg.supabase.co" })
+    ).toMatchObject({
+      ok: true,
+    })
+  })
+})
