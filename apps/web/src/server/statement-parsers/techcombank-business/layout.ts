@@ -65,7 +65,7 @@ const DATE_TEXT = "(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}/\\d{4})"
  * A time of day right after a date, in the same cell ("01/11/2026 08:00",
  * "2026-11-01t08:00:00" once folded, "15/11/2026 11:59 PM").
  */
-const TIME_TEXT = "(?:(?: |t)(\\d{1,2}:\\d{2}(?::\\d{2})?(?: ?(?:am|pm|sa|ch))?))?"
+const TIME_TEXT = "(?:(?:[,.] ?| |t)(\\d{1,2}:\\d{2}(?::\\d{2})?(?: ?(?:am|pm|sa|ch))?))?"
 /** Cells of a row are joined with this, so a pattern never reads one cell's time as another's. */
 const CELL_GAP = " | "
 /** Between a label and its date: in the same cell, or in the next one. */
@@ -92,7 +92,7 @@ const HAS_DATE = new RegExp(DATE_TEXT)
  * reads as a time (fail closed: the file is refused, never taken as whole).
  */
 const ANY_TIME_SOURCE =
-  "(?<![\\d.,:])\\d{1,2} ?: ?\\d{2}(?![\\d])|(?<![\\d.,:])\\d{1,2} ?(?:h|g|gio)(?: ?\\d{2}|(?![a-z\\d]))|(?<![\\d.,:])\\d{1,2}\\.\\d{2}(?![\\d.,])|(?<![\\d.,:])\\d{1,2} ?(?:am|pm|sa|ch)\\b"
+  "(?<!\\d|\\d[.,:])\\d{1,2} ?: ?\\d{2}(?![\\d])|(?<!\\d|\\d[.,:])\\d{1,2} ?(?:h|g|gio)(?: ?\\d{2}|(?![a-z\\d]))|(?<!\\d|\\d[.,:])\\d{1,2}\\.\\d{2}(?![\\d.,])|(?<!\\d|\\d[.,:])\\d{1,2} ?(?:am|pm|sa|ch)\\b"
 const ANY_TIME = new RegExp(ANY_TIME_SOURCE)
 const ANY_TIMES = new RegExp(ANY_TIME_SOURCE, "g")
 /** The first date of a text (a print or export time holds one). */

@@ -453,6 +453,44 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     expect(parsed.coverage).not.toBe("full")
   })
 
+  it.each<[string, XlsxCell[][], XlsxCell[][]]>([
+    ["a time right after a colon above the table", [["Giờ/Time:14:30"]], []],
+    ["a time right after a comma above the table", [["Khung giờ,14:30"]], []],
+    ["a time right after a colon in the footer", [], [["Lọc đến:14:30"]]],
+    ["a time after a lone comma in the footer", [], [["Bộ lọc", ",14:30"]]],
+  ])("reads %s as partial", async (_, top, bottom) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({ top: [...withBalances("10,000", "11,000"), ...top], bottom })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it("reads the period row with Đến:14:30 as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", "Đến:14:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it.each<[string, string, string]>([
+    ["a doubled comma", "15/11/2026,,14:30", "partial"],
+    ["a dot and comma", "15/11/2026.,14:30", "partial"],
+    ["a comma then the end of the day", "15/11/2026, 23:59", "full"],
+    ["a comma then an early end", "15/11/2026, 14:30", "ends_early"],
+  ])("reads a to-date cell with %s", async (_, to, coverage) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [["Từ ngày/From", "01/11/2026", "Đến ngày/To", to], ...withBalances("10,000", "11,000").slice(1)],
+      })
+    )
+    expect(parsed.coverage).toBe(coverage)
+  })
+
   it("reads a time filter in a row after the table as partial", async () => {
     const parsed = await tcbBusinessParser.parse(statement({ bottom: [["Điều kiện lọc", "08:00-14:30"]] }))
     expect([parsed.coverage, parsed.coverageDetail]).toEqual(["partial", "unplaced_time"])
