@@ -526,8 +526,8 @@ type.
    Next's `after()`), and again from the `reprocess-inbound` cron. It works
    within the existing inbound rules (`apps/web/src/server/inbound/index.ts`).
    An attempt is cut off after 15 s (`PROCESSOR_TIMEOUT_MS`). Every attempt
-   counts toward the 10 before parking. A second attempt within 2 minutes of
-   the first reports `busy`. So Tingee's list may lag the webhook, but the
+   counts toward the 10 before parking. A new attempt reports `busy` while an earlier one
+   may still be running (up to 2 minutes). So Tingee's list may lag the webhook, but the
    lookup waits briefly **inside one attempt**, a few tries within about
    10 s, rather than spending attempts. If the row is still missing, the
    attempt fails and the cron retries it minutes later. The M2 goal of
