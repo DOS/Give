@@ -476,6 +476,18 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
   })
 
   it.each<[string, XlsxCell[], string]>([
+    ["an enquiry time holding a range", ["Thời gian truy vấn/Enquiry time: 08:00 - 14:30"], "partial"],
+    ["an enquiry time label then a range", ["Thời gian truy vấn/Enquiry time", "08:00 - 14:30"], "partial"],
+    ["a print label then a date and a range", ["Ngày giờ in/Printed on", "18/11/2026", "08:00-14:30"], "partial"],
+    ["a full-width colon", ["Giờ/Time", "08：00 - 14：30"], "partial"],
+    ["an address with Hàng", ["Địa chỉ/Address", "12 Hàng Bài, Hà Nội"], "full"],
+    ["an address with Giảng", ["Địa chỉ/Address", "Số 5 Giảng Võ, Quận 3 Hồ Chí Minh"], "full"],
+    ["a print time worded Printed at", ["Printed at", "18/11/2026 08:45"], "full"],
+    ["a print time worded In lúc", ["In lúc: 08:45 18/11/2026"], "full"],
+    ["a print time worded Ngày giờ in báo cáo", ["Ngày giờ in báo cáo", "18/11/2026 08:45"], "full"],
+    ["a print time worded Ngày/giờ in", ["Ngày/giờ in", "18/11/2026 08:45"], "full"],
+    ["a creation time", ["Ngày tạo/Created on", "18/11/2026 08:45"], "full"],
+    ["a whole day to 24:00", ["Thời gian/Time", "00:00 - 24:00"], "full"],
     ["a bare range", ["08:00 - 14:30"], "partial"],
     ["Hours and a range", ["Hours", "08:00 - 14:30"], "partial"],
     ["Timeframe: 08:00-14:30", ["Timeframe: 08:00-14:30"], "partial"],

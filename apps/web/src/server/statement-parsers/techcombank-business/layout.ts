@@ -88,24 +88,29 @@ const DATE_ONLY = new RegExp(DATE_TEXT, "g")
  * "8h", "14h30", "14g30", "14.30", "8 giờ", "2 PM", "8 SA"); never part of
  * a longer number ("1.000.000", "10,000").
  */
-const ANY_TIME =
-  /(?<![\d.,:])\d{1,2} ?(?::|h|g|gio)(?: ?\d{2})?(?![\d])|(?<![\d.,:])\d{1,2}\.\d{2}(?![\d.,])|(?<![\d.,:])\d{1,2} ?(?:am|pm|sa|ch)\b/
+const ANY_TIME_SOURCE =
+  "(?<![\\d.,:])\\d{1,2} ?(?::|h|g|gio)(?: ?\\d{2}|(?![a-z\\d]))|(?<![\\d.,:])\\d{1,2}\\.\\d{2}(?![\\d.,])|(?<![\\d.,:])\\d{1,2} ?(?:am|pm|sa|ch)\\b"
+const ANY_TIME = new RegExp(ANY_TIME_SOURCE)
+const ANY_TIMES = new RegExp(ANY_TIME_SOURCE, "g")
+/** The first date of a text (a print or export time holds one). */
+const ONE_DATE = new RegExp(DATE_TEXT)
 /** A range separator ("-", "–", "—", "~", "→", "/", "to", "đến"). */
 const SEP = "(?:-|–|—|~|→|/|to|den)"
 /** A range over the whole day, standing alone ("00:00 - 23:59", "12:00 AM - 11:59 PM"), which bounds nothing. */
 const WHOLE_DAY_RANGE = new RegExp(
-  `(?<![\\d:.,])(?:0?0:00(?::00)?|12:00(?::00)? ?(?:am|sa)) ?${SEP} ?(?:23:59(?::\\d{2})?|11:59(?::\\d{2})? ?(?:pm|ch))(?![\\d:])`,
+  `(?<![\\d:.,])(?:0?0:00(?::00)?|12:00(?::00)? ?(?:am|sa)) ?${SEP} ?(?:23:59(?::\\d{2})?|24:00(?::00)?|11:59(?::\\d{2})? ?(?:pm|ch))(?![\\d:])`,
   "g"
 )
 /** Labels of a time range above the table ("Từ giờ/From time"), which bound the export even without a value. */
 const TIME_RANGE = /\b(tu gio|den gio|from time|to time|gio bat dau|gio ket thuc|start time|end time)\b/
 /**
- * Labels of the time the file was printed, exported or enquired, whose value
- * (a date and a time) bounds nothing.
+ * Labels of the moment the file was printed, exported or created, whose
+ * value (one date and at most one time) bounds nothing. An enquiry time is
+ * not one: it may be the enquiry's window.
  */
 const EXPORT_LABEL =
-  /^(?:ngay gio in|printed on|ngay in|thoi gian in|printed time|print time|ngay gio xuat|thoi gian xuat|exported at|export time|thoi gian truy van|enquiry time)$/
-/** A cell that holds only a date and/or a time ("18/11/2026", "08:45", "18/11/2026, 08:45"). */
+  /^(?:ngay gio in|gio in|printed on|printed at|ngay in|in luc|thoi gian in|printed time|print time|ngay gio in bao cao|ngay gio xuat|thoi gian xuat|exported at|export time|ngay tao|created on)$/
+/** A cell that holds only a date or a time ("18/11/2026", "08:45"). */
 const DATE_TIME_ONLY = /^[\d/:.,\- ]*(?:(?:am|pm|sa|ch)[\d/:.,\- ]*)?$/
 const START_OF_DAY = /^(?:0?0:00(?::00)?|12:00(?::00)? ?(?:am|sa))$/
 const END_OF_DAY = /^(?:23:59(?::\d{2})?|11:59(?::\d{2})? ?(?:pm|ch))$/
@@ -262,10 +267,16 @@ function timeBoundRow(cells: readonly string[]): boolean {
   for (let i = 0; i < cells.length; i++) {
     const cell = cells[i]
     if (labelOf(cell).some((part) => EXPORT_LABEL.test(part))) {
-      // A label on its own: its value follows in the next cells.
-      if (!cell.includes(":") || cell.trimEnd().endsWith(":")) {
-        for (let k = 0; k < 2 && i + 1 < cells.length && DATE_TIME_ONLY.test(cells[i + 1]); k++) i++
+      // The value of a print or export label: after its colon, or in the
+      // next one or two cells (a date, then a time). It is one moment.
+      const colon = cell.indexOf(":")
+      let value = colon > 0 ? cell.slice(colon + 1) : ""
+      if (value.trim() === "") {
+        for (let k = 0; k < 2 && i + 1 < cells.length && DATE_TIME_ONLY.test(cells[i + 1]); k++) {
+          value += ` ${cells[++i]}`
+        }
       }
+      if (!isOneMoment(value)) return true
       continue
     }
     const rest = cell.replace(WHOLE_DAY_RANGE, " ").replace(DATE_ONLY, " ")
@@ -274,8 +285,17 @@ function timeBoundRow(cells: readonly string[]): boolean {
   return false
 }
 
+/** One date with at most one time ("18/11/2026 08:45", "08:45, 18/11/2026"): a moment, not a range. */
+function isOneMoment(value: string): boolean {
+  const rest = value.replace(ONE_DATE, " ")
+  return (rest.match(ANY_TIMES) ?? []).length <= 1 && !DATE_ONLY.test(rest)
+}
+
 function headerPeriod(rows: Grid): HeaderPeriod | null {
-  const folded = rows.map((row) => row.map((cell) => label(cellText(cell))).filter((cell) => cell !== ""))
+  // NFKC first: a full-width colon ("08：00") reads as a colon.
+  const folded = rows.map((row) =>
+    row.map((cell) => label(cellText(cell).normalize("NFKC"))).filter((cell) => cell !== "")
+  )
   for (const [index, cells] of folded.entries()) {
     const text = cells.join(CELL_GAP)
     const match = PERIOD.exec(text.slice(0, PERIOD_SCAN_CHARS))
