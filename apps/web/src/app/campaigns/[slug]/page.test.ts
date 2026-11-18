@@ -399,3 +399,217 @@ describe("generateMetadata (/campaigns/[slug], DOS/Give#232)", () => {
     expect(state.anonCalls).toHaveLength(0)
   })
 })
+
+describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/Give#240)", () => {
+  const TIER_FIXTURE = {
+    id: "tier-1",
+    campaign_id: CAMPAIGN,
+    title: "Mức đồng hành",
+    description: "Quà kỷ niệm.",
+    min_amount: 200_000,
+    quantity_limit: 50,
+    quantity_claimed: 3,
+    estimated_delivery: "2027-03-01",
+    requires_shipping: false,
+    shipping_note: null,
+    status: "active" as const,
+    sort_order: 1,
+    retired_at: null,
+  }
+
+  it.each(["draft", "in_review", "changes_requested", "approved"] as const)(
+    "keeps pre-launch preview banner and closedNote copy on %s campaigns (give and back)",
+    async (status) => {
+      state.session = {
+        user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
+        accessToken: "org-token",
+      }
+      state.anonHandler = () => ({ data: null })
+
+      state.userHandler = (call) => {
+        if (call.target === "campaigns") return { data: campaignFixture(status) }
+        if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+        return undefined
+      }
+      const giveHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+      expect(giveHtml).toContain("Bản xem trước: chiến dịch đang ở trạng thái")
+      expect(giveHtml).toContain("và chưa công khai.")
+      expect(giveHtml).toContain("Give sắp mở nhận ủng hộ. Tiền sẽ đi thẳng vào tài khoản nhận của chiến dịch.")
+
+      state.userHandler = (call) => {
+        if (call.target === "campaigns") {
+          return { data: { ...campaignFixture(status), type: "back", funding_model: "all_or_nothing" } }
+        }
+        if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+        if (call.target === "reward_tiers") return { data: [TIER_FIXTURE] }
+        return undefined
+      }
+      const backHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+      expect(backHtml).toContain("Bản xem trước: chiến dịch đang ở trạng thái")
+      expect(backHtml).toContain("Give sắp mở nhận cam kết. Tiền sẽ đi thẳng vào tài khoản nhận của chiến dịch.")
+      expect(backHtml).toContain("Bản xem trước: người ủng hộ chọn được mức khi dự án mở gây quỹ.")
+    }
+  )
+
+  it("renders halted non-public copy instead of pre-launch preview promises on suspended and cancelled campaigns", async () => {
+    state.session = {
+      user: { id: VIEWER, email: "mod@dos.me", name: "Kiểm duyệt viên" },
+      accessToken: "mod-token",
+    }
+    state.anonHandler = () => ({ data: null })
+
+    for (const { status, badge, giveNote, backNote } of [
+      {
+        status: "suspended" as const,
+        badge: "Tạm dừng",
+        giveNote: "Chiến dịch đang tạm dừng nên không nhận ủng hộ.",
+        backNote: "Dự án đang tạm dừng nên không nhận cam kết.",
+      },
+      {
+        status: "cancelled" as const,
+        badge: "Đã hủy",
+        giveNote: "Chiến dịch đã hủy nên không nhận ủng hộ.",
+        backNote: "Dự án đã hủy nên không nhận cam kết.",
+      },
+    ]) {
+      state.userHandler = (call) => {
+        if (call.target === "campaigns") return { data: campaignFixture(status) }
+        if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+        return undefined
+      }
+      const giveHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+      const giveDoc = parseDoc(giveHtml)
+      expect(giveDoc.querySelector(".bg-warning-soft")?.textContent.replace(/\s+/g, " ").trim()).toBe(
+        `Chiến dịch đang ở trạng thái ${badge} và không hiển thị công khai.`
+      )
+      expect(giveHtml).toContain(giveNote)
+      expect(giveHtml).not.toContain("Bản xem trước")
+      expect(giveHtml).not.toContain("chưa công khai")
+      expect(giveHtml).not.toContain("Give sắp mở nhận")
+
+      state.userHandler = (call) => {
+        if (call.target === "campaigns") {
+          return { data: { ...campaignFixture(status), type: "back", funding_model: "all_or_nothing" } }
+        }
+        if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+        if (call.target === "reward_tiers") return { data: [TIER_FIXTURE] }
+        return undefined
+      }
+      const backHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+      const backDoc = parseDoc(backHtml)
+      expect(backDoc.querySelector(".bg-warning-soft")?.textContent.replace(/\s+/g, " ").trim()).toBe(
+        `Chiến dịch đang ở trạng thái ${badge} và không hiển thị công khai.`
+      )
+      const rewardSection = backDoc.querySelector('section[aria-labelledby="reward-tiers"]')
+      expect(rewardSection?.textContent).toContain(backNote)
+      expect(backHtml).toContain(backNote)
+      expect(backHtml).not.toContain("Bản xem trước")
+      expect(backHtml).not.toContain("người ủng hộ chọn được mức khi dự án mở gây quỹ")
+      expect(backHtml).not.toContain("Give sắp mở nhận")
+    }
+  })
+
+  it("omits the organizer block instead of crashing when getPublicOrganizer fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:public_organizer") {
+        return { data: null, error: { code: "57014", message: "statement timeout" } }
+      }
+      return baseAnon(call)
+    }
+
+    try {
+      const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+      const doc = parseDoc(html)
+
+      expect(doc.querySelector("h1")?.textContent).toBe("Xây trường Bản Mây")
+      expect(html).not.toContain("Quỹ Bản Mây")
+      expect(html).not.toContain("Tổ chức gây quỹ")
+      // Beneficiary line on give campaigns still renders cleanly.
+      expect(html).toContain("Điểm trường Bản Mây")
+      expect(errorSpy).toHaveBeenCalledWith(
+        "campaign page: public organizer lookup failed",
+        expect.objectContaining({ message: "statement timeout" })
+      )
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it("extracts organizer initials by Unicode code point without lone UTF-16 surrogates", async () => {
+    const baseAnon = state.anonHandler
+    for (const [displayName, expectedInitial] of [
+      ["  𠀀 Quỹ Mùa Xuân", "𠀀"],
+      ["🌱 Bản Xanh", "🌱"],
+      ["đồng hành vùng cao", "Đ"],
+    ] as const) {
+      state.anonHandler = (call) => {
+        if (call.target === "rpc:public_organizer") {
+          return { data: [{ display_name: displayName, kind: "organization", verification_status: "verified" }] }
+        }
+        return baseAnon(call)
+      }
+
+      const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+      const doc = parseDoc(html)
+      const tile = doc.querySelector("header span.size-9")
+      expect(tile?.textContent).toBe(expectedInitial)
+      expect(html).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/)
+    }
+  })
+
+  it("sizes the funding box <dl> grid tracks dynamically for 3, 2, 1, and 0 stats", async () => {
+    const baseAnon = state.anonHandler
+
+    // 3 stats: supporters, days remaining, goal percent
+    const threeDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const threeDl = threeDoc.querySelector('section[aria-label="Ủng hộ chiến dịch"] dl')
+    expect(threeDl?.className).toContain("grid-cols-[auto_auto_auto]")
+    expect(threeDl?.className).toContain("justify-between")
+
+    // 2 stats: ends_at is null -> supporters + goal percent
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: { ...campaignFixture("live"), ends_at: null } }
+      return baseAnon(call)
+    }
+    const twoDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const twoDl = twoDoc.querySelector('section[aria-label="Ủng hộ chiến dịch"] dl')
+    expect(twoDl?.className).toContain("grid-cols-[auto_auto]")
+    expect(twoDl?.className).not.toContain("grid-cols-[auto_auto_auto]")
+    expect(twoDl?.className).toContain("justify-between")
+
+    // 1 stat: only progress_bar enabled
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("live"),
+            display_options: { progress_bar: true, backers_count: false, time_remaining: false },
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+    const oneDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const oneDl = oneDoc.querySelector('section[aria-label="Ủng hộ chiến dịch"] dl')
+    expect(oneDl?.className).toContain("grid-cols-[auto]")
+    expect(oneDl?.className).not.toContain("grid-cols-[auto_auto]")
+    expect(oneDl?.className).not.toContain("justify-between")
+
+    // 0 stats: all three disabled -> <dl> omitted
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("live"),
+            display_options: { progress_bar: false, backers_count: false, time_remaining: false },
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+    const zeroDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(zeroDoc.querySelector('section[aria-label="Ủng hộ chiến dịch"] dl')).toBeNull()
+  })
+})
