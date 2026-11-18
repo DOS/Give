@@ -53,8 +53,8 @@ export function isSenderAddress(value: string): boolean {
 
 export function emailLinkOrigin(env: Env = process.env): string | null {
   return (
-    siteOrigin(env.EMAIL_LINK_ORIGIN) ??
-    siteOrigin(env.NEXT_PUBLIC_SITE_URL) ??
+    siteOrigin(env.EMAIL_LINK_ORIGIN ?? "") ??
+    siteOrigin(env.NEXT_PUBLIC_SITE_URL ?? "") ??
     (env.VERCEL_ENV === "production" ? PRODUCTION_ORIGIN : null)
   )
 }
