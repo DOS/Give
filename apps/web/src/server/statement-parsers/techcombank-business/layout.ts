@@ -113,6 +113,10 @@ const TIME_RANGE = /\b(tu gio|den gio|from time|to time|gio bat dau|gio ket thuc
  */
 const EXPORT_LABEL =
   /^(?:ngay gio in|gio in|printed on|printed at|ngay in|in luc|thoi gian in|printed time|print time|ngay gio in bao cao|thoi gian in bao cao|printed date|thoi diem in|ngay gio xuat|ngay xuat|thoi gian xuat|exported at|export time|export date|ngay tao|created on)$/
+/** A time label word anywhere in a cell. */
+const TIME_WORD = /\b(?:thoi gian|time|gio)\b/
+/** A time written with a dot, which also reads as an amount ("08.00"). */
+const DOTTED_TIME = /^\d{1,2}\.\d{2}$/
 /** A cell that holds only a date or a time ("18/11/2026", "08:45"). */
 const DATE_TIME_ONLY = /^[\d/:.,\- ]*(?:(?:am|pm|sa|ch)[\d/:.,\- ]*)?$/
 const START_OF_DAY = /^(?:0?0:00(?::00)?|12:00(?::00)? ?(?:am|sa))$/
@@ -267,9 +271,9 @@ function labelOf(cell: string): string[] {
  */
 function timeBoundRow(cells: readonly string[]): boolean {
   if (cells.some((cell) => TIME_RANGE.test(cell))) return true
-  // A summary line (totals, balances) carries amounts, not times ("Tổng
-  // phí/Total fees | 0.00").
-  if (cells.length > 0 && labelOf(cells[0]).some((part) => SUMMARY.test(part))) return false
+  // A row labelled as a time ("Khung giờ", "Giờ/Time"; not a print label):
+  // there "08.00" is a time, not an amount.
+  const timeRow = cells.some((cell) => TIME_WORD.test(cell) && !labelOf(cell).some((part) => EXPORT_LABEL.test(part)))
   for (let i = 0; i < cells.length; i++) {
     const cell = cells[i]
     if (labelOf(cell).some((part) => EXPORT_LABEL.test(part))) {
@@ -285,8 +289,10 @@ function timeBoundRow(cells: readonly string[]): boolean {
       if (!isOneMoment(value)) return true
       continue
     }
-    // A cell that reads as an amount ("0.00", "1,500,000.00") holds no time.
-    if (readsAs(() => cellAmount(cell))) continue
+    // A cell that reads as an amount ("0.00", "1,500,000.00" in a total)
+    // holds no time, unless it is written like a time ("08.00") on a row
+    // labelled as a time.
+    if (readsAs(() => cellAmount(cell)) && !(timeRow && DOTTED_TIME.test(cell.trim()))) continue
     const rest = cell.replace(WHOLE_DAY_RANGE, " ").replace(DATE_ONLY, " ")
     if (ANY_TIME.test(rest)) return true
   }
@@ -489,7 +495,12 @@ export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
   for (const row of after) {
     const first = row.find((cell) => cellText(cell) !== "")
     const names = parts(cellText(first))
-    if (names.length > 0 && names.every((name) => SUMMARY.test(name) || PRINTED.test(name))) continue
+    if (
+      names.length > 0 &&
+      names.every((name) => SUMMARY.test(name) || PRINTED.test(name) || EXPORT_LABEL.test(name))
+    ) {
+      continue
+    }
     if (row.some((cell) => readsAs(() => cellAmount(cell)) || readsAs(() => cellDate(cell)))) {
       throw new TcbLayoutError("rows after the end of the table")
     }
