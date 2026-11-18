@@ -86,10 +86,11 @@ const DATE_ONLY = new RegExp(DATE_TEXT, "g")
 /**
  * Any time of day written with digits, hour-only forms included ("08:00",
  * "8h", "14h30", "14g30", "14.30", "8 giờ", "2 PM", "8 SA"); never part of
- * a longer number ("1.000.000", "10,000").
+ * a longer number ("1.000.000", "10,000"). A name such as "3H" or "4G" also
+ * reads as a time (fail closed: the file is refused, never taken as whole).
  */
 const ANY_TIME_SOURCE =
-  "(?<![\\d.,:])\\d{1,2} ?(?::|h|g|gio)(?: ?\\d{2}|(?![a-z\\d]))|(?<![\\d.,:])\\d{1,2}\\.\\d{2}(?![\\d.,])|(?<![\\d.,:])\\d{1,2} ?(?:am|pm|sa|ch)\\b"
+  "(?<![\\d.,:])\\d{1,2} ?: ?\\d{2}(?![\\d])|(?<![\\d.,:])\\d{1,2} ?(?:h|g|gio)(?: ?\\d{2}|(?![a-z\\d]))|(?<![\\d.,:])\\d{1,2}\\.\\d{2}(?![\\d.,])|(?<![\\d.,:])\\d{1,2} ?(?:am|pm|sa|ch)\\b"
 const ANY_TIME = new RegExp(ANY_TIME_SOURCE)
 const ANY_TIMES = new RegExp(ANY_TIME_SOURCE, "g")
 /** The first date of a text (a print or export time holds one). */
@@ -109,7 +110,7 @@ const TIME_RANGE = /\b(tu gio|den gio|from time|to time|gio bat dau|gio ket thuc
  * not one: it may be the enquiry's window.
  */
 const EXPORT_LABEL =
-  /^(?:ngay gio in|gio in|printed on|printed at|ngay in|in luc|thoi gian in|printed time|print time|ngay gio in bao cao|ngay gio xuat|thoi gian xuat|exported at|export time|ngay tao|created on)$/
+  /^(?:ngay gio in|gio in|printed on|printed at|ngay in|in luc|thoi gian in|printed time|print time|ngay gio in bao cao|thoi diem in|ngay gio xuat|ngay xuat|thoi gian xuat|exported at|export time|export date|ngay tao|created on)$/
 /** A cell that holds only a date or a time ("18/11/2026", "08:45"). */
 const DATE_TIME_ONLY = /^[\d/:.,\- ]*(?:(?:am|pm|sa|ch)[\d/:.,\- ]*)?$/
 const START_OF_DAY = /^(?:0?0:00(?::00)?|12:00(?::00)? ?(?:am|sa))$/
