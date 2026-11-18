@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import type { ReactNode } from "react"
 
@@ -10,6 +11,18 @@ import { DEFAULT_DISCOVERY, discoveryHref, listCategories, listPublicCampaigns }
 import { homeSections } from "@/lib/home"
 import { listMoneyTotals, raisedAmount } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    siteName: "Give",
+    locale: "vi_VN",
+    title: "Give – Gây quỹ minh bạch",
+    description: "Gây quỹ từ thiện và dự án sáng tạo, minh bạch từng đồng. Một sản phẩm của DOS.",
+    url: "/",
+  },
+}
 
 const LOGIN_ERRORS: Record<string, string> = {
   denied: "Bạn đã hủy đăng nhập.",
