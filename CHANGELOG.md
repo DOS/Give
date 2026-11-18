@@ -26,7 +26,7 @@ lọc"` and a self-linking `"Xoá bộ lọc"`; unknown or cross-type `category`
   failure, organizer initials extract by Unicode code point, and the funding
   `<dl>` sizes 1, 2 or 3 tracks dynamically. Whole-page `EmptyState` boundaries
   cover `/campaigns/error.tsx` and `/campaigns/[slug]/not-found.tsx`, with
-  Vitest suites across all four files (#240).
+  Vitest suites across all four files (#240 / #247).
 - Organizer fulfillment pagination, bulk-save reset and workspace hardening:
   `/me/campaigns/[id]/fulfillment` pages 500-row batches via `page` and
   `fulfillmentHref` (`Trang trước` / `Trang sau`), resets bulk selection and
