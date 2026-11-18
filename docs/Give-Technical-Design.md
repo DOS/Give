@@ -419,6 +419,108 @@ Người góp (không cần đăng nhập)
 
 Chính sách còn mở (P1): nếu sau hạn thanh toán, số **đã thanh toán** thấp hơn mục tiêu thì sao? Mặc định đề xuất: người tạo vẫn phải thực hiện dự án với số đã nhận, và điều này được ghi rõ trong điều khoản khi tạo campaign. Phương án khác: cho người tạo chọn hủy trong vòng 7 ngày và tự hoàn hết.
 
+### 4.3 Ủng hộ hằng tháng (DOS/Give#255)
+
+> Trạng thái: **đề xuất, chờ JOY chọn mô hình** (viết 2026-11-19). Chỉ áp dụng cho chiến dịch `give`. Mục này chưa đổi schema hay hàm nào ở mục 2–3; khi JOY chọn xong, phần thiết kế dưới đây được tách thành issue DB (DOS.Me) và issue app.
+
+**Bối cảnh.** GoFundMe cho người góp chọn "monthly" lúc thanh toán (người tổ chức phải bật), tự trừ thẻ mỗi tháng, gửi biên nhận mỗi lần, cho hủy bất cứ lúc nào, và tự hủy khi chiến dịch đóng ([GoFundMe Help: recurring monthly donations][gfm-recurring]). Give không làm được y như vậy: không có kênh thẻ, không giữ tiền (D3), và tiền đi thẳng vào tài khoản của người tổ chức qua VietQR. Câu hỏi là có cách nào để "góp mỗi tháng" mà vẫn giữ D3.
+
+#### 4.3.1 Các phương án
+
+| #   | Phương án                                                                                                                                                                                                                                                          | Tiền có đi qua bên thứ ba?                                               | Give dừng được khi chiến dịch đóng?           | Hợp với sổ cái, import sao kê, Tingee                                                                                                             |
+| --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A   | **Cam kết hằng tháng có nhắc.** Người góp đăng ký số tiền mỗi tháng. Mỗi tháng Give tạo một donation mới, có mã ủng hộ và VietQR riêng, rồi nhắc người góp. Người góp tự bấm chuyển. Tháng nào không chuyển thì thôi, không có gì bị trừ tự động và không có "nợ". | Không                                                                    | Có (ngừng tạo donation và ngừng nhắc)         | Hợp hoàn toàn: mỗi tháng là một `contributions` bình thường, khớp theo mã như mục 3. Không đổi pipeline (mục 5.1), parser sao kê hay kênh Tingee. |
+| A+  | **A, thêm mã cố định cho lệnh chuyển tiền định kỳ của chính người góp.** Người góp tự đặt lệnh "chuyển tiền định kỳ" trong app ngân hàng của mình, với một mã kế hoạch cố định thay cho mã từng tháng.                                                             | Không                                                                    | **Không**: lệnh nằm ở ngân hàng của người góp | Cần thêm luật khớp: mã kế hoạch → donation của tháng đó. Tiền có thể tiếp tục về sau khi chiến dịch đóng.                                         |
+| B1  | **Trích nợ tự động qua Tingee (Direct Debit).** Người góp liên kết tài khoản một lần; mỗi tháng Give gọi API trích nợ.                                                                                                                                             | **Có**: đi qua cổng trích nợ của OnePay, merchant là Give                | Có                                            | Không hợp: không phải giao dịch vào tài khoản của người tổ chức, nên không có biến động số dư hay dòng sao kê để khớp.                            |
+| B2  | **Ủy nhiệm thu / trích nợ do ngân hàng của người tổ chức thực hiện.**                                                                                                                                                                                              | Không, nhưng cần thỏa thuận bằng văn bản giữa người góp và người tổ chức | Có, qua ngân hàng                             | Về kỹ thuật thì hợp (tiền vào tài khoản nhận như một giao dịch thường), nhưng không có API nào cho bên thứ ba như Give khởi tạo.                  |
+
+**Kết quả tra cứu về (b) trích nợ tự động và lệnh định kỳ** (tra cứu trên web ngày 2026-11-19; các trang Tingee Direct Debit được đọc trực tiếp, các nguồn khác ghi rõ mức độ đã đọc):
+
+- **Tingee Direct Debit** có thật, nhưng không hợp với Give. Đối tác gọi `POST /v1/direct-debit/payment-bill` cho từng lần trích (Tingee không tự chạy lịch); `partnerCode` duy nhất được liệt kê là `one-pay`, tức tiền đi qua cổng trích nợ của OnePay; không có tham số `merchantId`, nên Master Merchant không trích thay cho từng người tổ chức được; hạn mức 2.000.000 đ mỗi hóa đơn và 5.000.000 đ mỗi ngày; merchant phải được Tingee cấu hình riêng và credential cần whitelist IP ([Tingee: Trích nợ tự động][tg-dd], [payment-bill][tg-dd-bill], [webhook][tg-dd-wh]). Tài liệu không nói tiền trích được chuyển vào tài khoản nào, và không nói lần trích có sinh biến động số dư trên tài khoản nhận hay không (_không có trong tài liệu_). Nghiên cứu Tingee trước đó đã để Direct Debit ngoài phạm vi (`docs/research/tingee.md` mục 3).
+- **NAPAS** không công bố dịch vụ trích nợ định kỳ tài khoản cho bên thứ ba. Các dịch vụ công khai là chuyển mạch, VietQR, cổng thanh toán thẻ nội địa và Tap and Pay ([NAPAS: Payment Gateway][napas-pg]). Không tìm thấy nguồn nào về direct debit của NAPAS (_không tìm thấy_, không phải _không tồn tại_).
+- **Ủy nhiệm thu** theo Thông tư 15/2024/TT-NHNN: ngân hàng trích tiền từ tài khoản bên trả tiền theo đề nghị của bên thụ hưởng, dựa trên văn bản thỏa thuận giữa hai bên, và ngân hàng của bên thụ hưởng kiểm soát chứng từ ([LuatVietnam: ủy nhiệm thu theo TT 15/2024][lvn-unt], [Thư viện pháp luật: TT 15/2024, bản tiếng Anh][tvpl-tt15]; _đọc qua bài phân tích, chưa đọc văn bản hợp nhất_). Bên thụ hưởng ở đây là người tổ chức (thường là cá nhân), không phải Give. Mỗi người góp phải ký thỏa thuận với từng người tổ chức, và ngân hàng không mở API cho nền tảng thứ ba khởi tạo. Không khả thi cho Give.
+- **Lệnh chuyển tiền định kỳ do người góp tự đặt** có ở một số ngân hàng. Vietcombank cho đặt lệnh chuyển tiền định kỳ (kể cả ra ngoài Vietcombank) trên VCB Digibank, với tần suất, ngày bắt đầu, số tiền và nội dung do người dùng nhập, và cho hủy lệnh trong app ([VNBA: VCB Digibank cập nhật tính năng][vnba-vcb], [Finhay: hướng dẫn chuyển tiền định kỳ VCB][finhay-vcb]; _chỉ đọc qua kết quả tìm kiếm, trang Finhay trả lỗi 503_). Techcombank Mobile chỉ mô tả Autobill cho hóa đơn, không rõ có lệnh chuyển tiền định kỳ tới tài khoản bất kỳ (_chưa xác minh_). Đây là cơ sở của phương án A+.
+- **Ví điện tử** (MoMo "Liên kết thanh toán") cho nhà cung cấp trừ tiền ví sau một lần liên kết ([MoMo: Dịch vụ liên kết][momo-link]), nhưng tiền đi vào ví của merchant, tức qua trung gian (_suy luận_): trái D3 và nằm ngoài phạm vi #255.
+
+Kết luận cho (b): **không có đường trích nợ tự động nào mà tiền đi thẳng vào tài khoản của người tổ chức và Give khởi tạo được.** Mọi đường "tự trừ" hoặc qua một trung gian giữ tiền (B1, ví), hoặc cần thỏa thuận ngân hàng giữa từng người góp và từng người tổ chức (B2).
+
+#### 4.3.2 Pháp lý
+
+Đọc lại theo `docs/research/legal-charity-campaigns.md` (văn bản gốc Nghị định 93/2021, ký hiệu "D93"):
+
+| Quy định                                                                                                                                                                                  | Ảnh hưởng tới ủng hộ hằng tháng                                                                                                                                                                                                                                                                                                                                                                |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D93 Art. 4.3: vận động là tự nguyện, không được đặt mức tối thiểu để bắt buộc đóng góp                                                                                                    | Cam kết hằng tháng phải là **ý định**, không phải nghĩa vụ: hủy được bất cứ lúc nào, tháng bỏ lỡ không thành nợ, không có chữ "quá hạn" hay "còn nợ" (khác với pledge của `back`). Phương án A và A+ đáp ứng; B2 (thỏa thuận ủy nhiệm thu) đi ngược tinh thần này.                                                                                                                             |
+| D93 Art. 17.2, 9.7: không nhận thêm sau thời hạn nhận đã cam kết, và báo ngân hàng ngừng nhận                                                                                             | Kế hoạch phải tự kết thúc khi chiến dịch kết thúc nhận (`closed`, `cancelled`), và không được nhắc sau `ends_at`. Phương án A làm được. Phương án A+ **không** làm được: lệnh định kỳ vẫn chạy ở ngân hàng của người góp, tiền về sau hạn thành `after_close` (mục 3), đúng điều Nghị định cấm.                                                                                                |
+| D93 Art. 8.2 và ghi chú (4) của mẫu thông báo: thời hạn nhận tối đa 90 ngày (với tổ chức; với cá nhân là câu hỏi cho luật sư), "trừ trường hợp thực hiện theo cam kết với người đóng góp" | Với chiến dịch thuộc phạm vi D93 (thiên tai, dịch bệnh, sự cố, bệnh hiểm nghèo), một kế hoạch hằng tháng chỉ có tối đa khoảng 3 kỳ. Ủng hộ hằng tháng có ích nhất cho chiến dịch ngoài D93 (giáo dục, môi trường, động vật…, thuộc TT41). Kế hoạch hằng tháng có phải là "cam kết với người đóng góp" để kéo dài thời hạn hay không: **câu hỏi cho luật sư**, Give không dựa vào cách hiểu đó. |
+| D93 Art. 17.2, TT41 Art. 10.4.a: tài khoản riêng cho từng cuộc vận động                                                                                                                   | Kế hoạch gắn với **một** chiến dịch. Không bao giờ tự chuyển sang chiến dịch sau của cùng người tổ chức, kể cả khi họ dùng lại tài khoản (mục 2.2).                                                                                                                                                                                                                                            |
+| D93 Art. 14.2, 14.4, 19.3: công khai tổng nhận, tổng chi, người nhận                                                                                                                      | Không đổi: mỗi tháng là một donation thường, được tính và công khai như mọi khoản khác. Số tiền **đã đăng ký** hằng tháng không phải tiền đã nhận, nên không cộng vào "đã gây quỹ".                                                                                                                                                                                                            |
+| Thông tư 15/2024 (ủy nhiệm thu)                                                                                                                                                           | Chỉ liên quan tới B2: cần văn bản thỏa thuận giữa người góp và người tổ chức. Phương án A và A+ là chuyển khoản do người góp tự lệnh, không cần gì thêm.                                                                                                                                                                                                                                       |
+
+**Với người tổ chức:** phương án A không thêm nghĩa vụ nào. Mỗi tháng là một khoản chuyển khoản vào đúng tài khoản của chiến dịch, sổ sách theo TT41 và báo cáo theo D93 giữ nguyên. Người tổ chức nên được bật/tắt tính năng cho chiến dịch của mình (như GoFundMe), vì nó kéo dài số khoản nhỏ cần đối chiếu.
+
+**Với Give:** phương án A không làm Give chạm vào tiền, nên vị trí "không giữ tiền, không phải trung gian thanh toán" (D3) không đổi. Khác biệt duy nhất là Give **liên lạc định kỳ** với người góp: cần sự đồng ý rõ ràng lúc đăng ký và một nút ngừng nhắc ở mọi lời nhắc, theo luật bảo vệ dữ liệu cá nhân hiện hành (_chưa đọc văn bản gốc; xác nhận khi làm issue app_). B1 sẽ biến Give thành merchant nhận tiền qua trung gian: trái D3 và cần xem lại pháp lý trung gian thanh toán, nên bị loại.
+
+#### 4.3.3 Đề xuất: phương án A
+
+Làm phương án A. Để ngỏ A+ làm phần mở rộng sau, chỉ khi luật sư xác nhận cách xử lý tiền về sau hạn (P4). Loại B1 và B2.
+
+Lý do: A là cách duy nhất vừa giữ D3, vừa dừng được đúng lúc chiến dịch kết thúc nhận (D93 Art. 17.2), vừa không đổi sổ cái, pipeline nhận giao dịch, parser sao kê hay kênh Tingee. Đổi lại, người góp vẫn phải tự bấm chuyển mỗi tháng. Vì vậy đây là "nhắc góp hằng tháng", không phải "tự trừ tiền hằng tháng" như GoFundMe, và giao diện phải nói đúng như vậy.
+
+**Thiết kế cho phương án A** (để tách issue, chưa phải DDL):
+
+```sql
+give.donation_plans (                      -- "kế hoạch ủng hộ hằng tháng"
+  id uuid PK,
+  campaign_id uuid,                        -- trigger: campaign.type='give'; không đổi sau khi tạo
+  contributor_user_id uuid NOT NULL,       -- bắt buộc đăng nhập: cần trang "Ủng hộ của tôi" để xem QR và hủy
+  amount bigint CHECK (> 0),               -- số tiền dự định mỗi tháng
+  day_of_month int CHECK (BETWEEN 1 AND 28),
+  is_anonymous bool, public_name text, message text,   -- mặc định cho mọi donation sinh ra
+  reminder_consent_at timestamptz NOT NULL,
+  status text CHECK IN ('active','cancelled','ended'),
+  ended_reason text NULL CHECK IN ('donor_cancelled','campaign_closed','campaign_cancelled','organizer_disabled'),
+  next_period date,                        -- ngày 1 của tháng kế tiếp cần tạo donation
+  created_at, updated_at, ended_at
+)
+-- give.contributions thêm:
+--   plan_id uuid NULL → give.donation_plans, plan_period date NULL
+--   UNIQUE (plan_id, plan_period)          -- mỗi kế hoạch tối đa 1 donation mỗi tháng
+--   CHECK ((plan_id IS NULL) = (plan_period IS NULL)); CHECK (plan_id IS NULL OR kind='donation')
+-- give.campaigns thêm: allow_monthly bool DEFAULT false   -- người tổ chức bật
+```
+
+| Hàm (chỉ `service_role`)                                    | Việc chính                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `give.create_donation_plan(campaign, user, amount, day, …)` | Chiến dịch `give`, `live`, `allow_monthly`; tạo kế hoạch và **ngay lập tức** donation của tháng đầu (giống `create_donation`, cùng giới hạn tần suất). Mỗi người tối đa một kế hoạch `active` cho mỗi chiến dịch.                                                                                                                                                                                                      |
+| `give.cancel_donation_plan(plan, user)`                     | Người góp hủy. Donation đang `awaiting_transfer` của tháng hiện tại giữ nguyên (tiền về vẫn khớp), chỉ dừng tạo tháng sau.                                                                                                                                                                                                                                                                                             |
+| `give.issue_plan_donations()`                               | Cron: với mỗi kế hoạch `active` có `next_period` ≤ hôm nay, khóa dòng kế hoạch, kiểm tra chiến dịch còn `live` và chưa quá `ends_at`, tạo donation với mã mới, `plan_period`, rồi ghi `outbox` lời nhắc. `ON CONFLICT (plan_id, plan_period) DO NOTHING`: chạy lại hay chạy trùng vẫn chỉ một donation mỗi tháng. Chiến dịch không còn nhận thì kết thúc kế hoạch (`ended`, lý do tương ứng) và báo người góp một lần. |
+| `give.transition_campaign` (mở rộng)                        | Khi chiến dịch sang `closed` hoặc `cancelled`: kết thúc mọi kế hoạch của nó trong cùng transaction. Khi `suspended`: cron bỏ qua (không tạo, không nhắc) cho tới khi `live` lại; tháng bị bỏ qua không tạo bù.                                                                                                                                                                                                         |
+
+Các điểm khớp với phần đã có:
+
+- **Sổ cái (mục 2.4):** không có bucket mới. Donation của kế hoạch đi qua `match_transaction` như mọi donation và ghi `received`. Số đăng ký hằng tháng **không** ghi sổ cái (khác `pledged` của `back`), vì nó không phải cam kết ràng buộc. Trang chiến dịch chỉ có thể hiện "N người ủng hộ hằng tháng".
+- **Mã và QR (mục 3, G3):** mỗi tháng một `reference_code` mới cùng định dạng `GV…`, nên luật khớp, kiểm tra mã thuộc đúng chiến dịch và test 3 ở mục 8 giữ nguyên. QR luôn dựng từ tài khoản đang gắn với chiến dịch lúc hiển thị, nên đổi tài khoản (DOS/Give#55) tự áp dụng cho các tháng sau.
+- **`expired` (mục 2.3):** với donation của kế hoạch, QR hiển thị được tới cuối kỳ thay cho 24 giờ. Hết kỳ thì `expired`, nhưng tiền về muộn vẫn khớp như hiện nay. Tháng không trả không đổi trạng thái gì khác và không bị công khai.
+- **Import sao kê (mục 5.2):** Give chỉ biết tiền đã về sau khi người tổ chức nhập sao kê, có thể trễ nhiều ngày. Vì vậy với tài khoản chỉ dùng `statement_import`, Give chỉ nhắc **một lần** mỗi tháng, kèm câu "nếu bạn đã chuyển thì bỏ qua". Không có lời nhắc thứ hai, để không làm phiền người đã trả.
+- **Tingee (D8, mục 5.2):** tiền về được khớp trong vòng một phút, nên với tài khoản có Tingee, Give có thể nhắc thêm một lần (ví dụ sau 5 ngày) nếu donation của tháng vẫn `awaiting_transfer`. VietinBank không gửi nội dung chuyển khoản qua Tingee, nên donation hằng tháng vào tài khoản VietinBank vẫn rơi vào `unmatched_in` như donation thường (`docs/research/tingee.md` mục 6.3).
+- **Kênh nhắc:** trong app ngay (trang "Ủng hộ của tôi" hiện QR của tháng); email khi `give.outbox` và job `send-outbox` (M4) có. Job mới `issue-plan-donations`, chạy mỗi giờ, sẽ được thêm vào mục 5.3 khi làm.
+
+Test bắt buộc thêm cho mục 8 khi làm: (a) `issue_plan_donations` gọi hai lần hoặc song song → một donation mỗi kế hoạch mỗi tháng; (b) chiến dịch `closed` → kế hoạch `ended`, không tạo donation sau đó, kể cả khi cron chạy trễ; (c) hủy kế hoạch → donation đang chờ vẫn khớp được khi tiền về, tháng sau không tạo; (d) tổng "đã gây quỹ" không đổi khi tạo hay hủy kế hoạch; (e) không tạo donation sau `ends_at`, kể cả khi `finalize_campaign` chưa chạy; (f) RLS: người góp chỉ đọc kế hoạch của mình; người tổ chức chỉ thấy số lượng và tên hiển thị, không thấy email.
+
+**Câu hỏi còn lại cho luật sư (gộp vào P4):** kế hoạch hằng tháng có được coi là "cam kết với người đóng góp" theo D93 Art. 8.2 hay không; và nếu làm A+, người tổ chức xử lý thế nào khoản tiền từ lệnh định kỳ về sau hạn nhận.
+
+[gfm-recurring]: https://support.gofundme.com/hc/en-us/articles/26707416172059-Provide-ongoing-support-with-recurring-monthly-donations
+[tg-dd]: https://developers.tingee.vn/docs/direct-debit/
+[tg-dd-bill]: https://developers.tingee.vn/docs/direct-debit/payment-bill/
+[tg-dd-wh]: https://developers.tingee.vn/docs/direct-debit/webhook/
+[napas-pg]: https://en.napas.com.vn/napas-payment-gateway-service-for-other
+[lvn-unt]: https://luatvietnam.vn/uy-nhiem-thu-la-gi-883-99474-article.html
+[tvpl-tt15]: https://thuvienphapluat.vn/van-ban/Tien-te-Ngan-hang/Circular-15-2024-TT-NHNN-provision-of-cashless-payment-services-618416.aspx
+[vnba-vcb]: https://vnba.org.vn/vi/vcb-digibank-cap-nhat-them-nhieu-tinh-nang-uu-viet-348.htm
+[finhay-vcb]: https://www.finhay.com.vn/chuyen-tien-dinh-ky-trong-vietcombank-bang-ung-dung-vcb-mobile-banking-toi-finhay
+[momo-link]: https://www.momo.vn/hoi-dap/dich-vu-lien-ket-la-gi
+
 ## 5. Adapter kênh thanh toán
 
 ### 5.1 Interface (TypeScript, `apps/web/src/server/channels/`)
