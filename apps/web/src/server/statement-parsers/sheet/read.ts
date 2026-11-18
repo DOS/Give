@@ -51,6 +51,100 @@ export function dateCell(value: Date): LocalDate {
   return { day, time: h === 0 && m === 0 && s === 0 ? null : `${pad(h)}:${pad(m)}:${pad(s)}` }
 }
 
+/**
+ * Bounds of a worksheet the reader may build. `read-excel-file` trusts the
+ * row and cell numbers in the XML: it adds an empty row for every skipped
+ * row number and pads every row to the widest column, so `<row r="50000000">`
+ * in a 2 KB file would exhaust memory. Statements hold at most 5000 rows
+ * (statement-import MAX_ROWS) and a dozen columns.
+ */
+export const MAX_SHEET_ROWS = 20000
+export const MAX_SHEET_COLUMNS = 100
+
+const NAME = /[\w.:-]*/y
+const ATTRIBUTE = /(?:^|\s)(?:[A-Za-z_][\w.-]*:)?(r|t|ref)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
+const SHEET_TAGS = new Set(["row", "c", "dimension"])
+
+/**
+ * Every start tag named row, c or dimension (namespace prefix dropped, as
+ * the reader drops it) with its attribute text, in one pass over the XML:
+ * each character is read once, quotes are honoured, so no input makes it
+ * slow. Tags inside comments or CDATA are included, which only over-checks.
+ */
+function* sheetTags(xml: string): Generator<[string, string]> {
+  let i = xml.indexOf("<")
+  while (i >= 0) {
+    NAME.lastIndex = i + 1
+    NAME.exec(xml)
+    const nameEnd = NAME.lastIndex
+    const name = xml.slice(i + 1, nameEnd)
+    let end = nameEnd
+    let quote = ""
+    for (; end < xml.length; end++) {
+      const c = xml[end]
+      if (quote) {
+        if (c === quote) quote = ""
+      } else if (c === '"' || c === "'") quote = c
+      else if (c === ">") break
+    }
+    const local = name.slice(name.lastIndexOf(":") + 1)
+    if (SHEET_TAGS.has(local) && /^[\s/>]?$/.test(xml.charAt(nameEnd))) yield [local, xml.slice(nameEnd, end)]
+    i = xml.indexOf("<", end + 1)
+  }
+}
+
+function columnNumber(letters: string): number {
+  let n = 0
+  for (const c of letters) n = n * 26 + (c.charCodeAt(0) - 64)
+  return n
+}
+
+/** A cell address within the bounds ("L5000"), or throws. */
+function checkAddress(address: string): void {
+  const match = /^([A-Z]{1,3})(\d{1,7})$/.exec(address)
+  if (!match || columnNumber(match[1]) > MAX_SHEET_COLUMNS || Number(match[2]) > MAX_SHEET_ROWS) {
+    throw new SheetReadError("worksheet larger than a statement")
+  }
+}
+
+/**
+ * Checks the XML of every part of a workbook before the reader parses it:
+ * at most MAX_SHEET_ROWS rows, every row and cell address within the
+ * bounds, a `<dimension>` within them, and no date (`t="d"`) or error
+ * (`t="e"`) cells. A date cell holds a zoneless ISO text the reader parses
+ * in the server's time zone; an error cell (#N/A, #REF!) would silently
+ * read as empty and could hide a donation code. The scan matches more than
+ * the XML parser would (tags inside comments, say), which can only refuse
+ * a file, never let one through.
+ */
+export function checkSheetXml(xml: string): void {
+  let rows = 0
+  for (const [tag, attributes] of sheetTags(xml)) {
+    const values = new Map<string, string>()
+    for (const [, name, double, single] of attributes.matchAll(ATTRIBUTE)) {
+      const value = double ?? single
+      // The reader decodes entities; real files never put one in these.
+      if (value.includes("&")) throw new SheetReadError("entity in a cell address")
+      values.set(name, value)
+    }
+    if (tag === "row") {
+      rows++
+      const r = values.get("r")
+      if (rows > MAX_SHEET_ROWS || (r !== undefined && !(/^\d{1,7}$/.test(r) && Number(r) <= MAX_SHEET_ROWS))) {
+        throw new SheetReadError("worksheet larger than a statement")
+      }
+    } else if (tag === "c") {
+      const r = values.get("r")
+      if (r !== undefined) checkAddress(r)
+      const type = values.get("t")
+      if (type === "d") throw new SheetReadError("date cell stored as text")
+      if (type === "e") throw new SheetReadError("error cell")
+    } else {
+      for (const address of (values.get("ref") ?? "").split(":")) checkAddress(address)
+    }
+  }
+}
+
 function checkLength(text: string): string {
   if (text.length > MAX_CELL_CHARS) throw new SheetReadError("cell too long")
   return text
@@ -61,7 +155,9 @@ async function readXlsx(file: Uint8Array): Promise<Grid> {
   // the reader itself trusts the sizes the archive declares.
   let archive: Buffer
   try {
-    archive = storedZip(unzipXml(file))
+    const entries = unzipXml(file)
+    for (const entry of entries) checkSheetXml(entry.data.toString("utf8"))
+    archive = storedZip(entries)
   } catch (err) {
     if (err instanceof ZipError) throw new SheetReadError(err.message)
     throw err
@@ -108,8 +204,10 @@ export function parseCsv(text: string, delimiter: string): string[][] {
   let row: string[] = []
   let field = ""
   let quoted = false
+  // A quoted field just closed: only a delimiter or a line end may follow.
+  let closed = false
   let i = 0
-  const body = text.replace(/^﻿/, "")
+  const body = text.replace(/^\ufeff/, "")
   while (i < body.length) {
     const c = body[i]
     if (quoted) {
@@ -118,26 +216,31 @@ export function parseCsv(text: string, delimiter: string): string[][] {
         i += 2
         continue
       }
-      if (c === '"') quoted = false
-      else field += c
+      if (c === '"') {
+        quoted = false
+        closed = true
+      } else field += c
       i++
       continue
     }
-    if (c === '"' && field === "") quoted = true
-    else if (c === delimiter) {
+    if (c === delimiter) {
       row.push(field)
       field = ""
+      closed = false
     } else if (c === "\n" || c === "\r") {
       row.push(field)
       rows.push(row)
       row = []
       field = ""
+      closed = false
       if (c === "\r" && body[i + 1] === "\n") i++
-    } else field += c
+    } else if (closed) throw new SheetReadError("text after a closing quote in CSV")
+    else if (c === '"' && field === "") quoted = true
+    else field += c
     i++
   }
   if (quoted) throw new SheetReadError("unterminated quote in CSV")
-  if (field !== "" || row.length > 0) {
+  if (field !== "" || closed || row.length > 0) {
     row.push(field)
     rows.push(row)
   }

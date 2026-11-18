@@ -48,7 +48,7 @@ function sheetXml(rows: readonly (readonly XlsxCell[])[]): string {
 
 const STYLES = `${XML}<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><numFmts count="1"><numFmt numFmtId="164" formatCode="dd/mm/yyyy hh:mm:ss"/></numFmts><fonts count="1"><font/></fonts><fills count="1"><fill/></fills><borders count="1"><border/></borders><cellStyleXfs count="1"><xf/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0"/><xf numFmtId="164" applyNumberFormat="1"/></cellXfs></styleSheet>`
 
-function parts(sheetName: string, rows: readonly (readonly XlsxCell[])[]): [string, string][] {
+function parts(sheetName: string, sheet: string): [string, string][] {
   return [
     [
       "[Content_Types].xml",
@@ -67,16 +67,26 @@ function parts(sheetName: string, rows: readonly (readonly XlsxCell[])[]): [stri
       `${XML}<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
     ],
     ["xl/styles.xml", STYLES],
-    ["xl/worksheets/sheet1.xml", sheetXml(rows)],
+    ["xl/worksheets/sheet1.xml", sheet],
   ]
 }
 
 /** A one-sheet XLSX file (deflated ZIP entries, fixed timestamps, so the bytes are reproducible). */
 export function xlsxFile(rows: readonly (readonly XlsxCell[])[], sheetName = "Sheet1"): Uint8Array {
+  return zipParts(parts(sheetName, sheetXml(rows)))
+}
+
+/** A one-sheet XLSX whose `<sheetData>` content is given as raw XML, for hostile shapes. */
+export function xlsxFromSheetData(sheetData: string, beforeSheetData = ""): Uint8Array {
+  const sheet = `${XML}<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${beforeSheetData}<sheetData>${sheetData}</sheetData></worksheet>`
+  return zipParts(parts("Sheet1", sheet))
+}
+
+function zipParts(files: [string, string][]): Uint8Array {
   const local: Buffer[] = []
   const central: Buffer[] = []
   let offset = 0
-  for (const [name, text] of parts(sheetName, rows)) {
+  for (const [name, text] of files) {
     const nameBytes = Buffer.from(name, "utf8")
     const data = Buffer.from(text, "utf8")
     const packed = deflateRawSync(data)

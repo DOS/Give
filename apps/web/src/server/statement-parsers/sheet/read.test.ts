@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest"
 
-import { xlsxFile } from "@/test/xlsx-file"
+import { xlsxFile, xlsxFromSheetData } from "@/test/xlsx-file"
 
-import { dateCell, MAX_CELL_CHARS, parseCsv, readGrid, SheetReadError } from "./read"
+import {
+  checkSheetXml,
+  dateCell,
+  MAX_CELL_CHARS,
+  MAX_SHEET_COLUMNS,
+  MAX_SHEET_ROWS,
+  parseCsv,
+  readGrid,
+  SheetReadError,
+} from "./read"
 
 const text = (s: string) => new TextEncoder().encode(s)
 
@@ -55,6 +64,69 @@ describe("readGrid on XLSX", () => {
   })
 })
 
+describe("readGrid refuses worksheets larger than a statement, before the reader builds them", () => {
+  const cell = (r: string, value = "x") => `<c r="${r}" t="inlineStr"><is><t>${value}</t></is></c>`
+
+  it("reads a sheet within the bounds", async () => {
+    const file = xlsxFromSheetData(
+      `<row r="1">${cell("A1")}</row><row r="${MAX_SHEET_ROWS}">${cell(`CV${MAX_SHEET_ROWS}`)}</row>`
+    )
+    const grid = await readGrid(file)
+    expect(grid).toHaveLength(MAX_SHEET_ROWS)
+    expect(grid[MAX_SHEET_ROWS - 1][MAX_SHEET_COLUMNS - 1]).toBe("x")
+  })
+
+  it.each([
+    ["a sparse huge row number", `<row r="1">${cell("A1")}</row><row r="50000000">${cell("A50000000")}</row>`],
+    ["a row number past the bound", `<row r="${MAX_SHEET_ROWS + 1}"></row>`],
+    ["a cell in a far column", `<row r="1">${cell("XFD1")}</row>`],
+    ["a cell in a far row of an unnumbered row", `<row>${cell("A2000000")}</row>`],
+    ["more row elements than the bound", "<row/>".repeat(MAX_SHEET_ROWS + 1)],
+    ["a namespace-prefixed row", `<x:row xmlns:x="urn:x" x:r="50000000"></x:row>`],
+    ["an entity in a row number", `<row r="&#53;0000000"></row>`],
+    [
+      "a quoted '>' before the address",
+      `<row r="1"><c foo=">" r="A99999999" t="inlineStr"><is><t>x</t></is></c></row>`,
+    ],
+    ["a date cell stored as text", `<row r="1"><c r="A1" t="d"><v>2026-11-17T03:00:00</v></c></row>`],
+    ["an error cell", `<row r="1"><c r="A1" t="e"><v>#N/A</v></c></row>`],
+  ])("refuses %s", async (_, sheetData) => {
+    await expect(readGrid(xlsxFromSheetData(sheetData))).rejects.toBeInstanceOf(SheetReadError)
+  })
+
+  it("refuses a dimension past the bounds", async () => {
+    const file = xlsxFromSheetData(`<row r="1">${cell("A1")}</row>`, '<dimension ref="A1:XFD1048576"/>')
+    await expect(readGrid(file)).rejects.toThrow("worksheet larger than a statement")
+  })
+
+  it("scans hostile XML in linear time", () => {
+    const started = performance.now()
+    expect(() => checkSheetXml('<c a="'.repeat(200000))).not.toThrow()
+    expect(() => checkSheetXml("<".repeat(1000000))).not.toThrow()
+    expect(performance.now() - started).toBeLessThan(2000)
+  })
+})
+
+describe("readGrid on XLSX under another time zone", () => {
+  it("reads date cells the same as under UTC", async () => {
+    const before = process.env.TZ
+    process.env.TZ = "Asia/Ho_Chi_Minh"
+    try {
+      expect(new Date(2026, 0, 1).getTimezoneOffset()).toBe(-420)
+      const grid = await readGrid(xlsxFile([[{ date: "2026-11-02T09:15:02" }, { date: "2026-11-03T00:00:00" }]]))
+      expect(grid).toEqual([
+        [
+          { day: "2026-11-02", time: "09:15:02" },
+          { day: "2026-11-03", time: null },
+        ],
+      ])
+    } finally {
+      if (before === undefined) delete process.env.TZ
+      else process.env.TZ = before
+    }
+  })
+})
+
 describe("dateCell", () => {
   it("rounds to the nearest second, so a serial just short of midnight is the next day", () => {
     expect(dateCell(new Date(Date.UTC(2026, 10, 2) - 1))).toEqual({ day: "2026-11-02", time: null })
@@ -95,6 +167,7 @@ describe("readGrid on CSV", () => {
 
   it.each([
     ["an unterminated quote", text('a,"b\n')],
+    ["text after a closing quote", text('"a"b,c\n')],
     ["Windows-1258 text", new Uint8Array([0x4e, 0x67, 0xe0, 0x79])],
     ["an old binary .xls", new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00, 0x00])],
     ["an empty file", new Uint8Array()],
