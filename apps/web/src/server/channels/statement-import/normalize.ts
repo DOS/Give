@@ -210,7 +210,11 @@ function assertFullStatement(parsed: ParsedStatement, to: string | null, exporte
   ) {
     return
   }
-  throw new StatementImportError("STATEMENT_PARTIAL_EXPORT")
+  throw new StatementImportError(
+    coverage === "partial" && parsed.coverageDetail === "unplaced_time"
+      ? "STATEMENT_COVERAGE_UNCLEAR"
+      : "STATEMENT_PARTIAL_EXPORT"
+  )
 }
 
 /**

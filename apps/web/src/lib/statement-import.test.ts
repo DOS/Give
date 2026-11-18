@@ -623,6 +623,7 @@ describe("listTrustBlocks (DOS/Give#57)", () => {
       rejected: "2",
       last_rejected_at: "2026-11-18T00:00:00Z",
       last_restored_at: null,
+      last_rejected_row_id: "77777777-7777-4777-8777-000000000001",
     }
     const db = fakeDb(() => ({ data: [row] }), calls) as unknown as Db
     expect(await listTrustBlocks(db, "11111111-1111-4111-8111-111111111111")).toEqual([{ ...row, rejected: 2 }])

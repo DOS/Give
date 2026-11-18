@@ -163,6 +163,7 @@ describe("AdminStatementsPage finance review (DOS/Give#57)", () => {
         rejected: 2,
         last_rejected_at: "2026-11-18T02:00:00Z",
         last_restored_at: null,
+        last_rejected_row_id: "77777777-7777-4777-8777-000000000001",
       },
     ]
     const doc = await render()
