@@ -10,8 +10,9 @@ import { inboundExplanationLabel } from "./statement"
 /**
  * Statement uploads and the staff queue of ambiguous rows (design sections
  * 2.4 and 5.2; DDL in DOS-Me
- * `supabase/migrations/20261101170000_give_statement_import.sql` and
- * `20261116120000_give_statement_row_not_a_transaction.sql`).
+ * `supabase/migrations/20261101170000_give_statement_import.sql`,
+ * `20261116120000_give_statement_row_not_a_transaction.sql` and
+ * `20261122090000_give_statement_import_followups.sql`).
  *
  * Reads run with the caller's token: RLS shows a batch and its rows to the
  * account's owner and to finance/admin staff, and the column grants leave
@@ -31,7 +32,9 @@ export type AmbiguousReason =
   | "file_mismatch"
   | "possible_recorded"
   | "event_dismissed"
-export type Resolution = "import" | "duplicate" | "not_a_transaction"
+  | "finance_review"
+/** balance_confirmed: the system imported a row kept for its edge balance once a later file filled the gap (DOS/Give#57). */
+export type Resolution = "import" | "duplicate" | "not_a_transaction" | "balance_confirmed"
 
 export const ROW_STATUS_LABELS: Record<RowStatus, string> = {
   ready: "Chờ nhập",
@@ -56,17 +59,83 @@ export const AMBIGUOUS_REASON_LABELS: Record<AmbiguousReason, string> = {
   possible_recorded: "Có thể đã được ghi nhận: đã có giao dịch cùng chiều, cùng số tiền vào khoảng ngày này.",
   event_dismissed:
     "Dòng của một lần tải sao kê mà đội tài chính đã bỏ qua. Đối chiếu với sao kê của ngân hàng: nhập nếu đây là giao dịch thật chưa được ghi, đánh dấu là giao dịch đã ghi nếu bị trùng, hoặc đánh dấu không phải giao dịch thật (ví dụ file thử, tải nhầm tài khoản).",
+  finance_review:
+    "Chờ đội tài chính duyệt: sao kê do người tổ chức tự tải lên, khi chiến dịch chưa có lần tải nào được đội tài chính duyệt, khi số tiền từ ngưỡng duyệt trở lên, hoặc khi tổng trong ngày chạm giới hạn mỗi ngày. Đội tài chính đối chiếu với sao kê trên trang của ngân hàng rồi mới ghi.",
 }
 
 export const RESOLUTION_LABELS: Record<Resolution, string> = {
   import: "Nhập thành giao dịch mới",
   duplicate: "Là giao dịch đã ghi",
   not_a_transaction: "Không phải giao dịch thật",
+  balance_confirmed: "Tự nhập: số dư đã khớp nhờ sao kê tải sau",
 }
 
-/** Reasons where a staged row can be fake or from another account, not a real transaction of this account (DOS/Give#78). */
+/**
+ * Reasons where a staged row can be fake or from another account, not a real
+ * transaction of this account: a dismissed upload (DOS/Give#78), or an
+ * organizer's row finance reviews and rejects (DOS/Give#57).
+ */
 export function allowsNotATransaction(reason: AmbiguousReason | string | null | undefined): boolean {
-  return reason === "event_dismissed"
+  return reason === "event_dismissed" || reason === "finance_review"
+}
+
+// ---------------------------------------------------------------------------
+// Finance review of organizer uploads (DOS/Give#57)
+// ---------------------------------------------------------------------------
+
+/** The database defaults of give.statement_review_settings. */
+export const DEFAULT_REVIEW_THRESHOLD_VND = 20_000_000
+export const DEFAULT_REVIEW_DAILY_LIMIT_VND = 100_000_000
+
+export interface ReviewSettings {
+  /** A row an organizer uploads at or above this waits for finance review. */
+  thresholdVnd: number
+  /**
+   * A campaign's automatic organizer-upload rows of one day: once they would
+   * reach this, every new row of that day waits too (against split amounts).
+   */
+  dailyLimitVnd: number
+}
+
+function positiveAmount(value: unknown): number | null {
+  const amount = Number(value)
+  return Number.isSafeInteger(amount) && amount > 0 ? amount : null
+}
+
+/**
+ * The finance review settings of organizer uploads (DOS/Give#57), readable
+ * by every signed-in user. Null when they cannot be read (the database
+ * migration is not applied yet), so pages leave them out rather than state a
+ * wrong amount.
+ */
+export async function getReviewSettings(db: Db): Promise<ReviewSettings | null> {
+  const { data, error } = await db
+    .from("statement_review_settings")
+    .select("threshold_vnd, daily_limit_vnd")
+    .maybeSingle()
+  if (error) {
+    console.error("statement_review_settings read failed:", error.code ?? "unknown")
+    return null
+  }
+  if (!data) return null
+  const row = data as { threshold_vnd: unknown; daily_limit_vnd: unknown }
+  const thresholdVnd = positiveAmount(row.threshold_vnd)
+  const dailyLimitVnd = positiveAmount(row.daily_limit_vnd)
+  return thresholdVnd === null || dailyLimitVnd === null ? null : { thresholdVnd, dailyLimitVnd }
+}
+
+// Plain digits, or groups of three after one separator kind ("20.000.000",
+// "20,000,000", "20 000 000"); "1,5" (a decimal comma) is no amount.
+const VND_TEXT = /^(\d{1,13}|\d{1,3}(\.\d{3})+|\d{1,3}(,\d{3})+|\d{1,3}( \d{3})+)$/
+
+/** A threshold typed by staff, in whole VND. Null for anything else. */
+export function parseThresholdVnd(text: string): number | null {
+  const trimmed = text.trim().replace(/\s*(đ|₫|vnd)$/i, "")
+  if (!VND_TEXT.test(trimmed)) return null
+  const digits = trimmed.replace(/[., ]/g, "")
+  if (digits.length > 13) return null
+  const value = Number(digits)
+  return value >= 1 ? value : null
 }
 
 export function rowStatusLabel(status: string): string {
@@ -107,6 +176,8 @@ const UPLOAD_MESSAGES: Record<string, string> = {
   STATEMENT_ROW_OUTSIDE_PERIOD: "Có dòng giao dịch nằm ngoài khoảng thời gian ghi trên sao kê.",
   STATEMENT_PERIOD_INVALID: "Khoảng thời gian của sao kê không hợp lệ (ngày kết thúc không được sau hôm nay).",
   STATEMENT_PERIOD_REQUIRED: "Sao kê của định dạng này cần ghi rõ từ ngày, đến ngày.",
+  STATEMENT_PARTIAL_EXPORT:
+    "File chỉ có một phần giao dịch (lọc theo giờ, chỉ các giao dịch gần nhất, hoặc không ghi khoảng ngày). Hãy xuất sao kê đầy đủ theo khoảng ngày “Từ ngày … Đến ngày …”, từ đầu ngày, không lọc theo giờ hay loại giao dịch. Chỉ sao kê có ngày cuối là hôm nay mới được dừng ở giờ xuất file.",
   STATEMENT_BALANCE_INVALID: "Số dư ghi trên sao kê không hợp lệ.",
   GIVE_INBOUND_EVENT_DISMISSED: `Đội tài chính đã bỏ qua file này (hoặc một phần của nó), nên Give không nhập nữa. Nếu cần nhập lại, hãy liên hệ đội tài chính của Give ${VIA_CONTACT_EMAIL}.`,
   STATEMENT_PART_PREVIOUS_FAILED: "Phần trước của file không nhập được, nên phần này cũng không được nhập.",
@@ -486,6 +557,9 @@ export const RECONCILIATION_AUDIT_ACTIONS = [
   // An explanation corrected to a contribution (DOS/Give#71) or returned to unmatched (DOS/Give#196).
   "bank_transaction.correct_explanation",
   "bank_transaction.return_explanation",
+  // DOS/Give#57: rows the system imported once a gap was filled, and threshold changes.
+  "statement_import_row.balance_confirmed",
+  "statement_review_settings.update",
 ] as const
 
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
@@ -494,6 +568,8 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "bank_transaction.explain_inbound": "Giải trình tiền vào không phải tiền ủng hộ",
   "bank_transaction.correct_explanation": "Sửa giải trình thành tiền ủng hộ",
   "bank_transaction.return_explanation": "Đưa giải trình về chưa khớp",
+  "statement_import_row.balance_confirmed": "Tự nhập dòng sao kê khi số dư đã khớp",
+  "statement_review_settings.update": "Đổi ngưỡng duyệt sao kê",
 }
 
 /** The latest reconciliation audit entries. give.audit_log is readable by admins only; others get none. */
@@ -515,6 +591,18 @@ export function reconciliationAuditSummary(entry: AuditEntry): string {
     const label = resolutionLabel(typeof after.resolution === "string" ? after.resolution : null)
     const note = typeof after.note === "string" ? after.note : ""
     return `${label}${after.override_candidate === true ? " (xác nhận khác dòng trước)" : ""}: ${note}`
+  }
+  if (entry.action === "statement_import_row.balance_confirmed") {
+    const before = entry.before ?? {}
+    return `Dòng ${String(before.row_no ?? "—")} (${ambiguousReasonLabel(typeof before.reason === "string" ? before.reason : null)}) được nhập tự động: sao kê lần tải #${String(after.confirmed_by_batch_no ?? "—")} lấp khoảng trống và số dư khớp`
+  }
+  if (entry.action === "statement_review_settings.update") {
+    const before = entry.before ?? {}
+    const note = typeof after.note === "string" ? after.note : ""
+    if (entry.entity_id === "daily_limit_vnd") {
+      return `Giới hạn mỗi ngày từ ${formatVnd(Number(before.daily_limit_vnd ?? 0))} thành ${formatVnd(Number(after.daily_limit_vnd ?? 0))}: ${note}`
+    }
+    return `Ngưỡng duyệt từ ${formatVnd(Number(before.threshold_vnd ?? 0))} thành ${formatVnd(Number(after.threshold_vnd ?? 0))}: ${note}`
   }
   if (entry.action === "bank_transaction.manual_match") {
     return `${formatVnd(Number(after.amount ?? 0))} chuyển từ "chưa khớp" sang "đã khớp", lượt ủng hộ ${String(after.contribution_id ?? "—")}`

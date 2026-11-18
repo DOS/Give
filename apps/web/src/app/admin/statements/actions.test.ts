@@ -22,7 +22,7 @@ vi.mock("@/lib/supabase", () => ({
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
 }))
 
-const { resolveStatementRow } = await import("./actions")
+const { resolveStatementRow, setReviewDailyLimit, setReviewThreshold } = await import("./actions")
 
 function form(values: Record<string, string>) {
   const data = new FormData()
@@ -219,5 +219,86 @@ describe("resolveStatementRow", () => {
     // The queue sends it as a hidden field: a void candidate is no earlier transaction.
     await resolveStatementRow(ROW, null, form({ resolution: "import", note: "thật", override_candidate: "on" }))
     expect(rpcArgs()).toMatchObject({ p_resolution: "import", p_override_candidate: true })
+  })
+})
+
+describe("setReviewThreshold (DOS/Give#57)", () => {
+  function thresholdArgs() {
+    return op(
+      state.serviceCalls.find((c) => c.target === "rpc:set_statement_review_threshold"),
+      "args"
+    )?.[0]
+  }
+
+  beforeEach(() => {
+    state.serviceHandler = () => ({ data: { threshold_vnd: 30000000, replayed: false } })
+  })
+
+  it("sets the threshold typed with separators, with the note, after a role check with the user's own token", async () => {
+    const result = await setReviewThreshold(
+      null,
+      form({ threshold: " 30.000.000 ", note: "  Theo quyết định của PO  " })
+    )
+    expect(result?.ok).toBe(true)
+    expect(result?.message).toContain("Đã đổi ngưỡng duyệt")
+    expect(op(state.userCalls[0], "args")).toEqual([{ p_roles: ["finance", "admin"] }])
+    expect(thresholdArgs()).toEqual({
+      p_actor_id: REVIEWER,
+      p_threshold_vnd: 30000000,
+      p_note: "Theo quyết định của PO",
+    })
+  })
+
+  it.each([["0"], ["-5"], ["abc"], ["1,5"], ["12345678901234"], [""]])(
+    "refuses %j before any call",
+    async (threshold) => {
+      const result = await setReviewThreshold(null, form({ threshold, note: "x" }))
+      expect(result?.ok).toBe(false)
+      expect(state.serviceCalls).toHaveLength(0)
+    }
+  )
+
+  it("needs a note", async () => {
+    const result = await setReviewThreshold(null, form({ threshold: "1000000", note: "  " }))
+    expect(result).toEqual({ ok: false, message: "Ghi chú là bắt buộc: ghi lý do thay đổi." })
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("refuses a user who is not finance or admin staff", async () => {
+    state.userHandler = (call) => (call.target === "rpc:is_admin" ? { data: false } : undefined)
+    const result = await setReviewThreshold(null, form({ threshold: "1000000", note: "x" }))
+    expect(result?.ok).toBe(false)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("says nothing changed when the database reports the same threshold", async () => {
+    state.serviceHandler = () => ({ data: { threshold_vnd: 1000000, replayed: true } })
+    const result = await setReviewThreshold(null, form({ threshold: "1000000", note: "x" }))
+    expect(result?.ok).toBe(true)
+    expect(result?.message).toContain("không có gì thay đổi")
+  })
+
+  it("words a refusal of the database", async () => {
+    state.serviceHandler = () => ({ error: { code: "P0001", message: "GIVE_NOT_ALLOWED" } })
+    const result = await setReviewThreshold(null, form({ threshold: "1000000", note: "x" }))
+    expect(result).toEqual({
+      ok: false,
+      message: "Chỉ nhân viên tài chính hoặc quản trị viên được đổi ngưỡng duyệt và giới hạn mỗi ngày.",
+    })
+  })
+})
+
+describe("setReviewDailyLimit (DOS/Give#57)", () => {
+  it("sets the daily limit through its own RPC, with the note", async () => {
+    state.serviceHandler = () => ({ data: { daily_limit_vnd: 40000000, replayed: false } })
+    const result = await setReviewDailyLimit(null, form({ threshold: "40.000.000", note: "Theo JOY" }))
+    expect(result?.ok).toBe(true)
+    expect(result?.message).toContain("giới hạn mỗi ngày")
+    expect(
+      op(
+        state.serviceCalls.find((c) => c.target === "rpc:set_statement_review_daily_limit"),
+        "args"
+      )?.[0]
+    ).toEqual({ p_actor_id: REVIEWER, p_daily_limit_vnd: 40000000, p_note: "Theo JOY" })
   })
 })

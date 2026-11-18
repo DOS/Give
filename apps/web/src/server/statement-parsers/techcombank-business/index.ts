@@ -34,7 +34,9 @@ export const TECHCOMBANK_BIN = "970407"
  * The registry needs at least one of the two flags (design section 5.2), so
  * both cannot be false: the running balance, verified on every file,
  * carries the import. Without row ids the file must state its period ("Từ
- * ngày/From … Đến ngày/To …"); one that does not is refused.
+ * ngày/From … Đến ngày/To …"); one that does not is refused as a partial
+ * export, as is one whose period starts after midnight, or ends before the
+ * end of a day other than today (DOS/Give#57; the guide shows dates only).
  */
 export const tcbBusinessParser: StatementParser = {
   name: "tcb-business",

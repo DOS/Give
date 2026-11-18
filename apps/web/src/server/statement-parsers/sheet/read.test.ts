@@ -153,6 +153,11 @@ describe("dateCell", () => {
     expect(dateCell(new Date(Date.UTC(2026, 10, 2) - 1))).toEqual({ day: "2026-11-02", time: null })
     expect(dateCell(new Date(Date.UTC(2026, 10, 2, 9, 15, 1, 999)))).toEqual({ day: "2026-11-02", time: "09:15:02" })
   })
+
+  it("keeps a time from 23:59:59.5 on its own day (DOS/Give#57)", () => {
+    expect(dateCell(new Date(Date.UTC(2026, 10, 1, 23, 59, 59, 500)))).toEqual({ day: "2026-11-01", time: "23:59:59" })
+    expect(dateCell(new Date(Date.UTC(2026, 10, 1, 23, 59, 59, 998)))).toEqual({ day: "2026-11-01", time: "23:59:59" })
+  })
 })
 
 describe("readGrid on CSV", () => {
