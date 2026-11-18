@@ -91,13 +91,31 @@ export async function resolveStatementRow(rowId: string, _state: ActionResult, f
 }
 
 /**
- * Finance/admin staff change the amount at or above which a row an organizer
- * uploads waits for finance review (DOS/Give#57). As for resolutions, the
- * role is checked with the reviewer's own token first, then
- * give.set_statement_review_threshold checks it again, requires the note and
- * writes the audit row.
+ * Finance/admin staff change a finance review setting of organizer uploads
+ * (DOS/Give#57): the per-row threshold, or the daily limit against split
+ * amounts. As for resolutions, the role is checked with the reviewer's own
+ * token first, then the RPC checks it again, requires the note and writes the
+ * audit row.
  */
-export async function setReviewThreshold(_state: ActionResult, form: FormData): Promise<ActionResult> {
+export async function setReviewThreshold(state: ActionResult, form: FormData): Promise<ActionResult> {
+  return setReviewSetting("threshold", state, form)
+}
+
+export async function setReviewDailyLimit(state: ActionResult, form: FormData): Promise<ActionResult> {
+  return setReviewSetting("daily_limit", state, form)
+}
+
+const REVIEW_SETTINGS = {
+  threshold: { rpc: "set_statement_review_threshold", arg: "p_threshold_vnd", name: "Ngưỡng duyệt" },
+  daily_limit: { rpc: "set_statement_review_daily_limit", arg: "p_daily_limit_vnd", name: "Giới hạn mỗi ngày" },
+} as const
+
+async function setReviewSetting(
+  kind: keyof typeof REVIEW_SETTINGS,
+  _state: ActionResult,
+  form: FormData
+): Promise<ActionResult> {
+  const setting = REVIEW_SETTINGS[kind]
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
   const threshold = parseThresholdVnd(String(form.get("threshold") ?? ""))
@@ -111,15 +129,15 @@ export async function setReviewThreshold(_state: ActionResult, form: FormData): 
   if (role.data !== true) return fail(REVIEW_THRESHOLD_MESSAGES.GIVE_NOT_ALLOWED)
 
   const { data, error } = await dbService()
-    .rpc("set_statement_review_threshold", { p_actor_id: session.user.id, p_threshold_vnd: threshold, p_note: note })
+    .rpc(setting.rpc, { p_actor_id: session.user.id, [setting.arg]: threshold, p_note: note })
     .single()
   if (error) return fail(dbErrorMessage(error, REVIEW_THRESHOLD_MESSAGES))
 
   revalidatePath("/admin/statements")
   revalidatePath("/me/statements")
   const result = data as { replayed?: boolean } | null
-  if (result?.replayed === true) return done(`Ngưỡng duyệt đã là ${formatVnd(threshold)}; không có gì thay đổi.`)
+  if (result?.replayed === true) return done(`${setting.name} đã là ${formatVnd(threshold)}; không có gì thay đổi.`)
   return done(
-    `Đã đổi ngưỡng duyệt thành ${formatVnd(threshold)}. Các lần tải sao kê sau của người tổ chức dùng ngưỡng mới; dòng đã tải giữ nguyên.`
+    `Đã đổi ${setting.name.toLowerCase()} thành ${formatVnd(threshold)}. Các lần tải sao kê sau của người tổ chức dùng giá trị mới; dòng đã tải giữ nguyên.`
   )
 }

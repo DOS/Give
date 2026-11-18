@@ -60,7 +60,7 @@ export const AMBIGUOUS_REASON_LABELS: Record<AmbiguousReason, string> = {
   event_dismissed:
     "Dòng của một lần tải sao kê mà đội tài chính đã bỏ qua. Đối chiếu với sao kê của ngân hàng: nhập nếu đây là giao dịch thật chưa được ghi, đánh dấu là giao dịch đã ghi nếu bị trùng, hoặc đánh dấu không phải giao dịch thật (ví dụ file thử, tải nhầm tài khoản).",
   finance_review:
-    "Chờ đội tài chính duyệt: sao kê do người tổ chức tự tải lên, khi chiến dịch chưa có dòng sao kê nào được đội tài chính duyệt, hoặc khi số tiền từ ngưỡng duyệt trở lên. Đội tài chính đối chiếu với sao kê trên trang của ngân hàng rồi mới ghi.",
+    "Chờ đội tài chính duyệt: sao kê do người tổ chức tự tải lên, khi chiến dịch chưa có lần tải nào được đội tài chính duyệt, khi số tiền từ ngưỡng duyệt trở lên, hoặc khi tổng trong ngày chạm giới hạn mỗi ngày. Đội tài chính đối chiếu với sao kê trên trang của ngân hàng rồi mới ghi.",
 }
 
 export const RESOLUTION_LABELS: Record<Resolution, string> = {
@@ -83,24 +83,45 @@ export function allowsNotATransaction(reason: AmbiguousReason | string | null | 
 // Finance review of organizer uploads (DOS/Give#57)
 // ---------------------------------------------------------------------------
 
-/** The database default of give.statement_review_settings. */
+/** The database defaults of give.statement_review_settings. */
 export const DEFAULT_REVIEW_THRESHOLD_VND = 20_000_000
+export const DEFAULT_REVIEW_DAILY_LIMIT_VND = 100_000_000
+
+export interface ReviewSettings {
+  /** A row an organizer uploads at or above this waits for finance review. */
+  thresholdVnd: number
+  /**
+   * A campaign's automatic organizer-upload rows of one day: once they would
+   * reach this, every new row of that day waits too (against split amounts).
+   */
+  dailyLimitVnd: number
+}
+
+function positiveAmount(value: unknown): number | null {
+  const amount = Number(value)
+  return Number.isSafeInteger(amount) && amount > 0 ? amount : null
+}
 
 /**
- * The amount at or above which a row an organizer uploads waits for finance
- * review. Readable by every signed-in user. Null when it cannot be read (the
- * database migration is not applied yet), so pages leave the notice out
- * rather than state a wrong amount.
+ * The finance review settings of organizer uploads (DOS/Give#57), readable
+ * by every signed-in user. Null when they cannot be read (the database
+ * migration is not applied yet), so pages leave them out rather than state a
+ * wrong amount.
  */
-export async function getReviewThreshold(db: Db): Promise<number | null> {
-  const { data, error } = await db.from("statement_review_settings").select("threshold_vnd").maybeSingle()
+export async function getReviewSettings(db: Db): Promise<ReviewSettings | null> {
+  const { data, error } = await db
+    .from("statement_review_settings")
+    .select("threshold_vnd, daily_limit_vnd")
+    .maybeSingle()
   if (error) {
     console.error("statement_review_settings read failed:", error.code ?? "unknown")
     return null
   }
   if (!data) return null
-  const value = Number((data as { threshold_vnd: unknown }).threshold_vnd)
-  return Number.isSafeInteger(value) && value > 0 ? value : null
+  const row = data as { threshold_vnd: unknown; daily_limit_vnd: unknown }
+  const thresholdVnd = positiveAmount(row.threshold_vnd)
+  const dailyLimitVnd = positiveAmount(row.daily_limit_vnd)
+  return thresholdVnd === null || dailyLimitVnd === null ? null : { thresholdVnd, dailyLimitVnd }
 }
 
 // Plain digits, or groups of three after one separator kind ("20.000.000",
@@ -578,6 +599,9 @@ export function reconciliationAuditSummary(entry: AuditEntry): string {
   if (entry.action === "statement_review_settings.update") {
     const before = entry.before ?? {}
     const note = typeof after.note === "string" ? after.note : ""
+    if (entry.entity_id === "daily_limit_vnd") {
+      return `Giới hạn mỗi ngày từ ${formatVnd(Number(before.daily_limit_vnd ?? 0))} thành ${formatVnd(Number(after.daily_limit_vnd ?? 0))}: ${note}`
+    }
     return `Ngưỡng duyệt từ ${formatVnd(Number(before.threshold_vnd ?? 0))} thành ${formatVnd(Number(after.threshold_vnd ?? 0))}: ${note}`
   }
   if (entry.action === "bank_transaction.manual_match") {

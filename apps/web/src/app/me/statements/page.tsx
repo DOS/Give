@@ -13,7 +13,7 @@ import {
   accountLabel,
   accountLabels,
   countWaitingRows,
-  getReviewThreshold,
+  getReviewSettings,
   listBatches,
   listUploadAccounts,
   MAX_UPLOAD_BYTES,
@@ -37,10 +37,10 @@ export default async function StatementsPage() {
   const session = await requireSession("/me/statements")
   const db = dbAs(session.accessToken)
   const staff = await isStaff(db, FINANCE_ROLES)
-  const [accounts, batches, threshold] = await Promise.all([
+  const [accounts, batches, reviewSettings] = await Promise.all([
     listUploadAccounts(db, session.user.id, staff),
     listBatches(db),
-    getReviewThreshold(db),
+    getReviewSettings(db),
   ])
   const [waiting, labels] = await Promise.all([
     countWaitingRows(
@@ -78,11 +78,13 @@ export default async function StatementsPage() {
         ) : (
           <>
             {/* Only the account's owner uploads as the organizer; staff uploads to others' accounts are not reviewed. */}
-            {threshold !== null && accounts.some((account) => account.owner_user_id === session.user.id) && (
+            {reviewSettings !== null && accounts.some((account) => account.owner_user_id === session.user.id) && (
               <p className="mb-4 text-sm text-muted">
                 Với tài khoản của bạn, các giao dịch sau chỉ được ghi khi đội tài chính của Give đã đối chiếu với ngân
-                hàng: mọi dòng khi chiến dịch chưa có dòng sao kê nào được duyệt, và mọi giao dịch từ{" "}
-                <span className="font-semibold text-fg tabular-nums">{formatVnd(threshold)}</span> trở lên.
+                hàng: mọi dòng khi chiến dịch chưa có lần tải nào được duyệt, và mọi giao dịch từ{" "}
+                <span className="font-semibold text-fg tabular-nums">{formatVnd(reviewSettings.thresholdVnd)}</span> trở
+                lên, và mọi giao dịch trong ngày khi tổng các giao dịch tự ghi của chiến dịch trong ngày đó chạm{" "}
+                <span className="font-semibold text-fg tabular-nums">{formatVnd(reviewSettings.dailyLimitVnd)}</span>.
               </p>
             )}
             <UploadForm action={uploadStatement} accounts={choices} maxBytes={MAX_UPLOAD_BYTES} />

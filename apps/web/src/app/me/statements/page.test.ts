@@ -14,7 +14,10 @@ const VIEWER = "11111111-1111-4111-8111-111111111111"
 const OTHER = "22222222-2222-4222-8222-222222222222"
 
 const state = vi.hoisted(() => ({
-  threshold: 20000000 as number | null,
+  settings: { thresholdVnd: 20000000, dailyLimitVnd: 100000000 } as {
+    thresholdVnd: number
+    dailyLimitVnd: number
+  } | null,
   accounts: [] as unknown[],
 }))
 
@@ -35,7 +38,7 @@ vi.mock("@/lib/statement-import", async (original) => ({
   listBatches: vi.fn(async () => []),
   countWaitingRows: vi.fn(async () => new Map()),
   accountLabels: vi.fn(async () => new Map()),
-  getReviewThreshold: vi.fn(async () => state.threshold),
+  getReviewSettings: vi.fn(async () => state.settings),
 }))
 vi.mock("./actions", () => ({ uploadStatement: vi.fn(async () => null) }))
 
@@ -58,7 +61,7 @@ async function text(): Promise<string> {
 }
 
 beforeEach(() => {
-  state.threshold = 20000000
+  state.settings = { thresholdVnd: 20000000, dailyLimitVnd: 100000000 }
   state.accounts = [account(VIEWER)]
 })
 
@@ -67,6 +70,7 @@ describe("StatementsPage finance review notice (DOS/Give#57)", () => {
     const page = await text()
     expect(page).toContain("chỉ được ghi khi đội tài chính của Give đã đối chiếu")
     expect(page).toContain("20.000.000")
+    expect(page).toContain("100.000.000")
   })
 
   it("is not shown to staff uploading only for other people's accounts", async () => {
@@ -75,7 +79,7 @@ describe("StatementsPage finance review notice (DOS/Give#57)", () => {
   })
 
   it("is not shown when the threshold cannot be read", async () => {
-    state.threshold = null
+    state.settings = null
     expect(await text()).not.toContain("đội tài chính của Give đã đối chiếu")
   })
 })

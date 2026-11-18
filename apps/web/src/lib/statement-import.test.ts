@@ -12,7 +12,7 @@ import {
   AUDIT_ACTION_LABELS,
   countWaitingRows,
   getCandidateRows,
-  getReviewThreshold,
+  getReviewSettings,
   importSummary,
   isOwnStatementRow,
   isVoidRow,
@@ -541,17 +541,23 @@ describe("account owners and bindings", () => {
 })
 
 describe("finance review threshold (DOS/Give#57)", () => {
-  it("reads the threshold every signed-in user may read", async () => {
+  it("reads the threshold and the daily limit every signed-in user may read", async () => {
     const calls: Call[] = []
-    const db = fakeDb(() => ({ data: { threshold_vnd: 20000000 } }), calls) as unknown as Db
-    expect(await getReviewThreshold(db)).toBe(20000000)
+    const db = fakeDb(
+      () => ({ data: { threshold_vnd: 20000000, daily_limit_vnd: "100000000" } }),
+      calls
+    ) as unknown as Db
+    expect(await getReviewSettings(db)).toEqual({ thresholdVnd: 20000000, dailyLimitVnd: 100000000 })
     expect(calls[0].target).toBe("statement_review_settings")
-    expect(op(calls[0], "select")).toEqual(["threshold_vnd"])
+    expect(op(calls[0], "select")).toEqual(["threshold_vnd, daily_limit_vnd"])
   })
 
   it("gives null rather than a wrong amount when the setting cannot be read", async () => {
-    expect(await getReviewThreshold(fakeDb(() => ({ error: { code: "42P01" } })) as unknown as Db)).toBeNull()
-    expect(await getReviewThreshold(fakeDb(() => ({ data: null })) as unknown as Db)).toBeNull()
+    expect(await getReviewSettings(fakeDb(() => ({ error: { code: "42P01" } })) as unknown as Db)).toBeNull()
+    expect(await getReviewSettings(fakeDb(() => ({ data: null })) as unknown as Db)).toBeNull()
+    expect(
+      await getReviewSettings(fakeDb(() => ({ data: { threshold_vnd: 1, daily_limit_vnd: null } })) as unknown as Db)
+    ).toBeNull()
   })
 
   it.each<[string, number | null]>([
@@ -593,5 +599,14 @@ describe("finance review threshold (DOS/Give#57)", () => {
         after: { threshold_vnd: 30000000, note: "PO" },
       })
     ).toMatch(/^Ngưỡng duyệt từ .*20\.000\.000.* thành .*30\.000\.000.*: PO$/)
+    expect(
+      reconciliationAuditSummary({
+        ...base,
+        entity_id: "daily_limit_vnd",
+        action: "statement_review_settings.update",
+        before: { daily_limit_vnd: 100000000 },
+        after: { daily_limit_vnd: 40000000, note: "JOY" },
+      })
+    ).toMatch(/^Giới hạn mỗi ngày từ .*100\.000\.000.* thành .*40\.000\.000.*: JOY$/)
   })
 })

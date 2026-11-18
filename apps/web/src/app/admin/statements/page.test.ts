@@ -14,7 +14,10 @@ const VIEWER = "11111111-1111-4111-8111-111111111111"
 const ACCOUNT = "bbbbbbbb-0000-4000-8000-000000000001"
 
 const state = vi.hoisted(() => ({
-  threshold: 20000000 as number | null,
+  settings: { thresholdVnd: 20000000, dailyLimitVnd: 100000000 } as {
+    thresholdVnd: number
+    dailyLimitVnd: number
+  } | null,
   queue: [] as unknown[],
 }))
 
@@ -40,7 +43,7 @@ vi.mock("@/lib/statement-import", async (original) => ({
   ...(await original<typeof import("@/lib/statement-import")>()),
   listAmbiguousRows: vi.fn(async () => ({ rows: state.queue, total: state.queue.length })),
   listResolvedRows: vi.fn(async () => []),
-  getReviewThreshold: vi.fn(async () => state.threshold),
+  getReviewSettings: vi.fn(async () => state.settings),
   getCandidateRows: vi.fn(async () => ({ rows: new Map(), voidIds: new Set() })),
   accountOwners: vi.fn(async () => new Map()),
   listAccountBindings: vi.fn(async () => []),
@@ -51,6 +54,7 @@ vi.mock("@/lib/statement-import", async (original) => ({
 vi.mock("./actions", () => ({
   resolveStatementRow: vi.fn(async () => null),
   setReviewThreshold: vi.fn(async () => null),
+  setReviewDailyLimit: vi.fn(async () => null),
 }))
 
 const { default: AdminStatementsPage } = await import("./page")
@@ -98,7 +102,7 @@ async function render(): Promise<Document> {
 }
 
 beforeEach(() => {
-  state.threshold = 20000000
+  state.settings = { thresholdVnd: 20000000, dailyLimitVnd: 100000000 }
   state.queue = []
 })
 
@@ -114,8 +118,15 @@ describe("AdminStatementsPage finance review (DOS/Give#57)", () => {
     expect(doc.querySelector("#review-threshold-note")?.hasAttribute("required")).toBe(true)
   })
 
+  it("shows the daily limit next to the threshold, with its own form", async () => {
+    const doc = await render()
+    expect(doc.querySelector('section[aria-labelledby="review-threshold"]')?.textContent).toContain("100.000.000")
+    expect(doc.querySelector("#review-daily-limit-amount")?.getAttribute("value")).toBe("100.000.000")
+    expect(doc.querySelector("#review-daily-limit-note")?.hasAttribute("required")).toBe(true)
+  })
+
   it("says so when the threshold cannot be read, without a form", async () => {
-    state.threshold = null
+    state.settings = null
     const doc = await render()
     expect(doc.querySelector('section[aria-labelledby="review-threshold"]')?.textContent).toContain(
       "Chưa đọc được ngưỡng duyệt"

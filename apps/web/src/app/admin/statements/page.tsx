@@ -19,7 +19,7 @@ import {
   AUDIT_ACTION_LABELS,
   DUPLICATE_WINDOW_DAYS,
   getCandidateRows,
-  getReviewThreshold,
+  getReviewSettings,
   isOwnStatementRow,
   listAccountBindings,
   listAmbiguousRows,
@@ -34,12 +34,13 @@ import {
   type AuditEntry,
   type DuplicateTargets,
   type QueueRow,
+  type ReviewSettings,
   type StatementRowView,
 } from "@/lib/statement-import"
 import { dbAs } from "@/lib/supabase"
 
 import { AdminPage, AdminSection, DataTable, ItemActions, ItemCard, ItemList } from "../_components/ui"
-import { resolveStatementRow, setReviewThreshold } from "./actions"
+import { resolveStatementRow, setReviewDailyLimit, setReviewThreshold } from "./actions"
 import { MachineId } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Đối soát sao kê", robots: { index: false } }
@@ -54,11 +55,11 @@ export default async function AdminStatementsPage() {
   // Finance and admin staff only; others get a 404.
   if (!(await isStaff(db, FINANCE_ROLES))) notFound()
 
-  const [{ rows: queue, total }, resolved, isAdmin, threshold] = await Promise.all([
+  const [{ rows: queue, total }, resolved, isAdmin, reviewSettings] = await Promise.all([
     listAmbiguousRows(db),
     listResolvedRows(db),
     isStaff(db, ["admin"]),
-    getReviewThreshold(db),
+    getReviewSettings(db),
   ])
   const accountIds = queue.map((row) => row.batch.receiving_account_id)
   // Void candidates (not_a_transaction rows) are never offered (DOS/Give#78).
@@ -104,8 +105,8 @@ export default async function AdminStatementsPage() {
           Các dòng sao kê dưới đây chưa được ghi thành giao dịch vì Give không chắc chúng là giao dịch mới hay lặp lại
           một giao dịch đã ghi. Đối chiếu với sao kê trên trang của chính ngân hàng rồi chọn một cách xử lý. Ghi chú là
           bắt buộc; mỗi lần xử lý được ghi vào nhật ký kiểm toán và không đổi được. Sao kê do người tổ chức tự tải lên
-          còn chờ đội tài chính duyệt cho đến khi chiến dịch có dòng đầu tiên được duyệt, và ở mọi dòng từ ngưỡng duyệt
-          trở lên.
+          còn chờ đội tài chính duyệt cho đến khi một lần tải của chiến dịch được duyệt trọn vẹn, ở mọi dòng từ ngưỡng
+          duyệt trở lên, và khi tổng trong ngày chạm giới hạn mỗi ngày.
         </p>
       }
     >
@@ -135,7 +136,7 @@ export default async function AdminStatementsPage() {
         )}
       </AdminSection>
 
-      <ReviewThreshold threshold={threshold} />
+      <ReviewThreshold settings={reviewSettings} />
 
       <AdminSection id="resolved" title="Đã xử lý gần đây" count={resolved.length}>
         {resolved.length === 0 ? (
@@ -348,40 +349,73 @@ function QueueCard({
   )
 }
 
-/** The finance review threshold of organizer uploads (DOS/Give#57), with the form to change it. */
-function ReviewThreshold({ threshold }: { threshold: number | null }) {
+/** The finance review settings of organizer uploads (DOS/Give#57), with the forms to change them. */
+function ReviewThreshold({ settings }: { settings: ReviewSettings | null }) {
   return (
     <AdminSection
       id="review-threshold"
       title="Ngưỡng duyệt sao kê"
-      lead="Dòng sao kê do người tổ chức tự tải lên có số tiền (vào hoặc ra) từ ngưỡng này trở lên chờ đội tài chính duyệt trước khi được ghi. Khi chiến dịch chưa có dòng sao kê nào được duyệt, mọi dòng do người tổ chức tải lên đều chờ duyệt, dù số tiền nhỏ."
+      lead="Dòng sao kê do người tổ chức tự tải lên chờ đội tài chính duyệt trước khi được ghi khi: chiến dịch chưa có lần tải nào được duyệt; số tiền (vào hoặc ra) từ ngưỡng duyệt trở lên; hoặc tổng các dòng tự ghi của chiến dịch trong một ngày chạm giới hạn mỗi ngày (chống chia nhỏ số tiền)."
     >
-      {threshold === null ? (
+      {settings === null ? (
         <Callout tone="warning">Chưa đọc được ngưỡng duyệt. Hãy tải lại trang sau.</Callout>
       ) : (
-        <ActionForm action={setReviewThreshold} className="max-w-xl space-y-4" confirm="Đổi ngưỡng duyệt sao kê?">
-          <p className="text-sm">
-            Ngưỡng hiện tại: <span className="font-semibold text-fg tabular-nums">{formatVnd(threshold)}</span>
-          </p>
-          <div className="space-y-1">
-            <label htmlFor="review-threshold-amount" className="label">
-              Ngưỡng mới (VND)
-            </label>
-            <input
-              id="review-threshold-amount"
-              name="threshold"
-              className="field tabular-nums"
-              inputMode="numeric"
-              required
-              maxLength={20}
-              defaultValue={threshold.toLocaleString("vi-VN")}
-            />
-          </div>
-          <NoteField id="review-threshold-note" placeholder="Ghi chú bắt buộc: lý do đổi ngưỡng" />
-          <SubmitButton className="btn-secondary">Lưu ngưỡng</SubmitButton>
-        </ActionForm>
+        <div className="grid gap-8 md:grid-cols-2">
+          <SettingForm
+            id="review-threshold"
+            action={setReviewThreshold}
+            label="Ngưỡng duyệt mỗi dòng"
+            value={settings.thresholdVnd}
+            confirm="Đổi ngưỡng duyệt sao kê?"
+          />
+          <SettingForm
+            id="review-daily-limit"
+            action={setReviewDailyLimit}
+            label="Giới hạn mỗi ngày của chiến dịch"
+            value={settings.dailyLimitVnd}
+            confirm="Đổi giới hạn mỗi ngày?"
+          />
+        </div>
       )}
     </AdminSection>
+  )
+}
+
+function SettingForm({
+  id,
+  action,
+  label,
+  value,
+  confirm,
+}: {
+  id: string
+  action: typeof setReviewThreshold
+  label: string
+  value: number
+  confirm: string
+}) {
+  return (
+    <ActionForm action={action} className="space-y-4" confirm={confirm}>
+      <p className="text-sm">
+        {label}: <span className="font-semibold text-fg tabular-nums">{formatVnd(value)}</span>
+      </p>
+      <div className="space-y-1">
+        <label htmlFor={`${id}-amount`} className="label">
+          Giá trị mới (VND)
+        </label>
+        <input
+          id={`${id}-amount`}
+          name="threshold"
+          className="field tabular-nums"
+          inputMode="numeric"
+          required
+          maxLength={20}
+          defaultValue={value.toLocaleString("vi-VN")}
+        />
+      </div>
+      <NoteField id={`${id}-note`} placeholder="Ghi chú bắt buộc: lý do thay đổi" />
+      <SubmitButton className="btn-secondary">Lưu</SubmitButton>
+    </ActionForm>
   )
 }
 

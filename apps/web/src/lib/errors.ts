@@ -374,9 +374,9 @@ export const STATEMENT_ROW_MESSAGES: Record<string, string> = {
 
 /** Refusals of give.set_statement_review_threshold (DOS/Give#57). */
 export const REVIEW_THRESHOLD_MESSAGES: Record<string, string> = {
-  GIVE_NOT_ALLOWED: "Chỉ nhân viên tài chính hoặc quản trị viên được đổi ngưỡng duyệt.",
-  GIVE_THRESHOLD_INVALID: "Ngưỡng duyệt là một số tiền VND nguyên, lớn hơn 0.",
-  GIVE_SETTING_NOTE_REQUIRED: "Ghi chú là bắt buộc: ghi lý do đổi ngưỡng.",
+  GIVE_NOT_ALLOWED: "Chỉ nhân viên tài chính hoặc quản trị viên được đổi ngưỡng duyệt và giới hạn mỗi ngày.",
+  GIVE_THRESHOLD_INVALID: "Hãy nhập một số tiền VND nguyên, lớn hơn 0.",
+  GIVE_SETTING_NOTE_REQUIRED: "Ghi chú là bắt buộc: ghi lý do thay đổi.",
 }
 
 /**

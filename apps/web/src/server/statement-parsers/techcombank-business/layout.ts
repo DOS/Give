@@ -91,8 +91,12 @@ const ONE_TIME = "(?:\\d{1,2} ?(?::|h|g|gio|\\.) ?\\d{2}(?::\\d{2})?(?: ?(?:am|p
 const TIME_CELL = new RegExp(
   `^(?:(?:luc|den|tu|-|–|—) ?)?(?:${ONE_TIME}(?: ?(?:-|–|—|den) ?${ONE_TIME})?|(?:gio|time|luc)(?: ?/ ?(?:gio|time))?)(?: ?\\(?(?:gmt|utc|ict)[^)]*\\)?)?$`
 )
-/** A "Thời gian/Time" label cell, whose neighbour on its row may bound the export by time. */
-const TIME_LABEL = /^(?:thoi gian|time)(?: ?\/ ?(?:thoi gian|time))?$/
+/** A row label of a time ("Thời gian/Time", "Time:", "Giờ"), whose row may bound the export by time. */
+const TIME_ROW_LABEL = /^(?:thoi gian|time|gio)\b/
+/** A time written with digits ("08:00", "14h30", "2 PM"), without the label words of TIME_LIKE. */
+const TIME_DIGITS = /\d{1,2} ?(?::|h|g|gio|\.) ?\d{2}|\d ?(?:am|pm|sa|ch)\b/
+/** A print-time label ("Thời gian in", "Printed time"), which is no bound of the export. */
+const PRINT_WORD = /\b(?:in|printed|print)\b/
 /** A label of a time range on another row above the table ("Từ giờ/From time 08:00"). */
 const TIME_RANGE = /\b(tu gio|den gio|from time|to time|gio bat dau|gio ket thuc|start time|end time)\b/
 const START_OF_DAY = /^0?0:00(:00)?$/
@@ -233,12 +237,15 @@ interface HeaderPeriod {
 
 /**
  * Another row above the table that bounds the export by time: a time-range
- * label ("Từ giờ/From time"), or a "Thời gian/Time" label with a time or
- * time range on the same row.
+ * label ("Từ giờ/From time"), or a row labelled "Thời gian", "Time" or "Giờ"
+ * (not a print-time label) that holds any time ("08:00 ~ 14:30", "Thời
+ * gian/Time: 08:00 - 14:30").
  */
 function timeBoundRow(cells: readonly string[]): boolean {
   if (cells.some((cell) => TIME_RANGE.test(cell))) return true
-  return cells.some((cell) => TIME_LABEL.test(cell)) && cells.some((cell) => TIME_CELL.test(cell))
+  const labelled = cells.some((cell) => TIME_ROW_LABEL.test(cell) && !PRINT_WORD.test(cell))
+  if (!labelled) return false
+  return cells.some((cell) => TIME_CELL.test(cell)) || TIME_DIGITS.test(cells.join(" ").replace(PERIOD_DATE, " "))
 }
 
 function headerPeriod(rows: Grid): HeaderPeriod | null {

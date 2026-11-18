@@ -22,7 +22,7 @@ vi.mock("@/lib/supabase", () => ({
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
 }))
 
-const { resolveStatementRow, setReviewThreshold } = await import("./actions")
+const { resolveStatementRow, setReviewDailyLimit, setReviewThreshold } = await import("./actions")
 
 function form(values: Record<string, string>) {
   const data = new FormData()
@@ -260,7 +260,7 @@ describe("setReviewThreshold (DOS/Give#57)", () => {
 
   it("needs a note", async () => {
     const result = await setReviewThreshold(null, form({ threshold: "1000000", note: "  " }))
-    expect(result).toEqual({ ok: false, message: "Ghi chú là bắt buộc: ghi lý do đổi ngưỡng." })
+    expect(result).toEqual({ ok: false, message: "Ghi chú là bắt buộc: ghi lý do thay đổi." })
     expect(state.serviceCalls).toHaveLength(0)
   })
 
@@ -281,6 +281,24 @@ describe("setReviewThreshold (DOS/Give#57)", () => {
   it("words a refusal of the database", async () => {
     state.serviceHandler = () => ({ error: { code: "P0001", message: "GIVE_NOT_ALLOWED" } })
     const result = await setReviewThreshold(null, form({ threshold: "1000000", note: "x" }))
-    expect(result).toEqual({ ok: false, message: "Chỉ nhân viên tài chính hoặc quản trị viên được đổi ngưỡng duyệt." })
+    expect(result).toEqual({
+      ok: false,
+      message: "Chỉ nhân viên tài chính hoặc quản trị viên được đổi ngưỡng duyệt và giới hạn mỗi ngày.",
+    })
+  })
+})
+
+describe("setReviewDailyLimit (DOS/Give#57)", () => {
+  it("sets the daily limit through its own RPC, with the note", async () => {
+    state.serviceHandler = () => ({ data: { daily_limit_vnd: 40000000, replayed: false } })
+    const result = await setReviewDailyLimit(null, form({ threshold: "40.000.000", note: "Theo JOY" }))
+    expect(result?.ok).toBe(true)
+    expect(result?.message).toContain("giới hạn mỗi ngày")
+    expect(
+      op(
+        state.serviceCalls.find((c) => c.target === "rpc:set_statement_review_daily_limit"),
+        "args"
+      )?.[0]
+    ).toEqual({ p_actor_id: REVIEWER, p_daily_limit_vnd: 40000000, p_note: "Theo JOY" })
   })
 })
