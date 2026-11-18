@@ -7,6 +7,7 @@ import { ActionForm, SubmitButton } from "@/components/forms"
 import { ButtonLink } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
+import { Field } from "@/components/ui/Field"
 import { requireSession } from "@/lib/auth/session"
 import {
   accountProblemLabel,
@@ -114,20 +115,19 @@ export default async function AdminReviewPage() {
                         </p>
                         <SubmitButton>Duyệt</SubmitButton>
                       </ActionForm>
-                      <ActionForm action={requestChanges.bind(null, campaign.id)} resetOnSuccess className="space-y-2">
+                      <ActionForm action={requestChanges.bind(null, campaign.id)} resetOnSuccess className="space-y-6">
                         <input type="hidden" name="from_status" value="in_review" />
-                        <label htmlFor={`reason-${campaign.id}`} className="label">
-                          Yêu cầu chỉnh sửa
-                        </label>
-                        <textarea
-                          id={`reason-${campaign.id}`}
-                          name="reason"
-                          className="field"
-                          rows={2}
-                          required
-                          maxLength={2000}
-                          placeholder="Người tổ chức cần sửa gì?"
-                        />
+                        <Field htmlFor={`reason-${campaign.id}`} label="Yêu cầu chỉnh sửa">
+                          <textarea
+                            id={`reason-${campaign.id}`}
+                            name="reason"
+                            className="field"
+                            rows={2}
+                            required
+                            maxLength={2000}
+                            placeholder="Người tổ chức cần sửa gì?"
+                          />
+                        </Field>
                         <SubmitButton className="btn-secondary">Gửi yêu cầu</SubmitButton>
                       </ActionForm>
                     </ItemActions>
@@ -187,21 +187,20 @@ export default async function AdminReviewPage() {
                     <ActionForm
                       action={requestChanges.bind(null, campaign.id)}
                       confirm="Trả chiến dịch đã duyệt về cho người tổ chức chỉnh sửa? Chiến dịch sẽ phải gửi duyệt lại."
-                      className="max-w-160 space-y-2 border-t border-border pt-6"
+                      className="max-w-160 space-y-6 border-t border-border pt-6"
                     >
                       <input type="hidden" name="from_status" value="approved" />
-                      <label htmlFor={`waiting-reason-${campaign.id}`} className="label">
-                        Yêu cầu chỉnh sửa
-                      </label>
-                      <textarea
-                        id={`waiting-reason-${campaign.id}`}
-                        name="reason"
-                        className="field"
-                        rows={4}
-                        required
-                        maxLength={2000}
-                        defaultValue={advice.sendBackReason}
-                      />
+                      <Field htmlFor={`waiting-reason-${campaign.id}`} label="Yêu cầu chỉnh sửa">
+                        <textarea
+                          id={`waiting-reason-${campaign.id}`}
+                          name="reason"
+                          className="field"
+                          rows={4}
+                          required
+                          maxLength={2000}
+                          defaultValue={advice.sendBackReason}
+                        />
+                      </Field>
                       <SubmitButton className="btn-secondary">Gửi yêu cầu</SubmitButton>
                     </ActionForm>
                   )}
@@ -222,35 +221,51 @@ export default async function AdminReviewPage() {
           <EmptyState title="Không có hồ sơ nào chờ xác minh." />
         ) : (
           <ul className="divide-y divide-border card">
-            {organizers.map((organizer) => (
-              <li key={organizer.user_id} className="flex flex-wrap items-center gap-4 p-4 sm:p-6">
-                <div className="min-w-0 flex-1 basis-60 text-sm">
-                  <p className="text-base font-semibold break-words text-fg">{organizer.display_name}</p>
-                  <p className="break-words text-fg">
-                    Tên pháp lý: {organizer.legal_name} · {organizer.kind === "organization" ? "Tổ chức" : "Cá nhân"}
-                    {organizer.phone ? ` · ${organizer.phone}` : ""}
-                  </p>
-                  <p className="mt-1">
-                    <VerificationBadge status={organizer.verification_status} />
-                  </p>
-                </div>
-                {organizer.user_id !== session.user.id && (
-                  <div className="flex flex-wrap gap-2">
-                    {(["verified", "rejected"] as const).map((status) => (
-                      <ActionForm key={status} action={setVerification.bind(null, organizer.user_id)}>
-                        <input type="hidden" name="status" value={status} />
-                        <input type="hidden" name="expected_legal_name" value={organizer.legal_name} />
-                        <input type="hidden" name="expected_display_name" value={organizer.display_name} />
-                        <input type="hidden" name="expected_kind" value={organizer.kind} />
-                        <SubmitButton className={status === "verified" ? "btn-primary" : "btn-danger"}>
-                          {status === "verified" ? "Xác minh" : "Từ chối"}
-                        </SubmitButton>
-                      </ActionForm>
-                    ))}
+            {organizers.map((organizer) => {
+              const own = organizer.user_id === session.user.id
+              const statuses =
+                organizer.verification_status === "rejected"
+                  ? (["verified"] as const)
+                  : (["verified", "rejected"] as const)
+              return (
+                <li key={organizer.user_id} className="flex flex-wrap items-center gap-4 p-4 sm:p-6">
+                  <div className="min-w-0 flex-1 basis-60 text-sm">
+                    <p className="text-base font-semibold break-words text-fg">{organizer.display_name}</p>
+                    <p className="break-words text-fg">
+                      Tên pháp lý: {organizer.legal_name} · {organizer.kind === "organization" ? "Tổ chức" : "Cá nhân"}
+                      {organizer.phone ? ` · ${organizer.phone}` : ""}
+                    </p>
+                    <p className="mt-1">
+                      <VerificationBadge status={organizer.verification_status} />
+                    </p>
                   </div>
-                )}
-              </li>
-            ))}
+                  {own ? (
+                    <Callout tone="warning">Đây là hồ sơ của bạn; một kiểm duyệt viên khác cần xác minh.</Callout>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {statuses.map((status) => (
+                        <ActionForm
+                          key={status}
+                          action={setVerification.bind(null, organizer.user_id)}
+                          confirm={
+                            status === "rejected" ? `Từ chối xác minh hồ sơ “${organizer.display_name}”?` : undefined
+                          }
+                        >
+                          <input type="hidden" name="status" value={status} />
+                          <input type="hidden" name="expected_legal_name" value={organizer.legal_name} />
+                          <input type="hidden" name="expected_display_name" value={organizer.display_name} />
+                          <input type="hidden" name="expected_kind" value={organizer.kind} />
+                          <SubmitButton className={status === "verified" ? "btn-secondary" : "btn-danger"}>
+                            {status === "verified" ? "Xác minh" : "Từ chối"}
+                            <span className="sr-only">: {organizer.display_name}</span>
+                          </SubmitButton>
+                        </ActionForm>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </AdminSection>
@@ -279,7 +294,7 @@ function CampaignHead({
         {children}
       </div>
       <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary" target="_blank">
-        Xem trước<span className="sr-only"> (mở thẻ mới)</span>
+        Xem trước<span className="sr-only">: {campaign.title} (mở thẻ mới)</span>
       </ButtonLink>
     </div>
   )

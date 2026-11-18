@@ -170,7 +170,7 @@ function CampaignHeading({
       </div>
       {campaign && (
         <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary" target="_blank">
-          Xem chiến dịch<span className="sr-only"> (mở thẻ mới)</span>
+          Xem chiến dịch<span className="sr-only">: {campaign.title} (mở thẻ mới)</span>
         </ButtonLink>
       )}
     </div>
@@ -192,10 +192,12 @@ function UnresolvedCampaignCard({ item, selfId }: { item: UnresolvedCampaignItem
     .filter(Boolean)
     .join(" · ")
 
+  const noteHintId = `note-hint-${item.campaign_id}`
   const inquiryAndDismissForm = (
     <ActionForm action={moderateCampaignReports.bind(null, item.campaign_id)} className="space-y-6" resetOnSuccess>
       <Field
         htmlFor={`note-${item.campaign_id}`}
+        hintId={noteHintId}
         label={open_count > 0 ? "Câu hỏi gửi người tổ chức hoặc lý do bác bỏ" : "Lý do bác bỏ (lưu nhật ký kiểm toán)"}
         hint={
           open_count > 0
@@ -205,6 +207,7 @@ function UnresolvedCampaignCard({ item, selfId }: { item: UnresolvedCampaignItem
       >
         <textarea
           id={`note-${item.campaign_id}`}
+          aria-describedby={noteHintId}
           name="reason"
           rows={2}
           required

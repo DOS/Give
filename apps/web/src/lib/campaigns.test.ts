@@ -12,6 +12,7 @@ import {
   fundingModelFor,
   isEditableStatus,
   isPublicStatus,
+  listOrganizersToVerify,
   listPublicCampaigns,
   listWaitingForAccount,
   waitingAdvice,
@@ -21,6 +22,7 @@ import {
   STATUS_LABELS,
   type CampaignStatus,
   type Category,
+  type Organizer,
 } from "./campaigns"
 
 const ALL_STATUSES = Object.keys(STATUS_LABELS) as CampaignStatus[]
@@ -429,11 +431,172 @@ describe("listWaitingForAccount", () => {
     await expect(listWaitingForAccount(refused as any)).rejects.toMatchObject({ code: "42883" })
   })
 
+  it("chunks managed_campaigns id lookups 100 ids at a time, preserves order, and throws on chunk errors", async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `6a7e65c0-0000-4000-8000-${String(i).padStart(12, "0")}`)
+    const log: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "rpc:campaigns_waiting_for_account") {
+        return {
+          data: ids.map((campaign_id, i) => ({
+            campaign_id,
+            account_problem: i % 2 === 0 ? "no_account" : "name_mismatch",
+            account_has_transactions: i === 100,
+          })),
+        }
+      }
+      if (call.target === "rpc:managed_campaigns") {
+        const chunkIds = (op(call, "in")?.[1] as string[]) ?? []
+        return { data: chunkIds.map((id) => ({ id, title: `Campaign ${id.slice(-3)}` })) }
+      }
+    }, log)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const list = await listWaitingForAccount(db as any)
+    const managedCalls = log.filter((c) => c.target === "rpc:managed_campaigns")
+    expect(managedCalls.map((c) => op(c, "in")?.[1])).toEqual([ids.slice(0, 100), ids.slice(100)])
+    expect(list.map((c) => c.id)).toEqual(ids)
+    expect(list[100]).toMatchObject({
+      id: ids[100],
+      account_problem: "no_account",
+      account_has_transactions: true,
+    })
+
+    const chunkErrorDb = fakeDb((call) => {
+      if (call.target === "rpc:campaigns_waiting_for_account") {
+        return {
+          data: ids.map((campaign_id) => ({
+            campaign_id,
+            account_problem: "no_account",
+            account_has_transactions: false,
+          })),
+        }
+      }
+      if (call.target === "rpc:managed_campaigns") {
+        const chunkIds = (op(call, "in")?.[1] as string[]) ?? []
+        return chunkIds.length === 1
+          ? { error: { code: "42501", message: "permission denied" } }
+          : { data: chunkIds.map((id) => ({ id, title: id })) }
+      }
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(listWaitingForAccount(chunkErrorDb as any)).rejects.toMatchObject({ code: "42501" })
+  })
+
   it("labels every reason in Vietnamese, with a fallback for an unknown one", () => {
     expect(accountProblemLabel("organizer_not_verified")).toContain("đặt lại trạng thái xác minh")
     expect(accountProblemLabel("account_not_verified")).toContain("bị bộ phận tài chính khóa")
     expect(accountProblemLabel("name_mismatch")).toContain("không còn trùng tên pháp lý")
     expect(accountProblemLabel("something_new")).toBe("Tài khoản nhận tiền không dùng được.")
+  })
+})
+
+describe("listOrganizersToVerify", () => {
+  const makeOrganizer = (
+    user_id: string,
+    verification_status: Organizer["verification_status"],
+    created_at: string
+  ): Organizer => ({
+    user_id,
+    kind: "individual",
+    legal_name: `Pháp lý ${user_id}`,
+    display_name: `Hiển thị ${user_id}`,
+    phone: null,
+    verification_status,
+    verified_at: null,
+    created_at,
+  })
+
+  it("queries pending and unverified oldest-first ahead of rejected so 50 rejected rows never starve fresh profiles", async () => {
+    const rejectedPool = Array.from({ length: 50 }, (_, i) =>
+      makeOrganizer(
+        `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+        "rejected",
+        `2026-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:${String(i).padStart(2, "0")}Z`
+      )
+    )
+    const pendingNew = makeOrganizer("90000000-0000-4000-8000-000000000001", "pending", "2026-11-18T01:00:00Z")
+    const unverifiedNew = makeOrganizer("90000000-0000-4000-8000-000000000002", "unverified", "2026-11-18T02:00:00Z")
+    const allRows = [...rejectedPool, pendingNew, unverifiedNew]
+    const log: Call[] = []
+
+    const db = fakeDb((call) => {
+      if (call.target !== "organizers") return undefined
+      const inOp = op(call, "in")
+      const eqOp = op(call, "eq")
+      const lim = (op(call, "limit")?.[0] as number | undefined) ?? allRows.length
+      const statuses = inOp
+        ? (inOp[1] as Organizer["verification_status"][])
+        : eqOp
+          ? [eqOp[1] as Organizer["verification_status"]]
+          : []
+      const filtered = allRows
+        .filter((r) => statuses.includes(r.verification_status))
+        .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.user_id.localeCompare(b.user_id))
+        .slice(0, lim)
+      return { data: filtered }
+    }, log)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await listOrganizersToVerify(db as any, 50)
+
+    expect(log).toHaveLength(2)
+    expect(op(log[0], "in")).toEqual(["verification_status", ["pending", "unverified"]])
+    expect(log[0].ops.filter(([n]) => n === "order")).toEqual([
+      ["order", "created_at", { ascending: true }],
+      ["order", "user_id", { ascending: true }],
+    ])
+    expect(op(log[0], "limit")).toEqual([50])
+
+    expect(op(log[1], "eq")).toEqual(["verification_status", "rejected"])
+    expect(log[1].ops.filter(([n]) => n === "order")).toEqual([
+      ["order", "created_at", { ascending: true }],
+      ["order", "user_id", { ascending: true }],
+    ])
+    expect(op(log[1], "limit")).toEqual([48])
+
+    expect(result).toHaveLength(50)
+    expect(result.slice(0, 2).map((o) => o.user_id)).toEqual([pendingNew.user_id, unverifiedNew.user_id])
+    expect(result.slice(2).every((o) => o.verification_status === "rejected")).toBe(true)
+  })
+
+  it("skips querying rejected profiles when actionable profiles already fill limit, or when limit <= 0", async () => {
+    const actionable = [
+      makeOrganizer("90000000-0000-4000-8000-000000000001", "pending", "2026-11-18T01:00:00Z"),
+      makeOrganizer("90000000-0000-4000-8000-000000000002", "unverified", "2026-11-18T02:00:00Z"),
+    ]
+    const log: Call[] = []
+    const db = fakeDb(() => ({ data: actionable }), log)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(await listOrganizersToVerify(db as any, 0)).toEqual([])
+    expect(log).toHaveLength(0)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const full = await listOrganizersToVerify(db as any, 2)
+    expect(full).toEqual(actionable)
+    expect(log).toHaveLength(1)
+    expect(op(log[0], "in")).toEqual(["verification_status", ["pending", "unverified"]])
+  })
+
+  it("deduplicates user_id across reads and throws when either read fails", async () => {
+    const raced = makeOrganizer("90000000-0000-4000-8000-000000000001", "pending", "2026-11-18T01:00:00Z")
+    const otherRejected = makeOrganizer("90000000-0000-4000-8000-000000000002", "rejected", "2026-11-10T00:00:00Z")
+    const db = fakeDb((call) => {
+      if (op(call, "in")) return { data: [raced] }
+      return { data: [{ ...raced, verification_status: "rejected" }, otherRejected] }
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const deduped = await listOrganizersToVerify(db as any, 5)
+    expect(deduped.map((o) => o.user_id)).toEqual([raced.user_id, otherRejected.user_id])
+
+    const errFirst = fakeDb(() => ({ error: { code: "42501", message: "denied" } }))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(listOrganizersToVerify(errFirst as any)).rejects.toMatchObject({ code: "42501" })
+
+    const errSecond = fakeDb((call) =>
+      op(call, "in") ? { data: [raced] } : { error: { code: "57014", message: "statement timeout" } }
+    )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(listOrganizersToVerify(errSecond as any)).rejects.toMatchObject({ code: "57014" })
   })
 })
 
