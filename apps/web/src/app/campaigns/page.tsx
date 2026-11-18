@@ -3,7 +3,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 
 import { CampaignCard } from "@/components/CampaignCard"
-import { buttonClass } from "@/components/ui/Button"
+import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Dropdown } from "@/components/ui/Dropdown"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { CheckIcon, ChevronDownIcon, CloseIcon, SearchIcon } from "@/components/ui/icons"
@@ -12,6 +12,7 @@ import { SegmentedNav } from "@/components/ui/Tabs"
 import { TagLink } from "@/components/ui/Tag"
 import {
   categoriesFor,
+  DEFAULT_DISCOVERY,
   DISCOVERY_MAX_PAGE,
   DISCOVERY_PAGE_SIZE,
   DISCOVERY_SORTS,
@@ -141,19 +142,21 @@ export default async function CampaignsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }) {
-  const filters = parseDiscoveryFilters(await searchParams)
+  const rawFilters = parseDiscoveryFilters(await searchParams)
   const db = dbAs()
   const categories = await listCategories(db)
+  const visibleCategories = rawFilters.type ? categoriesFor(categories, rawFilters.type) : categories
+  const category = rawFilters.category ? (visibleCategories.find((c) => c.slug === rawFilters.category) ?? null) : null
+  const filters = { ...rawFilters, category: category?.slug ?? null }
   const { campaigns, total } = await listPublicCampaigns(db, filters, categories, filters.page * DISCOVERY_PAGE_SIZE)
   const totals = await listMoneyTotals(
     db,
     campaigns.map((c) => c.id)
   )
-  const visibleCategories = filters.type ? categoriesFor(categories, filters.type) : categories
-  const category = categories.find((c) => c.slug === filters.category) ?? null
   const status = DISCOVERY_STATUSES.find((s) => s.value === filters.status) ?? DISCOVERY_STATUSES[0]
   const sort = DISCOVERY_SORTS.find((s) => s.value === filters.sort) ?? DISCOVERY_SORTS[0]
-  const filtered = Boolean(filters.category || filters.q)
+  const filtered = Boolean(category || filters.q)
+  const hasFilter = Boolean(filters.type || category || filters.q || filters.status !== DEFAULT_DISCOVERY.status)
   // What every link keeps; a change of filter or order starts again at page 1.
   const keep = {
     type: filters.type,
@@ -189,6 +192,7 @@ export default async function CampaignsPage({
             defaultValue={filters.q ?? ""}
             placeholder="Tìm chiến dịch, dự án"
             className="field pl-10"
+            minLength={2}
             maxLength={80}
           />
         </div>
@@ -303,7 +307,7 @@ export default async function CampaignsPage({
               )
             })}
           </div>
-        ) : (
+        ) : hasFilter ? (
           <EmptyState
             title="Không có chiến dịch nào khớp bộ lọc"
             icon={<SearchIcon width={40} height={40} />}
@@ -314,6 +318,13 @@ export default async function CampaignsPage({
             }
           >
             Thử từ khoá ngắn hơn, chọn danh mục hoặc trạng thái khác.
+          </EmptyState>
+        ) : (
+          <EmptyState
+            title="Chưa có chiến dịch nào đang gây quỹ"
+            action={<ButtonLink href="/start">Tạo chiến dịch của bạn</ButtonLink>}
+          >
+            Chiến dịch hiện ở đây ngay khi được duyệt.
           </EmptyState>
         )}
         {shown > 0 && (

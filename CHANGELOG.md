@@ -1,9 +1,10 @@
 # Changelog
 
 What changed on `dev`, newest first. Each line names the issue and the PR
-as `#issue / #PR`, or only the PR when it had no separate issue. `main` has no Production deploy yet (see
-`docs/product-owner-config.md`), so no app change below is released; the
-database changes that reached Production are listed under "On Production".
+as `#issue / #PR`, or only the PR when it had no separate issue. Merging into
+`main` deploys Production at https://give.vn via Vercel (see
+`docs/product-owner-config.md`, #224 / #225, #238); promotions to `main` and
+the database changes that reached Production are listed under "On Production".
 
 The schema for these changes lives in DOS/DOS.Me `supabase/migrations`.
 Migrations merged into DOS.Me `dev` run on the Beta Supabase branch only;
@@ -13,11 +14,58 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Discovery and campaign page states and route boundaries: unfiltered
+  `/campaigns` with zero live campaigns renders `"Chưa có chiến dịch nào đang
+gây quỹ"` with a `/start` CTA instead of `"Không có chiến dịch nào khớp bộ
+lọc"` and a self-linking `"Xoá bộ lọc"`; unknown or cross-type `category`
+  query values fall back to `"Mọi danh mục"` without a ghost `"Đang lọc:"`
+  strip or unchecked menu, and the phone search input sets `minLength={2}`.
+  Non-public `suspended` and `cancelled` views on `/campaigns/[slug]` replace
+  pre-launch preview copy in the top banner, funding box and `RewardTiers`
+  with halted-status wording; `getPublicOrganizer` degrades cleanly on RPC
+  failure, organizer initials extract by Unicode code point, and the funding
+  `<dl>` sizes 1, 2 or 3 tracks dynamically. Whole-page `EmptyState` boundaries
+  cover `/campaigns/error.tsx` and `/campaigns/[slug]/not-found.tsx`, with
+  Vitest suites across all four files (#240).
+- Organizer fulfillment pagination, bulk-save reset and workspace hardening:
+  `/me/campaigns/[id]/fulfillment` pages 500-row batches via `page` and
+  `fulfillmentHref` (`Trang trước` / `Trang sau`), resets bulk selection and
+  `#bulk_note` after save via `resetOnSuccess` and keyed row controls, names
+  each row's `reference_code` on `"Lưu cho người này"`, and skips tier reads
+  when `!canUpdateFulfillment`. `/me/campaigns/[id]` surfaces a warning callout
+  when `payments_stopped_at` is set, covers `settling`, `succeeded`, `failed`
+  and `closed` in `StatusNotice`, confirms milestone deletion, and marks
+  `payment_window_days` required; `RewardTiersSection` promotes tier titles to
+  `<h3>` with contextual row control labels, and `/start` wires hint
+  `aria-describedby` ids and `maxLength={20}` on `#phone` (#241 / #244).
+- Home canonical and OpenGraph metadata and RSC tests: `/` exports canonical
+  `/` and complete `openGraph` metadata (`title`, `description`, `url`,
+  `siteName`, `locale`, `type`), with Vitest suites covering `HomePage`
+  (empty-site vs live hero, up to three `"Đang được quan tâm"` cards, visible
+  `"Hai cách gây quỹ"` discovery links, and `login_error` alert codes and
+  fallback) and `FeaturedReceipt` (`give` vs `back` breakdowns,
+  `other_in_amount`, missing totals fallback and `display_options` toggles)
+  (#233 / #237).
+- Discovery and campaign OpenGraph and indexing metadata: `/campaigns` exports
+  a Vietnamese description, canonical `/campaigns` URL and complete `openGraph`
+  card; `/campaigns/[slug]` emits an encoded canonical URL and complete
+  `openGraph` card (with cover image when present) for public non-suspended
+  campaigns, and sets `robots: { index: false, follow: false }` without
+  `openGraph` or `alternates` on missing, preview and `suspended` campaigns,
+  with Vitest coverage (#232 / #236).
+- Campaign UI and organizer error-boundary tests: Vitest suites cover
+  `ReportCampaign` (signed-in `ActionForm`, `REPORT_REASONS` options,
+  `#report-details-hint` `aria-describedby` association and
+  `REPORT_DETAILS_MAX`, secondary submit hierarchy, bound submission,
+  signed-out encoded `return_path`, and disbursement-evidence link),
+  `SummaryCells` (`<dl>` label, formatted VND figures, `data-figure` hooks and
+  tones), and `/me/campaigns/error.tsx` (`MeError` alert copy, back link and
+  `retry` callback); no screen change (#234 / #235).
 - Campaigns cleanup: associate report-details guidance with its textarea via
   `aria-describedby`, with an optional hint id on `Field` that preserves caller
   descriptions. Correct the editor summary hint to name the campaign story,
   and document reporting, the moderator report queue and organizer fulfillment
-  routes with their access guards (#228).
+  routes with their access guards (#228 / #229).
 - Report a campaign and moderator queue: public `/campaigns/[slug]` pages offer
   a `"Báo cáo chiến dịch"` disclosure (signed-in callers submit one of six
   structured reasons and optional details, required for `"Lý do khác"`, after
@@ -29,7 +77,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   moderator's question and a `mailto:` contact link on `/me/notices`),
   `dismiss`, `suspend` (approved/live campaigns) and `stop_payment_requests`
   (succeeded `back` projects), refusing self-review, plus recently resolved
-  summaries and full error mappings in `errors.ts` (#98).
+  summaries and full error mappings in `errors.ts` (#98 / #223).
 - Pledge flow tests cover the `/campaigns/[slug]/pledge` RSC's session
   routing, reward and open-pledge defaults, reference-code callout and form
   visibility, plus `PledgeForm`'s sold-out rewards, amount and minimum-hint
@@ -39,7 +87,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   session guards, profile validation and normalization, insert/update column
   boundaries, re-verification messages, funding models, slug collision retries,
   database errors and redirects, plus the StartPage RSC onboarding, collapsible
-  profile, verification badges and warnings; no screen change (#208).
+  profile, verification badges and warnings; no screen change (#208 / #222).
 - Organizer campaigns, reward tiers and fulfillment tests: Vitest suites cover
   the `/me/campaigns` RSC (session and `dbAs` RLS reads, level-2 `EmptyState`
   keeping `PageHeader`'s `"Tạo chiến dịch"` as the sole primary CTA, badges,
@@ -70,7 +118,8 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   list draw their 2px ring 2px inside the item so adjacent items do not touch;
   `DESIGN.md` 6 names `/me/campaigns/[id]` with the side lists of `/me` and
   `/admin`. Unit tests cover `addMilestone`, `cancelCampaign` and `postUpdate`
-  in `me/campaigns/actions.ts`, `RecentSupporters` and `RewardTiers` (#210).
+  in `me/campaigns/actions.ts`, `RecentSupporters` and `RewardTiers`
+  (#210 / #214).
 - Discovery and `Dropdown` tests: Vitest suites cover `Dropdown`'s phone-sheet
   and desktop-popover focus rules (checked-item and first-link opening focus,
   `Escape`, `focusout` containment on popover vs sheet, focus return on scrim,
@@ -78,7 +127,7 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   focus) and the `/campaigns` RSC (filter-bar `keep` preservation and page-1
   reset, `categoriesFor` narrowing when `type` changes, `"Đang lọc:"` chips and
   `"Xoá tất cả"`, `"Xem thêm"` and the `DISCOVERY_MAX_PAGE` hint, and the
-  filtered empty state); no screen change (#209).
+  filtered empty state); no screen change (#209 / #213).
 - Campaign page: the "Ủng hộ chiến dịch" and "Sao kê" sections keep 24px
   between their subtitle and section content, up from 16px, matching section
   rhythm while keeping 8px from the heading to the subtitle. `DESIGN.md` 2.4
