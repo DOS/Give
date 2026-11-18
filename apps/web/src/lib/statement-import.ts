@@ -91,6 +91,8 @@ export interface TrustBlock {
   rejected: number
   last_rejected_at: string
   last_restored_at: string | null
+  /** The latest rejected row: the restore names it, so a newer rejection refuses the restore. */
+  last_rejected_row_id: string
 }
 
 /**
@@ -206,6 +208,7 @@ const UPLOAD_MESSAGES: Record<string, string> = {
   STATEMENT_PERIOD_REQUIRED: "Sao kê của định dạng này cần ghi rõ từ ngày, đến ngày.",
   STATEMENT_PARTIAL_EXPORT:
     "File chỉ có một phần giao dịch (lọc theo giờ, chỉ các giao dịch gần nhất, hoặc không ghi khoảng ngày). Hãy xuất sao kê đầy đủ theo khoảng ngày “Từ ngày … Đến ngày …”, từ đầu ngày, không lọc theo giờ hay loại giao dịch. Chỉ sao kê có ngày cuối là hôm nay mới được dừng ở giờ xuất file.",
+  STATEMENT_COVERAGE_UNCLEAR: `Give chưa chắc file này là sao kê đầy đủ: phần đầu hoặc cuối file có ghi giờ, hoặc có chữ trông giống giờ (ví dụ tên có “4G”, “3H”). Nếu khi xuất bạn đã lọc theo giờ, hãy xuất lại đầy đủ theo khoảng ngày. Nếu không, đừng xuất lại: hãy gửi file cho đội tài chính của Give ${VIA_CONTACT_EMAIL} để được nhập.`,
   STATEMENT_BALANCE_INVALID: "Số dư ghi trên sao kê không hợp lệ.",
   GIVE_INBOUND_EVENT_DISMISSED: `Đội tài chính đã bỏ qua file này (hoặc một phần của nó), nên Give không nhập nữa. Nếu cần nhập lại, hãy liên hệ đội tài chính của Give ${VIA_CONTACT_EMAIL}.`,
   STATEMENT_PART_PREVIOUS_FAILED: "Phần trước của file không nhập được, nên phần này cũng không được nhập.",

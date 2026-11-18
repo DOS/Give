@@ -41,6 +41,13 @@ export interface ParsedStatement {
   /** See StatementCoverage. The pipeline refuses partial exports of past days. */
   coverage: StatementCoverage
   /**
+   * Why a "partial" file is partial, when the parser is unsure: it found a
+   * time it cannot place (a time filter, or a name such as "4G" that reads
+   * like one). The uploader is then told to contact finance as well as to
+   * export again.
+   */
+  coverageDetail?: "unplaced_time"
+  /**
    * The period the file states, as local (Asia/Ho_Chi_Minh) dates
    * "YYYY-MM-DD". Required for formats without row ids. The file must hold
    * every row of each day of the period; only its last day may end early,

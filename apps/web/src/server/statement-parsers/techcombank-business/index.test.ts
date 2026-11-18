@@ -357,7 +357,9 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
       })
     )
     expect(parsed.coverage).toBe(coverage)
-    expect(() => normalizeStatement(tcbBusinessParser, parsed, NOW)).toThrow("STATEMENT_PARTIAL_EXPORT")
+    expect(() => normalizeStatement(tcbBusinessParser, parsed, NOW)).toThrow(
+      /STATEMENT_(PARTIAL_EXPORT|COVERAGE_UNCLEAR)/
+    )
   })
 
   it("reads a time range in a cell after the period as partial", async () => {
@@ -439,6 +441,41 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
   })
 
   // Review of #245: any time left on a row above the table bounds the export.
+  it("reads a to-date with a time after a comma as not full", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026,14:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).not.toBe("full")
+  })
+
+  it("reads a time filter in a row after the table as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(statement({ bottom: [["Điều kiện lọc", "08:00-14:30"]] }))
+    expect([parsed.coverage, parsed.coverageDetail]).toEqual(["partial", "unplaced_time"])
+  })
+
+  it("keeps a full statement full with a print time after the table", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({ bottom: [["Ngày giờ in/Printed on", "18/11/2026 08:45"]] })
+    )
+    expect([parsed.coverage, parsed.coverageDetail]).toEqual(["full", undefined])
+  })
+
+  it("tells an unplaced time from a missing period", async () => {
+    const unplaced = await tcbBusinessParser.parse(
+      statement({ top: [...withBalances("10,000", "11,000"), ["Tên tài khoản/Account name", "CONG TY 4G VIET"]] })
+    )
+    expect([unplaced.coverage, unplaced.coverageDetail]).toEqual(["partial", "unplaced_time"])
+    expect(() => normalizeStatement(tcbBusinessParser, unplaced, NOW)).toThrow("STATEMENT_COVERAGE_UNCLEAR")
+    const noPeriod = await tcbBusinessParser.parse(statement({ top: withBalances("10,000", "11,000").slice(1) }))
+    expect([noPeriod.coverage, noPeriod.coverageDetail]).toEqual(["partial", undefined])
+    expect(() => normalizeStatement(tcbBusinessParser, noPeriod, NOW)).toThrow("STATEMENT_PARTIAL_EXPORT")
+  })
+
   it.each<[string, XlsxCell[], string]>([
     ["a start ending in :00 next to 23:59", ["Giờ/Time: 20:00 - 23:59"], "partial"],
     ["10:00 - 23:59 after the to-date", ["10:00 - 23:59"], "partial"],
@@ -476,6 +513,7 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
   })
 
   it.each<[string, XlsxCell[], string]>([
+    ["a date and time joined by a comma", ["Giờ/Time: 01/11/2026,08:00 - 15/11/2026,14:30"], "partial"],
     ["an enquiry time holding a range", ["Thời gian truy vấn/Enquiry time: 08:00 - 14:30"], "partial"],
     ["an enquiry time label then a range", ["Thời gian truy vấn/Enquiry time", "08:00 - 14:30"], "partial"],
     ["a print label then a date and a range", ["Ngày giờ in/Printed on", "18/11/2026", "08:00-14:30"], "partial"],

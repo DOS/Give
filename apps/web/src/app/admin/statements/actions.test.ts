@@ -305,7 +305,7 @@ describe("setReviewDailyLimit (DOS/Give#57)", () => {
 
 describe("restoreCampaignTrust (DOS/Give#57)", () => {
   const CAMPAIGN = "88888888-8888-4888-8888-888888888888"
-  const SEEN = 2
+  const SEEN = "77777777-7777-4777-8777-000000000001"
 
   it("restores with the note, after a role check with the user's own token", async () => {
     state.serviceHandler = () => ({ data: { restored_at: "2026-11-18T03:00:00Z" } })
@@ -321,7 +321,7 @@ describe("restoreCampaignTrust (DOS/Give#57)", () => {
       p_actor_id: REVIEWER,
       p_campaign_id: CAMPAIGN,
       p_note: "Đã xác minh với ngân hàng",
-      p_expected_rejected: SEEN,
+      p_expected_last_rejected_row: SEEN,
     })
   })
 
@@ -351,7 +351,7 @@ describe("restoreCampaignTrust (DOS/Give#57)", () => {
   it("says a newer rejection came in when the database refuses a stale restore", async () => {
     state.serviceHandler = () => ({ error: { code: "P0001", message: "GIVE_TRUST_CHANGED" } })
     expect((await restoreCampaignTrust(CAMPAIGN, SEEN, null, form({ note: "x" })))?.message).toContain(
-      "vừa bị từ chối thêm"
+      "không còn là dòng bạn đã xem"
     )
   })
 })

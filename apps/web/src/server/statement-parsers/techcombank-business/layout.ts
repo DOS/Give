@@ -80,9 +80,11 @@ const PERIOD = new RegExp(
   `tu ngay${LABEL_GAP.replace("(?:from|to)", "from")}${DATE_TEXT}${TIME_TEXT}.*?den ngay${LABEL_GAP.replace("(?:from|to)", "to")}${DATE_TEXT}${TIME_TEXT}`
 )
 /** A date with the time this parser reads after it in the same cell. */
-const PERIOD_DATE = new RegExp(`${DATE_TEXT}${TIME_TEXT}`, "g")
+const PERIOD_DATE = new RegExp(`${DATE_TEXT}${TIME_TEXT}[,.]?`, "g")
 /** A bare date. */
-const DATE_ONLY = new RegExp(DATE_TEXT, "g")
+const DATE_ONLY = new RegExp(`${DATE_TEXT}[,.]?`, "g")
+/** Whether a text holds a date (not global: test() keeps no state). */
+const HAS_DATE = new RegExp(DATE_TEXT)
 /**
  * Any time of day written with digits, hour-only forms included ("08:00",
  * "8h", "14h30", "14g30", "14.30", "8 giờ", "2 PM", "8 SA"); never part of
@@ -289,14 +291,16 @@ function timeBoundRow(cells: readonly string[]): boolean {
 /** One date with at most one time ("18/11/2026 08:45", "08:45, 18/11/2026"): a moment, not a range. */
 function isOneMoment(value: string): boolean {
   const rest = value.replace(ONE_DATE, " ")
-  return (rest.match(ANY_TIMES) ?? []).length <= 1 && !DATE_ONLY.test(rest)
+  return (rest.match(ANY_TIMES) ?? []).length <= 1 && !HAS_DATE.test(rest)
+}
+
+/** A row as the time checks read it: non-empty cells, NFKC-folded (a full-width colon reads as a colon). */
+function foldRow(row: readonly Cell[]): string[] {
+  return row.map((cell) => label(cellText(cell).normalize("NFKC"))).filter((cell) => cell !== "")
 }
 
 function headerPeriod(rows: Grid): HeaderPeriod | null {
-  // NFKC first: a full-width colon ("08：00") reads as a colon.
-  const folded = rows.map((row) =>
-    row.map((cell) => label(cellText(cell).normalize("NFKC"))).filter((cell) => cell !== "")
-  )
+  const folded = rows.map(foldRow)
   for (const [index, cells] of folded.entries()) {
     const text = cells.join(CELL_GAP)
     const match = PERIOD.exec(text.slice(0, PERIOD_SCAN_CHARS))
@@ -305,7 +309,8 @@ function headerPeriod(rows: Grid): HeaderPeriod | null {
     // leave the row; whatever else is on it, and on every other row above
     // the table, is checked for a time.
     const end = match.index + match[0].length
-    const rest = text.slice(0, match.index) + match[0].replace(PERIOD_DATE, " ") + text.slice(end)
+    // A comma or dot right after the to-date goes with it ("15/11/2026,14:30").
+    const rest = text.slice(0, match.index) + match[0].replace(PERIOD_DATE, " ") + text.slice(end).replace(/^[,.]/, " ")
     return {
       otherTime: folded.some((other, i) => timeBoundRow(i === index ? rest.split(CELL_GAP) : other)),
       from: bankDate(match[1]).day,
@@ -322,8 +327,8 @@ function headerPeriod(rows: Grid): HeaderPeriod | null {
  * a list of recent transactions; a period starting after midnight leaves out
  * the start of its first day; one ending before 23:59 cuts its last day.
  */
-function coverage(period: HeaderPeriod | null): StatementCoverage {
-  if (period === null || period.otherTime) return "partial"
+function coverage(period: HeaderPeriod | null, footerTime: boolean): StatementCoverage {
+  if (period === null || period.otherTime || footerTime) return "partial"
   if (period.fromTime !== null && !START_OF_DAY.test(period.fromTime)) return "partial"
   if (period.toTime !== null && !END_OF_DAY.test(period.toTime)) return "ends_early"
   return "full"
@@ -472,6 +477,9 @@ export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
   // After the table, only summary lines may carry an amount or a date. A
   // row that does means the table was not read to its end (a row with an
   // unreadable or missing date): refuse rather than drop it.
+  // Rows after the table are read for times too (a filter or time-range
+  // line in a footer), as the rows above it are.
+  const footerTime = grid.slice(end).some((row) => timeBoundRow(foldRow(row)))
   const after = grid.slice(end)
   for (const row of after) {
     const first = row.find((cell) => cellText(cell) !== "")
@@ -507,7 +515,10 @@ export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
   }
 
   return {
-    coverage: coverage(period),
+    coverage: coverage(period, footerTime),
+    // A time this parser cannot place (maybe a name such as "4G"): the
+    // uploader is told so, not only to export again (DOS/Give#57).
+    ...(period !== null && (period.otherTime || footerTime) ? { coverageDetail: "unplaced_time" as const } : {}),
     periodFrom: period?.from ?? null,
     periodTo: period?.to ?? null,
     openingBalance: opening,
