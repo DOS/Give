@@ -269,12 +269,19 @@ function labelOf(cell: string): string[] {
  */
 function timeBoundRow(cells: readonly string[]): boolean {
   if (cells.some((cell) => TIME_RANGE.test(cell))) return true
-  // A summary or balance line ("Tổng phí/Total fees | 0.00"): there a dotted
-  // number is an amount. Anywhere else "08.00" may be a time.
-  const summaryRow =
-    cells.length > 0 && labelOf(cells[0]).some((part) => SUMMARY.test(part) || OPENING.test(part) || CLOSING.test(part))
+  // Right after a summary or balance label ("Tổng phí/Total fees | 0.00"),
+  // until any other cell, a dotted number is an amount. Anywhere else
+  // "08.00" may be a time.
+  let afterSummary = false
   for (let i = 0; i < cells.length; i++) {
     const cell = cells[i]
+    if (labelOf(cell).some((part) => SUMMARY.test(part) || OPENING.test(part) || CLOSING.test(part))) {
+      afterSummary = true
+      continue
+    }
+    const amount: boolean = readsAs(() => cellAmount(cell))
+    const summaryAmount: boolean = afterSummary && amount
+    afterSummary = summaryAmount
     if (labelOf(cell).some((part) => EXPORT_LABEL.test(part))) {
       // The value of a print or export label: after its colon, or in the
       // next one or two cells (a date, then a time). It is one moment.
@@ -291,7 +298,7 @@ function timeBoundRow(cells: readonly string[]): boolean {
     // A cell that reads as an amount ("1,500,000.00", or "0.00" in a total)
     // holds no time; one written like a time ("08.00") counts as a time
     // except on a summary or balance line.
-    if (readsAs(() => cellAmount(cell)) && (summaryRow || !DOTTED_TIME.test(cell.trim()))) continue
+    if (amount && (summaryAmount || !DOTTED_TIME.test(cell.trim()))) continue
     const rest = cell.replace(WHOLE_DAY_RANGE, " ").replace(DATE_ONLY, " ")
     if (ANY_TIME.test(rest)) return true
   }

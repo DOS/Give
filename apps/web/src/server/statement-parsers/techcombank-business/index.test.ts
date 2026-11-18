@@ -525,6 +525,17 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     ["dotted times on a Ca/Shift row", [["Ca/Shift", "08.00", "17.00"]], []],
     ["dotted times on a Lọc/Filter row", [["Lọc/Filter", "08.00", "14.00"]], []],
     ["dotted times on an unlabelled row", [["Khung", "08.00", "14.00"]], []],
+    [
+      "dotted times after an opening balance",
+      [["Số dư đầu ngày/Opening balance", "10,000", "Giờ/Time", "08.00", "14.00"]],
+      [],
+    ],
+    [
+      "dotted times after a closing balance",
+      [["Số dư cuối ngày/ Closing balance", "11,000", "Khung giờ", "08.00", "17.00"]],
+      [],
+    ],
+    ["dotted times after a footer total", [], [["Tổng ghi có/Total credits", "1,000", "Lọc giờ", "08.00", "14.00"]]],
   ])("reads %s as partial", async (_, top, bottom) => {
     const parsed = await tcbBusinessParser.parse(
       statement({ top: [...withBalances("10,000", "11,000"), ...top], bottom })
