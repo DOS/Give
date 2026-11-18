@@ -304,7 +304,9 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     ["an end after lúc", "01/11/2026", "15/11/2026 lúc 14:30", "partial"],
     ["an end after a dash", "01/11/2026", "15/11/2026 - 14:30", "partial"],
     ["a start after a comma", "01/11/2026, 08:00", "15/11/2026", "partial"],
-    ["a 12-hour time", "01/11/2026 12:00 AM", "15/11/2026", "partial"],
+    ["a 12-hour start after midnight", "01/11/2026 08:00 AM", "15/11/2026", "partial"],
+    ["12-hour whole days", "01/11/2026 12:00 AM", "15/11/2026 11:59 PM", "full"],
+    ["a 12-hour end before the day ends", "01/11/2026", "15/11/2026 02:30 PM", "ends_early"],
     ["an end written 14g30", "01/11/2026", "15/11/2026 14g30", "partial"],
     ["an end written 14.30", "01/11/2026", "15/11/2026 14.30", "partial"],
   ])("reads %s on the period line as a %s export", async (_, from, to, coverage) => {
@@ -405,6 +407,45 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
       })
     )
     expect([parsed.periodTo, parsed.coverage]).toEqual(["2026-11-15", "full"])
+  })
+
+  // PO review of #243: labelled times on the period row, more separators,
+  // labels not at the start, whole-day ranges.
+  it.each<[string, XlsxCell[], string]>([
+    ["a labelled time range cell", ["Giờ/Time: 08:00 - 14:30"], "partial"],
+    ["a range with ~", ["08:00 ~ 14:30"], "partial"],
+    ["a range with to", ["08:00 to 14:30"], "partial"],
+    ["a range with →", ["08:00 → 14:30"], "partial"],
+    ["a range with /", ["08:00/14:30"], "partial"],
+    ["a Khung giờ label and range", ["Khung giờ", "08:00 - 14:30"], "partial"],
+    [
+      "a time after the print time",
+      ["Ngày giờ in/Printed on", "18/11/2026 08:45", "Giờ/Time", "08:00 - 14:30"],
+      "partial",
+    ],
+    ["a whole-day range", ["Giờ/Time: 00:00 - 23:59"], "full"],
+    ["a whole-day range in two cells", ["Khoảng thời gian/Time range", "00:00 - 23:59"], "full"],
+    ["a print time alone", ["Ngày giờ in/Printed on", "18/11/2026 08:45"], "full"],
+  ])("reads the period row with %s", async (_, extra, coverage) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", ...extra],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe(coverage)
+  })
+
+  it.each<[string, XlsxCell[], string]>([
+    ["Khoảng thời gian with a range", ["Khoảng thời gian/Time range", "08:00 - 14:30"], "partial"],
+    ["Khung giờ with a range", ["Khung giờ", "08:00 → 14:30"], "partial"],
+    ["a whole-day Thời gian row", ["Thời gian/Time", "00:00 - 23:59"], "full"],
+    ["a 12-hour whole-day row", ["Thời gian/Time", "12:00 AM - 11:59 PM"], "full"],
+  ])("reads a row above the table with %s", async (_, extra, coverage) => {
+    const parsed = await tcbBusinessParser.parse(statement({ top: [...withBalances("10,000", "11,000"), extra] }))
+    expect(parsed.coverage).toBe(coverage)
   })
 
   it("reads date-typed period cells that end at 23:59 as a full statement", async () => {

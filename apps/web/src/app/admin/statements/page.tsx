@@ -26,6 +26,7 @@ import {
   listDuplicateTargets,
   listReconciliationAudit,
   listResolvedRows,
+  listTrustBlocks,
   reconciliationAuditSummary,
   RESOLUTION_LABELS,
   resolutionLabel,
@@ -35,12 +36,13 @@ import {
   type DuplicateTargets,
   type QueueRow,
   type ReviewSettings,
+  type TrustBlock,
   type StatementRowView,
 } from "@/lib/statement-import"
 import { dbAs } from "@/lib/supabase"
 
 import { AdminPage, AdminSection, DataTable, ItemActions, ItemCard, ItemList } from "../_components/ui"
-import { resolveStatementRow, setReviewDailyLimit, setReviewThreshold } from "./actions"
+import { resolveStatementRow, restoreCampaignTrust, setReviewDailyLimit, setReviewThreshold } from "./actions"
 import { MachineId } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Đối soát sao kê", robots: { index: false } }
@@ -55,11 +57,12 @@ export default async function AdminStatementsPage() {
   // Finance and admin staff only; others get a 404.
   if (!(await isStaff(db, FINANCE_ROLES))) notFound()
 
-  const [{ rows: queue, total }, resolved, isAdmin, reviewSettings] = await Promise.all([
+  const [{ rows: queue, total }, resolved, isAdmin, reviewSettings, trustBlocks] = await Promise.all([
     listAmbiguousRows(db),
     listResolvedRows(db),
     isStaff(db, ["admin"]),
     getReviewSettings(db),
+    listTrustBlocks(db),
   ])
   const accountIds = queue.map((row) => row.batch.receiving_account_id)
   // Void candidates (not_a_transaction rows) are never offered (DOS/Give#78).
@@ -137,6 +140,8 @@ export default async function AdminStatementsPage() {
       </AdminSection>
 
       <ReviewThreshold settings={reviewSettings} />
+
+      <TrustBlocks blocks={trustBlocks} />
 
       <AdminSection id="resolved" title="Đã xử lý gần đây" count={resolved.length}>
         {resolved.length === 0 ? (
@@ -349,6 +354,56 @@ function QueueCard({
   )
 }
 
+/**
+ * Campaigns whose trust a rejected row blocks (DOS/Give#57): every organizer
+ * upload of them waits for review until finance restores the trust.
+ */
+function TrustBlocks({ blocks }: { blocks: TrustBlock[] }) {
+  return (
+    <AdminSection
+      id="trust-blocks"
+      title="Chiến dịch bị chặn tin cậy sao kê"
+      count={blocks.length}
+      lead="Một dòng sao kê do người tổ chức tải lên đã bị từ chối, nên mọi lần tải sau của chiến dịch đều chờ đội tài chính duyệt. Chỉ khôi phục khi đã xác minh với người tổ chức và sao kê thật của ngân hàng."
+    >
+      {blocks.length === 0 ? (
+        <EmptyState title="Không có chiến dịch nào bị chặn." />
+      ) : (
+        <ItemList>
+          {blocks.map((block) => (
+            <ItemCard key={block.campaign_id}>
+              <div className="space-y-2">
+                <p className="font-semibold text-fg">
+                  <Link href={`/campaigns/${block.slug}`} className="link">
+                    {block.title}
+                  </Link>
+                </p>
+                <p className="text-sm text-muted">
+                  {block.rejected} dòng bị từ chối, lần cuối {formatDateTime(block.last_rejected_at)}
+                  {block.last_restored_at ? ` · khôi phục lần trước ${formatDateTime(block.last_restored_at)}` : ""}
+                </p>
+              </div>
+              <ItemActions>
+                <ActionForm
+                  action={restoreCampaignTrust.bind(null, block.campaign_id)}
+                  confirm="Khôi phục tin cậy sao kê của chiến dịch này?"
+                  className="space-y-4"
+                >
+                  <NoteField
+                    id={`restore-note-${block.campaign_id}`}
+                    placeholder="Ghi chú bắt buộc: đã xác minh gì để chiến dịch đáng tin trở lại"
+                  />
+                  <SubmitButton className="btn-secondary">Khôi phục tin cậy</SubmitButton>
+                </ActionForm>
+              </ItemActions>
+            </ItemCard>
+          ))}
+        </ItemList>
+      )}
+    </AdminSection>
+  )
+}
+
 /** The finance review settings of organizer uploads (DOS/Give#57), with the forms to change them. */
 function ReviewThreshold({ settings }: { settings: ReviewSettings | null }) {
   return (
@@ -409,7 +464,7 @@ function SettingForm({
           className="field tabular-nums"
           inputMode="numeric"
           required
-          maxLength={20}
+          maxLength={32}
           defaultValue={value.toLocaleString("vi-VN")}
         />
       </div>
