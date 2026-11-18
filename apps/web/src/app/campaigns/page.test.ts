@@ -146,8 +146,20 @@ beforeEach(() => {
 })
 
 describe("CampaignsPage (/campaigns, DOS/Give#209)", () => {
-  it("exports the discovery page title metadata", () => {
-    expect(metadata.title).toBe("Khám phá chiến dịch")
+  it("exports discovery canonical, description, and complete OpenGraph metadata (DOS/Give#232)", () => {
+    expect(metadata).toEqual({
+      title: "Khám phá chiến dịch",
+      description: "Khám phá các chiến dịch từ thiện và dự án sáng tạo minh bạch từng đồng trên Give.",
+      alternates: { canonical: "/campaigns" },
+      openGraph: {
+        type: "website",
+        siteName: "Give",
+        locale: "vi_VN",
+        title: "Khám phá chiến dịch",
+        description: "Khám phá các chiến dịch từ thiện và dự án sáng tạo minh bạch từng đồng trên Give.",
+        url: "/campaigns",
+      },
+    })
   })
 
   describe("filter bar links and categoriesFor narrowing", () => {

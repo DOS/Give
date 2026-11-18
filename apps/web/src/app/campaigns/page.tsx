@@ -25,7 +25,22 @@ import {
 import { listMoneyTotals, raisedAmount } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
-export const metadata: Metadata = { title: "Khám phá chiến dịch" }
+const DISCOVERY_TITLE = "Khám phá chiến dịch"
+const DISCOVERY_DESCRIPTION = "Khám phá các chiến dịch từ thiện và dự án sáng tạo minh bạch từng đồng trên Give."
+
+export const metadata: Metadata = {
+  title: DISCOVERY_TITLE,
+  description: DISCOVERY_DESCRIPTION,
+  alternates: { canonical: "/campaigns" },
+  openGraph: {
+    type: "website",
+    siteName: "Give",
+    locale: "vi_VN",
+    title: DISCOVERY_TITLE,
+    description: DISCOVERY_DESCRIPTION,
+    url: "/campaigns",
+  },
+}
 
 const TYPE_TABS: { value: CampaignType | null; label: string }[] = [
   { value: null, label: "Tất cả" },
