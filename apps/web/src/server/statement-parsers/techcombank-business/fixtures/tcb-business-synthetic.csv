@@ -1,0 +1,29 @@
+﻿NGÂN HÀNG TMCP KỸ THƯƠNG VIỆT NAM
+TRUY VẤN GIAO DỊCH TÀI KHOẢN / TRANSACTION ENQUIRY
+Từ ngày/From,2026-11-01,Đến ngày/To,2026-11-15
+
+Thông tin khách hàng / Customer Information
+Số tài khoản/Account number,1900000000001
+Tên tài khoản/Account name,CONG TY TNHH VI DU GIVE (DU LIEU GIA)
+Loại tiền/Currency,VND
+Loại tài khoản/Account type,Tài khoản thanh toán
+
+Thông tin số dư / BalanceSummary
+Số dư hiện tại/Actual balance,"9,127,000"
+Số dư đầu ngày/Opening balance,"10,000,000"
+Số dư cuối ngày/ Closing balance,"9,127,000"
+Tổng ghi nợ/ Total debits,"3,000,000"
+Tổng ghi có/ Total credits,"2,160,000"
+Tổng phí/ Total fees,"30,000"
+Tổng VAT/ Total VAT,"3,000"
+
+Ngày giao dịch/Transaction date,Ngày hiệu lực/Value date,Số bút toán/Transaction number,Đối tác giao dịch/Remitter,Tài khoản đối ứng/Remitter's account number,Ngân hàng đối tác/Remitter's bank,Diễn giải/Description,Nợ/Debit,Có/Credit,Phí/Fee,Thuế GTGT/VAT,Số dư/Running balance
+02/11/2026 09:15:02,02/11/2026,FT26306000000001,NGUYEN VAN AN,1900000000011,Techcombank,NGUYEN VAN AN chuyen tien GV7K2M9Q3,,"500,000",,,"10,500,000"
+03/11/2026 10:20:00,03/11/2026,FT26307000000002,TRAN THI BINH,0070000000022,Vietcombank,MBVCB.9000000001.GV3HT8WXW ung ho.CT tu 0070000000022 TRAN THI BINH toi 1900000000001,,"200,000",,,"10,700,000"
+04/11/2026 11:00:00,04/11/2026,FT26308000000003,LE THI CUC,0300000000033,MB,QR - GIVETEST01,,"10,000",,,"10,710,000"
+05/11/2026 08:00:00,05/11/2026,FT26309000000004,PHAM VAN DUNG,0400000000044,ACB,UNG HO GV5PZ4NCS,,"100,000",,,"10,810,000"
+05/11/2026 08:00:00,05/11/2026,FT26309000000005,PHAM VAN DUNG,0400000000044,ACB,UNG HO GV5PZ4NCS,,"100,000",,,"10,910,000"
+06/11/2026 14:30:00,06/11/2026,FT26310000000006,CONG TY TNHH GAO MAU,0500000000055,BIDV,CHI MUA GAO CUU TRO DOT 1,"3,000,000",,"10,000","1,000","7,899,000"
+07/11/2026,07/11/2026,19135200000000-20261107,,,,PHI QUAN LY TAI KHOAN THANG 10/2026,,,"20,000","2,000","7,877,000"
+08/11/2026 16:45:10,08/11/2026,FT26312000000008,VÕ THỊ ĐÀO,0600000000066,VPBank,Ủng hộ đồng bào miền Trung GV8RD2KMR,,"1,000,000",,,"8,877,000"
+09/11/2026 07:05:00,09/11/2026,FT26313000000009,HOANG VAN EM,0700000000077,VietinBank,HOANG VAN EM chuyen khoan ung ho chuong trinh nau com cho benh nhan ngheo tai benh vien tinh dot thang muoi mot nam hai nghin khong tram hai muoi sau GV4VJ6TEB,,"250,000",,,"9,127,000"

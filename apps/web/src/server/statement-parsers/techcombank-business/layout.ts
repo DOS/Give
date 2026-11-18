@@ -1,0 +1,355 @@
+import type { NormalizedTx } from "@/server/channels/types"
+
+import type { Cell, Grid } from "../sheet/read"
+import { bankDate, label, vnd, vnInstant, type LocalDate } from "../sheet/text"
+import type { ParsedStatement } from "../types"
+
+/**
+ * The layout of a Techcombank Business transaction export ("Tải sao kê" /
+ * "Xuất ra", CSV or XLSX) as a grid of cells. Built from Techcombank's
+ * public guides before any real file was seen (DOS/Give#17); see
+ * docs/research/bank-statements.md, section 6.2.
+ *
+ * What is documented (official guides): the header block of the download
+ * ("TRUY VẤN GIAO DỊCH TÀI KHOẢN / TRANSACTION ENQUIRY", "Từ ngày/From …
+ * Đến ngày/To …", "Loại tiền/Currency", "Số dư đầu ngày/Opening balance",
+ * "Số dư cuối ngày/ Closing balance"), and the columns of the monthly
+ * statement: transaction and value dates, counterparty and its bank,
+ * transaction number, description, "Nợ", "Có", "Phí", "Thuế GTGT" and
+ * "Số dư", with balance after = before + Có − Nợ − Phí − Thuế.
+ *
+ * UNCONFIRMED until JOY's anonymized samples arrive: the table header of
+ * the CSV/XLSX export itself. The labels below are the statement's, in the
+ * bilingual "Vietnamese/English" form the download uses. A file whose table
+ * lacks them is refused, never guessed at.
+ */
+
+type Column =
+  | "date"
+  | "valueDate"
+  | "ref"
+  | "description"
+  | "counterpartyName"
+  | "counterpartyAccount"
+  | "counterpartyBank"
+  | "debit"
+  | "credit"
+  | "fee"
+  | "vat"
+  | "balance"
+
+/**
+ * Header labels per column, compared part by part: a header cell
+ * "Nợ/Debit" is the parts "no" and "debit" (after `label()`), and every part
+ * must name the same column. A cell naming two columns ("Ngày giao dịch /
+ * Ngày hiệu lực", as the PDF statement stacks them) matches neither.
+ */
+const HEADERS: Record<Column, readonly string[]> = {
+  date: ["ngay giao dich", "transaction date"],
+  valueDate: ["ngay hieu luc", "value date", "ngay kh thuc hien", "requesting date"],
+  ref: ["so but toan", "transaction number", "transaction no", "ma giao dich", "so tham chieu", "reference number"],
+  description: ["dien giai", "description"],
+  counterpartyName: ["doi tac giao dich", "remitter", "ten tai khoan doi ung", "remitter's account name"],
+  counterpartyAccount: ["tai khoan doi ung", "so tai khoan doi ung", "remitter's account number"],
+  counterpartyBank: ["ngan hang doi tac", "remitter's bank"],
+  debit: ["no", "debit"],
+  credit: ["co", "credit"],
+  fee: ["phi", "fee", "fees"],
+  vat: ["thue gtgt", "vat"],
+  balance: ["so du", "running balance"],
+}
+const REQUIRED: readonly Column[] = ["date", "description", "debit", "credit", "balance"]
+
+const DATE_TEXT = "(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}/\\d{4})"
+/** "Từ ngày/From 2025-09-01 Đến ngày/To 2025-09-30" (Techcombank Business web guide, 31/10/2025, p.32). */
+const PERIOD = new RegExp(`tu ngay(?: ?/ ?from)?:? ?${DATE_TEXT}.*?den ngay(?: ?/ ?to)?:? ?${DATE_TEXT}`)
+/** "Số dư đầu ngày/Opening balance" in the download; "Số dư đầu kỳ" in the monthly statement. */
+const OPENING = /^(so du dau ngay|so du dau ky|opening balance)$/
+/** "Số dư cuối ngày/ Closing balance" in the download; "Số dư cuối kỳ/Ending balance" in the statement. */
+const CLOSING = /^(so du cuoi ngay|so du cuoi ky|closing balance|ending balance)$/
+const CURRENCY = /^(loai tien|currency)$/
+/** "Ngày giờ in/Printed on: 02/02/2023 08:45" (monthly statement). */
+const PRINTED = /^(ngay gio in|printed on)$/
+const UNIT = /\(?\s*vn[dđ]\s*\)?/gi
+
+/** A file this parser does not recognise, or a cell it cannot read. Messages never carry cell contents. */
+export class TcbLayoutError extends Error {
+  constructor(
+    message: string,
+    /** 1-based position among the statement's transactions, when one row is at fault. */
+    readonly row?: number
+  ) {
+    super(message)
+    this.name = "TcbLayoutError"
+  }
+}
+
+function cellText(cell: Cell | undefined): string {
+  if (cell === null || cell === undefined) return ""
+  if (typeof cell === "string") return cell.trim()
+  // A date the file stored as a date, written back day first.
+  const [y, m, d] = cell.day.split("-")
+  return cell.time === null ? `${d}/${m}/${y}` : `${d}/${m}/${y} ${cell.time}`
+}
+
+/** The labels of a cell: "Nợ/Debit" -> ["no", "debit"]. */
+function parts(text: string): string[] {
+  return text
+    .split(/[/\n]/)
+    .map(label)
+    .filter((part) => part !== "")
+}
+
+function cellDate(cell: Cell | undefined): LocalDate {
+  if (cell !== null && cell !== undefined && typeof cell === "object") return cell
+  if (typeof cell !== "string") throw new Error("not a date")
+  return bankDate(cell)
+}
+
+function cellAmount(cell: Cell | undefined): bigint | null {
+  if (cell !== null && cell !== undefined && typeof cell === "object") throw new Error("not an amount")
+  return vnd(cell === undefined || cell === null ? null : cell.trim())
+}
+
+function isBlank(row: readonly Cell[]): boolean {
+  return row.every((cell) => cellText(cell) === "")
+}
+
+function headerColumns(row: readonly Cell[]): Partial<Record<Column, number>> | null {
+  const found: Partial<Record<Column, number>> = {}
+  row.forEach((cell, index) => {
+    const names = parts(cellText(cell))
+    if (names.length === 0) return
+    const columns = new Set(
+      names.map((name) => (Object.keys(HEADERS) as Column[]).find((column) => HEADERS[column].includes(name)))
+    )
+    if (columns.size !== 1) return
+    const [column] = [...columns]
+    if (column !== undefined && found[column] === undefined) found[column] = index
+  })
+  return REQUIRED.every((column) => found[column] !== undefined) ? found : null
+}
+
+/**
+ * The value next to a label outside the table: in the same cell after a
+ * colon ("Ngày giờ in/Printed on: 02/02/2023 08:45") or in the next
+ * non-empty cell of the row.
+ */
+function labelled(rows: Grid, pattern: RegExp): Cell | undefined {
+  for (const row of rows) {
+    for (let i = 0; i < row.length; i++) {
+      const text = cellText(row[i])
+      const colon = text.indexOf(":")
+      if (colon > 0 && parts(text.slice(0, colon)).some((p) => pattern.test(p)) && text.slice(colon + 1).trim()) {
+        return text.slice(colon + 1).trim()
+      }
+      if (parts(text).some((p) => pattern.test(p))) {
+        return row.slice(i + 1).find((cell) => cellText(cell) !== "") ?? null
+      }
+    }
+  }
+  return undefined
+}
+
+function balanceAt(rows: Grid, pattern: RegExp): bigint | null {
+  const cell = labelled(rows, pattern)
+  if (cell === undefined || cell === null) return null
+  try {
+    return cellAmount(typeof cell === "string" ? cell.replace(UNIT, "") : cell)
+  } catch {
+    throw new TcbLayoutError("unreadable balance outside the table")
+  }
+}
+
+function headerPeriod(rows: Grid): { from: string; to: string } | null {
+  for (const row of rows) {
+    const match = PERIOD.exec(label(row.map(cellText).join(" ")))
+    if (match) return { from: bankDate(match[1]).day, to: bankDate(match[2]).day }
+  }
+  return null
+}
+
+function printedAt(rows: Grid): Date | null {
+  const cell = labelled(rows, PRINTED)
+  if (cell === undefined || cell === null) return null
+  try {
+    return vnInstant(cellDate(cell))
+  } catch {
+    throw new TcbLayoutError("unreadable print time")
+  }
+}
+
+interface Entry {
+  date: LocalDate
+  tx: NormalizedTx
+}
+
+function signed(tx: NormalizedTx): bigint {
+  return tx.direction === "in" ? tx.amount : -tx.amount
+}
+
+function chainBreak(entries: readonly Entry[], opening: bigint | null): number {
+  for (let i = 0; i < entries.length; i++) {
+    const before = i === 0 ? opening : entries[i - 1].tx.balanceAfter!
+    if (before !== null && before + signed(entries[i].tx) !== entries[i].tx.balanceAfter) return i
+  }
+  return -1
+}
+
+/**
+ * Puts the entries oldest first: the order in which every balance follows
+ * from the one before (and from the opening balance). The file's order is
+ * tried first, then the reverse (exports often list the newest first);
+ * dates must agree with the order chosen.
+ */
+function oldestFirst(entries: Entry[], opening: bigint | null): Entry[] {
+  const reversed = [...entries].reverse()
+  const ascending = (list: readonly Entry[]) => list.every((e, i) => i === 0 || e.date.day >= list[i - 1].date.day)
+  for (const candidate of [entries, reversed]) {
+    if (ascending(candidate) && chainBreak(candidate, opening) < 0) return candidate
+  }
+  const inDateOrder = ascending(entries) ? entries : ascending(reversed) ? reversed : null
+  if (inDateOrder === null) throw new TcbLayoutError("rows are not in date order")
+  const at = chainBreak(inDateOrder, opening)
+  // Report the position in the file, whichever way round it is.
+  throw new TcbLayoutError("running balance does not add up", inDateOrder === entries ? at + 1 : entries.length - at)
+}
+
+const ZERO = BigInt(0)
+
+function magnitude(value: bigint | null): bigint {
+  return value === null ? ZERO : value < ZERO ? -value : value
+}
+
+/**
+ * Reads a Techcombank Business export grid. Throws TcbLayoutError on
+ * anything it does not recognise; never returns a partial statement.
+ */
+export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
+  const headerIndex = grid.findIndex((row) => headerColumns(row) !== null)
+  if (headerIndex < 0) throw new TcbLayoutError("no Techcombank Business table header")
+  const columns = headerColumns(grid[headerIndex]) as Record<(typeof REQUIRED)[number], number> &
+    Partial<Record<Column, number>>
+  const headerLabels = grid[headerIndex].map(cellText)
+  const above = grid.slice(0, headerIndex)
+
+  const currency = labelled(above, CURRENCY)
+  if (currency !== undefined && currency !== null && label(cellText(currency)) !== "vnd") {
+    throw new TcbLayoutError("not a VND account")
+  }
+
+  const entries: Entry[] = []
+  let end = grid.length
+  for (let r = headerIndex + 1; r < grid.length; r++) {
+    const row = grid[r]
+    if (isBlank(row)) continue
+    let date: LocalDate
+    try {
+      date = cellDate(row[columns.date])
+    } catch {
+      // The first row without a transaction date ends the table.
+      end = r
+      break
+    }
+    const position = entries.length + 1
+    let debit: bigint | null, credit: bigint | null, fee: bigint | null, vat: bigint | null, balance: bigint | null
+    try {
+      debit = cellAmount(row[columns.debit])
+      credit = cellAmount(row[columns.credit])
+      fee = columns.fee === undefined ? null : cellAmount(row[columns.fee])
+      vat = columns.vat === undefined ? null : cellAmount(row[columns.vat])
+      balance = cellAmount(row[columns.balance])
+    } catch {
+      throw new TcbLayoutError("unreadable cell", position)
+    }
+    if (balance === null) throw new TcbLayoutError("row has no balance", position)
+    // Money out is Nợ plus the fee and VAT charged with it, as the
+    // statement's balance counts them; a sign in those columns only repeats
+    // the direction. A credit with a charge on the same row is not
+    // documented, so it is refused until a sample shows one.
+    const outgoing = magnitude(debit) + magnitude(fee) + magnitude(vat)
+    if (credit !== null && credit < ZERO) throw new TcbLayoutError("negative credit", position)
+    const incoming = credit ?? ZERO
+    if ((outgoing === ZERO) === (incoming === ZERO)) {
+      throw new TcbLayoutError("row needs either money in or money out", position)
+    }
+
+    const text = (column: Column) => (columns[column] === undefined ? "" : cellText(row[columns[column]!]))
+    const cells: Record<string, string> = {}
+    headerLabels.forEach((name, i) => {
+      const value = cellText(row[i])
+      if (name !== "" && value !== "") cells[name] = value
+    })
+    const ref = text("ref")
+    entries.push({
+      date,
+      tx: {
+        // hasStableRowId is false until JOY's samples show the transaction
+        // number is present and unique on every row; it stays in `raw.ref`.
+        providerTxId: null,
+        direction: incoming > ZERO ? "in" : "out",
+        asset: "VND",
+        amount: incoming > ZERO ? incoming : outgoing,
+        bookedAt: vnInstant(date),
+        bookedDateOnly: date.time === null,
+        description: text("description") || null,
+        counterpartyName: text("counterpartyName") || null,
+        counterpartyAccount: text("counterpartyAccount") || null,
+        balanceAfter: balance,
+        raw: { sheetRow: r + 1, ...(ref === "" ? {} : { ref }), cells },
+      },
+    })
+  }
+  if (entries.length === 0) throw new TcbLayoutError("no transactions")
+
+  // A row that still looks like a transaction after the table ended means
+  // the table was not read to its end: refuse rather than drop it.
+  const after = grid.slice(end)
+  for (const row of after) {
+    const dated = row.some((cell) => {
+      try {
+        cellDate(cell)
+        return true
+      } catch {
+        return false
+      }
+    })
+    const amounts = row.filter((cell) => {
+      try {
+        return cellAmount(cell) !== null
+      } catch {
+        return false
+      }
+    })
+    if (dated && amounts.length >= 2) throw new TcbLayoutError("rows after the end of the table")
+  }
+
+  const outside = [...above, ...after]
+  const opening = balanceAt(outside, OPENING)
+  const closing = balanceAt(outside, CLOSING)
+  let period: { from: string; to: string } | null
+  try {
+    period = headerPeriod(above)
+  } catch {
+    throw new TcbLayoutError("unreadable statement period")
+  }
+
+  const rows = oldestFirst(entries, opening)
+  const last = rows[rows.length - 1].tx.balanceAfter!
+  if (closing !== null && closing !== last) throw new TcbLayoutError("closing balance does not match the last row")
+  for (let i = 1; i < rows.length; i++) {
+    const [a, b] = [rows[i - 1].date, rows[i].date]
+    if (a.time !== null && b.time !== null && `${b.day} ${b.time}` < `${a.day} ${a.time}`) {
+      throw new TcbLayoutError("rows are not in time order")
+    }
+  }
+
+  return {
+    periodFrom: period?.from ?? null,
+    periodTo: period?.to ?? null,
+    openingBalance: opening,
+    closingBalance: closing,
+    exportedAt: printedAt(outside),
+    rows: rows.map((entry) => entry.tx),
+  }
+}

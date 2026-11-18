@@ -4,6 +4,8 @@
 > question **P3** (partner bank and preferred statement format) in
 > `docs/Give-Technical-Design.md` section 9, and for the parser task
 > DOS/Give#17. P3 stays JOY's decision; section 6 is a recommendation only.
+> JOY decided P3 on 2026-11-18: Techcombank Business first (6.2); the ACB
+> research of 2026-11-17 is kept in 6.1.
 
 ## 1. Scope and method
 
@@ -196,6 +198,186 @@ Parsers should target spreadsheet exports (XLSX/XLS/CSV) first. PDF
 statements at MTTQ scale run to thousands of pages and are harder to parse
 reliably.
 
+### 6.1 ACB statement export (not built yet)
+
+JOY chose ACB for the first parser on 2026-11-17 (P3, DOS/Give#17), then
+switched to Techcombank Business on 2026-11-18, because JOY holds a
+Techcombank business account and only a personal ACB account (6.2). No ACB
+parser exists; this research waits until a campaigner needs one. This
+subsection gathers what public sources say about ACB's statement file, read
+2026-11-17. **Confirmed** means an official ACB page or guide shows it. No
+real ACB export file has been seen yet, and no official source shows the
+cells inside an exported file: the guides show the on-screen grid and the
+printed statement, and the export is assumed to follow them. Everything
+here waits for JOY's anonymized sample files (section 7).
+
+Export formats:
+
+- Old ACB Online personal web: an "Xuất Excel" button; the save dialog
+  offers `ACB_01032011_25032011.xls` as a "Microsoft Excel Worksheet"
+  [acb-1]. That is evidence from one screenshot of 2011 in a 2014 guide,
+  not of today's format: whether ACB ONE still exports `.xls`, and whether
+  that file is a real binary Excel file or an HTML table renamed `.xls`,
+  are **unknown**.
+- ACB ONE BIZ (business): "In sao kê", "Xem" and "Xuất Excel" for day and
+  month ranges [acb-2, p.16]; an MT940 text file through "Liệt kê giao dịch
+  MT", on demand or by daily email [acb-2, pp.18–19]; the monthly statement
+  as a digitally signed PDF, emailed copies protected by the account number
+  [acb-2, pp.112–117]. **Confirmed**.
+- ACB ONE (today's personal app and web): no official guide to its export.
+  A retailer blog says it can export Excel or print [acb-14] _(3rd party)_;
+  the ACB ONE FAQ lists statements but not the format [acb-13]. **Unknown**.
+- CSV: no source. **Unknown**.
+
+Layout of the statement grid (**confirmed** in two official guides, for the
+screen and print views):
+
+- Columns, in order: `Ngày | Số GD | Diễn giải | Ghi nợ | Ghi có | Số dư`
+  [acb-1, p.13] [acb-2, p.17].
+- Above the table: the title "Bảng sao kê giao dịch", "Số tài khoản: … -
+  Chủ tài khoản: …", the period "Từ ngày: 12/09/2019 Đến ngày: 12/09/2019"
+  and "Số dư đầu: 5.725.084 (VND)" [acb-1] [acb-2, p.17].
+- Below it: "Tổng rút ra", "Tổng gửi vào" and "Số dư cuối", each with
+  "(VND)" [acb-1] [acb-2]. No export time appears: **unknown**.
+- Dates in the rows are `dd-mm-yy` ("02-04-14", "12-09-19"), date only;
+  the period uses `dd/mm/yyyy` [acb-1] [acb-2].
+- Debit and credit are separate columns, the unused one left blank;
+  thousands are separated by "." with no decimals ("10.058.370") [acb-1]
+  [acb-2].
+- A balance after every row ("Số dư") [acb-1] [acb-2]. The "Liệt kê theo số
+  tham chiếu" view drops it and adds a "Số tham chiếu" column [acb-1, p.14].
+
+A second layout, seen only in a 2024 HTML capture of the old portal in a
+third-party payment-gateway project [acb-15] _(3rd party)_: `Ngày hiệu lực |
+Ngày giao dịch | Số GD | Ghi nợ | Ghi có | Số dư`, with a timed transaction
+date ("01/11/2024 23:37:01") and the description on its own row below each
+transaction. **Unconfirmed**.
+
+Row id and running balance (the two parser flags):
+
+- "Số GD" is in every sample, with values that look like a per-account
+  sequence (4224, 4225, 4228…) [acb-1] [acb-2]; MT940 output carries it as
+  the reference (`NMSCNONREF3948`) [acb-2, p.19]; a third-party gateway uses
+  it as its transaction id [acb-15] _(3rd party)_. That it is **unique per
+  row** is an inference: ACB does not say so. **Unconfirmed**, so
+  `hasStableRowId` stays **false**.
+- "Số dư" on every row is **confirmed** for the grid, **unconfirmed** for
+  the exported file. A parser can check it on every file (a balance on
+  each row, adding up row by row and against "Số dư đầu" and "Số dư cuối"),
+  so it is the flag to rely on until samples settle "Số GD".
+
+Transfer content:
+
+- ACB's examples are upper case without diacritics, the sender's name
+  often first: "PHAM HOANG TRANG 345,566#HD123457", "IBTSAN NGOC NGAN NAP
+  TIEN …" [acb-1] [acb-2]. A third-party capture shows an interbank credit
+  as "… CHUYEN TIEN GD 079121-110124 23:37:00" [acb-15] _(3rd party)_.
+- ACB asks senders to type content without diacritics [acb-1] [acb-5], and
+  its business bulk template refuses over-long content [acb-2]. Whether ACB
+  strips diacritics from incoming NAPAS or VietQR content, its length limit,
+  and any NAPAS/VietQR prefix: **unknown**.
+
+Not readable: the 2019 statement on pdfcoffee.com [acb-4] (HTTP 503), and
+the developer portal's field schemas, which need a login (the public pages
+list only endpoints such as `/statements` and `/transaction-history`)
+[acb-16]. No open-source parser of ACB Excel exports was found.
+
+### 6.2 Techcombank Business export (decided: first parser)
+
+JOY moved the first parser to Techcombank Business on 2026-11-18 (P3,
+DOS/Give#17): JOY holds a Techcombank business account, so real samples
+can come from its web export. Read 2026-11-18. **Confirmed** means an
+official Techcombank guide shows it (page numbers are the guides' printed
+slide numbers). No real export file has been seen yet, and no official
+source shows the table inside the exported CSV or XLSX: the guides show the
+screen list, the downloaded form's header block and the monthly PDF
+statement. Everything here waits for JOY's anonymized samples (section 7).
+
+Export formats:
+
+- Transaction list ("Giao dịch" tab, "Xuất ra"): "CSV hoặc XLSX"; queries
+  reach back 36 months [tcb-2, pp.27–28]. **Confirmed**.
+- "Tải sao kê" (new interface): since 25/10/2025, at most 100,000
+  transactions per CSV and 30,000 per XLSX; period presets of 7, 30, 60 or
+  90 days or a chosen range; filter "Tất cả/Tiền về/Tiền đi"; when a file
+  would exceed the cap, the newest transactions are kept [tcb-8, p.19].
+  **Confirmed**. So a file can hold fewer days than its stated period;
+  only the period the bank writes in the file counts.
+- Monthly statement ("Sổ phụ"): PDF per calendar month, last 36 months,
+  several months as a ZIP, ready on the 2nd working day of the next month
+  [tcb-2, p.29]. **Confirmed**. MT940, XLS and file names: **unknown**.
+
+Header block of the "Tải sao kê" download [tcb-2, p.32] (**confirmed**; the
+screenshot stops before the table header):
+
+- "NGÂN HÀNG TMCP KỸ THƯƠNG VIỆT NAM", the bank's tax code, the title
+  "TRUY VẤN GIAO DỊCH TÀI KHOẢN / TRANSACTION ENQUIRY" and the period
+  "Từ ngày/From 2025-09-01 Đến ngày/To 2025-09-30" (year first).
+- "Thông tin khách hàng / Customer Information": "Số tài khoản/Account
+  number", "Tên tài khoản/Account name", "Loại tiền/Currency", "Loại tài
+  khoản/Account type".
+- "Thông tin số dư / BalanceSummary": "Số dư hiện tại/Actual balance",
+  "Số dư đầu ngày/Opening balance", "Số dư cuối ngày/ Closing balance",
+  "Tổng ghi nợ/ Total debits", "Tổng ghi có/ Total credits", "Tổng phí/
+  Total fees", "Tổng VAT/ Total VAT", and transaction counts.
+
+Columns:
+
+- Monthly PDF statement [tcb-2, pp.30–31] (**confirmed**): "Ngày giao dịch
+  / Ngày hiệu lực" (transaction / value date) | "Đối tác giao dịch / Ngân
+  hàng đối tác" (remitter / remitter's bank) | "Số bút toán / Diễn giải"
+  (transaction number / description) | "Nợ" | "Có" | "Phí" | "Thuế GTGT" |
+  "Số dư" (running balance). Its summary gives closing = opening + credits
+  − debits − fees − VAT. Footer "Ngày giờ in/Printed on: 02/02/2023 08:45".
+- Screen list [tcb-2, p.27] (**confirmed**): "Ngày giao dịch / Ngày hiệu
+  lực" (new interface: "Ngày KH thực hiện"), "Tên / Số tài khoản", "Tên
+  ngân hàng", "Mã giao dịch / Diễn giải", a signed "Số tiền" ("+10,000",
+  "- 1,000,000"), "Phí + VAT", "Số dư cuối".
+- The CSV/XLSX table header: **unknown**. A third-party ERP importer of
+  Techcombank Excel files matches bilingual headers such as "Nợ/Debit",
+  "Có/Credit", "Diễn giải/Description", "Số dư/Running balance", "Ngày KH
+  thực hiện/Requesting date" and "Remitter's account number" [tcb-11]
+  _(3rd party)_; another project reads a different, personal-account
+  layout [tcb-12] _(3rd party)_.
+
+Formats: rows use `dd/mm/yyyy`; the period line uses `yyyy-mm-dd`
+[tcb-2, pp.27, 30, 32]. Times of day on rows: **unknown**. Amounts use ","
+for thousands and "." for decimals ("1,409,071", "19,000,000.00")
+[tcb-2]. CSV delimiter, encoding and quoting: **unknown**.
+
+Row id and running balance (the two parser flags):
+
+- Transaction numbers ("Số bút toán", "Mã giao dịch", "Số tham chiếu")
+  appear as "FT" plus 14 digits, but also in other shapes, such as
+  "AZ-14901000447757" for a deposit settlement or "19135209863018-20221231"
+  for interest [tcb-2] [tcb-9]. Whether every exported row has one and
+  whether it is unique: **unconfirmed**, so `hasStableRowId` is **false**.
+- A balance after every row is **confirmed** for the screen list and the
+  PDF statement, **unconfirmed** for the export file. The parser sets
+  `hasRunningBalance` **true** and checks it on every file: each row must
+  carry a balance that follows from the previous one (and from "Số dư đầu
+  ngày" and to "Số dư cuối ngày" when present), or the file is refused.
+- Since 25/10/2025 the statement lists transactions by transaction date
+  instead of value date, matching the core system (T24) and branch
+  statements [tcb-2, pp.30–32]; the June 2024 guide gives the same wording
+  dated 1/4/2023 [tcb-10].
+
+Transfer content: 140 characters in the business app, but NAPAS 24/7
+allows 100, and the app warns that a longer content changes the transfer
+method [tcb-3] [tcb-8]. Samples are mostly upper case without diacritics,
+sometimes mixed case; no documented prefix scheme [tcb-2].
+
+What the parser (`apps/web/src/server/statement-parsers/techcombank-business/`,
+format `tcb-business`) assumes until samples arrive: the statement's
+columns as bilingual "Vietnamese/English" headers (one column per cell; a
+cell naming two columns, as the PDF stacks them, is not read); dates day
+first or year first; money out = "Nợ" + "Phí" + "Thuế GTGT" on the row (a
+credit row with a charge is refused); the period from "Từ ngày/From …
+Đến ngày/To …" (a file without it is refused, as a format without row ids
+needs one); "Loại tiền" VND only; and the rows put oldest first by
+following the running balance. CSV must be UTF-8 or UTF-16; the old binary
+`.xls` is not read. Its fixtures are synthetic.
+
 ## 7. Sample files needed from JOY for DOS/Give#17
 
 For each bank JOY picks, real exports from an account JOY or a test organizer
@@ -302,6 +484,16 @@ Techcombank
   effective 10/05/2024.
 - [tcb-6] Techcombank blog, 27/10/2026. How to open an account.
 - [tcb-7] Techcombank blog, 24/09/2026. Account-opening fees.
+- [tcb-8] Techcombank Business mobile user guide, version 31/10/2025
+  (read 2026-11-18).
+- [tcb-9] Techcombank international transfer guide, 11/2021 (read
+  2026-11-18).
+- [tcb-10] Techcombank Business web user guide, version 05/06/2024 (read
+  2026-11-18).
+- [tcb-11] GitHub, sonlv102-hue/ADERP, `app/Services/BankReconciliationService.php`
+  (read 2026-11-18).
+- [tcb-12] GitHub, fchienvuhoang/dh, `src/lib/techcombank.ts` (read
+  2026-11-18).
 
 MB
 
@@ -336,6 +528,13 @@ ACB
 - [acb-10] SePay docs. Connecting ACB.
 - [acb-11] ACB. How to open a payment account online.
 - [acb-12] ACB. Account number on request.
+- [acb-13] ACB. "FAQs ACB ONE_01.25", 31/12/2024 (read 2026-11-17).
+- [acb-14] Điện máy Chợ Lớn blog, 25/12/2025. How to view ACB transaction
+  history (read 2026-11-17).
+- [acb-15] GitHub, vuumanhhung/Payment-Gateway, `acbbank.services.ts` and
+  its spec with an ACB portal HTML capture of 11/2024 (read 2026-11-17).
+- [acb-16] ACB developer portal, product 12826 (statements; read
+  2026-11-17).
 
 Cross-bank
 
@@ -384,6 +583,11 @@ Cross-bank
 [tcb-5]: https://techcombank.com/content/dam/techcombank/public-site/documents/Techcombank-Bieu-phi-quan-ly-tien-te-danh-cho-khach-hang-to-chuc-51a56809b9.pdf
 [tcb-6]: https://techcombank.com/thong-tin/blog/cach-mo-tai-khoan
 [tcb-7]: https://techcombank.com/thong-tin/blog/mo-tai-khoan-ngan-hang-co-mat-phi-khong
+[tcb-8]: https://techcombank.com/content/dam/techcombank/cdb-app/documents/1-1-hdsd-techcombank-business-mobile-20251031.pdf
+[tcb-9]: https://techcombank.com/content/dam/techcombank/public-site/imported-assets/HDSD_CTQTBNT_VIE_115112021_1e452_pdf_9ed4e787bf.pdf
+[tcb-10]: https://techcombank.com/content/dam/techcombank/public-site/documents/hdsd-techcombank-business-web-20240605.pdf
+[tcb-11]: https://github.com/sonlv102-hue/ADERP
+[tcb-12]: https://github.com/fchienvuhoang/dh
 [mb-1]: https://vietbooks.vn/blog/sao-ke-ngan-hang/cach-lay-sao-ke-mb-bank/
 [mb-2]: https://vnexpress.net/mb-ra-mat-tinh-nang-so-phu-dien-tu-cho-doanh-nghiep-4376515.html
 [mb-3]: https://integration-mini-app.mbbank.com.vn/docs/home/apispec/payment/transaction-info/
@@ -410,6 +614,10 @@ Cross-bank
 [acb-10]: https://docs.sepay.vn/ket-noi-acb.html
 [acb-11]: https://acb.com.vn/thu-vien/huong-dan-mo-tai-khoan-thanh-toan-online-ngan-hang-acb
 [acb-12]: https://acb.com.vn/dich-vu-cap-so-tai-khoan-theo-yeu-cau
+[acb-13]: https://online.acb.com.vn/news/images/qa%20khcn.pdf
+[acb-14]: https://dienmaycholon.com/kinh-nghiem-mua-sam/cach-xem-lich-su-giao-dich-acb-nhanh-chong
+[acb-15]: https://github.com/vuumanhhung/Payment-Gateway
+[acb-16]: https://developer.acb.com.vn/acb/open/vi/product/12826
 [x-1]: https://tuoitre.vn/mat-tran-to-quoc-viet-nam-len-tieng-viec-sao-ke-cong-khai-ung-ho-dong-bao-thiet-hai-do-bao-so-3-20240913201551297.htm
 [x-2]: https://thitruongtaichinhtiente.vn/mat-tran-to-quoc-cong-bo-2-009-trang-sao-ke-tien-ung-ho-dong-bao-bi-anh-huong-do-bao-so-3-thong-qua-tai-khoan-vietinbank-62588.html
 [x-3]: https://mia.vn/tin-tuc/cach-check-var-tu-ban-sao-ke-cua-mttq-3542

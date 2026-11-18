@@ -224,6 +224,15 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Money (M1)
 
+- First bank statement parser: Techcombank Business transaction export,
+  CSV or XLSX (`tcb-business`, #17, decision P3 of 2026-11-18). Built
+  from Techcombank's public guides with synthetic fixtures; the export's
+  table header and both format flags stay unconfirmed until JOY's
+  anonymized samples arrive. `hasRunningBalance` is set and checked on
+  every file (balances must add up row by row), `hasStableRowId` is not.
+  Shared spreadsheet reading in `statement-parsers/sheet` (XLSX through
+  the `read-excel-file` package, CSV in-house). ACB research is kept in
+  `docs/research/bank-statements.md` 6.1; no ACB parser yet.
 - Follow-ups from #64 (`apps/web`): `approveCampaign` and `requestChanges`
   report a failed campaign pre-read instead of "not found";
   `checkSubmitAccount`, `loadEditorAccounts` and `/me/campaigns/[id]` load
