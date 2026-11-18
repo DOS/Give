@@ -57,10 +57,19 @@ export interface FulfillmentFilters {
   tier: string | null
   /** A delivery status, "none" for not reported yet, or null for all. */
   status: FulfillmentStatus | "none" | null
+  /** 1-based page number of FULFILLMENT_BATCH_MAX pledges. */
+  page: number
 }
+
+const MAX_FULFILLMENT_PAGE = 10_000
 
 function firstParam(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value) ?? ""
+}
+
+function parsePage(value: string): number {
+  if (!/^[1-9][0-9]*$/.test(value)) return 1
+  return Math.min(Number(value), MAX_FULFILLMENT_PAGE)
 }
 
 export function parseFulfillmentFilters(params: Record<string, string | string[] | undefined>): FulfillmentFilters {
@@ -69,25 +78,34 @@ export function parseFulfillmentFilters(params: Record<string, string | string[]
   return {
     tier: tier === "none" || isUuid(tier) ? tier : null,
     status: status === "none" || isFulfillmentStatus(status) ? status : null,
+    page: parsePage(firstParam(params.page)),
   }
 }
 
-/**
- * Paid pledges of a campaign the caller organizes, oldest first, read with
- * their token (RLS: the organizer and finance see their campaign's
- * contributions). At most one batch, so "select all" fits one call.
- */
-export async function listFulfillmentPledges(
+/** Builds a /me/campaigns/[id]/fulfillment URL, preserving active filters and omitting defaults. */
+export function fulfillmentHref(campaignId: string, filters: Partial<FulfillmentFilters> = {}): string {
+  const params = new URLSearchParams()
+  if (filters.tier) params.set("tier", filters.tier)
+  if (filters.status) params.set("status", filters.status)
+  if (filters.page && filters.page > 1) params.set("page", String(filters.page))
+  const query = params.toString()
+  const base = `/me/campaigns/${campaignId}/fulfillment`
+  return query ? `${base}?${query}` : base
+}
+
+const FULFILLMENT_PLEDGE_COLUMNS =
+  "id, reference_code, public_name, is_anonymous, intended_amount, received_amount, reward_tier_id, shipping_address, fulfillment_status, fulfillment_note, fulfillment_updated_at, created_at"
+
+function fulfillmentQuery(
   db: Db,
   campaignId: string,
-  filters: FulfillmentFilters
-): Promise<{ pledges: FulfillmentPledge[]; total: number }> {
+  filters: Pick<FulfillmentFilters, "tier" | "status">,
+  columns: string,
+  head = false
+) {
   let query = db
     .from("contributions")
-    .select(
-      "id, reference_code, public_name, is_anonymous, intended_amount, received_amount, reward_tier_id, shipping_address, fulfillment_status, fulfillment_note, fulfillment_updated_at, created_at",
-      { count: "exact" }
-    )
+    .select(columns, head ? { count: "exact", head: true } : { count: "exact" })
     .eq("campaign_id", campaignId)
     .eq("kind", "pledge")
     .eq("status", "paid")
@@ -95,13 +113,35 @@ export async function listFulfillmentPledges(
   else if (filters.tier) query = query.eq("reward_tier_id", filters.tier)
   if (filters.status === "none") query = query.is("fulfillment_status", null)
   else if (filters.status) query = query.eq("fulfillment_status", filters.status)
-  const { data, error, count } = await query
+  return query
+}
+
+/**
+ * Paid pledges of a campaign the caller organizes, oldest first, read with
+ * their token (RLS: the organizer and finance see their campaign's
+ * contributions). One page of at most FULFILLMENT_BATCH_MAX rows, so
+ * "select all" on any page fits a single RPC call.
+ */
+export async function listFulfillmentPledges(
+  db: Db,
+  campaignId: string,
+  filters: Pick<FulfillmentFilters, "tier" | "status"> & { page?: number }
+): Promise<{ pledges: FulfillmentPledge[]; total: number }> {
+  const page = Math.max(1, Math.trunc(filters.page ?? 1))
+  const from = (page - 1) * FULFILLMENT_BATCH_MAX
+  const to = page * FULFILLMENT_BATCH_MAX - 1
+  const { data, error, count } = await fulfillmentQuery(db, campaignId, filters, FULFILLMENT_PLEDGE_COLUMNS)
     .order("created_at", { ascending: true })
     .order("id")
-    .limit(FULFILLMENT_BATCH_MAX)
+    .range(from, to)
+  if (error?.code === "PGRST103") {
+    const counted = await fulfillmentQuery(db, campaignId, filters, "id", true)
+    if (counted.error) throw counted.error
+    return { pledges: [], total: counted.count ?? 0 }
+  }
   if (error) throw error
-  const pledges = (data ?? []) as FulfillmentPledge[]
-  return { pledges, total: count ?? pledges.length }
+  const pledges = (data ?? []) as unknown as FulfillmentPledge[]
+  return { pledges, total: count ?? (pledges.length > 0 ? from + pledges.length : 0) }
 }
 
 /** The keys the pledge form stores (DOS/Give#31, lib/pledges.ts shippingAddressSchema), labelled. */

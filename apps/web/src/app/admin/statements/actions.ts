@@ -3,9 +3,19 @@
 import { revalidatePath } from "next/cache"
 
 import { getSession } from "@/lib/auth/session"
-import { dbErrorMessage, done, fail, STATEMENT_ROW_MESSAGES, type ActionResult } from "@/lib/errors"
+import {
+  dbErrorMessage,
+  done,
+  fail,
+  RESTORE_TRUST_MESSAGES,
+  REVIEW_THRESHOLD_MESSAGES,
+  STATEMENT_ROW_MESSAGES,
+  type ActionResult,
+} from "@/lib/errors"
+import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
+import { parseThresholdVnd } from "@/lib/statement-import"
 import { dbAs, dbService } from "@/lib/supabase"
 
 /**
@@ -78,5 +88,99 @@ export async function resolveStatementRow(rowId: string, _state: ActionResult, f
   }
   return done(
     "Đã nhập dòng thành giao dịch. Tiền vào của chiến dịch mà không có mã ủng hộ hợp lệ sẽ nằm trong danh sách giao dịch chưa khớp; giao dịch ngoài thời gian tài khoản gắn với chiến dịch thì không thuộc chiến dịch nào."
+  )
+}
+
+/**
+ * Finance/admin staff change a finance review setting of organizer uploads
+ * (DOS/Give#57): the per-row threshold, or the daily limit against split
+ * amounts. As for resolutions, the role is checked with the reviewer's own
+ * token first, then the RPC checks it again, requires the note and writes the
+ * audit row.
+ */
+export async function setReviewThreshold(state: ActionResult, form: FormData): Promise<ActionResult> {
+  return setReviewSetting("threshold", state, form)
+}
+
+export async function setReviewDailyLimit(state: ActionResult, form: FormData): Promise<ActionResult> {
+  return setReviewSetting("daily_limit", state, form)
+}
+
+const REVIEW_SETTINGS = {
+  threshold: { rpc: "set_statement_review_threshold", arg: "p_threshold_vnd", name: "Ngưỡng duyệt" },
+  daily_limit: { rpc: "set_statement_review_daily_limit", arg: "p_daily_limit_vnd", name: "Giới hạn mỗi ngày" },
+} as const
+
+async function setReviewSetting(
+  kind: keyof typeof REVIEW_SETTINGS,
+  _state: ActionResult,
+  form: FormData
+): Promise<ActionResult> {
+  const setting = REVIEW_SETTINGS[kind]
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  const threshold = parseThresholdVnd(String(form.get("threshold") ?? ""))
+  if (threshold === null) return fail(REVIEW_THRESHOLD_MESSAGES.GIVE_THRESHOLD_INVALID)
+  const note = String(form.get("note") ?? "").trim()
+  if (!note) return fail(REVIEW_THRESHOLD_MESSAGES.GIVE_SETTING_NOTE_REQUIRED)
+  if (note.length > 1000) return fail("Ghi chú tối đa 1.000 ký tự.")
+
+  const role = await dbAs(session.accessToken).rpc("is_admin", { p_roles: FINANCE_ROLES })
+  if (role.error) return fail(dbErrorMessage(role.error))
+  if (role.data !== true) return fail(REVIEW_THRESHOLD_MESSAGES.GIVE_NOT_ALLOWED)
+
+  const { data, error } = await dbService()
+    .rpc(setting.rpc, { p_actor_id: session.user.id, [setting.arg]: threshold, p_note: note })
+    .single()
+  if (error) return fail(dbErrorMessage(error, REVIEW_THRESHOLD_MESSAGES))
+
+  revalidatePath("/admin/statements")
+  revalidatePath("/me/statements")
+  const result = data as { replayed?: boolean } | null
+  if (result?.replayed === true) return done(`${setting.name} đã là ${formatVnd(threshold)}; không có gì thay đổi.`)
+  return done(
+    `Đã đổi ${setting.name.toLowerCase()} thành ${formatVnd(threshold)}. Các lần tải sao kê sau của người tổ chức dùng giá trị mới; dòng đã tải giữ nguyên.`
+  )
+}
+
+/**
+ * Finance/admin staff restore the statement trust of a campaign that a
+ * rejected row blocks (DOS/Give#57, PO decision): until then every organizer
+ * upload of it waits for review. The role is checked with the user's own
+ * token first; give.restore_campaign_statement_trust checks it again, refuses
+ * staff who organize the campaign, requires the note and writes the audit row.
+ */
+export async function restoreCampaignTrust(
+  campaignId: string,
+  /** The latest rejected row the staff member saw: any other refuses the restore (GIVE_TRUST_CHANGED). */
+  lastRejectedRowId: string,
+  _state: ActionResult,
+  form: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  if (!isUuid(campaignId)) return fail(RESTORE_TRUST_MESSAGES.GIVE_CAMPAIGN_NOT_FOUND)
+  if (!isUuid(lastRejectedRowId)) return fail(RESTORE_TRUST_MESSAGES.GIVE_TRUST_CHANGED)
+  const note = String(form.get("note") ?? "").trim()
+  if (!note) return fail(RESTORE_TRUST_MESSAGES.GIVE_SETTING_NOTE_REQUIRED)
+  if (note.length > 1000) return fail("Ghi chú tối đa 1.000 ký tự.")
+
+  const role = await dbAs(session.accessToken).rpc("is_admin", { p_roles: FINANCE_ROLES })
+  if (role.error) return fail(dbErrorMessage(role.error))
+  if (role.data !== true) return fail(RESTORE_TRUST_MESSAGES.GIVE_NOT_ALLOWED)
+
+  const { error } = await dbService()
+    .rpc("restore_campaign_statement_trust", {
+      p_actor_id: session.user.id,
+      p_campaign_id: campaignId,
+      p_note: note,
+      p_expected_last_rejected_row: lastRejectedRowId,
+    })
+    .single()
+  if (error) return fail(dbErrorMessage(error, RESTORE_TRUST_MESSAGES))
+
+  revalidatePath("/admin/statements")
+  return done(
+    "Đã khôi phục tin cậy của chiến dịch. Nếu chiến dịch đã có lần tải được duyệt trọn vẹn, các lần tải sau của người tổ chức lại theo ngưỡng duyệt; nếu chưa, lần tải tiếp theo vẫn chờ duyệt. Một dòng bị từ chối nữa sẽ chặn lại."
   )
 }

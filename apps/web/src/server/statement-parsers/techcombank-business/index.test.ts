@@ -54,6 +54,7 @@ describe.each(Object.keys(FILES))("tcbBusinessParser on %s", (name) => {
 
   it("reads the period and balances of the header block", async () => {
     expect(await read()).toMatchObject({
+      coverage: "full",
       periodFrom: PERIOD.from,
       periodTo: PERIOD.to,
       openingBalance: BigInt(OPENING),
@@ -279,10 +280,474 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     expect(JSON.stringify(parsed.rows[0].raw)).not.toContain("0123456789012")
   })
 
-  it("leaves the period empty when the file does not state it, which the pipeline then refuses", async () => {
+  it("leaves the period empty when the file does not state it, a partial export the pipeline refuses", async () => {
     const parsed = await tcbBusinessParser.parse(statement({ top: withBalances("10,000", "11,000").slice(1) }))
-    expect([parsed.periodFrom, parsed.periodTo]).toEqual([null, null])
-    expect(() => normalizeStatement(tcbBusinessParser, parsed, NOW)).toThrow("STATEMENT_PERIOD_REQUIRED")
+    expect([parsed.periodFrom, parsed.periodTo, parsed.coverage]).toEqual([null, null, "partial"])
+    expect(() => normalizeStatement(tcbBusinessParser, parsed, NOW)).toThrow("STATEMENT_PARTIAL_EXPORT")
+  })
+
+  // DOS/Give#57: an export bounded by times holds part of a day.
+  const period = (from: XlsxCell, to: XlsxCell) => [
+    ["Từ ngày/From", from, "Đến ngày/To", to],
+    ...withBalances("10,000", "11,000").slice(1),
+  ]
+
+  it.each<[string, XlsxCell, XlsxCell, string]>([
+    ["dates alone", "2026-11-01", "2026-11-15", "full"],
+    ["whole days with times", "01/11/2026 00:00", "15/11/2026 23:59:59", "full"],
+    ["a start after midnight", "01/11/2026 08:00", "15/11/2026", "partial"],
+    ["an ISO start after midnight", "2026-11-01T08:00:00", "2026-11-15", "partial"],
+    ["an end before the day ends", "01/11/2026", "15/11/2026 14:30", "ends_early"],
+    // Times this parser does not read count as partial (fail closed).
+    ["a start written 08h00", "01/11/2026 08h00", "15/11/2026", "partial"],
+    ["an end written 14h30", "01/11/2026", "15/11/2026 14h30", "partial"],
+    ["an end after lúc", "01/11/2026", "15/11/2026 lúc 14:30", "partial"],
+    ["an end after a dash", "01/11/2026", "15/11/2026 - 14:30", "partial"],
+    ["a start after a comma", "01/11/2026, 08:00", "15/11/2026", "partial"],
+    ["a 12-hour start after midnight", "01/11/2026 08:00 AM", "15/11/2026", "partial"],
+    ["12-hour whole days", "01/11/2026 12:00 AM", "15/11/2026 11:59 PM", "full"],
+    ["a 12-hour end before the day ends", "01/11/2026", "15/11/2026 02:30 PM", "ends_early"],
+    ["an end written 14g30", "01/11/2026", "15/11/2026 14g30", "partial"],
+    ["an end written 14.30", "01/11/2026", "15/11/2026 14.30", "partial"],
+  ])("reads %s on the period line as a %s export", async (_, from, to, coverage) => {
+    const parsed = await tcbBusinessParser.parse(statement({ top: period(from, to) }))
+    expect([parsed.periodFrom, parsed.periodTo, parsed.coverage]).toEqual(["2026-11-01", "2026-11-15", coverage])
+  })
+
+  it("reads a time in its own labelled cell on the period line as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", "Giờ/Time", "14:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it("reads a time range on its own row above the table as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026"],
+          ["Từ giờ/From time", "08:00", "Đến giờ/To time", "14:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it.each<[string, XlsxCell[], string]>([
+    ["an empty cell then a time", [null, "14:30"], "partial"],
+    ["a dash then a time", ["-", "14:30"], "partial"],
+    ["a time zone then a time", ["(GMT+7)", "14:30"], "partial"],
+    ["a cell lúc 14:30", ["lúc 14:30"], "partial"],
+    ["a cell - 14:30", ["- 14:30"], "partial"],
+    ["a cell đến 14h30", ["đến 14h30"], "partial"],
+    ["a cell 14:30 (GMT+7)", ["x", "14:30 (GMT+7)"], "partial"],
+  ])("reads a time after the to-date with %s between as not full", async (_, extra, coverage) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", ...extra],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe(coverage)
+    expect(() => normalizeStatement(tcbBusinessParser, parsed, NOW)).toThrow(
+      /STATEMENT_(PARTIAL_EXPORT|COVERAGE_UNCLEAR)/
+    )
+  })
+
+  it("reads a time range in a cell after the period as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", "08:00 - 14:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it("reads a Thời gian/Time row with a time range above the table as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({ top: [...withBalances("10,000", "11,000"), ["Thời gian/Time", "08:00 - 14:30"]] })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it.each<[string, XlsxCell[]]>([
+    ["a range with ~", ["Thời gian/Time", "08:00 ~ 14:30"]],
+    ["a range with to", ["Thời gian/Time", "08:00 to 14:30"]],
+    ["a label and range in one cell", ["Thời gian/Time: 08:00 - 14:30"]],
+    ["a Giờ/Time row", ["Giờ/Time", "08:00 - 14:30"]],
+  ])("reads a time row above the table with %s as partial", async (_, extra) => {
+    const parsed = await tcbBusinessParser.parse(statement({ top: [...withBalances("10,000", "11,000"), extra] }))
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it.each<[string, XlsxCell[]]>([
+    ["a print-time row", ["Thời gian in/Printed time", "18/11/2026 08:45"]],
+    ["a heading without a time", ["Thời gian/Time period"]],
+  ])("keeps a full statement full with %s above the table", async (_, extra) => {
+    const parsed = await tcbBusinessParser.parse(statement({ top: [...withBalances("10,000", "11,000"), extra] }))
+    expect(parsed.coverage).toBe("full")
+  })
+
+  it("keeps a period to-date cell at 23:59:59.9 on its own day", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", { date: "2026-11-01T00:00:00" }, "Đến ngày/To", { date: "2026-11-15T23:59:59.900" }],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect([parsed.periodTo, parsed.coverage]).toEqual(["2026-11-15", "full"])
+  })
+
+  // PO review of #243: labelled times on the period row, more separators,
+  // labels not at the start, whole-day ranges.
+  it.each<[string, XlsxCell[], string]>([
+    ["a labelled time range cell", ["Giờ/Time: 08:00 - 14:30"], "partial"],
+    ["a range with ~", ["08:00 ~ 14:30"], "partial"],
+    ["a range with to", ["08:00 to 14:30"], "partial"],
+    ["a range with →", ["08:00 → 14:30"], "partial"],
+    ["a range with /", ["08:00/14:30"], "partial"],
+    ["a Khung giờ label and range", ["Khung giờ", "08:00 - 14:30"], "partial"],
+    [
+      "a time after the print time",
+      ["Ngày giờ in/Printed on", "18/11/2026 08:45", "Giờ/Time", "08:00 - 14:30"],
+      "partial",
+    ],
+    ["a whole-day range", ["Giờ/Time: 00:00 - 23:59"], "full"],
+    ["a whole-day range in two cells", ["Khoảng thời gian/Time range", "00:00 - 23:59"], "full"],
+    ["a print time alone", ["Ngày giờ in/Printed on", "18/11/2026 08:45"], "full"],
+  ])("reads the period row with %s", async (_, extra, coverage) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", ...extra],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe(coverage)
+  })
+
+  // Review of #245: any time left on a row above the table bounds the export.
+  it("reads a to-date with a time after a comma as not full", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026,14:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).not.toBe("full")
+  })
+
+  it.each<[string, XlsxCell[][], XlsxCell[][]]>([
+    ["a time right after a colon above the table", [["Giờ/Time:14:30"]], []],
+    ["a time right after a comma above the table", [["Khung giờ,14:30"]], []],
+    ["a time right after a colon in the footer", [], [["Lọc đến:14:30"]]],
+    ["a time after a lone comma in the footer", [], [["Bộ lọc", ",14:30"]]],
+  ])("reads %s as partial", async (_, top, bottom) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({ top: [...withBalances("10,000", "11,000"), ...top], bottom })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it("reads the period row with Đến:14:30 as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", "Đến:14:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it.each<[string, string, string]>([
+    ["a doubled comma", "15/11/2026,,14:30", "partial"],
+    ["a dot and comma", "15/11/2026.,14:30", "partial"],
+    ["a comma then the end of the day", "15/11/2026, 23:59", "full"],
+    ["a comma then an early end", "15/11/2026, 14:30", "ends_early"],
+  ])("reads a to-date cell with %s", async (_, to, coverage) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [["Từ ngày/From", "01/11/2026", "Đến ngày/To", to], ...withBalances("10,000", "11,000").slice(1)],
+      })
+    )
+    expect(parsed.coverage).toBe(coverage)
+  })
+
+  it("reads a time filter in a row after the table as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(statement({ bottom: [["Điều kiện lọc", "08:00-14:30"]] }))
+    expect([parsed.coverage, parsed.coverageDetail]).toEqual(["partial", "unplaced_time"])
+  })
+
+  it.each<[string, XlsxCell[][]]>([
+    ["a zero fee total", [["Tổng phí/Total fees", "0.00"]]],
+    ["a zero VAT total", [["Total VAT", "0.00"]]],
+    ["a total with its amount in the label cell", [["Tổng ghi có/Total credits: 1,500,000"]]],
+    ["a credit total with decimals", [["Tổng ghi có/Total credits", "1,500,000.00"]]],
+  ])("keeps a full statement full with %s after the table", async (_, bottom) => {
+    const parsed = await tcbBusinessParser.parse(statement({ bottom }))
+    expect([parsed.coverage, parsed.coverageDetail]).toEqual(["full", undefined])
+  })
+
+  it.each<[string, XlsxCell[]]>([
+    ["Thời gian in báo cáo", ["Thời gian in báo cáo", "18/11/2026 08:45"]],
+    ["Printed date", ["Printed date", "18/11/2026 08:45"]],
+  ])("keeps a full statement full with a print time labelled %s", async (_, row) => {
+    const parsed = await tcbBusinessParser.parse(statement({ top: [...withBalances("10,000", "11,000"), row] }))
+    expect(parsed.coverage).toBe("full")
+  })
+
+  it.each<[string, XlsxCell[][], XlsxCell[][]]>([
+    [
+      "a time beside an opening balance",
+      [["Số dư đầu ngày/Opening balance", "10,000", "Giờ/Time", "08:00 - 14:30"]],
+      [],
+    ],
+    ["a time beside a closing balance", [["Số dư cuối ngày/ Closing balance", "11,000", "Khung giờ: 08:00-14:30"]], []],
+    ["a filter beside a footer total", [], [["Tổng ghi có/Total credits", "1,000", "Lọc: 08:00-14:30"]]],
+    ["dotted on-the-hour times on a time row", [["Khung giờ", "08.00", "14.00"]], []],
+    ["dotted times on a Ca/Shift row", [["Ca/Shift", "08.00", "17.00"]], []],
+    ["dotted times on a Lọc/Filter row", [["Lọc/Filter", "08.00", "14.00"]], []],
+    ["dotted times on an unlabelled row", [["Khung", "08.00", "14.00"]], []],
+    [
+      "dotted times after an opening balance",
+      [["Số dư đầu ngày/Opening balance", "10,000", "Giờ/Time", "08.00", "14.00"]],
+      [],
+    ],
+    [
+      "dotted times after a closing balance",
+      [["Số dư cuối ngày/ Closing balance", "11,000", "Khung giờ", "08.00", "17.00"]],
+      [],
+    ],
+    ["dotted times after a footer total", [], [["Tổng ghi có/Total credits", "1,000", "Lọc giờ", "08.00", "14.00"]]],
+    ["a time range in a total label's own cell", [], [["Tổng ghi có/Total credits: 1,000 (08:00 - 14:30)"]]],
+    ["a time after a total label", [["Tổng ghi có/Total credits to 14:30", "1,000"]], []],
+    ["an hour after a total label without a colon", [["Tổng ghi có/Total credits đến 14h", "1,000"]], []],
+  ])("reads %s as partial", async (_, top, bottom) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({ top: [...withBalances("10,000", "11,000"), ...top], bottom })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it("reads dotted times next to the period dates as not full", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "08.00", "Đến ngày/To", "15/11/2026", "14.00"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).not.toBe("full")
+  })
+
+  it("reads dotted on-the-hour times on the period row as not full", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", "Giờ/Time", "08.00", "17.00"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).not.toBe("full")
+  })
+
+  it("keeps a full statement full with a print date in the footer", async () => {
+    const parsed = await tcbBusinessParser.parse(statement({ bottom: [["Printed date", "18/11/2026 08:45"]] }))
+    expect(parsed.coverage).toBe("full")
+  })
+
+  it("still reads a time beside a total-like amount as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({ top: [...withBalances("10,000", "11,000"), ["Bộ lọc", "0.00", "14:30"]] })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
+  it("keeps a full statement full with a print time after the table", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({ bottom: [["Ngày giờ in/Printed on", "18/11/2026 08:45"]] })
+    )
+    expect([parsed.coverage, parsed.coverageDetail]).toEqual(["full", undefined])
+  })
+
+  it("tells an unplaced time from a missing period", async () => {
+    const unplaced = await tcbBusinessParser.parse(
+      statement({ top: [...withBalances("10,000", "11,000"), ["Tên tài khoản/Account name", "CONG TY 4G VIET"]] })
+    )
+    expect([unplaced.coverage, unplaced.coverageDetail]).toEqual(["partial", "unplaced_time"])
+    expect(() => normalizeStatement(tcbBusinessParser, unplaced, NOW)).toThrow("STATEMENT_COVERAGE_UNCLEAR")
+    const noPeriod = await tcbBusinessParser.parse(statement({ top: withBalances("10,000", "11,000").slice(1) }))
+    expect([noPeriod.coverage, noPeriod.coverageDetail]).toEqual(["partial", undefined])
+    expect(() => normalizeStatement(tcbBusinessParser, noPeriod, NOW)).toThrow("STATEMENT_PARTIAL_EXPORT")
+  })
+
+  it.each<[string, XlsxCell[], string]>([
+    ["a start ending in :00 next to 23:59", ["Giờ/Time: 20:00 - 23:59"], "partial"],
+    ["10:00 - 23:59 after the to-date", ["10:00 - 23:59"], "partial"],
+    ["From 08:00 to 14:30", ["From 08:00 to 14:30"], "partial"],
+    ["Ca 08:00 - 14:30", ["Ca 08:00 - 14:30"], "partial"],
+    ["Hours: 08:00-14:30", ["Hours: 08:00-14:30"], "partial"],
+    ["Thời điểm: 08:00 - 14:30", ["Thời điểm: 08:00 - 14:30"], "partial"],
+    ["a whole day with an exception", ["00:00 - 23:59 trừ 12:00-13:00"], "partial"],
+    ["08:00 -> 14:30", ["08:00 -> 14:30"], "partial"],
+    ["08:00 till 14:30", ["08:00 till 14:30"], "partial"],
+    ["hour-only times", ["Giờ/Time: 8h - 14h"], "partial"],
+    ["8 giờ đến 14 giờ", ["Khung giờ: 8 giờ đến 14 giờ"], "partial"],
+    [
+      "a colon print label then a time cell",
+      ["Ngày giờ in/Printed on: 18/11/2026 08:45", "Giờ/Time: 08:00 - 14:30"],
+      "partial",
+    ],
+    ["an English 'in' before the range", ["Giờ/Time (in GMT+7): 08:00 - 14:30"], "partial"],
+    ["a separate whole-day range after the to-date", ["00:00 - 23:59"], "full"],
+    ["a 12-hour whole-day range", ["12:00 SA - 11:59 CH"], "full"],
+    ["a print time split over two cells", ["Ngày giờ in/Printed on", "18/11/2026", "08:45"], "full"],
+    ["an export time with a comma", ["Ngày giờ xuất/Exported at", "18/11/2026, 08:45"], "full"],
+    ["an export time written time first", ["Ngày giờ xuất/Exported at", "08:45 18/11/2026"], "full"],
+    ["an amount", ["1.000.000"], "full"],
+  ])("reads the period row with %s", async (_, extra, coverage) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", ...extra],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe(coverage)
+  })
+
+  it.each<[string, XlsxCell[], string]>([
+    ["a date and time joined by a comma", ["Giờ/Time: 01/11/2026,08:00 - 15/11/2026,14:30"], "partial"],
+    ["an enquiry time holding a range", ["Thời gian truy vấn/Enquiry time: 08:00 - 14:30"], "partial"],
+    ["an enquiry time label then a range", ["Thời gian truy vấn/Enquiry time", "08:00 - 14:30"], "partial"],
+    ["a print label then a date and a range", ["Ngày giờ in/Printed on", "18/11/2026", "08:00-14:30"], "partial"],
+    ["a full-width colon", ["Giờ/Time", "08：00 - 14：30"], "partial"],
+    ["an address with Hàng", ["Địa chỉ/Address", "12 Hàng Bài, Hà Nội"], "full"],
+    ["an address with Giảng", ["Địa chỉ/Address", "Số 5 Giảng Võ, Quận 3 Hồ Chí Minh"], "full"],
+    ["a print time worded Printed at", ["Printed at", "18/11/2026 08:45"], "full"],
+    ["a print time worded In lúc", ["In lúc: 08:45 18/11/2026"], "full"],
+    ["a print time worded Ngày giờ in báo cáo", ["Ngày giờ in báo cáo", "18/11/2026 08:45"], "full"],
+    ["a print time worded Ngày/giờ in", ["Ngày/giờ in", "18/11/2026 08:45"], "full"],
+    ["a creation time", ["Ngày tạo/Created on", "18/11/2026 08:45"], "full"],
+    ["a whole day to 24:00", ["Thời gian/Time", "00:00 - 24:00"], "full"],
+    ["a print time worded Thời điểm in", ["Thời điểm in", "18/11/2026 08:45"], "full"],
+    ["an export date", ["Ngày xuất/Export date", "18/11/2026 08:45"], "full"],
+    ["a floor number with a colon", ["Địa chỉ/Address", "Tầng 12: Tòa nhà A"], "full"],
+    ["a name like 3H (fail closed)", ["Tên tài khoản/Account name", "CONG TY TNHH 3H"], "partial"],
+    ["a bare range", ["08:00 - 14:30"], "partial"],
+    ["Hours and a range", ["Hours", "08:00 - 14:30"], "partial"],
+    ["Timeframe: 08:00-14:30", ["Timeframe: 08:00-14:30"], "partial"],
+    ["8h-14h", ["Giờ/Time", "8h-14h"], "partial"],
+    ["Khung giờ 10:00 - 23:59", ["Khung giờ", "10:00 - 23:59"], "partial"],
+    ["an enquiry time and an amount", ["Số dư tại thời điểm truy vấn/Balance at enquiry time", "1.000.000"], "full"],
+  ])("reads a row above the table with %s", async (_, extra, coverage) => {
+    const parsed = await tcbBusinessParser.parse(statement({ top: [...withBalances("10,000", "11,000"), extra] }))
+    expect(parsed.coverage).toBe(coverage)
+  })
+
+  it.each<[string, XlsxCell[], string]>([
+    ["Khoảng thời gian with a range", ["Khoảng thời gian/Time range", "08:00 - 14:30"], "partial"],
+    ["Khung giờ with a range", ["Khung giờ", "08:00 → 14:30"], "partial"],
+    ["a whole-day Thời gian row", ["Thời gian/Time", "00:00 - 23:59"], "full"],
+    ["a 12-hour whole-day row", ["Thời gian/Time", "12:00 AM - 11:59 PM"], "full"],
+  ])("reads a row above the table with %s", async (_, extra, coverage) => {
+    const parsed = await tcbBusinessParser.parse(statement({ top: [...withBalances("10,000", "11,000"), extra] }))
+    expect(parsed.coverage).toBe(coverage)
+  })
+
+  it("reads date-typed period cells that end at 23:59 as a full statement", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", { date: "2026-11-01T00:00:00" }, "Đến ngày/To", { date: "2026-11-15T23:59:00" }],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect([parsed.periodFrom, parsed.periodTo, parsed.coverage]).toEqual(["2026-11-01", "2026-11-15", "full"])
+  })
+
+  it("reads a period line with empty cells between its parts", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", null, "01/11/2026", null, "Đến ngày/To", null, "15/11/2026"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect([parsed.periodFrom, parsed.periodTo, parsed.coverage]).toEqual(["2026-11-01", "2026-11-15", "full"])
+  })
+
+  it("checks the whole to-date cell even after long text on the row", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["x".repeat(255), "Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026 lúc 14:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).not.toBe("full")
+  })
+
+  it.each<[string, XlsxCell[]]>([
+    ["a print time", ["Ngày giờ in/Printed on", "18/11/2026 08:45"]],
+    ["a period heading", ["Thời gian/Time period"]],
+    ["an account name with SA", ["QUY TU THIEN SA PA"]],
+    ["an account name with CH", ["CONG TY CH 3 MIEN"]],
+    ["an address", ["Số 12 Lê Lợi, Hà Nội"]],
+    ["an amount with separators", ["1.000.000"]],
+  ])("keeps a full statement full when the period row also carries %s", async (_, extra) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", ...extra],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe("full")
+  })
+
+  it("refuses a partial export of past days in the pipeline", async () => {
+    const parsed = await tcbBusinessParser.parse(statement({ top: period("01/11/2026 08:00", "15/11/2026") }))
+    expect(() => normalizeStatement(tcbBusinessParser, parsed, NOW)).toThrow("STATEMENT_PARTIAL_EXPORT")
+  })
+
+  it("accepts an export of today that ends early", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "18/11/2026", "Đến ngày/To", "18/11/2026 09:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+        rows: [["18/11/2026", "UNG HO", null, "1,000", null, "11,000"]],
+      })
+    )
+    expect(parsed.coverage).toBe("ends_early")
+    expect(normalizeStatement(tcbBusinessParser, parsed, NOW).period_to).toBe("2026-11-18")
   })
 
   it("never puts file contents in its errors", async () => {

@@ -250,7 +250,8 @@ describe("importStatementFile", () => {
       p_period_to: "2026-10-02",
       p_opening_balance: null,
       p_closing_balance: null,
-      p_exported_at: NOW.toISOString(),
+      // No print time in the file: the last day (2 Oct) is staged as unfinished.
+      p_exported_at: "2026-10-02T16:59:59.000Z",
     })
     expect(args("import_statement_batch")).toEqual({ p_import_batch_id: BATCH })
     expect(op(rpc("stage_statement_import"), "abortSignal")?.[0]).toBeInstanceOf(AbortSignal)

@@ -1,12 +1,16 @@
+// @vitest-environment happy-dom
 /**
  * Covers the `/admin` moderator review queue RSC (`AdminReviewPage`,
- * DOS/Give#218): `requireSession("/admin")` and finance/non-staff routing,
+ * DOS/Give#218, #242): `requireSession("/admin")` and finance/non-staff routing,
  * `listWaitingForAccount` error isolation, `EmptyState` rendering across
  * `#queue`, `#waiting` and `#organizers`, self-review UI guards,
- * `waitingAdvice` notes and `from_status="approved"` send-back forms, and
- * `#organizers` concurrency hidden fields.
+ * `waitingAdvice` notes and `from_status="approved"` send-back forms,
+ * `<Field>` + `space-y-6` rhythm, contextualized preview/action labels, and
+ * `#organizers` secondary hierarchy, rejected button hiding, and `confirm` guard.
  */
+import { act } from "react"
 import { Window } from "happy-dom"
+import { createRoot } from "react-dom/client"
 import { renderToStaticMarkup } from "react-dom/server"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
@@ -23,6 +27,7 @@ import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 const STAFF_USER = "11111111-1111-4111-8111-111111111111"
 const OTHER_USER = "22222222-2222-4222-8222-222222222222"
 const THIRD_USER = "33333333-3333-4333-8333-333333333333"
+const REJECTED_USER = "44444444-4444-4444-8444-444444444444"
 
 const state = vi.hoisted(() => ({
   handler: (() => undefined) as Handler,
@@ -41,12 +46,14 @@ const notFoundMock = vi.hoisted(() =>
   })
 )
 
-const requireSessionMock = vi.hoisted(() =>
-  vi.fn(async (_next?: string) => ({
-    user: { id: STAFF_USER, email: "mod@dos.me", name: "Kiểm duyệt viên" },
-    accessToken: "mod-access-token",
-  }))
-)
+const sessionValue = {
+  user: { id: STAFF_USER, email: "mod@dos.me", name: "Kiểm duyệt viên" },
+  accessToken: "mod-access-token",
+}
+
+const requireSessionMock = vi.hoisted(() => vi.fn(async (_next?: string) => sessionValue))
+
+const getSessionMock = vi.hoisted(() => vi.fn(async () => sessionValue))
 
 const dbAsMock = vi.hoisted(() => vi.fn((_token?: string) => fakeDb((call) => state.handler(call), state.calls)))
 
@@ -57,7 +64,7 @@ vi.mock("next/navigation", () => ({
 }))
 vi.mock("@/lib/auth/session", () => ({
   requireSession: requireSessionMock,
-  getSession: vi.fn(async () => null),
+  getSession: getSessionMock,
 }))
 vi.mock("@/lib/supabase", () => ({
   dbAs: dbAsMock,
@@ -165,7 +172,18 @@ function setupAdmin({
         }
       }
     }
-    if (call.target === "organizers") return { data: organizers }
+    if (call.target === "organizers") {
+      const inStatuses = op(call, "in")?.[1] as string[] | undefined
+      const eqStatus = op(call, "eq")?.[1] as string | undefined
+      const lim = (op(call, "limit")?.[0] as number | undefined) ?? organizers.length
+      const filtered = inStatuses
+        ? organizers.filter((o) => inStatuses.includes(o.verification_status))
+        : eqStatus
+          ? organizers.filter((o) => o.verification_status === eqStatus)
+          : organizers
+      return { data: filtered.slice(0, lim) }
+    }
+    if (call.target === "rpc:set_organizer_verification") return { data: null }
     return undefined
   }
 }
@@ -317,11 +335,17 @@ describe("AdminReviewPage (/admin, DOS/Give#218)", () => {
         legal_name: "Trần Kiểm Duyệt",
         display_name: "Kiểm Duyệt",
       })
+      const rejectedOrganizer = organizerRow(REJECTED_USER, {
+        kind: "individual",
+        legal_name: "Lê Văn Bị Từ Chối",
+        display_name: "Hồ Sơ Cần Sửa",
+        verification_status: "rejected",
+      })
 
       setupAdmin({
         queue: [otherQueue, ownQueue],
         waiting: [otherWaitingSendBack, otherWaitingNoSendBack, ownWaiting],
-        organizers: [otherOrganizer, ownOrganizer],
+        organizers: [otherOrganizer, ownOrganizer, rejectedOrganizer],
       })
 
       const { queueSection, waitingSection, organizersSection } = await renderAdmin()
@@ -330,17 +354,30 @@ describe("AdminReviewPage (/admin, DOS/Give#218)", () => {
       const queueCards = Array.from(queueSection.querySelectorAll("li"))
       expect(queueCards).toHaveLength(2)
 
-      // Other organizer's campaign in #queue gets approve + requestChanges (from_status="in_review").
+      // Other organizer's campaign in #queue gets contextualized preview link, approve + Field/space-y-6 requestChanges.
       expect(queueCards[0]!.textContent).toContain("Xây cầu Kênh Tẻ")
+      expect(queueCards[0]!.querySelector('a[href="/campaigns/chien-dich-bbbb"]')?.textContent).toBe(
+        "Xem trước: Xây cầu Kênh Tẻ (mở thẻ mới)"
+      )
       expect(queueCards[0]!.textContent).toContain("Trường Tiểu học Bản Mây (Đơn vị thụ hưởng)")
       expect(
         Array.from(queueCards[0]!.querySelectorAll('button[type="submit"]')).map((b) => b.textContent.trim())
       ).toEqual(["Duyệt", "Gửi yêu cầu"])
-      expect(queueCards[0]!.querySelector('input[name="from_status"]')?.getAttribute("value")).toBe("in_review")
-      expect(queueCards[0]!.querySelector(`textarea#reason-${otherQueue.id}[name="reason"]`)).toBeTruthy()
+      const queueRequestForm = queueCards[0]!.querySelectorAll("form")[1]!
+      expect(queueRequestForm.className).toContain("space-y-6")
+      expect(queueRequestForm.querySelector('input[name="from_status"]')?.getAttribute("value")).toBe("in_review")
+      const queueTextarea = queueRequestForm.querySelector(`textarea#reason-${otherQueue.id}[name="reason"]`)!
+      expect(queueTextarea).toBeTruthy()
+      expect(queueTextarea.parentElement?.tagName).toBe("DIV")
+      expect(queueTextarea.parentElement?.querySelector(`label[for="reason-${otherQueue.id}"]`)?.textContent).toBe(
+        "Yêu cầu chỉnh sửa"
+      )
 
       // Moderator's own campaign in #queue shows warning Callout instead of action forms.
       expect(queueCards[1]!.textContent).toContain("Chiến dịch của kiểm duyệt viên")
+      expect(queueCards[1]!.querySelector('a[href="/campaigns/chien-dich-cccc"]')?.textContent).toBe(
+        "Xem trước: Chiến dịch của kiểm duyệt viên (mở thẻ mới)"
+      )
       expect(queueCards[1]!.textContent).toContain("Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần duyệt.")
       expect(queueCards[1]!.querySelectorAll("form")).toHaveLength(0)
 
@@ -353,13 +390,23 @@ describe("AdminReviewPage (/admin, DOS/Give#218)", () => {
       expect(expectedAdvice.note).toBeTruthy()
       expect(expectedAdvice.sendBackReason).toBeTruthy()
       expect(waitingCards[0]!.textContent).toContain("Sách cho em")
+      expect(waitingCards[0]!.querySelector('a[href="/campaigns/chien-dich-dddd"]')?.textContent).toBe(
+        "Xem trước: Sách cho em (mở thẻ mới)"
+      )
       expect(waitingCards[0]!.textContent).toContain(accountProblemLabel("account_not_owned"))
       expect(waitingCards[0]!.textContent).toContain(expectedAdvice.note!)
-      expect(waitingCards[0]!.querySelector('input[name="from_status"]')?.getAttribute("value")).toBe("approved")
-      const waitingTextarea = waitingCards[0]!.querySelector(
+      const waitingRequestForm = waitingCards[0]!.querySelector("form")!
+      expect(waitingRequestForm.className).toContain("space-y-6")
+      expect(waitingRequestForm.querySelector('input[name="from_status"]')?.getAttribute("value")).toBe("approved")
+      const waitingTextarea = waitingRequestForm.querySelector(
         `textarea#waiting-reason-${otherWaitingSendBack.id}[name="reason"]`
-      )
-      expect(waitingTextarea?.textContent).toBe(expectedAdvice.sendBackReason)
+      )!
+      expect(waitingTextarea.textContent).toBe(expectedAdvice.sendBackReason)
+      expect(waitingTextarea.parentElement?.tagName).toBe("DIV")
+      expect(
+        waitingTextarea.parentElement?.querySelector(`label[for="waiting-reason-${otherWaitingSendBack.id}"]`)
+          ?.textContent
+      ).toBe("Yêu cầu chỉnh sửa")
       expect(waitingCards[0]!.querySelector('button[type="submit"]')?.textContent.trim()).toBe("Gửi yêu cầu")
 
       // 2) Other organizer where waitingAdvice.sendBackReason === null: renders note only, no form.
@@ -376,27 +423,37 @@ describe("AdminReviewPage (/admin, DOS/Give#218)", () => {
       expect(waitingCards[2]!.querySelectorAll("form")).toHaveLength(0)
 
       // --- #organizers ---
-      const organizerItems = Array.from(organizersSection.querySelectorAll("li"))
-      expect(organizerItems).toHaveLength(2)
+      // DESIGN.md 6 "One primary per view": zero .btn-primary buttons inside #organizers.
+      expect(organizersSection.querySelectorAll(".btn-primary")).toHaveLength(0)
 
-      // Other organizer gets "Xác minh" and "Từ chối" forms with concurrency hidden fields.
+      const organizerItems = Array.from(organizersSection.querySelectorAll("li"))
+      expect(organizerItems).toHaveLength(3)
+
+      // 1) Actionable other organizer gets secondary "Xác minh: ..." and danger "Từ chối: ..." forms.
       expect(organizerItems[0]!.textContent).toContain("Quỹ Ánh Dương")
       expect(organizerItems[0]!.textContent).toContain("Tên pháp lý: Công ty TNHH Ánh Dương · Tổ chức")
       const verifyForms = Array.from(organizerItems[0]!.querySelectorAll("form"))
       expect(verifyForms).toHaveLength(2)
       expect(
-        verifyForms.map((form) => ({
-          button: form.querySelector('button[type="submit"]')?.textContent.trim(),
-          inputs: Object.fromEntries(
-            Array.from(form.querySelectorAll('input[type="hidden"]')).map((i) => [
-              i.getAttribute("name"),
-              i.getAttribute("value"),
-            ])
-          ),
-        }))
+        verifyForms.map((form) => {
+          const btn = form.querySelector('button[type="submit"]')!
+          return {
+            button: btn.textContent.trim(),
+            srOnly: btn.querySelector(".sr-only")?.textContent,
+            className: btn.className,
+            inputs: Object.fromEntries(
+              Array.from(form.querySelectorAll('input[type="hidden"]')).map((i) => [
+                i.getAttribute("name"),
+                i.getAttribute("value"),
+              ])
+            ),
+          }
+        })
       ).toEqual([
         {
-          button: "Xác minh",
+          button: "Xác minh: Quỹ Ánh Dương",
+          srOnly: ": Quỹ Ánh Dương",
+          className: "btn-secondary",
           inputs: {
             status: "verified",
             expected_legal_name: "Công ty TNHH Ánh Dương",
@@ -405,7 +462,9 @@ describe("AdminReviewPage (/admin, DOS/Give#218)", () => {
           },
         },
         {
-          button: "Từ chối",
+          button: "Từ chối: Quỹ Ánh Dương",
+          srOnly: ": Quỹ Ánh Dương",
+          className: "btn-danger",
           inputs: {
             status: "rejected",
             expected_legal_name: "Công ty TNHH Ánh Dương",
@@ -415,12 +474,95 @@ describe("AdminReviewPage (/admin, DOS/Give#218)", () => {
         },
       ])
 
-      // Moderator's own organizer profile omits both "Xác minh" and "Từ chối".
+      // 2) Moderator's own organizer profile shows explicit warning Callout and zero forms.
       expect(organizerItems[1]!.textContent).toContain("Kiểm Duyệt")
       expect(organizerItems[1]!.textContent).toContain("Tên pháp lý: Trần Kiểm Duyệt · Cá nhân")
+      expect(organizerItems[1]!.textContent).toContain("Đây là hồ sơ của bạn; một kiểm duyệt viên khác cần xác minh.")
+      expect(organizerItems[1]!.querySelector(".bg-warning-soft")).toBeTruthy()
       expect(organizerItems[1]!.querySelectorAll("form")).toHaveLength(0)
-      expect(organizerItems[1]!.textContent).not.toContain("Xác minh")
-      expect(organizerItems[1]!.textContent).not.toContain("Từ chối")
+
+      // 3) Already-rejected organizer profile (sorted after actionable ones) hides the no-op "Từ chối" button.
+      expect(organizerItems[2]!.textContent).toContain("Hồ Sơ Cần Sửa")
+      const rejectedForms = Array.from(organizerItems[2]!.querySelectorAll("form"))
+      expect(rejectedForms).toHaveLength(1)
+      expect(rejectedForms[0]!.querySelector('button[type="submit"]')?.textContent.trim()).toBe(
+        "Xác minh: Hồ Sơ Cần Sửa"
+      )
+      expect(rejectedForms[0]!.querySelector('input[name="status"]')?.getAttribute("value")).toBe("verified")
+      expect(organizerItems[2]!.textContent).not.toContain("Từ chối:")
+    })
+
+    it("prompts window.confirm before rejecting an organizer and skips confirm when verifying", async () => {
+      ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+      const org = organizerRow(OTHER_USER, {
+        kind: "organization",
+        legal_name: "Công ty TNHH Ánh Dương",
+        display_name: "Quỹ Ánh Dương",
+      })
+      setupAdmin({ organizers: [org] })
+
+      const container = document.createElement("div")
+      document.body.append(container)
+      const root = createRoot(container)
+      const originalConfirm = window.confirm
+      const confirmMock = vi.fn<(message?: string) => boolean>()
+      window.confirm = confirmMock
+
+      try {
+        const element = await AdminReviewPage()
+        await act(async () => {
+          root.render(element)
+        })
+
+        const buttons = [
+          ...container.querySelectorAll<HTMLButtonElement>(
+            'section[aria-labelledby="organizers"] button[type="submit"]'
+          ),
+        ]
+        expect(buttons.map((b) => b.textContent?.trim())).toEqual(["Xác minh: Quỹ Ánh Dương", "Từ chối: Quỹ Ánh Dương"])
+
+        // Declining confirmation cancels rejection before calling the RPC.
+        state.calls.length = 0
+        confirmMock.mockReturnValueOnce(false)
+        await act(async () => {
+          buttons[1]!.click()
+        })
+        expect(confirmMock).toHaveBeenCalledWith("Từ chối xác minh hồ sơ “Quỹ Ánh Dương”?")
+        expect(state.calls.filter((c) => c.target === "rpc:set_organizer_verification")).toHaveLength(0)
+
+        // Accepting confirmation submits set_organizer_verification with p_status = "rejected".
+        confirmMock.mockReturnValueOnce(true)
+        await act(async () => {
+          buttons[1]!.click()
+        })
+        const rejectCalls = state.calls.filter((c) => c.target === "rpc:set_organizer_verification")
+        expect(rejectCalls).toHaveLength(1)
+        expect(op(rejectCalls[0], "args")?.[0]).toMatchObject({
+          p_user_id: OTHER_USER,
+          p_status: "rejected",
+          p_expected_legal_name: "Công ty TNHH Ánh Dương",
+          p_expected_display_name: "Quỹ Ánh Dương",
+          p_expected_kind: "organization",
+        })
+
+        // Clicking "Xác minh" submits without prompting window.confirm.
+        confirmMock.mockClear()
+        state.calls.length = 0
+        await act(async () => {
+          buttons[0]!.click()
+        })
+        expect(confirmMock).not.toHaveBeenCalled()
+        const verifyCalls = state.calls.filter((c) => c.target === "rpc:set_organizer_verification")
+        expect(verifyCalls).toHaveLength(1)
+        expect(op(verifyCalls[0], "args")?.[0]).toMatchObject({
+          p_user_id: OTHER_USER,
+          p_status: "verified",
+        })
+      } finally {
+        window.confirm = originalConfirm
+        act(() => root.unmount())
+        container.remove()
+      }
     })
   })
 })

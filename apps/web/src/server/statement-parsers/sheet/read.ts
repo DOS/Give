@@ -43,9 +43,18 @@ function pad(n: number): string {
  * is rounded to the nearest second first. Midnight exactly counts as a
  * date without time.
  */
+const DAY_MS = 24 * 60 * 60 * 1000
+
 export function dateCell(value: Date): LocalDate {
   if (!Number.isFinite(value.getTime())) throw new SheetReadError("unreadable date cell")
-  const at = new Date(Math.round(value.getTime() / 1000) * 1000)
+  // To the nearest second (Excel stores times with float error, which a
+  // Date shows as at most 1 ms), but a time from 23:59:59.5 to 1 ms before
+  // midnight stays 23:59:59 instead of moving to the next day, so a period
+  // ending at "23:59:59.9" keeps its last day (DOS/Give#57).
+  const ms = value.getTime()
+  const rounded = Math.round(ms / 1000) * 1000
+  const crosses = rounded % DAY_MS === 0 && rounded - ms > 1
+  const at = new Date(crosses ? rounded - 1000 : rounded)
   const day = `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}`
   const [h, m, s] = [at.getUTCHours(), at.getUTCMinutes(), at.getUTCSeconds()]
   return { day, time: h === 0 && m === 0 && s === 0 ? null : `${pad(h)}:${pad(m)}:${pad(s)}` }

@@ -193,6 +193,9 @@ describe("CampaignsPage (/campaigns, DOS/Give#209)", () => {
         ["status", "ended"],
         ["sort", "ending"],
       ])
+      const mobileSearch = doc.querySelector('form[role="search"] input#q')
+      expect(mobileSearch?.getAttribute("minlength")).toBe("2")
+      expect(mobileSearch?.getAttribute("maxlength")).toBe("80")
 
       const keep = {
         type: "give" as const,
@@ -247,6 +250,49 @@ describe("CampaignsPage (/campaigns, DOS/Give#209)", () => {
         "Công nghệ",
         "Cộng đồng",
       ])
+    })
+
+    it("falls back to 'Mọi danh mục' on unknown or cross-type category slugs without ghost filter strips or unchecked menus (DOS/Give#240)", async () => {
+      // Unknown ?category=foo: falls back to null, checks "Mọi danh mục", and omits ghost "Đang lọc:" strip.
+      state.calls.length = 0
+      const unknown = await renderDiscovery({ category: "foo" })
+      const unknownCall = state.calls.find((c) => c.target === "rpc:discover_campaigns")
+      expect(op(unknownCall, "args")?.[0]).toMatchObject({ p_type: null, p_category_id: null })
+      expect(unknown.html).not.toContain("Đang lọc:")
+      expect(unknown.html).not.toContain("Xoá tất cả")
+      expect(unknown.doc.querySelector('form[role="search"] input[name="category"]')).toBeNull()
+      expect(navLinks(unknown.doc, "Danh mục")).toEqual([
+        { label: "Mọi danh mục", href: "/campaigns", current: true },
+        { label: "Y tế", href: "/campaigns?category=y-te", current: false },
+        { label: "Công nghệ", href: "/campaigns?category=cong-nghe", current: false },
+        { label: "Cộng đồng", href: "/campaigns?category=cong-dong", current: false },
+      ])
+
+      // Unknown ?category=foo with active q: shows only the q chip under "Đang lọc:".
+      const unknownWithQ = await renderDiscovery({ category: "foo", q: "trường" })
+      expect(unknownWithQ.html).toContain("Đang lọc:")
+      expect(unknownWithQ.doc.querySelector('a[aria-label^="Bỏ lọc danh mục"]')).toBeNull()
+      expect(unknownWithQ.doc.querySelector('a[aria-label="Bỏ tìm “trường”"]')?.getAttribute("href")).toBe("/campaigns")
+
+      // Cross-type ?type=give&category=cong-nghe ("Công nghệ" applies only to back):
+      // drops category so summary does not claim "Danh mục: Công nghệ" while omitting it from the menu.
+      state.calls.length = 0
+      const crossType = await renderDiscovery({ type: "give", category: "cong-nghe" })
+      const crossCall = state.calls.find((c) => c.target === "rpc:discover_campaigns")
+      expect(op(crossCall, "args")?.[0]).toMatchObject({ p_type: "give", p_category_id: null })
+      expect(crossType.html).not.toContain("Công nghệ")
+      expect(crossType.html).not.toContain("Đang lọc:")
+      expect(crossType.doc.querySelector('form[role="search"] input[name="category"]')).toBeNull()
+      expect(navLinks(crossType.doc, "Danh mục")).toEqual([
+        { label: "Mọi danh mục", href: "/campaigns?type=give", current: true },
+        { label: "Y tế", href: "/campaigns?type=give&category=y-te", current: false },
+        { label: "Cộng đồng", href: "/campaigns?type=give&category=cong-dong", current: false },
+      ])
+      expect(navLinks(crossType.doc, "Trạng thái")[1]).toEqual({
+        label: "Đã kết thúc",
+        href: "/campaigns?type=give&status=ended",
+        current: false,
+      })
     })
   })
 
@@ -361,16 +407,38 @@ describe("CampaignsPage (/campaigns, DOS/Give#209)", () => {
       expect(exact.html).not.toContain("Chọn thêm bộ lọc để xem các chiến dịch còn lại.")
     })
 
-    it("renders EmptyState ('Không có chiến dịch nào khớp bộ lọc') and hides pagination when shown === 0", async () => {
+    it("renders unfiltered EmptyState with /start CTA instead of self-linking 'Xoá bộ lọc' when zero live campaigns exist (DOS/Give#240)", async () => {
       setupDiscovery({ shown: 0, total: 0 })
-      const { html, doc } = await renderDiscovery({ q: "không có" })
 
-      expect(doc.querySelector("h3")?.textContent.trim()).toBe("Không có chiến dịch nào khớp bộ lọc")
-      expect(html).toContain("Thử từ khoá ngắn hơn, chọn danh mục hoặc trạng thái khác.")
-      const resetLink = Array.from(doc.querySelectorAll("a")).find((a) => a.textContent.trim() === "Xoá bộ lọc")
-      expect(resetLink?.getAttribute("href")).toBe("/campaigns")
-      expect(html).not.toContain("Đang xem")
-      expect(html).not.toContain("Xem thêm")
+      for (const params of [{}, { sort: "newest" }, { category: "khong-ton-tai" }]) {
+        const { html, doc } = await renderDiscovery(params)
+        expect(doc.querySelector("h3")?.textContent.trim()).toBe("Chưa có chiến dịch nào đang gây quỹ")
+        expect(html).toContain("Chiến dịch hiện ở đây ngay khi được duyệt.")
+        const startCta = doc.querySelector('a[href="/start"]')
+        expect(startCta?.textContent.trim()).toBe("Tạo chiến dịch của bạn")
+        expect(startCta?.className).toContain("btn-primary")
+        expect(html).not.toContain("Không có chiến dịch nào khớp bộ lọc")
+        expect(html).not.toContain("Xoá bộ lọc")
+        expect(html).not.toContain("Đang xem")
+        expect(html).not.toContain("Xem thêm")
+      }
+    })
+
+    it("renders filtered EmptyState ('Không có chiến dịch nào khớp bộ lọc') and hides pagination when shown === 0 under active filters", async () => {
+      setupDiscovery({ shown: 0, total: 0 })
+
+      for (const params of [{ q: "không có" }, { type: "give" }, { category: "y-te" }, { status: "ended" }]) {
+        const { html, doc } = await renderDiscovery(params)
+
+        expect(doc.querySelector("h3")?.textContent.trim()).toBe("Không có chiến dịch nào khớp bộ lọc")
+        expect(html).toContain("Thử từ khoá ngắn hơn, chọn danh mục hoặc trạng thái khác.")
+        const resetLink = Array.from(doc.querySelectorAll("a")).find((a) => a.textContent.trim() === "Xoá bộ lọc")
+        expect(resetLink?.getAttribute("href")).toBe("/campaigns")
+        expect(resetLink?.className).toContain("btn-secondary")
+        expect(html).not.toContain("Chưa có chiến dịch nào đang gây quỹ")
+        expect(html).not.toContain("Đang xem")
+        expect(html).not.toContain("Xem thêm")
+      }
     })
   })
 })

@@ -6,10 +6,11 @@ import { StatusBadge } from "@/components/badges"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { SelectAll } from "@/components/SelectAll"
 import { Badge } from "@/components/ui/Badge"
-import { buttonClass } from "@/components/ui/Button"
+import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { PageHeader } from "@/components/ui/PageHeader"
+import { RefCode } from "@/components/ui/RefCode"
 import { requireSession } from "@/lib/auth/session"
 import { getCampaignById } from "@/lib/campaigns"
 import { formatDateTime, formatVnd } from "@/lib/format"
@@ -20,6 +21,7 @@ import {
   FULFILLMENT_LABELS,
   FULFILLMENT_NOTE_MAX,
   FULFILLMENT_STATUSES,
+  fulfillmentHref,
   fulfillmentLabel,
   isFulfillmentStatus,
   listFulfillmentPledges,
@@ -36,7 +38,6 @@ import { checkInputClass } from "../../../_components/Panel"
 import { FULFILLMENT_TONES } from "../../../_components/tones"
 
 import { setFulfillment } from "./actions"
-import { RefCode } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Giao quà cho người ủng hộ", robots: { index: false } }
 
@@ -60,15 +61,17 @@ export default async function FulfillmentPage({
   const campaign = await getCampaignById(db, id)
   if (!campaign || campaign.organizer_id !== session.user.id || campaign.type !== "back") notFound()
 
-  const filters = parseFulfillmentFilters(await searchParams)
   const open = canUpdateFulfillment(campaign)
-  const [tiers, { pledges, total }] = await Promise.all([
-    listCampaignTiers(db, campaign.id),
-    open ? listFulfillmentPledges(db, campaign.id, filters) : Promise.resolve({ pledges: [], total: 0 }),
-  ])
+  const filters = parseFulfillmentFilters(await searchParams)
+  const [tiers, { pledges, total }] = open
+    ? await Promise.all([listCampaignTiers(db, campaign.id), listFulfillmentPledges(db, campaign.id, filters)])
+    : [[], { pledges: [], total: 0 }]
   const tierTitle = new Map(tiers.map((t) => [t.id, t.title]))
   const counts = countByStatus(pledges)
   const filtered = filters.tier !== null || filters.status !== null
+  const totalPages = Math.max(1, Math.ceil(total / FULFILLMENT_BATCH_MAX))
+  const hasPrev = filters.page > 1
+  const hasNext = filters.page < totalPages
 
   return (
     <MeDetail>
@@ -126,31 +129,62 @@ export default async function FulfillmentPage({
                 Lọc
               </button>
               {filtered && (
-                <Link
-                  href={`/me/campaigns/${campaign.id}/fulfillment`}
-                  className="inline-flex min-h-11 items-center link"
-                >
+                <Link href={fulfillmentHref(campaign.id)} className="inline-flex min-h-11 items-center link">
                   Bỏ lọc
                 </Link>
               )}
             </div>
           </form>
 
-          {pledges.length === 0 ? (
-            <EmptyState
-              level={2}
-              title={filtered ? "Không có lượt ủng hộ nào khớp bộ lọc." : "Chưa có người ủng hộ nào thanh toán đủ."}
-            />
-          ) : (
-            <FulfillmentForm
-              campaignId={campaign.id}
-              pledges={pledges}
-              total={total}
-              tierTitle={tierTitle}
-              counts={counts}
-              filters={filters}
-            />
-          )}
+          <div className="space-y-6">
+            {pledges.length === 0 ? (
+              <EmptyState
+                level={2}
+                title={
+                  hasPrev && total > 0
+                    ? "Trang này không còn lượt ủng hộ nào."
+                    : filtered
+                      ? "Không có lượt ủng hộ nào khớp bộ lọc."
+                      : "Chưa có người ủng hộ nào thanh toán đủ."
+                }
+              />
+            ) : (
+              <FulfillmentForm
+                campaignId={campaign.id}
+                pledges={pledges}
+                total={total}
+                tierTitle={tierTitle}
+                counts={counts}
+                filters={filters}
+              />
+            )}
+
+            {(hasPrev || hasNext) && (
+              <nav aria-label="Phân trang người ủng hộ" className="flex flex-wrap items-center justify-between gap-4">
+                <p className="text-sm text-muted">
+                  Trang {filters.page} / {Math.max(filters.page, totalPages)} ({total} lượt ủng hộ)
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {hasPrev && (
+                    <ButtonLink
+                      href={fulfillmentHref(campaign.id, { ...filters, page: Math.min(filters.page - 1, totalPages) })}
+                      variant="secondary"
+                    >
+                      Trang trước
+                    </ButtonLink>
+                  )}
+                  {hasNext && (
+                    <ButtonLink
+                      href={fulfillmentHref(campaign.id, { ...filters, page: filters.page + 1 })}
+                      variant="secondary"
+                    >
+                      Trang sau
+                    </ButtonLink>
+                  )}
+                </div>
+              </nav>
+            )}
+          </div>
         </>
       )}
     </MeDetail>
@@ -172,14 +206,23 @@ function FulfillmentForm({
   counts: ReturnType<typeof countByStatus>
   filters: FulfillmentFilters
 }) {
+  const rangeStart = (filters.page - 1) * FULFILLMENT_BATCH_MAX + 1
+  const rangeEnd = rangeStart + pledges.length - 1
+  const multiPage = total > pledges.length || filters.page > 1
+  const savedStateKey = pledges
+    .map(
+      (p) => `${p.id}:${p.fulfillment_status ?? "none"}:${p.fulfillment_updated_at ?? ""}:${p.fulfillment_note ?? ""}`
+    )
+    .join("|")
+
   return (
-    <ActionForm action={setFulfillment.bind(null, campaignId)} className="space-y-6">
+    <ActionForm action={setFulfillment.bind(null, campaignId)} resetOnSuccess className="space-y-6">
       {/* Enter in a field must not submit: the default button is disabled (each row and the bulk bar have their own). */}
       <button type="submit" disabled hidden aria-hidden tabIndex={-1} />
 
       <p className="max-w-[68ch] text-fg">
-        {total > pledges.length
-          ? `Hiện ${pledges.length} trong ${total} lượt (tối đa ${FULFILLMENT_BATCH_MAX} mỗi lần). Cập nhật xong, lọc theo "Chưa cập nhật" để xem tiếp.`
+        {multiPage
+          ? `Hiện ${rangeStart}–${rangeEnd} trong ${total} lượt ủng hộ${filters.tier || filters.status ? " khớp bộ lọc" : ""} (tối đa ${FULFILLMENT_BATCH_MAX} mỗi trang).`
           : `${pledges.length} lượt ủng hộ${filters.tier || filters.status ? " khớp bộ lọc" : ""}.`}{" "}
         {counts.none > 0 && `${counts.none} chưa cập nhật. `}
         {FULFILLMENT_STATUSES.filter((s) => counts[s] > 0)
@@ -189,7 +232,7 @@ function FulfillmentForm({
 
       <fieldset className="min-w-0 rounded-md bg-surface p-4 sm:p-6">
         <legend className="float-left w-full text-h3 text-fg">Cập nhật nhiều người cùng lúc</legend>
-        <div className="clear-left space-y-4 pt-2">
+        <div key={savedStateKey} className="clear-left space-y-4 pt-2">
           <SelectAll name="contribution_id" label="Chọn tất cả trong danh sách" />
           <div className="grid gap-4 sm:grid-cols-[12rem_1fr] lg:grid-cols-[12rem_1fr_auto] lg:items-end [&>*]:min-w-0">
             <div>
@@ -227,12 +270,14 @@ function FulfillmentForm({
         {pledges.map((pledge) => {
           const address = shippingLines(pledge.shipping_address)
           const status = isFulfillmentStatus(pledge.fulfillment_status) ? pledge.fulfillment_status : null
+          const rowStateKey = `${pledge.fulfillment_status ?? "none"}:${pledge.fulfillment_updated_at ?? ""}:${pledge.fulfillment_note ?? ""}`
           return (
             <li key={pledge.id} className="grid gap-4 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_24rem]">
               <div className="flex min-w-0 gap-1">
                 {/* The box sits in a 44px hit area; its name stays the aria-label. */}
                 <label className="-mt-3 -ml-3 flex size-11 shrink-0 cursor-pointer items-center justify-center">
                   <input
+                    key={rowStateKey}
                     type="checkbox"
                     name="contribution_id"
                     value={pledge.id}
@@ -268,10 +313,10 @@ function FulfillmentForm({
                   )}
                 </div>
               </div>
-              {/* Keyed on the saved state: a mounted select ignores a new defaultValue, so after a bulk
-                  update the row would still show, and save back, the old status. */}
+              {/* Keyed on the saved state: mounted controls ignore a new defaultValue, so after a bulk
+                  update the row would otherwise still show, and save back, its old status/note. */}
               <div
-                key={`${pledge.fulfillment_status ?? "none"}:${pledge.fulfillment_updated_at ?? ""}`}
+                key={rowStateKey}
                 className="grid min-w-0 content-start items-start gap-2 self-start sm:grid-cols-[10rem_1fr] [&>*]:min-w-0"
               >
                 <select
@@ -296,7 +341,7 @@ function FulfillmentForm({
                 />
                 <div className="sm:col-span-2">
                   <SubmitButton className={buttonClass({ variant: "secondary" })} name="only" value={pledge.id}>
-                    Lưu cho người này
+                    Lưu cho người này<span className="sr-only"> ({pledge.reference_code})</span>
                   </SubmitButton>
                 </div>
               </div>

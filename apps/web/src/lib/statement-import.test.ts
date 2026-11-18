@@ -12,6 +12,7 @@ import {
   AUDIT_ACTION_LABELS,
   countWaitingRows,
   getCandidateRows,
+  getReviewSettings,
   importSummary,
   isOwnStatementRow,
   isVoidRow,
@@ -20,7 +21,9 @@ import {
   listBatchRows,
   listDuplicateTargets,
   listReconciliationAudit,
+  listTrustBlocks,
   listUploadAccounts,
+  parseThresholdVnd,
   reconciliationAuditSummary,
   resolutionLabel,
   rowStatusLabel,
@@ -49,6 +52,7 @@ describe("labels", () => {
         "file_mismatch",
         "possible_recorded",
         "event_dismissed",
+        "finance_review",
       ].sort()
     )
     expect(ambiguousReasonLabel("balance_break")).toContain("Số dư chạy")
@@ -58,12 +62,14 @@ describe("labels", () => {
     expect(rowStatusLabel("ambiguous")).toBe("Chờ nhân viên tài chính")
     expect(rowStatusLabel("not_a_transaction")).toBe("Không phải giao dịch, đã bỏ qua")
     expect(resolutionLabel("not_a_transaction")).toBe("Không phải giao dịch thật")
+    expect(ambiguousReasonLabel("finance_review")).toContain("Chờ đội tài chính duyệt")
+    expect(resolutionLabel("balance_confirmed")).toBe("Tự nhập: số dư đã khớp nhờ sao kê tải sau")
     expect(resolutionLabel(null)).toBe("—")
   })
 
-  it("allows not_a_transaction only for event_dismissed rows (DOS/Give#78)", () => {
+  it("allows not_a_transaction only for dismissed (DOS/Give#78) and reviewed (DOS/Give#57) rows", () => {
     const reasons = Object.keys(AMBIGUOUS_REASON_LABELS) as AmbiguousReason[]
-    expect(reasons.filter((reason) => allowsNotATransaction(reason))).toEqual(["event_dismissed"])
+    expect(reasons.filter((reason) => allowsNotATransaction(reason))).toEqual(["event_dismissed", "finance_review"])
     expect(allowsNotATransaction(null)).toBe(false)
     expect(allowsNotATransaction(undefined)).toBe(false)
     expect(allowsNotATransaction("something_new")).toBe(false)
@@ -276,6 +282,9 @@ describe("listReconciliationAudit", () => {
         "bank_transaction.explain_inbound",
         "bank_transaction.correct_explanation",
         "bank_transaction.return_explanation",
+        "statement_import_row.balance_confirmed",
+        "statement_review_settings.update",
+        "campaign_statement_trust.restore",
       ],
     ])
     expect(AUDIT_ACTION_LABELS["bank_transaction.explain_inbound"]).toBe("Giải trình tiền vào không phải tiền ủng hộ")
@@ -530,5 +539,100 @@ describe("account owners and bindings", () => {
     expect(op(calls[1], "in")).toEqual(["id", ["c1", "c2"]])
     expect(await listAccountBindings(db, [])).toEqual([])
     expect(calls).toHaveLength(2)
+  })
+})
+
+describe("finance review threshold (DOS/Give#57)", () => {
+  it("reads the threshold and the daily limit every signed-in user may read", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(
+      () => ({ data: { threshold_vnd: 20000000, daily_limit_vnd: "100000000" } }),
+      calls
+    ) as unknown as Db
+    expect(await getReviewSettings(db)).toEqual({ thresholdVnd: 20000000, dailyLimitVnd: 100000000 })
+    expect(calls[0].target).toBe("statement_review_settings")
+    expect(op(calls[0], "select")).toEqual(["threshold_vnd, daily_limit_vnd"])
+  })
+
+  it("gives null rather than a wrong amount when the setting cannot be read", async () => {
+    expect(await getReviewSettings(fakeDb(() => ({ error: { code: "42P01" } })) as unknown as Db)).toBeNull()
+    expect(await getReviewSettings(fakeDb(() => ({ data: null })) as unknown as Db)).toBeNull()
+    expect(
+      await getReviewSettings(fakeDb(() => ({ data: { threshold_vnd: 1, daily_limit_vnd: null } })) as unknown as Db)
+    ).toBeNull()
+  })
+
+  it.each<[string, number | null]>([
+    ["20000000", 20000000],
+    [" 20.000.000 ", 20000000],
+    ["20,000,000", 20000000],
+    ["20 000 000", 20000000],
+    ["20.000.000đ", 20000000],
+    ["20.000.000 VND", 20000000],
+    ["1", 1],
+    ["9999999999999", 9999999999999],
+    ["0", null],
+    ["1,5", null],
+    ["20.000,000", null],
+    ["2.00.000", null],
+    ["-1", null],
+    ["10000000000000", null],
+    ["", null],
+    ["20tr", null],
+  ])("reads %j as %s", (text, value) => {
+    expect(parseThresholdVnd(text)).toBe(value)
+  })
+
+  it("summarises the audit entries of a confirmed gap and a threshold change", () => {
+    const base = { id: 1, actor_id: null, entity: "x", entity_id: "y", created_at: "2026-11-18T00:00:00Z" }
+    expect(
+      reconciliationAuditSummary({
+        ...base,
+        action: "statement_import_row.balance_confirmed",
+        before: { row_no: 3, reason: "balance_break" },
+        after: { confirmed_by_batch_no: 12 },
+      })
+    ).toContain("lần tải #12")
+    expect(
+      reconciliationAuditSummary({
+        ...base,
+        action: "statement_review_settings.update",
+        before: { threshold_vnd: 20000000 },
+        after: { threshold_vnd: 30000000, note: "PO" },
+      })
+    ).toMatch(/^Ngưỡng duyệt từ .*20\.000\.000.* thành .*30\.000\.000.*: PO$/)
+    expect(
+      reconciliationAuditSummary({
+        ...base,
+        entity_id: "daily_limit_vnd",
+        action: "statement_review_settings.update",
+        before: { daily_limit_vnd: 100000000 },
+        after: { daily_limit_vnd: 40000000, note: "JOY" },
+      })
+    ).toMatch(/^Giới hạn mỗi ngày từ .*100\.000\.000.* thành .*40\.000\.000.*: JOY$/)
+  })
+})
+
+describe("listTrustBlocks (DOS/Give#57)", () => {
+  it("reads the blocked campaigns through give.statement_trust_blocks", async () => {
+    const calls: Call[] = []
+    const row = {
+      campaign_id: "c",
+      slug: "s",
+      title: "t",
+      rejected: "2",
+      last_rejected_at: "2026-11-18T00:00:00Z",
+      last_restored_at: null,
+      last_rejected_row_id: "77777777-7777-4777-8777-000000000001",
+    }
+    const db = fakeDb(() => ({ data: [row] }), calls) as unknown as Db
+    expect(await listTrustBlocks(db, "11111111-1111-4111-8111-111111111111")).toEqual([{ ...row, rejected: 2 }])
+    expect(calls[0].target).toBe("rpc:statement_trust_blocks")
+    expect(op(calls[0], "args")).toEqual([{ p_actor_id: "11111111-1111-4111-8111-111111111111" }])
+  })
+
+  it("gives null, not an empty list, when the list cannot be read", async () => {
+    const failing = fakeDb(() => ({ error: { code: "PGRST202" } })) as unknown as Db
+    expect(await listTrustBlocks(failing, "11111111-1111-4111-8111-111111111111")).toBeNull()
   })
 })

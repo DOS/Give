@@ -123,12 +123,28 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
         }
       />
 
-      <StatusNotice
-        status={campaign.status}
-        reviewNote={campaign.review_note}
-        accountBlock={openingBlock(accounts)}
-        ended={campaign.ends_at !== null && new Date(campaign.ends_at) <= new Date()}
-      />
+      <div className="space-y-4">
+        <StatusNotice
+          status={campaign.status}
+          reviewNote={campaign.review_note}
+          accountBlock={openingBlock(accounts)}
+          ended={campaign.ends_at !== null && new Date(campaign.ends_at) <= new Date()}
+          paymentsStopped={Boolean(totals?.payments_stopped_at)}
+        />
+        {totals?.payments_stopped_at && (
+          <Callout
+            tone="warning"
+            className="break-words"
+            title={`Give đang tạm dừng yêu cầu thanh toán của dự án này từ ${formatDateTime(totals.payments_stopped_at)}.`}
+          >
+            {totals.payments_stopped_note && <p className="whitespace-pre-line">{totals.payments_stopped_note}</p>}
+            <p>
+              Người ủng hộ đang chờ thanh toán tạm thời không được nhắc chuyển tiền và trang thanh toán đang ẩn; trang
+              dự án công khai thông báo này. Cần trao đổi, hãy liên hệ đội ngũ Give qua email <ContactEmailLink />.
+            </p>
+          </Callout>
+        )}
+      </div>
 
       <div className="lg:grid lg:grid-cols-12 lg:gap-x-6">
         {/* The editor is long: on wide screens a sticky list of its sections in the 4-column sidebar; phones scroll. */}
@@ -350,6 +366,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                             type="number"
                             min={1}
                             max={30}
+                            required
                             className="field tabular-nums"
                             defaultValue={campaign.payment_window_days}
                           />
@@ -503,8 +520,13 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                     <div className="flex items-center gap-3">
                       <span className="figure">{formatVnd(milestone.target_amount)}</span>
                       {editable && (
-                        <ActionForm action={deleteMilestone.bind(null, campaign.id, milestone.id)}>
-                          <SubmitButton className={buttonClass({ variant: "danger", size: "sm" })}>Xóa</SubmitButton>
+                        <ActionForm
+                          action={deleteMilestone.bind(null, campaign.id, milestone.id)}
+                          confirm={`Xóa mốc “${milestone.title}”?`}
+                        >
+                          <SubmitButton className={buttonClass({ variant: "danger", size: "sm" })}>
+                            Xóa<span className="sr-only"> mốc {milestone.title}</span>
+                          </SubmitButton>
                         </ActionForm>
                       )}
                     </div>
@@ -964,12 +986,14 @@ function StatusNotice({
   reviewNote,
   accountBlock,
   ended,
+  paymentsStopped,
 }: {
-  status: string
+  status: CampaignStatus
   reviewNote: string | null
   /** Why the campaign has no usable receiving account (an approved one does not open), or null. */
   accountBlock: "no_account" | "unusable" | null
   ended: boolean
+  paymentsStopped?: boolean
 }) {
   const blockedApproval = !accountBlock
     ? null
@@ -978,7 +1002,7 @@ function StatusNotice({
       : accountBlock === "no_account"
         ? `Đã duyệt, nhưng chiến dịch chưa mở được vì chưa gắn tài khoản nhận tiền. Gắn một tài khoản đã xác minh ở mục Tài khoản nhận tiền bên dưới; chiến dịch tự mở khi tới ngày bắt đầu. Nếu không gắn được, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
         : `Đã duyệt, nhưng chiến dịch chưa mở được vì tài khoản nhận tiền đang gắn không dùng được. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn đổi tài khoản. Cần hỗ trợ, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
-  const notices: Record<string, { tone: CalloutTone; text: string }> = {
+  const notices: Record<CampaignStatus, { tone: CalloutTone; text: string }> = {
     draft: { tone: "neutral", text: "Bản nháp: chỉ bạn thấy. Hoàn thiện nội dung rồi gửi duyệt." },
     in_review: { tone: "warning", text: "Đang chờ kiểm duyệt. Nội dung tạm khóa." },
     changes_requested: {
@@ -989,6 +1013,24 @@ function StatusNotice({
       ? { tone: "warning", text: blockedApproval }
       : { tone: "info", text: "Đã duyệt. Chiến dịch tự mở khi tới ngày bắt đầu." },
     live: { tone: "success", text: "Chiến dịch đang công khai." },
+    settling: {
+      tone: "info",
+      text: "Dự án đã hết thời gian nhận cam kết và đang tất toán kết quả.",
+    },
+    succeeded: {
+      tone: "success",
+      text: paymentsStopped
+        ? "Dự án đã gây quỹ thành công. Bạn vẫn đăng cập nhật, giải trình chi và cập nhật giao quà cho người đã thanh toán được."
+        : "Dự án đã gây quỹ thành công. Người ủng hộ đang thanh toán cam kết; bạn vẫn đăng cập nhật, giải trình chi và cập nhật giao quà được.",
+    },
+    failed: {
+      tone: "neutral",
+      text: "Dự án đã kết thúc mà chưa đạt mục tiêu. Các cam kết đã được hủy; người ủng hộ không phải thanh toán.",
+    },
+    closed: {
+      tone: "neutral",
+      text: "Chiến dịch đã kết thúc nhận ủng hộ. Sao kê vẫn công khai; bạn vẫn đăng cập nhật và giải trình chi được.",
+    },
     suspended: {
       tone: "danger",
       text: `Chiến dịch đang tạm dừng${reviewNote ? `: ${reviewNote}` : "."}`,

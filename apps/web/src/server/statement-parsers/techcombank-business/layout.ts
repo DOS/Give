@@ -2,7 +2,7 @@ import type { NormalizedTx } from "@/server/channels/types"
 
 import type { Cell, Grid } from "../sheet/read"
 import { bankDate, label, vnd, vnInstant, wholeNumber, type LocalDate } from "../sheet/text"
-import type { ParsedStatement } from "../types"
+import type { ParsedStatement, StatementCoverage } from "../types"
 
 /**
  * The layout of a Techcombank Business transaction export ("Tải sao kê" /
@@ -61,8 +61,64 @@ const HEADERS: Record<Column, readonly string[]> = {
 const REQUIRED: readonly Column[] = ["date", "description", "debit", "credit", "balance"]
 
 const DATE_TEXT = "(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}/\\d{4})"
-/** "Từ ngày/From 2025-09-01 Đến ngày/To 2025-09-30" (Techcombank Business web guide, 31/10/2025, p.32). */
-const PERIOD = new RegExp(`tu ngay(?: ?/ ?from)?:? ?${DATE_TEXT}.*?den ngay(?: ?/ ?to)?:? ?${DATE_TEXT}`)
+/**
+ * A time of day right after a date, in the same cell ("01/11/2026 08:00",
+ * "2026-11-01t08:00:00" once folded, "15/11/2026 11:59 PM").
+ */
+const TIME_TEXT = "(?:(?:[,.] ?| |t)(\\d{1,2}:\\d{2}(?::\\d{2})?(?: ?(?:am|pm|sa|ch))?))?"
+/** Cells of a row are joined with this, so a pattern never reads one cell's time as another's. */
+const CELL_GAP = " | "
+/** Between a label and its date: in the same cell, or in the next one. */
+const LABEL_GAP = "(?: ?/ ?(?:from|to))?:?(?: \\| | )?"
+/**
+ * "Từ ngày/From 2025-09-01 Đến ngày/To 2025-09-30" (Techcombank Business web
+ * guide, 31/10/2025, p.32). A time after either date, in its cell, is read
+ * too: the guide shows none, and an export bounded by times holds only part
+ * of a day (DOS/Give#57).
+ */
+const PERIOD = new RegExp(
+  `tu ngay${LABEL_GAP.replace("(?:from|to)", "from")}${DATE_TEXT}${TIME_TEXT}.*?den ngay${LABEL_GAP.replace("(?:from|to)", "to")}${DATE_TEXT}${TIME_TEXT}`
+)
+/** A date with the time this parser reads after it in the same cell. */
+const PERIOD_DATE = new RegExp(`${DATE_TEXT}${TIME_TEXT}[,.]?`, "g")
+/** A bare date. */
+const DATE_ONLY = new RegExp(`${DATE_TEXT}[,.]?`, "g")
+/** Whether a text holds a date (not global: test() keeps no state). */
+const HAS_DATE = new RegExp(DATE_TEXT)
+/**
+ * Any time of day written with digits, hour-only forms included ("08:00",
+ * "8h", "14h30", "14g30", "14.30", "8 giờ", "2 PM", "8 SA"); never part of
+ * a longer number ("1.000.000", "10,000"). A name such as "3H" or "4G" also
+ * reads as a time (fail closed: the file is refused, never taken as whole).
+ */
+const ANY_TIME_SOURCE =
+  "(?<!\\d|\\d[.,:])\\d{1,2} ?: ?\\d{2}(?![\\d])|(?<!\\d|\\d[.,:])\\d{1,2} ?(?:h|g|gio)(?: ?\\d{2}|(?![a-z\\d]))|(?<!\\d|\\d[.,:])\\d{1,2}\\.\\d{2}(?![\\d.,])|(?<!\\d|\\d[.,:])\\d{1,2} ?(?:am|pm|sa|ch)\\b"
+const ANY_TIME = new RegExp(ANY_TIME_SOURCE)
+const ANY_TIMES = new RegExp(ANY_TIME_SOURCE, "g")
+/** The first date of a text (a print or export time holds one). */
+const ONE_DATE = new RegExp(DATE_TEXT)
+/** A range separator ("-", "–", "—", "~", "→", "/", "to", "đến"). */
+const SEP = "(?:-|–|—|~|→|/|to|den)"
+/** A range over the whole day, standing alone ("00:00 - 23:59", "12:00 AM - 11:59 PM"), which bounds nothing. */
+const WHOLE_DAY_RANGE = new RegExp(
+  `(?<![\\d:.,])(?:0?0:00(?::00)?|12:00(?::00)? ?(?:am|sa)) ?${SEP} ?(?:23:59(?::\\d{2})?|24:00(?::00)?|11:59(?::\\d{2})? ?(?:pm|ch))(?![\\d:])`,
+  "g"
+)
+/** Labels of a time range above the table ("Từ giờ/From time"), which bound the export even without a value. */
+const TIME_RANGE = /\b(tu gio|den gio|from time|to time|gio bat dau|gio ket thuc|start time|end time)\b/
+/**
+ * Labels of the moment the file was printed, exported or created, whose
+ * value (one date and at most one time) bounds nothing. An enquiry time is
+ * not one: it may be the enquiry's window.
+ */
+const EXPORT_LABEL =
+  /^(?:ngay gio in|gio in|printed on|printed at|ngay in|in luc|thoi gian in|printed time|print time|ngay gio in bao cao|thoi gian in bao cao|printed date|thoi diem in|ngay gio xuat|ngay xuat|thoi gian xuat|exported at|export time|export date|ngay tao|created on)$/
+/** A time written with a dot, which also reads as an amount ("08.00"). */
+const DOTTED_TIME = /^\d{1,2}\.\d{2}$/
+/** A cell that holds only a date or a time ("18/11/2026", "08:45"). */
+const DATE_TIME_ONLY = /^[\d/:.,\- ]*(?:(?:am|pm|sa|ch)[\d/:.,\- ]*)?$/
+const START_OF_DAY = /^(?:0?0:00(?::00)?|12:00(?::00)? ?(?:am|sa))$/
+const END_OF_DAY = /^(?:23:59(?::\d{2})?|11:59(?::\d{2})? ?(?:pm|ch))$/
 /** "Số dư đầu ngày/Opening balance" in the download; "Số dư đầu kỳ" in the monthly statement. */
 const OPENING = /^(so du dau ngay|so du dau ky|opening balance)$/
 /** "Số dư cuối ngày/ Closing balance" in the download; "Số dư cuối kỳ/Ending balance" in the statement. */
@@ -187,12 +243,121 @@ function balanceAt(rows: Grid, pattern: RegExp): bigint | null {
   }
 }
 
-function headerPeriod(rows: Grid): { from: string; to: string } | null {
-  for (const row of rows) {
-    const match = PERIOD.exec(label(row.map(cellText).join(" ").slice(0, PERIOD_SCAN_CHARS)))
-    if (match) return { from: bankDate(match[1]).day, to: bankDate(match[2]).day }
+interface HeaderPeriod {
+  from: string
+  to: string
+  /** The time stated after each date in its cell, if any ("08:00"). */
+  fromTime: string | null
+  toTime: string | null
+  /** Another time on a row above the table, which this parser cannot place. */
+  otherTime: boolean
+}
+
+/** The label of a cell: its text before a colon, split at "/". */
+function labelOf(cell: string): string[] {
+  const colon = cell.indexOf(":")
+  const head = colon > 0 && !/\d$/.test(cell.slice(0, colon)) ? cell.slice(0, colon) : cell
+  return head.split("/").map((part) => part.trim())
+}
+
+/**
+ * True when a row above the table holds a time of day that bounds the export:
+ * any time left after taking out the period's own dates (with the times read
+ * after them), a print or export time (its label, and its value in the same
+ * cell or the next one or two cells), dates, and whole-day ranges standing
+ * alone; or a time-range label. Unknown forms count (fail closed).
+ */
+function timeBoundRow(cells: readonly string[]): boolean {
+  if (cells.some((cell) => TIME_RANGE.test(cell))) return true
+  // Right after a summary or balance label ("Tổng phí/Total fees | 0.00"),
+  // until any other cell, a dotted number is an amount. Anywhere else
+  // "08.00" may be a time.
+  let afterSummary = false
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i]
+    if (labelOf(cell).some((part) => SUMMARY.test(part) || OPENING.test(part) || CLOSING.test(part))) {
+      // The label cell itself is checked whole (the labels hold no digits),
+      // unless all that follows its colon is an amount ("Tổng ghi có: 1,000").
+      const colon = cell.indexOf(":")
+      const value = colon > 0 ? cell.slice(colon + 1).trim() : ""
+      // ("Tổng ghi có/Total credits to 14:30": the colon is the time's own.)
+      const labelOnly = colon > 0 && !/\d/.test(cell.slice(0, colon))
+      if (!(labelOnly && value !== "" && readsAs(() => cellAmount(value)))) {
+        if (ANY_TIME.test(cell.replace(WHOLE_DAY_RANGE, " ").replace(DATE_ONLY, " "))) return true
+      }
+      afterSummary = true
+      continue
+    }
+    const amount: boolean = readsAs(() => cellAmount(cell))
+    const summaryAmount: boolean = afterSummary && amount
+    afterSummary = summaryAmount
+    if (labelOf(cell).some((part) => EXPORT_LABEL.test(part))) {
+      // The value of a print or export label: after its colon, or in the
+      // next one or two cells (a date, then a time). It is one moment.
+      const colon = cell.indexOf(":")
+      let value = colon > 0 ? cell.slice(colon + 1) : ""
+      if (value.trim() === "") {
+        for (let k = 0; k < 2 && i + 1 < cells.length && DATE_TIME_ONLY.test(cells[i + 1]); k++) {
+          value += ` ${cells[++i]}`
+        }
+      }
+      if (!isOneMoment(value)) return true
+      continue
+    }
+    // A cell that reads as an amount ("1,500,000.00", or "0.00" in a total)
+    // holds no time; one written like a time ("08.00") counts as a time
+    // except on a summary or balance line.
+    if (amount && (summaryAmount || !DOTTED_TIME.test(cell.trim()))) continue
+    const rest = cell.replace(WHOLE_DAY_RANGE, " ").replace(DATE_ONLY, " ")
+    if (ANY_TIME.test(rest)) return true
+  }
+  return false
+}
+
+/** One date with at most one time ("18/11/2026 08:45", "08:45, 18/11/2026"): a moment, not a range. */
+function isOneMoment(value: string): boolean {
+  const rest = value.replace(ONE_DATE, " ")
+  return (rest.match(ANY_TIMES) ?? []).length <= 1 && !HAS_DATE.test(rest)
+}
+
+/** A row as the time checks read it: non-empty cells, NFKC-folded (a full-width colon reads as a colon). */
+function foldRow(row: readonly Cell[]): string[] {
+  return row.map((cell) => label(cellText(cell).normalize("NFKC"))).filter((cell) => cell !== "")
+}
+
+function headerPeriod(rows: Grid): HeaderPeriod | null {
+  const folded = rows.map(foldRow)
+  for (const [index, cells] of folded.entries()) {
+    const text = cells.join(CELL_GAP)
+    const match = PERIOD.exec(text.slice(0, PERIOD_SCAN_CHARS))
+    if (!match) continue
+    // The period's own dates (with the times read after them in their cells)
+    // leave the row; whatever else is on it, and on every other row above
+    // the table, is checked for a time.
+    const end = match.index + match[0].length
+    // A comma or dot right after the to-date goes with it ("15/11/2026,14:30").
+    const rest = text.slice(0, match.index) + match[0].replace(PERIOD_DATE, " ") + text.slice(end).replace(/^[,.]/, " ")
+    return {
+      otherTime: folded.some((other, i) => timeBoundRow(i === index ? rest.split(CELL_GAP) : other)),
+      from: bankDate(match[1]).day,
+      fromTime: match[2] ?? null,
+      to: bankDate(match[3]).day,
+      toTime: match[4] ?? null,
+    }
   }
   return null
+}
+
+/**
+ * What the file says it holds (DOS/Give#57). Without a period line it may be
+ * a list of recent transactions; a period starting after midnight leaves out
+ * the start of its first day; one ending before 23:59 cuts its last day.
+ */
+function coverage(period: HeaderPeriod | null, footerTime: boolean): StatementCoverage {
+  if (period === null || period.otherTime || footerTime) return "partial"
+  if (period.fromTime !== null && !START_OF_DAY.test(period.fromTime)) return "partial"
+  if (period.toTime !== null && !END_OF_DAY.test(period.toTime)) return "ends_early"
+  return "full"
 }
 
 function printedAt(rows: Grid): Date | null {
@@ -338,11 +503,19 @@ export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
   // After the table, only summary lines may carry an amount or a date. A
   // row that does means the table was not read to its end (a row with an
   // unreadable or missing date): refuse rather than drop it.
+  // Rows after the table are read for times too (a filter or time-range
+  // line in a footer), as the rows above it are.
+  const footerTime = grid.slice(end).some((row) => timeBoundRow(foldRow(row)))
   const after = grid.slice(end)
   for (const row of after) {
     const first = row.find((cell) => cellText(cell) !== "")
     const names = parts(cellText(first))
-    if (names.length > 0 && names.every((name) => SUMMARY.test(name) || PRINTED.test(name))) continue
+    if (
+      names.length > 0 &&
+      names.every((name) => SUMMARY.test(name) || PRINTED.test(name) || EXPORT_LABEL.test(name))
+    ) {
+      continue
+    }
     if (row.some((cell) => readsAs(() => cellAmount(cell)) || readsAs(() => cellDate(cell)))) {
       throw new TcbLayoutError("rows after the end of the table")
     }
@@ -355,7 +528,7 @@ export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
   const opening = balanceAt(outside, OPENING)
   const closing = balanceAt(outside, CLOSING)
   if (opening === null || closing === null) throw new TcbLayoutError("no opening or closing balance")
-  let period: { from: string; to: string } | null
+  let period: HeaderPeriod | null
   try {
     period = headerPeriod(above)
   } catch {
@@ -373,6 +546,10 @@ export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
   }
 
   return {
+    coverage: coverage(period, footerTime),
+    // A time this parser cannot place (maybe a name such as "4G"): the
+    // uploader is told so, not only to export again (DOS/Give#57).
+    ...(period !== null && (period.otherTime || footerTime) ? { coverageDetail: "unplaced_time" as const } : {}),
     periodFrom: period?.from ?? null,
     periodTo: period?.to ?? null,
     openingBalance: opening,

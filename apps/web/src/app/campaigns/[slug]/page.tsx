@@ -1,3 +1,4 @@
+import clsx from "clsx"
 import type { Metadata } from "next"
 import Image from "next/image"
 import Link from "next/link"
@@ -118,6 +119,8 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   const { campaign, db, preview } = loaded
 
   const isGive = campaign.type === "give"
+  const halted = campaign.status === "suspended" || campaign.status === "cancelled"
+  const preLaunch = preview && !halted
   const donationsOpen = !preview && acceptsDonations(campaign)
   const pledgesOpen = !preview && acceptsPledges(campaign)
   const sessionPromise = getSession()
@@ -125,7 +128,12 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
     await Promise.all([
       listMilestones(db, campaign.id),
       listPublishedUpdates(db, campaign.id),
-      preview ? Promise.resolve(null) : getPublicOrganizer(db, campaign.id),
+      preview
+        ? Promise.resolve(null)
+        : getPublicOrganizer(db, campaign.id).catch((error: unknown) => {
+            console.error("campaign page: public organizer lookup failed", error)
+            return null
+          }),
       donationsOpen
         ? paymentAccount(dbService(), campaign.id).catch((error: unknown) => {
             // The page still renders, without the donate form.
@@ -169,15 +177,24 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   const canDonate = donationsOpen && account !== null
   const ownProject = pledgesOpen && ownCampaign
   const canPledge = pledgesOpen && !ownProject
-  const closedNote = preview
-    ? `Give sắp mở nhận ${isGive ? "ủng hộ" : "cam kết"}. Tiền sẽ đi thẳng vào tài khoản nhận của chiến dịch.`
-    : !isGive
-      ? campaign.status === "live" && campaign.starts_at && new Date(campaign.starts_at) > new Date()
-        ? "Dự án chưa tới ngày nhận cam kết."
-        : "Dự án không còn nhận cam kết."
-      : donationsOpen
-        ? "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau."
-        : "Chiến dịch không còn nhận ủng hộ."
+  const closedNote =
+    campaign.status === "suspended"
+      ? isGive
+        ? "Chiến dịch đang tạm dừng nên không nhận ủng hộ."
+        : "Dự án đang tạm dừng nên không nhận cam kết."
+      : campaign.status === "cancelled"
+        ? isGive
+          ? "Chiến dịch đã hủy nên không nhận ủng hộ."
+          : "Dự án đã hủy nên không nhận cam kết."
+        : preLaunch
+          ? `Give sắp mở nhận ${isGive ? "ủng hộ" : "cam kết"}. Tiền sẽ đi thẳng vào tài khoản nhận của chiến dịch.`
+          : !isGive
+            ? campaign.status === "live" && campaign.starts_at && new Date(campaign.starts_at) > new Date()
+              ? "Dự án chưa tới ngày nhận cam kết."
+              : "Dự án không còn nhận cam kết."
+            : donationsOpen
+              ? "Chiến dịch chưa sẵn sàng nhận chuyển khoản. Hãy quay lại sau."
+              : "Chiến dịch không còn nhận ủng hộ."
 
   const raised = raisedAmount(totals, campaign.type)
   const percent = progressPercent(raised, campaign.goal_amount)
@@ -209,6 +226,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
       : publicCoverUrl(campaign.cover.storage_path)
     : null
 
+  const organizerInitial = organizer ? (Array.from(organizer.display_name.trim())[0]?.toUpperCase() ?? "") : ""
   const stats = [
     options.backers_count !== false && people !== null
       ? { value: String(people), label: isGive ? "người ủng hộ" : "người đồng hành" }
@@ -224,7 +242,15 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
       {preview && (
         <div className="bg-warning-soft py-3">
           <p className="container-page">
-            Bản xem trước: chiến dịch đang ở trạng thái <StatusBadge status={campaign.status} /> và chưa công khai.
+            {halted ? (
+              <>
+                Chiến dịch đang ở trạng thái <StatusBadge status={campaign.status} /> và không hiển thị công khai.
+              </>
+            ) : (
+              <>
+                Bản xem trước: chiến dịch đang ở trạng thái <StatusBadge status={campaign.status} /> và chưa công khai.
+              </>
+            )}
           </p>
         </div>
       )}
@@ -277,12 +303,12 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             <h1 className="mt-3 text-h1-phone tracking-tight break-words sm:text-h1">{campaign.title}</h1>
             {(organizer || (isGive && campaign.beneficiary_name)) && (
               <div className="mt-4 flex items-start gap-3 text-sm">
-                {organizer && (
+                {organizer && organizerInitial && (
                   <span
                     className="inline-flex size-9 shrink-0 items-center justify-center rounded bg-surface font-bold text-muted"
                     aria-hidden
                   >
-                    {organizer.display_name.trim().charAt(0).toUpperCase()}
+                    {organizerInitial}
                   </span>
                 )}
                 <div className="min-w-0">
@@ -348,7 +374,16 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               </p>
               {options.progress_bar !== false && <ProgressBar percent={percent} className="mt-4" />}
               {stats.length > 0 && (
-                <dl className="mt-4 grid grid-cols-[auto_auto_auto] justify-between gap-4">
+                <dl
+                  className={clsx(
+                    "mt-4 grid gap-4",
+                    stats.length === 1
+                      ? "grid-cols-[auto]"
+                      : stats.length === 2
+                        ? "grid-cols-[auto_auto] justify-between"
+                        : "grid-cols-[auto_auto_auto] justify-between"
+                  )}
+                >
                   {stats.map((stat) => (
                     <div key={stat.label} className="flex min-w-0 flex-col-reverse justify-end">
                       <dt className="text-sm text-muted">{stat.label}</dt>
@@ -429,7 +464,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                   closedNote={
                     ownProject
                       ? "Đây là dự án của bạn nên bạn không chọn mức được."
-                      : preview
+                      : preLaunch
                         ? "Bản xem trước: người ủng hộ chọn được mức khi dự án mở gây quỹ."
                         : closedNote
                   }
