@@ -305,7 +305,7 @@ describe("setReviewDailyLimit (DOS/Give#57)", () => {
 
 describe("restoreCampaignTrust (DOS/Give#57)", () => {
   const CAMPAIGN = "88888888-8888-4888-8888-888888888888"
-  const SEEN = "2026-11-18T02:00:00.123456+00:00"
+  const SEEN = 2
 
   it("restores with the note, after a role check with the user's own token", async () => {
     state.serviceHandler = () => ({ data: { restored_at: "2026-11-18T03:00:00Z" } })
@@ -321,7 +321,7 @@ describe("restoreCampaignTrust (DOS/Give#57)", () => {
       p_actor_id: REVIEWER,
       p_campaign_id: CAMPAIGN,
       p_note: "Đã xác minh với ngân hàng",
-      p_expected_last_rejected_at: SEEN,
+      p_expected_rejected: SEEN,
     })
   })
 

@@ -388,7 +388,7 @@ function TrustBlocks({ blocks }: { blocks: TrustBlock[] | null }) {
               </div>
               <ItemActions>
                 <ActionForm
-                  action={restoreCampaignTrust.bind(null, block.campaign_id, block.last_rejected_at)}
+                  action={restoreCampaignTrust.bind(null, block.campaign_id, block.rejected)}
                   confirm="Khôi phục tin cậy sao kê của chiến dịch này?"
                   className="space-y-4"
                 >

@@ -152,15 +152,17 @@ async function setReviewSetting(
  */
 export async function restoreCampaignTrust(
   campaignId: string,
-  /** The latest rejection the staff member saw: a newer one refuses the restore (GIVE_TRUST_CHANGED). */
-  lastRejectedAt: string,
+  /** The rejections the staff member saw: more of them refuse the restore (GIVE_TRUST_CHANGED). */
+  expectedRejected: number,
   _state: ActionResult,
   form: FormData
 ): Promise<ActionResult> {
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
   if (!isUuid(campaignId)) return fail(RESTORE_TRUST_MESSAGES.GIVE_CAMPAIGN_NOT_FOUND)
-  if (!Number.isFinite(Date.parse(lastRejectedAt))) return fail(RESTORE_TRUST_MESSAGES.GIVE_TRUST_CHANGED)
+  if (!Number.isSafeInteger(expectedRejected) || expectedRejected < 1) {
+    return fail(RESTORE_TRUST_MESSAGES.GIVE_TRUST_CHANGED)
+  }
   const note = String(form.get("note") ?? "").trim()
   if (!note) return fail(RESTORE_TRUST_MESSAGES.GIVE_SETTING_NOTE_REQUIRED)
   if (note.length > 1000) return fail("Ghi chú tối đa 1.000 ký tự.")
@@ -174,7 +176,7 @@ export async function restoreCampaignTrust(
       p_actor_id: session.user.id,
       p_campaign_id: campaignId,
       p_note: note,
-      p_expected_last_rejected_at: lastRejectedAt,
+      p_expected_rejected: expectedRejected,
     })
     .single()
   if (error) return fail(dbErrorMessage(error, RESTORE_TRUST_MESSAGES))
