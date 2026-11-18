@@ -374,8 +374,8 @@ Caveats:
 Tingee fits `PaymentChannel` (design 5.1,
 `apps/web/src/server/channels/types.ts`) with one small change. Today
 `parseWebhook` returns `{ dedupeKey, txs }`. For Tingee, the webhook body is
-not trusted for money, and the API confirmation must not run in the request
-path (it must answer within 5 s). So the result needs to allow lookup keys
+not trusted for money, and the API confirmation must not run before the
+reply (Tingee times out after 5–10 s, per endpoint). So the result needs to allow lookup keys
 in place of `txs`, and the processor builds the transactions later:
 
 - **`kind`**: a new value `"tingee"` replaces `"payos"`, in `ChannelKind`, in
@@ -433,8 +433,9 @@ sub-merchant [t-mm].
   and into Tingee's UI, never through Give. The exception is a **Vietcombank
   or VPBank business or household-business account**: Tingee refuses to link
   it with the Master Merchant's key (`1133`, "cần gọi bằng API key của
-  Merchant") [t-create-va]. Such an organizer needs their own sub-merchant
-  API credentials. Give would store those per organizer, as in the fallback
+  Merchant") [t-create-va]. The code is documented for `create-va` only;
+  that Bank Link sessions follow the same rule is _(inferred)_ (section 10).
+  Such an organizer needs their own sub-merchant API credentials. Give would store those per organizer, as in the fallback
   below. Otherwise Give does not accept those accounts on Tingee.
 
 Fallback, if Tingee will not grant a Master Merchant:
@@ -483,7 +484,9 @@ UNIQUE (receiving_account_id) WHERE status IN ('pending','active')
   marks the `pending` row (found by its `metadata` nonce, idempotent on
   `merchantAccountNumberId`) as ready for checking. Give then reads the
   account with `get-va-paging`, which returns `accountNumber` and
-  `accountName` [t-banking], and activates the link only if both match.
+  `accountName` [t-va-paging], and activates the link only if both match.
+  Its rows carry no `merchantAccountNumberId`, so Give finds the row by VA,
+  BIN and `merchantId`.
   A mismatch leaves the link `failed` and asks the organizer to unlink it.
 - A successful bank-OTP link could also count as account-ownership evidence
   (design 2.2: "Khi có API ngân hàng thì bước này tự động"). That is a later
@@ -498,8 +501,11 @@ type.
 1. Read the raw body, with a size cap.
 2. Verify `x-signature` over `x-request-timestamp:rawBody`. If that fails,
    retry over the re-serialised body, as Tingee's own library does. Use a
-   constant-time comparison. Check `x-client-id` (and, for payments,
-   `clientId`) against Give's. This applies to URL challenges too.
+   constant-time comparison. `x-client-id` (and, for payments, `clientId`)
+   must be a client id Give expects: the platform's, or the organizer's own
+   under per-organizer credentials (8.2), which also selects the secret. For
+   a payment, it must be the client id of the link it resolves to. This
+   applies to URL challenges too.
 3. If `webhook-type: url-validation` and the signature is valid, answer the
    challenge (6.4) and stop.
 4. Record `give.inbound_events` with `channel = 'tingee'`,
@@ -516,7 +522,12 @@ type.
 5. Answer 200 `{"code":"00","message":"Success"}` as soon as the event is
    stored, well inside Tingee's 5–10 s timeout. Processing failures never
    reach Tingee; the `reprocess-inbound` cron retries them (design 5.1).
-6. The processor (inline, and from the cron):
+6. The processor runs inline **after** the reply is sent (for example with
+   Next's `after()`), and again from the `reprocess-inbound` cron. Tingee's
+   list may lag the webhook, so the inline run retries the lookup a few times
+   within about a minute before leaving it to the cron, which can be
+   several minutes later. The M2 goal of "within 1 minute" therefore
+   depends on that lag; **to measure in UAT**.
    - **Candidate link**: (BIN, `vaAccountNumber`), then (BIN,
      `accountNumber`). Account numbers are unique only within a bank, and
      banks sell chosen numbers, so a number alone is never enough. An
@@ -538,19 +549,30 @@ type.
      cannot add money or change an amount.
    - Refuse rows with `cashFlowSource` other than `bank-transfer`, and
      currencies other than VND.
-   - Then apply the cross-source rule of 8.4, and record:
-     `give.record_bank_transaction` with `source = 'webhook'` →
-     `match_transaction` for `in` → `ledger 'received'` or
-     `'unmatched_in'`; for `out` → `'disbursed'`.
+   - Then record it through the Tingee record step below.
 
-**No double counting within Tingee.** Webhook retries, the confirmation
-poll and the reconcile job all produce records from API rows. Those records
-are deduplicated on (provider, `transactionId`): with `source` `webhook` or
-`api_poll`, `provider_tx_id = transactionId`, and the existing
-`UNIQUE (receiving_account_id, provider_tx_id)` holds. The bank reference
-`code` is unique per (BIN, account number, `code`). A second API row with
-the same `code` on the same account is a conflict for staff, never a second
-transaction.
+**Recording a Tingee record** (webhook and reconcile poll alike). One
+`SECURITY DEFINER` function does the following in one transaction, holding a
+lock on the receiving account so a webhook and a poll of the same transfer
+cannot race:
+
+1. **Already known?** If `give.bank_transaction_sources` has (account,
+   source `tingee`, `transactionId`), stop: nothing changes. This is the
+   dedupe on (provider, `transactionId`). It holds whether the
+   `bank_transactions` row was created by Tingee or by a statement import
+   that this record was linked to. The webhook and the poll use the same
+   source value `tingee`; a separate `via` column records `webhook` or
+   `api_poll`.
+2. **Pair** with a statement record under the rule of 8.4. A unique pair
+   stores the source row as a link. An ambiguous pair goes to finance.
+3. **Otherwise record** a new transaction with
+   `provider_tx_id = transactionId`, plus its source row:
+   `give.record_bank_transaction` → `match_transaction` for `in` →
+   `ledger 'received'` or `'unmatched_in'`; for `out` → `'disbursed'`.
+
+The bank reference `code` is unique per (BIN, account number, `code`). A
+second API row with the same `code` on the same account, but another
+`transactionId`, is a conflict for staff, never a second transaction.
 
 ### 8.4 Statement import on the same account (DOS/Give#57 cross-channel item)
 
@@ -588,38 +610,57 @@ statement row and every Tingee record, **in both directions (`in` and
 - ACB debit webhooks together with an ACB statement import would otherwise
   record every outflow twice.
 
+**Statement re-imports first.** Each statement record has its own
+`source_record_id`: the parser's row id when it has one, otherwise the
+staging identity (`group_key` plus `occurrence`, design 5.2). A staged row
+whose record is already known for the account (an earlier upload of the
+same day) stays `duplicate` under the existing staging rules, and pairing
+does not run for it. This keeps a re-import of a row that is already linked
+to a Tingee record from becoming a second transaction.
+
 **Keys.**
 
 - **Bank where id equality is proven.** A parser's row id is the same value
   as Tingee's bank reference `code`. This is proven per bank with a real
   webhook and a statement row of the same transfer, and recorded as evidence
-  (for example a per-bank flag that staff set). For such a bank, the key is
-  account plus id = `code`. One candidate links. Anything else goes to
-  staff.
+  (for example a per-bank flag that staff set). For such a bank:
+  - a record of the other source with that id, the same account, direction
+    and amount, and not yet paired → link;
+  - a record with that id but another amount or direction, or one already
+    paired → finance staff;
+  - no record with that id → no match.
 - **Any other bank.** The key is account, direction and amount; booking day
   within ±1 day; and the statement description contains the Tingee
   `content`, or both contain the same Give reference code. Pairing is
   one-to-one and occurrence-aware, like the `group_key` rule in design 5.2.
-  Design 5.2 forbids this kind of fingerprint as a transaction identity
-  ("Fingerprint không được dùng làm danh tính giao dịch"). Here it is used
-  only to propose a link, under the rule above.
-- **No match.** The record is recorded as its own transaction. It is never
+  Exactly one unpaired candidate → link. More than one candidate, or a
+  partial match (same account, direction and amount within the window but
+  the content or code differs), → finance staff. Design 5.2 forbids this
+  kind of fingerprint as a transaction identity ("Fingerprint không được
+  dùng làm danh tính giao dịch"). Here it is used only to propose a link,
+  under the rule above.
+- **No match** (for either kind of bank): the record is recorded as its own
+  transaction. That is the normal case for outflows at non-ACB banks and for
+  transfers to the real account number at VA-only banks. A record is never
   dropped silently.
 
 **Order.**
 
 - **Statement after Tingee:** a staged row that pairs with exactly one
-  unpaired Tingee record becomes `duplicate` of it, linked. More than one
-  candidate, or a partial match, makes the row `ambiguous`.
-- **Tingee after statement** (retries can arrive hours late): before
-  recording, the Tingee processor looks for exactly one unpaired
-  statement-imported transaction on the same keys and links to it instead
-  of posting a new transaction. Ambiguous → final error, for finance staff.
+  unpaired Tingee record becomes `duplicate` of it, linked. A row for
+  finance becomes `ambiguous`.
+- **Tingee after statement** (retries can arrive hours late): the Tingee
+  record step of 8.3 pairs with exactly one unpaired statement-imported
+  record and links to it instead of posting a new transaction. A pair for
+  finance ends the event as a final error, for finance staff.
 
 **Storage.** Both records point at one `bank_transactions` row through
 `give.bank_transaction_sources (bank_transaction_id, source,
 source_record_id, bank_reference, inbound_event_id)`:
 
+- `source` is the provider: `tingee` or `statement_import`. The path
+  (`webhook`, `api_poll`, the upload batch) goes in a separate `via`
+  column, so it never weakens the unique key;
 - unique per (account, source, `source_record_id`);
 - for Tingee, also unique per (account, `bank_reference`).
 
@@ -632,6 +673,12 @@ ledger post.
   `out` → one transaction, one ledger post (design test 2);
 - a statement row with its own id in another format → paired, not a second
   transaction;
+- statement first, then the Tingee webhook (linked), then the reconcile poll
+  of the same `transactionId` → still one transaction;
+- a re-import of a statement row already linked to a Tingee record → no
+  change;
+- at a proven-id bank, a statement outflow with no Tingee record → its own
+  transaction, not sent to staff;
 - two equal donations on one day → paired one-to-one or sent to staff,
   never merged;
 - a link never changes an amount.
@@ -663,9 +710,9 @@ account's outflows wait for a parser of its bank.
   - from the last successful run minus a 2-day overlap;
   - in windows of at most 10 days, 200 rows per page;
   - passing the link's `merchantId`;
-  - recording through the same pipeline with `source = 'api_poll'` and
-    `provider_tx_id = transactionId`, the same as the webhook path, so
-    nothing is counted twice.
+  - recording each row through the Tingee record step of 8.3 (`via`
+    `api_poll`), which deduplicates on (account, `tingee`, `transactionId`)
+    whatever created the transaction, so nothing is counted twice.
 - It also lists links that are not `active` in `get-va-paging`, and API
   errors per merchant.
 - Tingee gives no balances, so "báo lệch khi số dư không khớp" (design 5.3)
@@ -726,9 +773,12 @@ account's outflows wait for a parser of its bank.
     signed with which secret;
   - whether individuals who are not doing business can be sub-merchants;
   - whether the `1133` rule for Vietcombank and VPBank business and
-    household-business accounts can be lifted for a Master Merchant.
+    household-business accounts can be lifted for a Master Merchant, and
+    whether it also applies to Bank Link sessions.
 - `transactionCode` (webhook) versus `code` and `transactionId` (list) for
   the same transfer, and whether `code` is unique per account.
+- How long a webhook's transaction takes to appear in
+  `transaction/get-paging` (it bounds the M2 "within 1 minute" goal).
 - What `vaAccountNumber` a dynamic-QR payment reports at BIDV and
   VietinBank: the `qrAccount` or the link's VA.
 - `transactionDate` time zone; retry timing and whether a retry keeps
@@ -750,6 +800,7 @@ page is Tingee's (HENO's) own.
   real-account linking.
 - [t-banking] Tài khoản & Định danh: overview and flow.
 - [t-get-banks] Lấy danh sách ngân hàng hỗ trợ.
+- [t-va-paging] Truy vấn danh sách tài khoản (`get-va-paging`).
 - [t-create-va] Tạo tài khoản ảo (VA).
 - [t-create-debit] Đăng ký biến động ghi nợ (ACB).
 - [t-tx] Lịch sử giao dịch (`transaction/get-paging`).
@@ -777,6 +828,7 @@ page is Tingee's (HENO's) own.
 [t-notes]: https://developers.tingee.vn/docs/luu-y-quan-trong
 [t-banking]: https://developers.tingee.vn/docs/banking/
 [t-get-banks]: https://developers.tingee.vn/docs/banking/get-banks
+[t-va-paging]: https://developers.tingee.vn/docs/banking/get-va-paging
 [t-create-va]: https://developers.tingee.vn/docs/banking/create-va
 [t-create-debit]: https://developers.tingee.vn/docs/banking/create-debit
 [t-tx]: https://developers.tingee.vn/docs/banking/get-paging-transaction
