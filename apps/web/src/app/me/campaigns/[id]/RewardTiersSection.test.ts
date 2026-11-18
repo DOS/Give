@@ -90,24 +90,26 @@ describe("RewardTiersSection (DOS/Give#217)", () => {
         expect(items).toHaveLength(3)
 
         // sortTiers orders by sort_order ascending, breaking ties by id ascending (TIER_A before TIER_B, then TIER_C).
-        expect(items[0]).toContain("Mức đầu")
+        expect(items[0]).toMatch(/<h3[^>]*>Mức đầu<\/h3>/)
         expect(items[0]).not.toContain("↑ Lên")
-        expect(items[0]).toContain("↓ Xuống")
-        expect(items[0]).toContain(">Xóa<")
-        expect(items[0]).toContain("Sửa mức này")
-        expect(items[0]).toContain(">Lưu phần thưởng<")
+        expect(items[0]).toContain('↓ Xuống<span class="sr-only">: Mức đầu</span>')
+        expect(items[0]).toContain('Xóa<span class="sr-only"> mức Mức đầu</span>')
+        expect(items[0]).toContain('aria-label="Sửa mức này: Mức đầu"')
+        expect(items[0]).toContain('Lưu phần thưởng<span class="sr-only">: Mức đầu</span>')
 
-        expect(items[1]).toContain("Mức giữa")
-        expect(items[1]).toContain("↑ Lên")
-        expect(items[1]).toContain("↓ Xuống")
-        expect(items[1]).toContain(">Xóa<")
-        expect(items[1]).toContain("Sửa mức này")
+        expect(items[1]).toMatch(/<h3[^>]*>Mức giữa<\/h3>/)
+        expect(items[1]).toContain('↑ Lên<span class="sr-only">: Mức giữa</span>')
+        expect(items[1]).toContain('↓ Xuống<span class="sr-only">: Mức giữa</span>')
+        expect(items[1]).toContain('Xóa<span class="sr-only"> mức Mức giữa</span>')
+        expect(items[1]).toContain('aria-label="Sửa mức này: Mức giữa"')
+        expect(items[1]).toContain('Lưu phần thưởng<span class="sr-only">: Mức giữa</span>')
 
-        expect(items[2]).toContain("Mức cuối")
-        expect(items[2]).toContain("↑ Lên")
+        expect(items[2]).toMatch(/<h3[^>]*>Mức cuối<\/h3>/)
+        expect(items[2]).toContain('↑ Lên<span class="sr-only">: Mức cuối</span>')
         expect(items[2]).not.toContain("↓ Xuống")
-        expect(items[2]).toContain(">Xóa<")
-        expect(items[2]).toContain("Sửa mức này")
+        expect(items[2]).toContain('Xóa<span class="sr-only"> mức Mức cuối</span>')
+        expect(items[2]).toContain('aria-label="Sửa mức này: Mức cuối"')
+        expect(items[2]).toContain('Lưu phần thưởng<span class="sr-only">: Mức cuối</span>')
         expect(items[2]).toContain("Giao hàng: Chỉ giao nội thành")
 
         expect(html).toContain("Thêm mức phần thưởng")
@@ -156,9 +158,9 @@ describe("RewardTiersSection (DOS/Give#217)", () => {
         const items = [...html.matchAll(/<li[\s\S]*?<\/li>/g)].map((m) => m[0])
         expect(items).toHaveLength(3)
 
-        // Active with 0 claimed -> canRetireTier is true -> offers "Ngừng nhận mức này".
-        expect(items[0]).toContain("Chưa ai chọn")
-        expect(items[0]).toContain(">Ngừng nhận mức này<")
+        // Active with 0 claimed -> canRetireTier is true -> offers "Ngừng nhận mức này" with tier.title context.
+        expect(items[0]).toMatch(/<h3[^>]*>Chưa ai chọn<\/h3>/)
+        expect(items[0]).toContain('Ngừng nhận mức này<span class="sr-only">: Chưa ai chọn</span>')
         expect(items[0]).not.toContain("Đã có người cam kết nên mức này không ngừng nhận được.")
         expect(items[0]).not.toContain("Đã ngừng nhận cam kết mới (ẩn khỏi trang dự án).")
 

@@ -1,3 +1,4 @@
+import { Window } from "happy-dom"
 import { Writable } from "node:stream"
 import { redirect } from "next/navigation"
 import type { ReactNode } from "react"
@@ -90,7 +91,7 @@ describe("StartPage (DOS/Give#208)", () => {
     expect(state.calls).toHaveLength(0)
   })
 
-  it("renders organizer onboarding without draft creation for a user with no profile", async () => {
+  it("renders organizer onboarding without draft creation for a user with no profile, with field hints and phone maxLength", async () => {
     const html = await renderAsync(await StartPage())
     expectOrganizerRead()
     expect(html).toContain("Hồ sơ người tổ chức")
@@ -99,6 +100,23 @@ describe("StartPage (DOS/Give#208)", () => {
     expect(html).not.toContain("Tạo bản nháp")
     expect(html).not.toContain("<details")
     expect(html).not.toContain(WARNING)
+
+    const doc = new Window().document
+    doc.body.innerHTML = html
+    expect(doc.querySelector("fieldset")?.getAttribute("aria-describedby")).toBeNull()
+    expect(doc.querySelector("#legal_name")?.getAttribute("aria-describedby")).toBe("legal_name_hint")
+    expect(doc.querySelector("#legal_name_hint")?.textContent).toBe(
+      "Không công khai. Phải khớp tên chủ tài khoản nhận tiền."
+    )
+    expect(doc.querySelector("#display_name")?.getAttribute("aria-describedby")).toBe("display_name_hint")
+    expect(doc.querySelector("#display_name_hint")?.textContent).toBe("Hiện trên trang chiến dịch.")
+    const phone = doc.querySelector("#phone")
+    expect(phone?.getAttribute("maxlength")).toBe("20")
+    expect(phone?.getAttribute("aria-describedby")).toBe("phone_hint")
+    expect(doc.querySelector("#phone_hint")?.textContent).toBe(
+      "Không công khai. Kiểm duyệt viên dùng để liên hệ khi cần."
+    )
+    expect(doc.querySelector("#organizer_reverify_hint")).toBeNull()
   })
 
   it.each([
@@ -130,6 +148,22 @@ describe("StartPage (DOS/Give#208)", () => {
       expect(details?.[2]).toContain('value="0901234567"')
       expect(html.includes(WARNING)).toBe(warns)
       if (warns) expect(details?.[2]).toContain(WARNING)
+
+      const doc = new Window().document
+      doc.body.innerHTML = html
+      const fieldsets = doc.querySelectorAll("fieldset")
+      expect(fieldsets[0]?.getAttribute("aria-describedby")).toBe("campaign_type_hint")
+      expect(doc.querySelector("#campaign_type_hint")?.textContent).toBe("Không đổi được loại sau khi gửi duyệt.")
+      expect(fieldsets[1]?.getAttribute("aria-describedby")).toBe(warns ? "organizer_reverify_hint" : null)
+      expect(doc.querySelector("#legal_name")?.getAttribute("aria-describedby")).toBe(
+        warns ? "legal_name_hint organizer_reverify_hint" : "legal_name_hint"
+      )
+      expect(doc.querySelector("#display_name")?.getAttribute("aria-describedby")).toBe(
+        warns ? "display_name_hint organizer_reverify_hint" : "display_name_hint"
+      )
+      expect(doc.querySelector("#phone")?.getAttribute("maxlength")).toBe("20")
+      expect(doc.querySelector("#phone")?.getAttribute("aria-describedby")).toBe("phone_hint")
+      expect(Boolean(doc.querySelector("#organizer_reverify_hint"))).toBe(warns)
     }
   )
 })
