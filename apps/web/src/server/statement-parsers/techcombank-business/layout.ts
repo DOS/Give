@@ -81,9 +81,13 @@ const PERIOD_DATE = new RegExp(`${DATE_TEXT}${TIME_TEXT}`, "g")
  * it counts as partial (fail closed).
  */
 const TIME_LIKE = /\d{1,2} ?(?::|h|g|gio|\.) ?\d{2}|\d ?(?:am|pm|sa|ch)\b|\b(?:gio|time|luc)\b/
-/** A cell that is only a time, or only a time label ("14:30", "8 SA", "Giờ/Time"). */
+/**
+ * A cell that is only a time or a time label, with an optional connector
+ * before it and time zone after it ("14:30", "8 SA", "Giờ/Time", "lúc
+ * 14:30", "- 14:30", "đến 14h30", "14:30 (GMT+7)").
+ */
 const TIME_CELL =
-  /^(?:\d{1,2} ?(?::|h|g|gio|\.) ?\d{2}(?::\d{2})?(?: ?(?:am|pm|sa|ch))?|\d{1,2} ?(?:am|pm|sa|ch)|(?:gio|time|luc)(?: ?\/ ?(?:gio|time))?)$/
+  /^(?:(?:luc|den|tu|-|–|—) ?)?(?:\d{1,2} ?(?::|h|g|gio|\.) ?\d{2}(?::\d{2})?(?: ?(?:am|pm|sa|ch))?|\d{1,2} ?(?:am|pm|sa|ch)|(?:gio|time|luc)(?: ?\/ ?(?:gio|time))?)(?: ?\(?(?:gmt|utc|ict)[^)]*\)?)?$/
 /** A label of a time range on another row above the table ("Từ giờ/From time 08:00"). */
 const TIME_RANGE = /\b(tu gio|den gio|from time|to time|gio bat dau|gio ket thuc|start time|end time)\b/
 const START_OF_DAY = /^0?0:00(:00)?$/

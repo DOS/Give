@@ -341,6 +341,10 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     ["an empty cell then a time", [null, "14:30"], "ends_early"],
     ["a dash then a time", ["-", "14:30"], "partial"],
     ["a time zone then a time", ["(GMT+7)", "14:30"], "partial"],
+    ["a cell lúc 14:30", ["lúc 14:30"], "partial"],
+    ["a cell - 14:30", ["- 14:30"], "partial"],
+    ["a cell đến 14h30", ["đến 14h30"], "partial"],
+    ["a cell 14:30 (GMT+7)", ["x", "14:30 (GMT+7)"], "partial"],
   ])("reads a time after the to-date with %s between as not full", async (_, extra, coverage) => {
     const parsed = await tcbBusinessParser.parse(
       statement({
