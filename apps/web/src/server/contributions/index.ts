@@ -205,6 +205,21 @@ interface GuestRow extends PaymentContribution {
 // PostgREST returns bytea as a backslash, "x" and the hex digits.
 const BYTEA_SHA256 = /^\\x([0-9a-f]{64})$/
 
+/** Expiry of an unexpired receipt tracking token of this contribution, by its hash. */
+async function receiptTokenExpiry(service: Db, contributionId: string, hash: string, now: Date): Promise<Date | null> {
+  const { data, error } = await service
+    .from("contribution_access_tokens")
+    .select("expires_at")
+    .eq("token_hash", `\\x${hash}`)
+    .eq("contribution_id", contributionId)
+    .gt("expires_at", now.toISOString())
+    .maybeSingle()
+  if (error) throw error
+  const expiresAt = (data as { expires_at?: string } | null)?.expires_at
+  const date = expiresAt ? new Date(expiresAt) : null
+  return date && !Number.isNaN(date.getTime()) && date > now ? date : null
+}
+
 export interface GuestContributionAccess {
   donation: PaymentContribution
   expiresAt: Date
@@ -232,10 +247,20 @@ export async function guestContributionAccess(
     .maybeSingle()
   if (error) throw error
   const row = data as GuestRow | null
-  const stored = BYTEA_SHA256.exec(row?.status_token_hash ?? "")?.[1]
-  const expiresAt = row?.status_token_expires_at ? new Date(row.status_token_expires_at) : null
-  if (!row || !stored || !expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt <= now) return null
-  if (!timingSafeEqual(Buffer.from(stored, "hex"), Buffer.from(statusTokenHash(token), "hex"))) return null
+  if (!row) return null
+  const hash = statusTokenHash(token)
+  const stored = BYTEA_SHA256.exec(row.status_token_hash ?? "")?.[1]
+  const statusExpiry = row.status_token_expires_at ? new Date(row.status_token_expires_at) : null
+  const statusTokenValid =
+    !!stored &&
+    !!statusExpiry &&
+    !Number.isNaN(statusExpiry.getTime()) &&
+    statusExpiry > now &&
+    timingSafeEqual(Buffer.from(stored, "hex"), Buffer.from(hash, "hex"))
+  // Otherwise a tracking token from the guest's receipt email (DOS/Give#254):
+  // the outbox stores only its hash, looked up exactly by that hash.
+  const expiresAt = statusTokenValid ? statusExpiry : await receiptTokenExpiry(service, row.id, hash, now)
+  if (!expiresAt) return null
   return {
     donation: {
       id: row.id,

@@ -59,6 +59,11 @@ async function adminLinks(): Promise<AdminNavLink[]> {
           { href: "/admin/inbound", label: "Tiền vào bị dừng" },
         ]
       : []),
-    ...(admin ? [{ href: "/admin/roles", label: "Phân quyền" }] : []),
+    ...(admin
+      ? [
+          { href: "/admin/emails", label: "Email" },
+          { href: "/admin/roles", label: "Phân quyền" },
+        ]
+      : []),
   ]
 }

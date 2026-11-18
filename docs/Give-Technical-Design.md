@@ -325,9 +325,18 @@ View công khai (client chỉ được đọc các view này):
 ```sql
 give.reports (id, campaign_id, reporter_id NULL, reason, details, status ('open','reviewing','actioned','dismissed'), handled_by)
 give.audit_log (id, actor_id, action, entity, entity_id, before jsonb, after jsonb, at)   -- chỉ ghi thêm
-give.outbox (id, kind, payload, status, attempts, next_attempt_at)   -- email/thông báo, job gửi lại khi lỗi
+give.outbox (id, kind, category, idempotency_key UNIQUE, recipient_user_id | recipient_email, payload,
+             status ('pending','sending','sent','dead','skipped'), attempts, max_attempts, next_attempt_at,
+             locked_until, last_error, unsubscribe_token)   -- email, mục 2.5.1
 give.admins (user_id PK, role ('moderator','finance','admin'))       -- hoặc dùng role chung của DOS nếu đã có
 ```
+
+#### 2.5.1 Email (DOS/Give#254)
+
+- **Ghi vào hàng chờ cùng transaction với sự kiện.** Trigger trên `contributions` (donation chuyển sang `received`: biên nhận), `notices` (`payment_due`, `payment_reminder`, `pledge_lapsed`) và `campaign_status_events` (duyệt, yêu cầu sửa, tạm dừng, kết thúc: gửi người tổ chức) ghi `give.outbox` với `idempotency_key` duy nhất và `ON CONFLICT DO NOTHING`. Vì vậy một dòng sao kê import lại, cron chạy lại hay một lần khớp bị hủy rồi khớp lại không bao giờ tạo email thứ hai. Lỗi dữ liệu khi ghi hàng chờ chỉ ghi cảnh báo, không làm hỏng giao dịch tiền.
+- **Gửi.** Job `send-outbox` gọi `give.claim_outbox` (khóa `FOR UPDATE SKIP LOCKED`, thuê dòng 5 phút, tăng `attempts`), gửi qua AWS SES bằng SMTP (nhà cung cấp DOS.Me đang dùng), rồi `give.complete_outbox` ghi kết quả của đúng lần thử đang giữ dòng. Lỗi thì thử lại sau 1, 5, 15, 60, 180, 360 phút; lần thứ 7 vẫn lỗi, hoặc địa chỉ bị từ chối hẳn, thì `dead`. Quản trị viên xem và gửi lại ở `/admin/emails` (`give.retry_outbox`, ghi `audit_log`).
+- **Loại email.** `transactional` (biên nhận, yêu cầu thanh toán, quyết định kiểm duyệt) luôn gửi. `notification` (tổng kết khi chiến dịch kết thúc) có link hủy đăng ký và header `List-Unsubscribe` một chạm; địa chỉ đã hủy nằm trong `give.email_suppressions`. Không có ảnh, pixel theo dõi hay nội dung tải từ xa.
+- **Link theo dõi cho khách.** Mỗi lần gửi biên nhận cho khách vãng lai, `claim_outbox` sinh một token mới 32 byte, chỉ lưu SHA-256 trong `give.contribution_access_tokens` (hết hạn sau 7 ngày, như token trạng thái), và trả token một lần để đưa vào email.
 
 ### 2.6 RLS
 
@@ -517,7 +526,7 @@ Kênh crypto nằm sau M4, nhưng schema đã có sẵn chỗ (`asset`, `vnd_equ
 | `remind-pledges`     | 1 giờ    | `remind_pledge_payments`: nhắc thanh toán cam kết vào ngày 1, 3 và 6 của hạn thanh toán (mỗi ngày một lần)            |
 | `reprocess-inbound`  | 5 phút   | Xử lý lại `inbound_events` còn treo; đỗ sự kiện sau 10 lần thử                                                        |
 | `reconcile-accounts` | 1 ngày   | `fetchTransactions` cho các kênh có hỗ trợ; báo lệch khi số dư không khớp                                             |
-| `send-outbox`        | 1 phút   | Gửi email/thông báo, có retry và backoff                                                                              |
+| `send-outbox`        | 1 phút   | Gửi email trong `give.outbox`, thử lại 1, 5, 15, 60, 180, 360 phút rồi `dead` (mục 2.5.1)                             |
 | `remind-unexplained` | 1 ngày   | Nhắc người tổ chức giải trình các khoản chi                                                                           |
 
 Mọi job đều idempotent. Nếu một lần chạy bị trùng hoặc bị bỏ lỡ, lần chạy sau sửa lại được.

@@ -173,6 +173,47 @@ describe("guestContribution", () => {
     expect(calls).toHaveLength(0)
   })
 
+  describe("with a tracking token from the receipt email (DOS/Give#254)", () => {
+    const other = { status_token_hash: `\\x${"0".repeat(64)}` }
+    const db = (token: { expires_at: string } | null, calls: Call[]) =>
+      fakeDb(
+        (call) =>
+          call.target === "contributions"
+            ? { data: row(other) }
+            : { data: call.target === "contribution_access_tokens" ? token : null },
+        calls
+      )
+
+    it("accepts an unexpired token of this donation, looked up by its hash", async () => {
+      const calls: Call[] = []
+      const access = await guestContributionAccess(
+        db({ expires_at: "2026-11-05T00:00:00.000Z" }, calls) as never,
+        "GVABCDEFG",
+        TOKEN,
+        now
+      )
+      expect(access?.donation.reference_code).toBe("GVABCDEFG")
+      expect(access?.expiresAt).toEqual(new Date("2026-11-05T00:00:00.000Z"))
+      expect(calls[1].target).toBe("contribution_access_tokens")
+      expect(calls[1].ops).toContainEqual(["eq", "token_hash", `\\x${TOKEN_SHA256}`])
+      expect(calls[1].ops).toContainEqual(["eq", "contribution_id", "33333333-3333-4333-8333-333333333333"])
+      expect(calls[1].ops).toContainEqual(["gt", "expires_at", now.toISOString()])
+    })
+
+    it("refuses an unknown or expired one", async () => {
+      expect(await guestContributionAccess(db(null, []) as never, "GVABCDEFG", TOKEN, now)).toBeNull()
+      expect(
+        await guestContributionAccess(db({ expires_at: now.toISOString() }, []) as never, "GVABCDEFG", TOKEN, now)
+      ).toBeNull()
+    })
+
+    it("does not look one up when the status token matches", async () => {
+      const calls: Call[] = []
+      await guestContributionAccess(fakeDb(() => ({ data: row() }), calls) as never, "GVABCDEFG", TOKEN, now)
+      expect(calls.map((c) => c.target)).toEqual(["contributions"])
+    })
+  })
+
   it("does not query for a malformed reference code", async () => {
     const calls: Call[] = []
     expect(await guestContributionAccess(fakeDb(() => undefined, calls) as never, "GV0OIL123", TOKEN, now)).toBeNull()
