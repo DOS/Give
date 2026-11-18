@@ -538,6 +538,8 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     ],
     ["dotted times after a footer total", [], [["Tổng ghi có/Total credits", "1,000", "Lọc giờ", "08.00", "14.00"]]],
     ["a time range in a total label's own cell", [], [["Tổng ghi có/Total credits: 1,000 (08:00 - 14:30)"]]],
+    ["a time after a total label", [["Tổng ghi có/Total credits to 14:30", "1,000"]], []],
+    ["an hour after a total label without a colon", [["Tổng ghi có/Total credits đến 14h", "1,000"]], []],
   ])("reads %s as partial", async (_, top, bottom) => {
     const parsed = await tcbBusinessParser.parse(
       statement({ top: [...withBalances("10,000", "11,000"), ...top], bottom })

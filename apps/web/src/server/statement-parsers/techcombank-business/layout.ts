@@ -276,12 +276,14 @@ function timeBoundRow(cells: readonly string[]): boolean {
   for (let i = 0; i < cells.length; i++) {
     const cell = cells[i]
     if (labelOf(cell).some((part) => SUMMARY.test(part) || OPENING.test(part) || CLOSING.test(part))) {
-      // A value in the label's own cell ("Tổng ghi có: 1,000") is checked
-      // like any other cell, unless it is only an amount.
+      // The label cell itself is checked whole (the labels hold no digits),
+      // unless all that follows its colon is an amount ("Tổng ghi có: 1,000").
       const colon = cell.indexOf(":")
       const value = colon > 0 ? cell.slice(colon + 1).trim() : ""
-      if (value !== "" && !readsAs(() => cellAmount(value))) {
-        if (ANY_TIME.test(value.replace(WHOLE_DAY_RANGE, " ").replace(DATE_ONLY, " "))) return true
+      // ("Tổng ghi có/Total credits to 14:30": the colon is the time's own.)
+      const labelOnly = colon > 0 && !/\d/.test(cell.slice(0, colon))
+      if (!(labelOnly && value !== "" && readsAs(() => cellAmount(value)))) {
+        if (ANY_TIME.test(cell.replace(WHOLE_DAY_RANGE, " ").replace(DATE_ONLY, " "))) return true
       }
       afterSummary = true
       continue
