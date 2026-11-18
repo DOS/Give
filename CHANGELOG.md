@@ -13,6 +13,11 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Campaigns cleanup: associate report-details guidance with its textarea via
+  `aria-describedby`, with an optional hint id on `Field` that preserves caller
+  descriptions. Correct the editor summary hint to name the campaign story,
+  and document reporting, the moderator report queue and organizer fulfillment
+  routes with their access guards (#228).
 - Report a campaign and moderator queue: public `/campaigns/[slug]` pages offer
   a `"Báo cáo chiến dịch"` disclosure (signed-in callers submit one of six
   structured reasons and optional details, required for `"Lý do khác"`, after
@@ -224,6 +229,27 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Money (M1)
 
+- First bank statement parser: Techcombank Business transaction export,
+  CSV or XLSX (`tcb-business`, decision P3 of 2026-11-18). Built
+  from Techcombank's public guides with synthetic fixtures; the export's
+  table header and both format flags stay unconfirmed until JOY's
+  anonymized samples arrive. `hasRunningBalance` is set and checked on
+  every file (opening and closing balances required, every row's balance
+  must follow from the one before), `hasStableRowId` is not. Shared
+  spreadsheet reading in `statement-parsers/sheet`: XLSX unpacked under a
+  32 MB inflate cap, its sheet XML checked (at most 20,000 rows and 100
+  columns, no text-date or error cells) and rebuilt before the
+  `read-excel-file` package reads it; CSV in-house. P3 marked decided in
+  the design doc. ACB research is kept in
+  `docs/research/bank-statements.md` 6.1; no ACB parser yet (#17 / #231).
+- Refusal reasons on `/admin/unmatched`: each transaction under "Tiền vào
+  không thuộc chiến dịch nào" shows why it was not given to a campaign
+  ("Tài khoản nhận không thuộc người tổ chức chiến dịch", or "Chiến dịch đã
+  đóng khi tiền về") with a link to that campaign, read with the staff
+  member's token through `give.bank_transaction_refusal_reasons`
+  (`refusalReasons` in `lib/reconciliation.ts`). Without the function (an
+  environment before DOS/DOS.Me#1757) or on a read error the rows show no
+  reason and the page no error (#138 / #230).
 - Follow-ups from #64 (`apps/web`): `approveCampaign` and `requestChanges`
   report a failed campaign pre-read instead of "not found";
   `checkSubmitAccount`, `loadEditorAccounts` and `/me/campaigns/[id]` load
@@ -379,6 +405,13 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Database (DOS.Me)
 
+- Finance can read why a bank transaction was refused:
+  `give.bank_transaction_refusal_reasons(uuid[])`, finance and admin only,
+  returns the `bank_transaction.account_owner_mismatch` and
+  `bank_transaction.after_close` audit entries of the given transactions with
+  their campaign and binding; every other `give.audit_log` entry stays
+  admin-only (#138 / DOS/DOS.Me#1757). Migration
+  `20261121160000_give_bank_transaction_refusal_reasons`.
 - Staff lock on the owner-or-staff RPC paths: a role change and the
   owner-or-staff actions no longer race (#120 / DOS/DOS.Me#1652). Migration
   `20261112060000_give_owner_or_staff_role_revoke_lock`.

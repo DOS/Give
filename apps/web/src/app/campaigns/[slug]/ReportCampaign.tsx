@@ -48,11 +48,13 @@ export function ReportCampaign({
             </Field>
             <Field
               htmlFor="report-details"
+              hintId="report-details-hint"
               label="Chi tiết (bắt buộc nếu chọn “Lý do khác”)"
               hint="Tối đa 1000 ký tự. Báo cáo được giữ kín; người tổ chức không biết ai báo cáo."
             >
               <textarea
                 id="report-details"
+                aria-describedby="report-details-hint"
                 name="details"
                 rows={3}
                 maxLength={REPORT_DETAILS_MAX}

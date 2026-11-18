@@ -1,12 +1,13 @@
 import "server-only"
 
 import { ParserRegistry } from "./registry"
+import { tcbBusinessParser } from "./techcombank-business"
 
 export { assertSupportedFormat, PARSER_NAME, ParserRegistry } from "./registry"
 export type { ParsedStatement, StatementFormat, StatementParser } from "./types"
 
 /**
- * Parsers of real bank formats. None yet: the bank is not chosen, and each
- * bank's parser lands with its own sample files (DOS/Give#17).
+ * Parsers of real bank formats. Techcombank Business is the first (DOS/Give#17),
+ * built from the bank's guides; its real sample files are still to come.
  */
-export const statementParsers = new ParserRegistry([])
+export const statementParsers = new ParserRegistry([tcbBusinessParser])

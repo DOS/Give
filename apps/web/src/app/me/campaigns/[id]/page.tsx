@@ -242,7 +242,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                       defaultValue={campaign.summary ?? ""}
                     />
                     <p id="summary_hint" className="hint">
-                      Tối đa 200 ký tự, hiện trên thẻ chiến dịch.
+                      Tối đa 200 ký tự, hiện ở đầu phần Câu chuyện trên trang chiến dịch.
                     </p>
                   </div>
                   <div>

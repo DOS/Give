@@ -52,7 +52,7 @@ vi.mock("@/lib/supabase", () => ({
 vi.mock("./actions", () => ({ reportCampaign: vi.fn(async () => null) }))
 vi.mock("@/app/(public)/donations/actions", () => ({ donate: vi.fn(async () => null) }))
 
-const { default: CampaignPage } = await import("./page")
+const { default: CampaignPage, generateMetadata } = await import("./page")
 
 function campaignFixture(status: CampaignStatus = "live"): PublicCampaign {
   return {
@@ -183,6 +183,25 @@ describe("CampaignPage report flow (DOS/Give#98)", () => {
     expect(submit?.className).not.toContain("btn-primary")
   })
 
+  it("associates report details with unique character-limit and privacy guidance (DOS/Give#228)", async () => {
+    state.session = {
+      user: { id: VIEWER, email: "viewer@dos.me", name: "Người xem" },
+      accessToken: "viewer-token",
+    }
+    const doc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const textarea = doc.querySelector('textarea[name="details"]')!
+    const descriptionIds = textarea.getAttribute("aria-describedby")?.split(/\s+/)
+
+    expect(descriptionIds).toEqual(["report-details-hint"])
+    for (const id of descriptionIds!) {
+      const matches = doc.querySelectorAll(`[id="${id}"]`)
+      expect(matches).toHaveLength(1)
+      expect(matches[0].textContent).toBe(
+        "Tối đa 1000 ký tự. Báo cáo được giữ kín; người tổ chức không biết ai báo cáo."
+      )
+    }
+  })
+
   it("hides 'Báo cáo chiến dịch' from the campaign's own organizer", async () => {
     state.session = {
       user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
@@ -213,5 +232,170 @@ describe("CampaignPage report flow (DOS/Give#98)", () => {
     expect(html).toContain("Bản xem trước")
     expect(html).not.toContain("Báo cáo chiến dịch")
     expect(state.userCalls.some((c) => c.target === "rpc:managed_campaigns")).toBe(false)
+  })
+})
+
+describe("generateMetadata (/campaigns/[slug], DOS/Give#232)", () => {
+  it("emits canonical URL and complete OpenGraph card with cover image for a public live campaign", async () => {
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("live"),
+            cover: { storage_path: "campaigns/3333/cover.jpg", alt: "Ảnh bìa Bản Mây" },
+          },
+        }
+      }
+      return undefined
+    }
+
+    const meta = await generateMetadata({ params: Promise.resolve({ slug: SLUG }) })
+
+    expect(meta).toStrictEqual({
+      title: "Xây trường Bản Mây",
+      description: "Cùng dựng lớp học mới.",
+      alternates: { canonical: `/campaigns/${SLUG}` },
+      openGraph: {
+        type: "website",
+        siteName: "Give",
+        locale: "vi_VN",
+        title: "Xây trường Bản Mây",
+        description: "Cùng dựng lớp học mới.",
+        url: `/campaigns/${SLUG}`,
+        images: ["/media/public/campaigns/3333/cover.jpg"],
+      },
+    })
+  })
+
+  it("emits complete OpenGraph without images when a public campaign has no cover, and omits description when summary is null", async () => {
+    const withoutCover = await generateMetadata({ params: Promise.resolve({ slug: SLUG }) })
+
+    expect(withoutCover).toStrictEqual({
+      title: "Xây trường Bản Mây",
+      description: "Cùng dựng lớp học mới.",
+      alternates: { canonical: `/campaigns/${SLUG}` },
+      openGraph: {
+        type: "website",
+        siteName: "Give",
+        locale: "vi_VN",
+        title: "Xây trường Bản Mây",
+        description: "Cùng dựng lớp học mới.",
+        url: `/campaigns/${SLUG}`,
+      },
+    })
+
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("succeeded"),
+            slug: "du-an/ban-may",
+            summary: null,
+          },
+        }
+      }
+      return undefined
+    }
+
+    const withoutSummary = await generateMetadata({ params: Promise.resolve({ slug: SLUG }) })
+
+    expect(withoutSummary).toStrictEqual({
+      title: "Xây trường Bản Mây",
+      alternates: { canonical: "/campaigns/du-an%2Fban-may" },
+      openGraph: {
+        type: "website",
+        siteName: "Give",
+        locale: "vi_VN",
+        title: "Xây trường Bản Mây",
+        url: "/campaigns/du-an%2Fban-may",
+      },
+    })
+  })
+
+  it("sets noindex/nofollow and omits openGraph and alternates on preview campaigns even with a cover", async () => {
+    state.session = {
+      user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
+      accessToken: "org-token",
+    }
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("in_review"),
+            cover: { storage_path: "campaigns/3333/cover.jpg", alt: "Ảnh bìa" },
+          },
+        }
+      }
+      return undefined
+    }
+
+    const meta = await generateMetadata({ params: Promise.resolve({ slug: SLUG }) })
+
+    expect(meta).toStrictEqual({
+      title: "Xây trường Bản Mây",
+      description: "Cùng dựng lớp học mới.",
+      robots: { index: false, follow: false },
+    })
+  })
+
+  it("sets noindex/nofollow and omits openGraph and alternates when campaign status is suspended", async () => {
+    state.session = {
+      user: { id: VIEWER, email: "mod@dos.me", name: "Kiểm duyệt viên" },
+      accessToken: "mod-token",
+    }
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("suspended"),
+            cover: { storage_path: "campaigns/3333/cover.jpg", alt: "Ảnh bìa" },
+          },
+        }
+      }
+      return undefined
+    }
+
+    const signedInSuspended = await generateMetadata({ params: Promise.resolve({ slug: SLUG }) })
+
+    expect(signedInSuspended).toStrictEqual({
+      title: "Xây trường Bản Mây",
+      description: "Cùng dựng lớp học mới.",
+      robots: { index: false, follow: false },
+    })
+
+    state.session = null
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("suspended") }
+      return undefined
+    }
+
+    const signedOutSuspended = await generateMetadata({ params: Promise.resolve({ slug: SLUG }) })
+
+    expect(signedOutSuspended).toStrictEqual({
+      title: "Không tìm thấy",
+      robots: { index: false, follow: false },
+    })
+  })
+
+  it("sets noindex/nofollow and omits openGraph and alternates when the campaign is not found or slug is invalid", async () => {
+    state.anonHandler = () => ({ data: null })
+
+    const missing = await generateMetadata({ params: Promise.resolve({ slug: SLUG }) })
+
+    expect(missing).toStrictEqual({
+      title: "Không tìm thấy",
+      robots: { index: false, follow: false },
+    })
+
+    state.anonCalls.length = 0
+    const invalidSlug = await generateMetadata({ params: Promise.resolve({ slug: "INVALID SLUG" }) })
+
+    expect(invalidSlug).toStrictEqual({
+      title: "Không tìm thấy",
+      robots: { index: false, follow: false },
+    })
+    expect(state.anonCalls).toHaveLength(0)
   })
 })

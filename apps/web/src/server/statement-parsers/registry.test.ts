@@ -42,8 +42,9 @@ describe("ParserRegistry", () => {
     expect(() => new ParserRegistry([csvStatementParser({ bankBins })])).toThrow("six-digit bank BINs")
   })
 
-  it("ships no bank parser until a bank is chosen (DOS/Give#17)", () => {
+  it("ships the Techcombank Business parser only (DOS/Give#17)", () => {
     expect(statementParsers.get("test-csv")).toBeUndefined()
+    expect(statementParsers.forBank("970407").map((p) => p.name)).toEqual(["tcb-business"])
     expect(statementParsers.forBank("970436")).toEqual([])
   })
 })

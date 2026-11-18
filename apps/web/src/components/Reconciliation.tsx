@@ -1,3 +1,5 @@
+import Link from "next/link"
+
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { buttonClass } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
@@ -9,6 +11,7 @@ import {
   candidateLabel,
   MAX_CORRECTION_REASON_LENGTH,
   MAX_RETURN_TO_UNMATCHED_REASON_LENGTH,
+  REFUSAL_REASON_LABELS,
   RETURN_TO_UNMATCHED_EFFECT,
   transactionSourceLabel,
   waitsFor,
@@ -18,6 +21,7 @@ import {
   type MatchCandidate,
   type ManualMatch,
   type PaidBreakdown,
+  type RefusalReason,
   type ReturnedTransfer,
   type UnattributedTransaction,
 } from "@/lib/reconciliation"
@@ -441,20 +445,57 @@ export function ReturnedTransferList({
   )
 }
 
+/** One refusal reason: what happened, in words, and a link to the campaign it names. */
+function RefusalReasonLine({
+  reason,
+  campaigns,
+}: {
+  reason: RefusalReason
+  campaigns: Map<string, { slug: string; title: string }>
+}) {
+  const campaign = reason.campaign_id ? campaigns.get(reason.campaign_id) : undefined
+  return (
+    <p className="break-words text-fg">
+      <span className="font-medium text-warning">Lý do: {REFUSAL_REASON_LABELS[reason.action]}.</span>
+      {reason.campaign_id && (
+        <>
+          {" "}
+          Chiến dịch:{" "}
+          {campaign ? (
+            <Link href={`/campaigns/${campaign.slug}`} className="link" target="_blank">
+              {campaign.title}
+              <span className="sr-only"> (mở thẻ mới)</span>
+            </Link>
+          ) : (
+            <MachineId>{reason.campaign_id}</MachineId>
+          )}
+        </>
+      )}
+    </p>
+  )
+}
+
 /**
  * Incoming money recorded with no campaign, read only (DOS/Give#148): what
- * came in, when, to which account and from whom. Why it has no campaign is
- * for DOS/Give#138, since give.audit_log is readable by admins only.
+ * came in, when, to which account and from whom, and why it has no campaign
+ * when the database recorded a reason (give.bank_transaction_refusal_reasons,
+ * DOS/Give#138).
  */
 export function UnattributedList({
   transactions,
   total,
   accounts,
+  reasons = new Map(),
+  campaigns = new Map(),
 }: {
   transactions: UnattributedTransaction[]
   total: number
   /** Labels of the receiving accounts, by id. */
   accounts: Map<string, string>
+  /** Why each transaction was not given to a campaign, by transaction id (DOS/Give#138). */
+  reasons?: Map<string, RefusalReason[]>
+  /** Slug and title of the campaigns the reasons name, by id. */
+  campaigns?: Map<string, { slug: string; title: string }>
 }) {
   return (
     <div className="space-y-3">
@@ -489,6 +530,9 @@ export function UnattributedList({
             <p className="text-sm break-words text-muted">
               Mã giao dịch: <MachineId>{tx.provider_tx_id}</MachineId>
             </p>
+            {reasons.get(tx.id)?.map((reason) => (
+              <RefusalReasonLine key={`${reason.action}:${reason.created_at}`} reason={reason} campaigns={campaigns} />
+            ))}
           </li>
         ))}
       </ul>
