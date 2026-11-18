@@ -7,6 +7,7 @@ import {
   dbErrorMessage,
   done,
   fail,
+  RESTORE_TRUST_MESSAGES,
   REVIEW_THRESHOLD_MESSAGES,
   STATEMENT_ROW_MESSAGES,
   type ActionResult,
@@ -139,5 +140,49 @@ async function setReviewSetting(
   if (result?.replayed === true) return done(`${setting.name} đã là ${formatVnd(threshold)}; không có gì thay đổi.`)
   return done(
     `Đã đổi ${setting.name.toLowerCase()} thành ${formatVnd(threshold)}. Các lần tải sao kê sau của người tổ chức dùng giá trị mới; dòng đã tải giữ nguyên.`
+  )
+}
+
+/**
+ * Finance/admin staff restore the statement trust of a campaign that a
+ * rejected row blocks (DOS/Give#57, PO decision): until then every organizer
+ * upload of it waits for review. The role is checked with the user's own
+ * token first; give.restore_campaign_statement_trust checks it again, refuses
+ * staff who organize the campaign, requires the note and writes the audit row.
+ */
+export async function restoreCampaignTrust(
+  campaignId: string,
+  /** The rejections the staff member saw: more of them refuse the restore (GIVE_TRUST_CHANGED). */
+  expectedRejected: number,
+  _state: ActionResult,
+  form: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  if (!isUuid(campaignId)) return fail(RESTORE_TRUST_MESSAGES.GIVE_CAMPAIGN_NOT_FOUND)
+  if (!Number.isSafeInteger(expectedRejected) || expectedRejected < 1) {
+    return fail(RESTORE_TRUST_MESSAGES.GIVE_TRUST_CHANGED)
+  }
+  const note = String(form.get("note") ?? "").trim()
+  if (!note) return fail(RESTORE_TRUST_MESSAGES.GIVE_SETTING_NOTE_REQUIRED)
+  if (note.length > 1000) return fail("Ghi chú tối đa 1.000 ký tự.")
+
+  const role = await dbAs(session.accessToken).rpc("is_admin", { p_roles: FINANCE_ROLES })
+  if (role.error) return fail(dbErrorMessage(role.error))
+  if (role.data !== true) return fail(RESTORE_TRUST_MESSAGES.GIVE_NOT_ALLOWED)
+
+  const { error } = await dbService()
+    .rpc("restore_campaign_statement_trust", {
+      p_actor_id: session.user.id,
+      p_campaign_id: campaignId,
+      p_note: note,
+      p_expected_rejected: expectedRejected,
+    })
+    .single()
+  if (error) return fail(dbErrorMessage(error, RESTORE_TRUST_MESSAGES))
+
+  revalidatePath("/admin/statements")
+  return done(
+    "Đã khôi phục tin cậy của chiến dịch. Nếu chiến dịch đã có lần tải được duyệt trọn vẹn, các lần tải sau của người tổ chức lại theo ngưỡng duyệt; nếu chưa, lần tải tiếp theo vẫn chờ duyệt. Một dòng bị từ chối nữa sẽ chặn lại."
   )
 }

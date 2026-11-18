@@ -372,6 +372,18 @@ export const STATEMENT_ROW_MESSAGES: Record<string, string> = {
     "Tài khoản nhận không thuộc về người tổ chức của chiến dịch đang gắn, nên dòng này không nhập được cho chiến dịch đó. Hãy báo đội ngũ Give kiểm tra lại tài khoản nhận và chiến dịch.",
 }
 
+/** Refusals of give.restore_campaign_statement_trust (DOS/Give#57). */
+export const RESTORE_TRUST_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Chỉ nhân viên tài chính hoặc quản trị viên được khôi phục tin cậy của chiến dịch.",
+  GIVE_SETTING_NOTE_REQUIRED: "Ghi chú là bắt buộc: ghi vì sao chiến dịch đáng tin trở lại.",
+  GIVE_SELF_REVIEW:
+    "Bạn không khôi phục được chiến dịch do bạn tổ chức hoặc gắn với tài khoản của bạn. Một nhân viên tài chính khác cần làm.",
+  GIVE_TRUST_NOT_REVOKED: "Chiến dịch này không bị chặn tin cậy, không có gì để khôi phục. Hãy tải lại trang.",
+  GIVE_TRUST_CHANGED:
+    "Có dòng sao kê của chiến dịch vừa bị từ chối thêm sau khi bạn mở trang. Hãy tải lại trang, xem lại rồi mới khôi phục.",
+  GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch.",
+}
+
 /** Refusals of give.set_statement_review_threshold (DOS/Give#57). */
 export const REVIEW_THRESHOLD_MESSAGES: Record<string, string> = {
   GIVE_NOT_ALLOWED: "Chỉ nhân viên tài chính hoặc quản trị viên được đổi ngưỡng duyệt và giới hạn mỗi ngày.",

@@ -61,46 +61,60 @@ const HEADERS: Record<Column, readonly string[]> = {
 const REQUIRED: readonly Column[] = ["date", "description", "debit", "credit", "balance"]
 
 const DATE_TEXT = "(\\d{4}-\\d{2}-\\d{2}|\\d{1,2}/\\d{1,2}/\\d{4})"
-/** A time of day after a date of the period line ("01/11/2026 08:00", "2026-11-01t08:00:00" once folded). */
-const TIME_TEXT = "(?:(?: |t)(\\d{1,2}:\\d{2}(?::\\d{2})?))?"
+/**
+ * A time of day right after a date, in the same cell ("01/11/2026 08:00",
+ * "2026-11-01t08:00:00" once folded, "15/11/2026 11:59 PM").
+ */
+const TIME_TEXT = "(?:(?: |t)(\\d{1,2}:\\d{2}(?::\\d{2})?(?: ?(?:am|pm|sa|ch))?))?"
+/** Cells of a row are joined with this, so a pattern never reads one cell's time as another's. */
+const CELL_GAP = " | "
+/** Between a label and its date: in the same cell, or in the next one. */
+const LABEL_GAP = "(?: ?/ ?(?:from|to))?:?(?: \\| | )?"
 /**
  * "Từ ngày/From 2025-09-01 Đến ngày/To 2025-09-30" (Techcombank Business web
- * guide, 31/10/2025, p.32). A time after either date is read too: the guide
- * shows none, and an export bounded by times holds only part of a day
- * (DOS/Give#57).
+ * guide, 31/10/2025, p.32). A time after either date, in its cell, is read
+ * too: the guide shows none, and an export bounded by times holds only part
+ * of a day (DOS/Give#57).
  */
 const PERIOD = new RegExp(
-  `tu ngay(?: ?/ ?from)?:? ?${DATE_TEXT}${TIME_TEXT}.*?den ngay(?: ?/ ?to)?:? ?${DATE_TEXT}${TIME_TEXT}`
+  `tu ngay${LABEL_GAP.replace("(?:from|to)", "from")}${DATE_TEXT}${TIME_TEXT}.*?den ngay${LABEL_GAP.replace("(?:from|to)", "to")}${DATE_TEXT}${TIME_TEXT}`
 )
-/** A date of the period line, with the time this parser reads after it. */
+/** A date with the time this parser reads after it in the same cell. */
 const PERIOD_DATE = new RegExp(`${DATE_TEXT}${TIME_TEXT}`, "g")
+/** A bare date. */
+const DATE_ONLY = new RegExp(DATE_TEXT, "g")
 /**
- * Anything else in the period's own cells that reads as a time ("08h00",
- * "14g30", "14.30", "lúc 14:30", "- 14:30", "8 SA", a following "Giờ/Time"
- * cell): the export may be bounded by a time this parser does not read, so
- * it counts as partial (fail closed).
+ * Any time of day written with digits, hour-only forms included ("08:00",
+ * "8h", "14h30", "14g30", "14.30", "8 giờ", "2 PM", "8 SA"); never part of
+ * a longer number ("1.000.000", "10,000"). A name such as "3H" or "4G" also
+ * reads as a time (fail closed: the file is refused, never taken as whole).
  */
-const TIME_LIKE = /\d{1,2} ?(?::|h|g|gio|\.) ?\d{2}|\d ?(?:am|pm|sa|ch)\b|\b(?:gio|time|luc)\b/
-/** One time of day ("14:30", "14h30", "14g30", "14.30", "2 PM", "8 SA"). */
-const ONE_TIME = "(?:\\d{1,2} ?(?::|h|g|gio|\\.) ?\\d{2}(?::\\d{2})?(?: ?(?:am|pm|sa|ch))?|\\d{1,2} ?(?:am|pm|sa|ch))"
-/**
- * A cell that is only a time, a time range or a time label, with an optional
- * connector before it and time zone after it ("14:30", "08:00 - 14:30",
- * "Giờ/Time", "lúc 14:30", "- 14:30", "đến 14h30", "14:30 (GMT+7)").
- */
-const TIME_CELL = new RegExp(
-  `^(?:(?:luc|den|tu|-|–|—) ?)?(?:${ONE_TIME}(?: ?(?:-|–|—|den) ?${ONE_TIME})?|(?:gio|time|luc)(?: ?/ ?(?:gio|time))?)(?: ?\\(?(?:gmt|utc|ict)[^)]*\\)?)?$`
+const ANY_TIME_SOURCE =
+  "(?<![\\d.,:])\\d{1,2} ?: ?\\d{2}(?![\\d])|(?<![\\d.,:])\\d{1,2} ?(?:h|g|gio)(?: ?\\d{2}|(?![a-z\\d]))|(?<![\\d.,:])\\d{1,2}\\.\\d{2}(?![\\d.,])|(?<![\\d.,:])\\d{1,2} ?(?:am|pm|sa|ch)\\b"
+const ANY_TIME = new RegExp(ANY_TIME_SOURCE)
+const ANY_TIMES = new RegExp(ANY_TIME_SOURCE, "g")
+/** The first date of a text (a print or export time holds one). */
+const ONE_DATE = new RegExp(DATE_TEXT)
+/** A range separator ("-", "–", "—", "~", "→", "/", "to", "đến"). */
+const SEP = "(?:-|–|—|~|→|/|to|den)"
+/** A range over the whole day, standing alone ("00:00 - 23:59", "12:00 AM - 11:59 PM"), which bounds nothing. */
+const WHOLE_DAY_RANGE = new RegExp(
+  `(?<![\\d:.,])(?:0?0:00(?::00)?|12:00(?::00)? ?(?:am|sa)) ?${SEP} ?(?:23:59(?::\\d{2})?|24:00(?::00)?|11:59(?::\\d{2})? ?(?:pm|ch))(?![\\d:])`,
+  "g"
 )
-/** A row label of a time ("Thời gian/Time", "Time:", "Giờ"), whose row may bound the export by time. */
-const TIME_ROW_LABEL = /^(?:thoi gian|time|gio)\b/
-/** A time written with digits ("08:00", "14h30", "2 PM"), without the label words of TIME_LIKE. */
-const TIME_DIGITS = /\d{1,2} ?(?::|h|g|gio|\.) ?\d{2}|\d ?(?:am|pm|sa|ch)\b/
-/** A print-time label ("Thời gian in", "Printed time"), which is no bound of the export. */
-const PRINT_WORD = /\b(?:in|printed|print)\b/
-/** A label of a time range on another row above the table ("Từ giờ/From time 08:00"). */
+/** Labels of a time range above the table ("Từ giờ/From time"), which bound the export even without a value. */
 const TIME_RANGE = /\b(tu gio|den gio|from time|to time|gio bat dau|gio ket thuc|start time|end time)\b/
-const START_OF_DAY = /^0?0:00(:00)?$/
-const END_OF_DAY = /^23:59(:\d{2})?$/
+/**
+ * Labels of the moment the file was printed, exported or created, whose
+ * value (one date and at most one time) bounds nothing. An enquiry time is
+ * not one: it may be the enquiry's window.
+ */
+const EXPORT_LABEL =
+  /^(?:ngay gio in|gio in|printed on|printed at|ngay in|in luc|thoi gian in|printed time|print time|ngay gio in bao cao|thoi diem in|ngay gio xuat|ngay xuat|thoi gian xuat|exported at|export time|export date|ngay tao|created on)$/
+/** A cell that holds only a date or a time ("18/11/2026", "08:45"). */
+const DATE_TIME_ONLY = /^[\d/:.,\- ]*(?:(?:am|pm|sa|ch)[\d/:.,\- ]*)?$/
+const START_OF_DAY = /^(?:0?0:00(?::00)?|12:00(?::00)? ?(?:am|sa))$/
+const END_OF_DAY = /^(?:23:59(?::\d{2})?|11:59(?::\d{2})? ?(?:pm|ch))$/
 /** "Số dư đầu ngày/Opening balance" in the download; "Số dư đầu kỳ" in the monthly statement. */
 const OPENING = /^(so du dau ngay|so du dau ky|opening balance)$/
 /** "Số dư cuối ngày/ Closing balance" in the download; "Số dư cuối kỳ/Ending balance" in the statement. */
@@ -228,56 +242,72 @@ function balanceAt(rows: Grid, pattern: RegExp): bigint | null {
 interface HeaderPeriod {
   from: string
   to: string
-  /** The time stated after each date, if any ("08:00"). */
+  /** The time stated after each date in its cell, if any ("08:00"). */
   fromTime: string | null
   toTime: string | null
-  /** Another time-like text on the period line, which this parser cannot place. */
+  /** Another time on a row above the table, which this parser cannot place. */
   otherTime: boolean
 }
 
+/** The label of a cell: its text before a colon, split at "/". */
+function labelOf(cell: string): string[] {
+  const colon = cell.indexOf(":")
+  const head = colon > 0 && !/\d$/.test(cell.slice(0, colon)) ? cell.slice(0, colon) : cell
+  return head.split("/").map((part) => part.trim())
+}
+
 /**
- * Another row above the table that bounds the export by time: a time-range
- * label ("Từ giờ/From time"), or a row labelled "Thời gian", "Time" or "Giờ"
- * (not a print-time label) that holds any time ("08:00 ~ 14:30", "Thời
- * gian/Time: 08:00 - 14:30").
+ * True when a row above the table holds a time of day that bounds the export:
+ * any time left after taking out the period's own dates (with the times read
+ * after them), a print or export time (its label, and its value in the same
+ * cell or the next one or two cells), dates, and whole-day ranges standing
+ * alone; or a time-range label. Unknown forms count (fail closed).
  */
 function timeBoundRow(cells: readonly string[]): boolean {
   if (cells.some((cell) => TIME_RANGE.test(cell))) return true
-  const labelled = cells.some((cell) => TIME_ROW_LABEL.test(cell) && !PRINT_WORD.test(cell))
-  if (!labelled) return false
-  return cells.some((cell) => TIME_CELL.test(cell)) || TIME_DIGITS.test(cells.join(" ").replace(PERIOD_DATE, " "))
+  for (let i = 0; i < cells.length; i++) {
+    const cell = cells[i]
+    if (labelOf(cell).some((part) => EXPORT_LABEL.test(part))) {
+      // The value of a print or export label: after its colon, or in the
+      // next one or two cells (a date, then a time). It is one moment.
+      const colon = cell.indexOf(":")
+      let value = colon > 0 ? cell.slice(colon + 1) : ""
+      if (value.trim() === "") {
+        for (let k = 0; k < 2 && i + 1 < cells.length && DATE_TIME_ONLY.test(cells[i + 1]); k++) {
+          value += ` ${cells[++i]}`
+        }
+      }
+      if (!isOneMoment(value)) return true
+      continue
+    }
+    const rest = cell.replace(WHOLE_DAY_RANGE, " ").replace(DATE_ONLY, " ")
+    if (ANY_TIME.test(rest)) return true
+  }
+  return false
+}
+
+/** One date with at most one time ("18/11/2026 08:45", "08:45, 18/11/2026"): a moment, not a range. */
+function isOneMoment(value: string): boolean {
+  const rest = value.replace(ONE_DATE, " ")
+  return (rest.match(ANY_TIMES) ?? []).length <= 1 && !DATE_ONLY.test(rest)
 }
 
 function headerPeriod(rows: Grid): HeaderPeriod | null {
-  for (const [index, row] of rows.entries()) {
-    // Non-empty cells, folded one by one, so the period's own cells can be
-    // told from the rest of the row (a print time, an account name).
-    const cells = row.map((cell) => label(cellText(cell))).filter((cell) => cell !== "")
-    const text = cells.join(" ")
+  // NFKC first: a full-width colon ("08：00") reads as a colon.
+  const folded = rows.map((row) =>
+    row.map((cell) => label(cellText(cell).normalize("NFKC"))).filter((cell) => cell !== "")
+  )
+  for (const [index, cells] of folded.entries()) {
+    const text = cells.join(CELL_GAP)
     const match = PERIOD.exec(text.slice(0, PERIOD_SCAN_CHARS))
     if (!match) continue
-    // The period's stretch: from "tu ngay" to the end of the to-date's cell.
+    // The period's own dates (with the times read after them in their cells)
+    // leave the row; whatever else is on it, and on every other row above
+    // the table, is checked for a time.
     const end = match.index + match[0].length
-    let toCell = cells.length - 1
-    let offset = 0
-    for (const [i, cell] of cells.entries()) {
-      if (end <= offset + cell.length) {
-        toCell = i
-        break
-      }
-      offset += cell.length + 1
-    }
-    const stretch = text.slice(match.index, cells.slice(0, toCell + 1).join(" ").length)
-    // Cells after it, up to a print-time label: a cell that is only a time
-    // (other than 23:59) or a time label bounds the export by a time.
-    const after = cells.slice(toCell + 1)
-    const printed = after.findIndex((cell) => cell.split("/").some((part) => PRINTED.test(part.trim())))
-    const following = printed < 0 ? after : after.slice(0, printed)
+    const rest = text.slice(0, match.index) + match[0].replace(PERIOD_DATE, " ") + text.slice(end)
     return {
-      otherTime:
-        TIME_LIKE.test(stretch.replace(PERIOD_DATE, " ")) ||
-        following.some((cell) => TIME_CELL.test(cell) && !END_OF_DAY.test(cell)) ||
-        rows.some((other, i) => i !== index && timeBoundRow(other.map((cell) => label(cellText(cell))))),
+      otherTime: folded.some((other, i) => timeBoundRow(i === index ? rest.split(CELL_GAP) : other)),
       from: bankDate(match[1]).day,
       fromTime: match[2] ?? null,
       to: bankDate(match[3]).day,

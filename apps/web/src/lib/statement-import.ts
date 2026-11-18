@@ -83,6 +83,34 @@ export function allowsNotATransaction(reason: AmbiguousReason | string | null | 
 // Finance review of organizer uploads (DOS/Give#57)
 // ---------------------------------------------------------------------------
 
+/** A campaign whose statement trust a rejected finance_review row blocks (DOS/Give#57). */
+export interface TrustBlock {
+  campaign_id: string
+  slug: string
+  title: string
+  rejected: number
+  last_rejected_at: string
+  last_restored_at: string | null
+}
+
+/**
+ * Campaigns whose trust a rejection blocks, until finance restores it
+ * (give.statement_trust_blocks, granted to the service role: pass dbService()
+ * and the signed-in staff member, whose role the database checks again; it
+ * gives no rows to anyone else). Null when it cannot be read (the database
+ * migration is not applied yet, an outage), so the page says so instead of
+ * "none blocked".
+ */
+export async function listTrustBlocks(service: Db, actorId: string): Promise<TrustBlock[] | null> {
+  if (!isUuid(actorId)) return null
+  const { data, error } = await service.rpc("statement_trust_blocks", { p_actor_id: actorId })
+  if (error) {
+    console.error("statement_trust_blocks failed:", error.code ?? "unknown")
+    return null
+  }
+  return ((data ?? []) as TrustBlock[]).map((row) => ({ ...row, rejected: Number(row.rejected) }))
+}
+
 /** The database defaults of give.statement_review_settings. */
 export const DEFAULT_REVIEW_THRESHOLD_VND = 20_000_000
 export const DEFAULT_REVIEW_DAILY_LIMIT_VND = 100_000_000
@@ -560,6 +588,7 @@ export const RECONCILIATION_AUDIT_ACTIONS = [
   // DOS/Give#57: rows the system imported once a gap was filled, and threshold changes.
   "statement_import_row.balance_confirmed",
   "statement_review_settings.update",
+  "campaign_statement_trust.restore",
 ] as const
 
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
@@ -570,6 +599,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "bank_transaction.return_explanation": "Đưa giải trình về chưa khớp",
   "statement_import_row.balance_confirmed": "Tự nhập dòng sao kê khi số dư đã khớp",
   "statement_review_settings.update": "Đổi ngưỡng duyệt sao kê",
+  "campaign_statement_trust.restore": "Khôi phục tin cậy sao kê của chiến dịch",
 }
 
 /** The latest reconciliation audit entries. give.audit_log is readable by admins only; others get none. */
@@ -603,6 +633,11 @@ export function reconciliationAuditSummary(entry: AuditEntry): string {
       return `Giới hạn mỗi ngày từ ${formatVnd(Number(before.daily_limit_vnd ?? 0))} thành ${formatVnd(Number(after.daily_limit_vnd ?? 0))}: ${note}`
     }
     return `Ngưỡng duyệt từ ${formatVnd(Number(before.threshold_vnd ?? 0))} thành ${formatVnd(Number(after.threshold_vnd ?? 0))}: ${note}`
+  }
+  if (entry.action === "campaign_statement_trust.restore") {
+    const before = entry.before ?? {}
+    const note = typeof after.note === "string" ? after.note : ""
+    return `Chiến dịch ${entry.entity_id} được khôi phục sau ${String(before.rejected_rows ?? "—")} dòng bị từ chối: ${note}`
   }
   if (entry.action === "bank_transaction.manual_match") {
     return `${formatVnd(Number(after.amount ?? 0))} chuyển từ "chưa khớp" sang "đã khớp", lượt ủng hộ ${String(after.contribution_id ?? "—")}`

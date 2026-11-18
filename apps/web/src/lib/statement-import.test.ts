@@ -21,6 +21,7 @@ import {
   listBatchRows,
   listDuplicateTargets,
   listReconciliationAudit,
+  listTrustBlocks,
   listUploadAccounts,
   parseThresholdVnd,
   reconciliationAuditSummary,
@@ -283,6 +284,7 @@ describe("listReconciliationAudit", () => {
         "bank_transaction.return_explanation",
         "statement_import_row.balance_confirmed",
         "statement_review_settings.update",
+        "campaign_statement_trust.restore",
       ],
     ])
     expect(AUDIT_ACTION_LABELS["bank_transaction.explain_inbound"]).toBe("Giải trình tiền vào không phải tiền ủng hộ")
@@ -608,5 +610,28 @@ describe("finance review threshold (DOS/Give#57)", () => {
         after: { daily_limit_vnd: 40000000, note: "JOY" },
       })
     ).toMatch(/^Giới hạn mỗi ngày từ .*100\.000\.000.* thành .*40\.000\.000.*: JOY$/)
+  })
+})
+
+describe("listTrustBlocks (DOS/Give#57)", () => {
+  it("reads the blocked campaigns through give.statement_trust_blocks", async () => {
+    const calls: Call[] = []
+    const row = {
+      campaign_id: "c",
+      slug: "s",
+      title: "t",
+      rejected: "2",
+      last_rejected_at: "2026-11-18T00:00:00Z",
+      last_restored_at: null,
+    }
+    const db = fakeDb(() => ({ data: [row] }), calls) as unknown as Db
+    expect(await listTrustBlocks(db, "11111111-1111-4111-8111-111111111111")).toEqual([{ ...row, rejected: 2 }])
+    expect(calls[0].target).toBe("rpc:statement_trust_blocks")
+    expect(op(calls[0], "args")).toEqual([{ p_actor_id: "11111111-1111-4111-8111-111111111111" }])
+  })
+
+  it("gives null, not an empty list, when the list cannot be read", async () => {
+    const failing = fakeDb(() => ({ error: { code: "PGRST202" } })) as unknown as Db
+    expect(await listTrustBlocks(failing, "11111111-1111-4111-8111-111111111111")).toBeNull()
   })
 })
