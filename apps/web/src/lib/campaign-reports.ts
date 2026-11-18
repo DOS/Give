@@ -70,6 +70,8 @@ const MANAGED_REPORT_CAMPAIGN_COLUMNS =
 
 /** Unresolved campaigns shown per page on `/admin/reports`. */
 export const UNRESOLVED_CAMPAIGNS_PER_PAGE = 20
+/** Maximum 1-based `?page=` value accepted on `/admin/reports`. */
+export const MAX_REPORTS_PAGE = 10_000
 /** Rows read per PostgREST range request while scanning unresolved reports. */
 export const REPORT_SCAN_BATCH = 1000
 /** Maximum UUIDs in one `.in(...)` filter so query URLs stay well under proxy caps. */
@@ -131,11 +133,11 @@ export interface CampaignReportQueue {
   resolved: ResolvedCampaignItem[]
 }
 
-/** Parses `?page=` on `/admin/reports` into a 1-based page integer. */
+/** Parses `?page=` on `/admin/reports` into a bounded 1-based page integer. */
 export function parseReportsPage(params: Record<string, string | string[] | undefined>): number {
-  const raw = Array.isArray(params.page) ? params.page[0] : params.page
-  const parsed = Number(raw)
-  return Number.isInteger(parsed) && parsed >= 1 ? parsed : 1
+  const raw = (Array.isArray(params.page) ? params.page[0] : params.page) ?? ""
+  if (!/^[1-9][0-9]*$/.test(raw)) return 1
+  return Math.min(Number(raw), MAX_REPORTS_PAGE)
 }
 
 export function reportsPageHref(page: number): string {
@@ -185,16 +187,23 @@ async function scanCampaignIdsByStatus(db: Db, status: "open" | "awaiting_organi
   return campaignIds
 }
 
-async function loadUnresolvedForCampaigns(db: Db, campaignIds: readonly string[]): Promise<CampaignReport[]> {
-  if (campaignIds.length === 0) return []
-  const all: CampaignReport[] = []
+function chunkIds(ids: readonly string[], size = CAMPAIGNS_PER_REQUEST): string[][] {
+  const result: string[][] = []
+  for (let i = 0; i < ids.length; i += size) {
+    result.push(ids.slice(i, i + size))
+  }
+  return result
+}
+
+async function loadUnresolvedChunk(db: Db, campaignChunk: readonly string[]): Promise<CampaignReport[]> {
+  const chunkRows: CampaignReport[] = []
   const seenRowIds = new Set<string>()
   for (let from = 0; ; from += REPORT_SCAN_BATCH) {
     const to = from + REPORT_SCAN_BATCH - 1
     const { data, error } = await db
       .from("campaign_reports")
       .select(CAMPAIGN_REPORT_COLUMNS)
-      .in("campaign_id", [...campaignIds])
+      .in("campaign_id", [...campaignChunk])
       .in("status", ["open", "awaiting_organizer"])
       .order("created_at", { ascending: true })
       .order("id", { ascending: true })
@@ -205,24 +214,29 @@ async function loadUnresolvedForCampaigns(db: Db, campaignIds: readonly string[]
     for (const row of rows) {
       if (!seenRowIds.has(row.id)) {
         seenRowIds.add(row.id)
-        all.push(row)
+        chunkRows.push(row)
         added++
       }
     }
     if (rows.length < REPORT_SCAN_BATCH || added === 0) break
   }
-  return all
+  return chunkRows
+}
+
+async function loadUnresolvedForCampaigns(db: Db, campaignIds: readonly string[]): Promise<CampaignReport[]> {
+  const unique = [...new Set(campaignIds)]
+  if (unique.length === 0) return []
+  const chunkResults = await Promise.all(chunkIds(unique).map((chunk) => loadUnresolvedChunk(db, chunk)))
+  return chunkResults.flat()
 }
 
 async function loadReportedCampaigns(db: Db, ids: readonly string[]): Promise<Map<string, ReportedCampaign>> {
   const unique = [...new Set(ids)]
   if (unique.length === 0) return new Map()
-  const chunks: string[][] = []
-  for (let i = 0; i < unique.length; i += CAMPAIGNS_PER_REQUEST) {
-    chunks.push(unique.slice(i, i + CAMPAIGNS_PER_REQUEST))
-  }
   const results = await Promise.all(
-    chunks.map((chunk) => db.rpc("managed_campaigns", {}).select(MANAGED_REPORT_CAMPAIGN_COLUMNS).in("id", chunk))
+    chunkIds(unique).map((chunk) =>
+      db.rpc("managed_campaigns", {}).select(MANAGED_REPORT_CAMPAIGN_COLUMNS).in("id", chunk)
+    )
   )
   const byId = new Map<string, ReportedCampaign>()
   for (const { data, error } of results) {
@@ -251,6 +265,9 @@ export async function listCampaignReportQueue(
   requestedPage = 1,
   pageSize = UNRESOLVED_CAMPAIGNS_PER_PAGE
 ): Promise<CampaignReportQueue> {
+  const safePageSize = Math.max(1, Math.trunc(pageSize))
+  const safeRequestedPage = Number.isFinite(requestedPage) ? Math.max(1, Math.trunc(requestedPage)) : 1
+
   const [openFirstIds, awaitingIds, resolvedRes] = await Promise.all([
     scanCampaignIdsByStatus(db, "open"),
     scanCampaignIdsByStatus(db, "awaiting_organizer"),
@@ -259,6 +276,7 @@ export async function listCampaignReportQueue(
       .select(CAMPAIGN_REPORT_COLUMNS)
       .in("status", ["actioned", "dismissed"])
       .order("handled_at", { ascending: false })
+      .order("id", { ascending: false })
       .limit(RESOLVED_REPORTS_LIMIT),
   ])
   if (resolvedRes.error) throw resolvedRes.error
@@ -267,13 +285,7 @@ export async function listCampaignReportQueue(
   for (const id of awaitingIds) {
     if (!openFirstIds.has(id)) awaitingOnlyIds.push(id)
   }
-  const orderedCampaignIds = [...openFirstIds, ...awaitingOnlyIds]
-
-  const totalUnresolvedCampaigns = orderedCampaignIds.length
-  const totalPages = Math.max(1, Math.ceil(totalUnresolvedCampaigns / pageSize))
-  const page = Math.min(Math.max(1, requestedPage), totalPages)
-  const start = (page - 1) * pageSize
-  const pageCampaignIds = orderedCampaignIds.slice(start, start + pageSize)
+  let activeCampaignIds = [...openFirstIds, ...awaitingOnlyIds]
 
   const resolvedRows = (resolvedRes.data ?? []) as CampaignReport[]
   const resolvedByCampaign = new Map<string, CampaignReport[]>()
@@ -281,14 +293,43 @@ export async function listCampaignReportQueue(
     resolvedByCampaign.set(row.campaign_id, [...(resolvedByCampaign.get(row.campaign_id) ?? []), row])
   }
 
-  const [pageReports, campaigns] = await Promise.all([
-    loadUnresolvedForCampaigns(db, pageCampaignIds),
-    loadReportedCampaigns(db, [...pageCampaignIds, ...resolvedByCampaign.keys()]),
-  ])
-
   const unresolvedByCampaign = new Map<string, CampaignReport[]>()
-  for (const row of pageReports) {
-    unresolvedByCampaign.set(row.campaign_id, [...(unresolvedByCampaign.get(row.campaign_id) ?? []), row])
+  const queriedReportCampaignIds = new Set<string>()
+  const queriedManagedCampaignIds = new Set<string>()
+  const campaigns = new Map<string, ReportedCampaign>()
+
+  let totalUnresolvedCampaigns = activeCampaignIds.length
+  let totalPages = Math.max(1, Math.ceil(totalUnresolvedCampaigns / safePageSize))
+  let page = Math.min(safeRequestedPage, totalPages)
+  let pageCampaignIds = activeCampaignIds.slice((page - 1) * safePageSize, page * safePageSize)
+
+  while (true) {
+    const unqueriedReportIds = pageCampaignIds.filter((id) => !queriedReportCampaignIds.has(id))
+    const campaignIdsToLoad = [...pageCampaignIds, ...resolvedByCampaign.keys()].filter(
+      (id) => !queriedManagedCampaignIds.has(id)
+    )
+    if (unqueriedReportIds.length === 0 && campaignIdsToLoad.length === 0) break
+
+    for (const id of unqueriedReportIds) queriedReportCampaignIds.add(id)
+    for (const id of campaignIdsToLoad) queriedManagedCampaignIds.add(id)
+
+    const [fetchedReports, fetchedCampaigns] = await Promise.all([
+      loadUnresolvedForCampaigns(db, unqueriedReportIds),
+      loadReportedCampaigns(db, campaignIdsToLoad),
+    ])
+    for (const [id, campaign] of fetchedCampaigns) campaigns.set(id, campaign)
+    for (const row of fetchedReports) {
+      unresolvedByCampaign.set(row.campaign_id, [...(unresolvedByCampaign.get(row.campaign_id) ?? []), row])
+    }
+
+    const resolvedConcurrently = new Set(unqueriedReportIds.filter((id) => !unresolvedByCampaign.has(id)))
+    if (resolvedConcurrently.size === 0) break
+
+    activeCampaignIds = activeCampaignIds.filter((id) => !resolvedConcurrently.has(id))
+    totalUnresolvedCampaigns = activeCampaignIds.length
+    totalPages = Math.max(1, Math.ceil(totalUnresolvedCampaigns / safePageSize))
+    page = Math.min(safeRequestedPage, totalPages)
+    pageCampaignIds = activeCampaignIds.slice((page - 1) * safePageSize, page * safePageSize)
   }
 
   const unresolved: UnresolvedCampaignItem[] = pageCampaignIds.flatMap((campaign_id) => {

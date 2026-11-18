@@ -19,9 +19,11 @@ vi.mock("@/lib/auth/session", () => ({
   ),
 }))
 
+const revalidatePathMock = vi.hoisted(() => vi.fn())
 const dbAsMock = vi.hoisted(() =>
   vi.fn((_token?: string) => fakeDb((call) => state.userHandler(call), state.userCalls))
 )
+vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }))
 vi.mock("@/lib/supabase", () => ({
   dbAs: dbAsMock,
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
@@ -39,6 +41,7 @@ function form(reasonCode?: string, details?: string) {
 const rpc = () => state.serviceCalls.find((c) => c.target === "rpc:report_campaign")
 
 beforeEach(() => {
+  revalidatePathMock.mockClear()
   dbAsMock.mockClear()
   state.userCalls.length = 0
   state.serviceCalls.length = 0
@@ -48,7 +51,7 @@ beforeEach(() => {
 })
 
 describe("reportCampaign (DOS/Give#98)", () => {
-  it("verifies the reporter's token and public campaign status first, then calls give.report_campaign as service_role", async () => {
+  it("verifies the reporter's token and public campaign status first, calls give.report_campaign, and revalidates /admin/reports", async () => {
     const result = await reportCampaign(CAMPAIGN, null, form("fraud_or_impersonation", "  Mạo danh bệnh viện  "))
     expect(result).toEqual({
       ok: true,
@@ -64,6 +67,7 @@ describe("reportCampaign (DOS/Give#98)", () => {
       p_reason_code: "fraud_or_impersonation",
       p_details: "Mạo danh bệnh viện",
     })
+    expect(revalidatePathMock.mock.calls).toEqual([["/admin/reports"]])
   })
 
   it("accepts non-'other' reasons without details and requires details for 'other'", async () => {
@@ -133,5 +137,6 @@ describe("reportCampaign (DOS/Give#98)", () => {
 
     state.serviceHandler = () => ({ error: { code: "23514", message: "GIVE_REPORT_LIMIT" } })
     expect((await reportCampaign(CAMPAIGN, null, form("fraud_or_impersonation")))?.message).toContain("24 giờ")
+    expect(revalidatePathMock).not.toHaveBeenCalled()
   })
 })

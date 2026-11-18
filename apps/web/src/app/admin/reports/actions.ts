@@ -72,11 +72,20 @@ export async function moderateCampaignReports(
     revalidatePath("/me/notices")
   } else if (parsed.data.action === "suspend") {
     revalidatePath("/admin")
+    revalidatePath(`/me/campaigns/${campaignId}`)
+    revalidatePath("/me/campaigns")
+    revalidatePath("/me/notices")
     revalidatePath("/campaigns/[slug]", "page")
+    revalidatePath("/campaigns/[slug]/pledge", "page")
+    revalidatePath("/campaigns/[slug]/statement", "page")
+    revalidatePath("/me/pledges/[code]", "page")
     revalidatePath("/campaigns")
     revalidatePath("/")
   } else if (parsed.data.action === "stop_payment_requests") {
     revalidatePath("/admin/payment-requests")
+    revalidatePath(`/me/campaigns/${campaignId}`)
+    revalidatePath("/me/contributions")
+    revalidatePath("/me/notices")
     revalidatePath("/campaigns/[slug]", "page")
     revalidatePath("/me/pledges/[code]", "page")
   }
