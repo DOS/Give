@@ -298,9 +298,28 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     ["a start after midnight", "01/11/2026 08:00", "15/11/2026", "partial"],
     ["an ISO start after midnight", "2026-11-01T08:00:00", "2026-11-15", "partial"],
     ["an end before the day ends", "01/11/2026", "15/11/2026 14:30", "ends_early"],
+    // Times this parser does not read count as partial (fail closed).
+    ["a start written 08h00", "01/11/2026 08h00", "15/11/2026", "partial"],
+    ["an end written 14h30", "01/11/2026", "15/11/2026 14h30", "partial"],
+    ["an end after lúc", "01/11/2026", "15/11/2026 lúc 14:30", "partial"],
+    ["an end after a dash", "01/11/2026", "15/11/2026 - 14:30", "partial"],
+    ["a start after a comma", "01/11/2026, 08:00", "15/11/2026", "partial"],
+    ["a 12-hour time", "01/11/2026 12:00 AM", "15/11/2026", "partial"],
   ])("reads %s on the period line as a %s export", async (_, from, to, coverage) => {
     const parsed = await tcbBusinessParser.parse(statement({ top: period(from, to) }))
     expect([parsed.periodFrom, parsed.periodTo, parsed.coverage]).toEqual(["2026-11-01", "2026-11-15", coverage])
+  })
+
+  it("reads a time in its own labelled cell on the period line as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", "Giờ/Time", "14:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe("partial")
   })
 
   it("refuses a partial export of past days in the pipeline", async () => {

@@ -60,7 +60,7 @@ export const AMBIGUOUS_REASON_LABELS: Record<AmbiguousReason, string> = {
   event_dismissed:
     "Dòng của một lần tải sao kê mà đội tài chính đã bỏ qua. Đối chiếu với sao kê của ngân hàng: nhập nếu đây là giao dịch thật chưa được ghi, đánh dấu là giao dịch đã ghi nếu bị trùng, hoặc đánh dấu không phải giao dịch thật (ví dụ file thử, tải nhầm tài khoản).",
   finance_review:
-    "Chờ đội tài chính duyệt: sao kê do người tổ chức tự tải lên, là lần tải đầu tiên của chiến dịch hoặc có số tiền từ ngưỡng duyệt trở lên. Đội tài chính đối chiếu với sao kê trên trang của ngân hàng rồi mới ghi.",
+    "Chờ đội tài chính duyệt: sao kê do người tổ chức tự tải lên, khi chiến dịch chưa có dòng sao kê nào được đội tài chính duyệt, hoặc khi số tiền từ ngưỡng duyệt trở lên. Đội tài chính đối chiếu với sao kê trên trang của ngân hàng rồi mới ghi.",
 }
 
 export const RESOLUTION_LABELS: Record<Resolution, string> = {
@@ -105,7 +105,7 @@ const VND_TEXT = /^(\d{1,13}|\d{1,3}(\.\d{3})+|\d{1,3}(,\d{3})+|\d{1,3}( \d{3})+
 
 /** A threshold typed by staff, in whole VND. Null for anything else. */
 export function parseThresholdVnd(text: string): number | null {
-  const trimmed = text.trim()
+  const trimmed = text.trim().replace(/\s*(đ|₫|vnd)$/i, "")
   if (!VND_TEXT.test(trimmed)) return null
   const digits = trimmed.replace(/[., ]/g, "")
   if (digits.length > 13) return null

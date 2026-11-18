@@ -72,6 +72,14 @@ const TIME_TEXT = "(?:(?: |t)(\\d{1,2}:\\d{2}(?::\\d{2})?))?"
 const PERIOD = new RegExp(
   `tu ngay(?: ?/ ?from)?:? ?${DATE_TEXT}${TIME_TEXT}.*?den ngay(?: ?/ ?to)?:? ?${DATE_TEXT}${TIME_TEXT}`
 )
+/** A date of the period line, with the time this parser reads after it. */
+const PERIOD_DATE = new RegExp(`${DATE_TEXT}${TIME_TEXT}`, "g")
+/**
+ * Anything else on the period line that reads as a time ("08h00", "lúc
+ * 14:30", "- 14:30", a "Giờ/Time" cell, AM/PM): the export may be bounded by
+ * a time this parser does not read, so it counts as partial (fail closed).
+ */
+const TIME_LIKE = /\d{1,2} ?(?::|h|gio) ?\d{2}|\b(?:am|pm|sa|ch|gio|time|luc)\b/
 const START_OF_DAY = /^0?0:00(:00)?$/
 const END_OF_DAY = /^23:59(:59)?$/
 /** "Số dư đầu ngày/Opening balance" in the download; "Số dư đầu kỳ" in the monthly statement. */
@@ -204,13 +212,17 @@ interface HeaderPeriod {
   /** The time stated after each date, if any ("08:00"). */
   fromTime: string | null
   toTime: string | null
+  /** Another time-like text on the period line, which this parser cannot place. */
+  otherTime: boolean
 }
 
 function headerPeriod(rows: Grid): HeaderPeriod | null {
   for (const row of rows) {
-    const match = PERIOD.exec(label(row.map(cellText).join(" ").slice(0, PERIOD_SCAN_CHARS)))
+    const text = label(row.map(cellText).join(" ").slice(0, PERIOD_SCAN_CHARS))
+    const match = PERIOD.exec(text)
     if (match) {
       return {
+        otherTime: TIME_LIKE.test(text.replace(PERIOD_DATE, " ")),
         from: bankDate(match[1]).day,
         fromTime: match[2] ?? null,
         to: bankDate(match[3]).day,
@@ -227,7 +239,7 @@ function headerPeriod(rows: Grid): HeaderPeriod | null {
  * the start of its first day; one ending before 23:59 cuts its last day.
  */
 function coverage(period: HeaderPeriod | null): StatementCoverage {
-  if (period === null) return "partial"
+  if (period === null || period.otherTime) return "partial"
   if (period.fromTime !== null && !START_OF_DAY.test(period.fromTime)) return "partial"
   if (period.toTime !== null && !END_OF_DAY.test(period.toTime)) return "ends_early"
   return "full"

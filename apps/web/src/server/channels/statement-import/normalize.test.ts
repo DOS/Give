@@ -180,6 +180,15 @@ describe("normalizeStatement", () => {
       ["an export that ends early on a past day", { coverage: "ends_early" }],
       ["a parser that states no coverage", { coverage: undefined }],
       ["a coverage the contract does not know", { coverage: "most" as never }],
+      [
+        "a partial export of today printed after midnight",
+        {
+          coverage: "partial",
+          periodFrom: "2026-10-05",
+          periodTo: "2026-10-05",
+          exportedAt: new Date("2026-10-06T00:10:00+07:00"),
+        },
+      ],
     ])("%s", (_name, overrides) => {
       const parsed = statement([tx()], overrides as Partial<ParsedStatement>)
       expect(refusal(() => normalizeStatement(IDS, parsed, NOW)).code).toBe("STATEMENT_PARTIAL_EXPORT")

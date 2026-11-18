@@ -104,7 +104,8 @@ export default async function AdminStatementsPage() {
           Các dòng sao kê dưới đây chưa được ghi thành giao dịch vì Give không chắc chúng là giao dịch mới hay lặp lại
           một giao dịch đã ghi. Đối chiếu với sao kê trên trang của chính ngân hàng rồi chọn một cách xử lý. Ghi chú là
           bắt buộc; mỗi lần xử lý được ghi vào nhật ký kiểm toán và không đổi được. Sao kê do người tổ chức tự tải lên
-          còn chờ đội tài chính duyệt ở lần tải đầu tiên của mỗi chiến dịch và ở mọi dòng từ ngưỡng duyệt trở lên.
+          còn chờ đội tài chính duyệt cho đến khi chiến dịch có dòng đầu tiên được duyệt, và ở mọi dòng từ ngưỡng duyệt
+          trở lên.
         </p>
       }
     >
@@ -353,7 +354,7 @@ function ReviewThreshold({ threshold }: { threshold: number | null }) {
     <AdminSection
       id="review-threshold"
       title="Ngưỡng duyệt sao kê"
-      lead="Dòng sao kê do người tổ chức tự tải lên có số tiền (vào hoặc ra) từ ngưỡng này trở lên chờ đội tài chính duyệt trước khi được ghi. Lần tải đầu tiên của mỗi chiến dịch luôn chờ duyệt, dù số tiền nhỏ."
+      lead="Dòng sao kê do người tổ chức tự tải lên có số tiền (vào hoặc ra) từ ngưỡng này trở lên chờ đội tài chính duyệt trước khi được ghi. Khi chiến dịch chưa có dòng sao kê nào được duyệt, mọi dòng do người tổ chức tải lên đều chờ duyệt, dù số tiền nhỏ."
     >
       {threshold === null ? (
         <Callout tone="warning">Chưa đọc được ngưỡng duyệt. Hãy tải lại trang sau.</Callout>
@@ -373,7 +374,7 @@ function ReviewThreshold({ threshold }: { threshold: number | null }) {
               inputMode="numeric"
               required
               maxLength={20}
-              defaultValue={threshold}
+              defaultValue={threshold.toLocaleString("vi-VN")}
             />
           </div>
           <NoteField id="review-threshold-note" placeholder="Ghi chú bắt buộc: lý do đổi ngưỡng" />

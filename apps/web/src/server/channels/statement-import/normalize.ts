@@ -199,10 +199,22 @@ function period(parsed: ParsedStatement, now: Date) {
  * export only when it covers today alone. A parser that states no coverage
  * is refused.
  */
-function assertFullStatement(parsed: ParsedStatement, from: string | null, to: string | null, now: Date): void {
+function assertFullStatement(
+  parsed: ParsedStatement,
+  from: string | null,
+  to: string | null,
+  exportedAt: Date | null,
+  now: Date
+): void {
   const today = vnDay(now)
   const coverage: unknown = parsed.coverage
   if (coverage === "full") return
+  // A partial export of today is staged as ending early only while it was
+  // produced that day: a print time after midnight would make the database
+  // take the day as complete.
+  if (to !== null && exportedAt !== null && exportedAt.getTime() >= vnMidnight(to) + DAY_MS) {
+    throw new StatementImportError("STATEMENT_PARTIAL_EXPORT")
+  }
   if (coverage === "ends_early" && to === today) return
   if (coverage === "partial" && from === today && to === today) return
   throw new StatementImportError("STATEMENT_PARTIAL_EXPORT")
@@ -222,7 +234,7 @@ export function normalizeStatement(
   assertSupportedFormat(format)
   const stable = format.hasStableRowId
   const { from, to, exportedAt } = period(parsed, now)
-  assertFullStatement(parsed, from, to, now)
+  assertFullStatement(parsed, from, to, exportedAt, now)
   if (!stable && (from === null || to === null)) throw new StatementImportError("STATEMENT_PERIOD_REQUIRED")
   if (!Array.isArray(parsed.rows) || parsed.rows.length === 0 || parsed.rows.length > MAX_ROWS) {
     throw new StatementImportError("STATEMENT_ROWS_INVALID")

@@ -79,9 +79,9 @@ export default async function StatementsPage() {
           <>
             {threshold !== null && (
               <p className="mb-4 text-sm text-muted">
-                Sao kê bạn tải cho tài khoản của mình: lần tải đầu tiên của mỗi chiến dịch, và mọi giao dịch từ{" "}
-                <span className="font-semibold text-fg tabular-nums">{formatVnd(threshold)}</span> trở lên, chờ đội tài
-                chính của Give đối chiếu với ngân hàng rồi mới được ghi.
+                Với tài khoản của bạn, giao dịch chỉ được ghi sau khi đội tài chính của Give đối chiếu với ngân hàng:
+                mọi dòng khi chiến dịch chưa có dòng sao kê nào được duyệt, và mọi giao dịch từ{" "}
+                <span className="font-semibold text-fg tabular-nums">{formatVnd(threshold)}</span> trở lên.
               </p>
             )}
             <UploadForm action={uploadStatement} accounts={choices} maxBytes={MAX_UPLOAD_BYTES} />
