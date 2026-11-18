@@ -7,6 +7,7 @@ import {
   canEditTiers,
   canRetireTier,
   deliveryMonthInput,
+  listCampaignTiers,
   minAmountLabel,
   moveTier,
   pledgeHref,
@@ -86,9 +87,11 @@ describe("editor rules", () => {
 })
 
 describe("tier display", () => {
-  it("labels slots left, sold out and unlimited", () => {
+  it("labels slots left, sold out (clamping negative remainingSlots to 0) and unlimited", () => {
     expect(quantityLabel(tier({ quantity_limit: 10, quantity_claimed: 7 }))).toBe("Còn 3/10 suất")
     expect(quantityLabel(tier({ quantity_limit: 10, quantity_claimed: 10 }))).toBe("Hết suất")
+    expect(remainingSlots(tier({ quantity_limit: 10, quantity_claimed: 12 }))).toBe(0)
+    expect(quantityLabel(tier({ quantity_limit: 10, quantity_claimed: 12 }))).toBe("Hết suất")
     expect(quantityLabel(tier())).toBe("Không giới hạn số suất")
     expect(remainingSlots(tier())).toBeNull()
   })
@@ -98,11 +101,46 @@ describe("tier display", () => {
     expect(deliveryMonthInput(null)).toBe("")
   })
 
-  it("formats the minimum and links the pledge flow with the tier", () => {
+  it("formats the minimum and URL-encodes both slug and tierId in pledgeHref", () => {
     expect(minAmountLabel(200_000)).toMatch(/^Từ 200\.000/)
     expect(pledgeHref("ao-thun-abcde", "a0000000-0000-4000-8000-000000000001")).toBe(
       "/campaigns/ao-thun-abcde/pledge?tier=a0000000-0000-4000-8000-000000000001"
     )
+    expect(pledgeHref("du-an/co dau?x=1", "tier id+1")).toBe(
+      `/campaigns/${encodeURIComponent("du-an/co dau?x=1")}/pledge?tier=${encodeURIComponent("tier id+1")}`
+    )
+  })
+})
+
+describe("listCampaignTiers", () => {
+  it("reads every tier (including retired) of one campaign from reward_tiers in sort_order, id order", async () => {
+    const calls: Call[] = []
+    const rows = [
+      tier({ id: "t1", sort_order: 1, status: "active" }),
+      tier({ id: "t2", sort_order: 2, status: "retired", retired_at: "2026-11-05T00:00:00Z" }),
+    ]
+    const db = fakeDb(() => ({ data: rows }), calls)
+
+    expect(await listCampaignTiers(db as never, CAMPAIGN)).toEqual(rows)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].target).toBe("reward_tiers")
+    expect(op(calls[0], "eq")).toEqual(["campaign_id", CAMPAIGN])
+    const selected = String(op(calls[0], "select")?.[0] ?? "")
+    expect(selected).not.toContain("*")
+    expect(selected).toContain("status")
+    expect(selected).toContain("retired_at")
+    expect(calls[0].ops.filter(([n]) => n === "order").map(([, c]) => c)).toEqual(["sort_order", "id"])
+  })
+
+  it("returns an empty array when data is null and rethrows database errors", async () => {
+    const emptyDb = fakeDb(() => ({ data: null }))
+    expect(await listCampaignTiers(emptyDb as never, CAMPAIGN)).toEqual([])
+
+    const failingDb = fakeDb(() => ({ error: { code: "42501", message: "permission denied" } }))
+    await expect(listCampaignTiers(failingDb as never, CAMPAIGN)).rejects.toEqual({
+      code: "42501",
+      message: "permission denied",
+    })
   })
 })
 

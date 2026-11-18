@@ -18,10 +18,12 @@ export function RecentSupporters({
 }: {
   slug: string
   rows: readonly StatementRow[]
-  /** All supporters of the campaign, for the "see all" link. */
-  count: number
+  /** All supporters of the campaign, for the "see all" link; omitted or null when the count is hidden. */
+  count?: number | null
 }) {
-  const donations = rows.filter((row) => row.direction === "in" && row.matched).slice(0, RECENT_SUPPORTERS)
+  const donations = rows
+    .filter((row) => row.direction === "in" && row.matched && !row.own_transfer_label && !row.return_of)
+    .slice(0, RECENT_SUPPORTERS)
   if (donations.length === 0) return null
   return (
     <section aria-labelledby="recent-supporters-heading">
@@ -40,7 +42,7 @@ export function RecentSupporters({
         ))}
       </ul>
       <Link href={statementHref(slug, "in")} className="mt-2 inline-flex min-h-11 items-center text-sm link">
-        {count > 0 ? `Xem tất cả ${count} người ủng hộ` : "Xem tất cả lượt ủng hộ"}
+        {count != null && count > 0 ? `Xem tất cả ${count} người ủng hộ` : "Xem tất cả lượt ủng hộ"}
       </Link>
     </section>
   )

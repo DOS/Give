@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import Image from "next/image"
 import Link from "next/link"
+import { redirect } from "next/navigation"
 import { Suspense } from "react"
 
 import { StatusBadge, TypeBadge } from "@/components/badges"
@@ -15,6 +16,7 @@ import { isPublicStatus, listMyCampaigns } from "@/lib/campaigns"
 import { privateCoverUrl } from "@/lib/cover-urls"
 import { formatDate, formatVnd } from "@/lib/format"
 import { dbAs } from "@/lib/supabase"
+import { isSessionRejected } from "@/server/contributions"
 
 import { MePage } from "../_components/MePage"
 
@@ -36,7 +38,13 @@ export default async function MyCampaignsPage() {
 }
 
 async function CampaignList({ session }: { session: Session }) {
-  const campaigns = await listMyCampaigns(dbAs(session.accessToken), session.user.id)
+  let campaigns
+  try {
+    campaigns = await listMyCampaigns(dbAs(session.accessToken), session.user.id)
+  } catch (error) {
+    if (isSessionRejected(error)) redirect(`/auth/login?return_path=${encodeURIComponent("/me/campaigns")}`)
+    throw error
+  }
 
   if (campaigns.length === 0) {
     return (
@@ -48,57 +56,64 @@ async function CampaignList({ session }: { session: Session }) {
 
   return (
     <ul className="divide-y divide-border card">
-      {campaigns.map((campaign) => (
-        <li key={campaign.id} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-6">
-          <div className="flex min-w-0 flex-1 gap-4">
-            <div className="relative hidden aspect-[16/9] w-32 shrink-0 overflow-hidden rounded bg-surface sm:block">
-              {campaign.cover?.storage_path ? (
-                <Image
-                  src={privateCoverUrl(campaign.cover.storage_path)}
-                  unoptimized
-                  alt=""
-                  fill
-                  sizes="128px"
-                  className="object-cover"
-                />
-              ) : (
-                <CoverPlaceholder type={campaign.type} />
-              )}
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <TypeBadge type={campaign.type} />
-                <StatusBadge status={campaign.status} />
+      {campaigns.map((campaign) => {
+        const reviewNote = campaign.review_note?.trim()
+        return (
+          <li key={campaign.id} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-6">
+            <div className="flex min-w-0 flex-1 gap-4">
+              <div className="relative hidden aspect-[16/9] w-32 shrink-0 overflow-hidden rounded bg-surface sm:block">
+                {campaign.cover?.storage_path ? (
+                  <Image
+                    src={privateCoverUrl(campaign.cover.storage_path)}
+                    unoptimized
+                    alt=""
+                    fill
+                    sizes="128px"
+                    className="object-cover"
+                  />
+                ) : (
+                  <CoverPlaceholder type={campaign.type} />
+                )}
               </div>
-              <Link
-                href={`/me/campaigns/${campaign.id}`}
-                className="mt-2 block text-h3 break-words text-fg hover:text-primary hover:underline"
-              >
-                {campaign.title}
-              </Link>
-              <p className="mt-1 text-sm text-muted">
-                Mục tiêu <span className="font-semibold text-fg tabular-nums">{formatVnd(campaign.goal_amount)}</span> ·
-                Tạo ngày {formatDate(campaign.created_at)}
-              </p>
-              {campaign.status === "changes_requested" && campaign.review_note && (
-                <p className="mt-2 text-sm font-medium break-words text-warning">
-                  Cần sửa: <ContactText text={campaign.review_note} />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <TypeBadge type={campaign.type} />
+                  <StatusBadge status={campaign.status} />
+                </div>
+                <h2 className="mt-2 text-h3 break-words">
+                  <Link href={`/me/campaigns/${campaign.id}`} className="text-fg hover:text-primary hover:underline">
+                    {campaign.title}
+                  </Link>
+                </h2>
+                <p className="mt-1 text-sm text-muted">
+                  Mục tiêu <span className="font-semibold text-fg tabular-nums">{formatVnd(campaign.goal_amount)}</span>{" "}
+                  · Tạo ngày {formatDate(campaign.created_at)}
                 </p>
-              )}
+                {(campaign.status === "changes_requested" || campaign.status === "suspended") && reviewNote && (
+                  <p
+                    className={`mt-2 max-w-[68ch] text-sm font-medium break-words whitespace-pre-line ${
+                      campaign.status === "suspended" ? "text-danger" : "text-warning"
+                    }`}
+                  >
+                    {campaign.status === "suspended" ? "Lý do tạm dừng: " : "Cần sửa: "}
+                    <ContactText text={reviewNote} />
+                  </p>
+                )}
+              </div>
             </div>
-          </div>
-          <div className="flex flex-wrap gap-3 sm:shrink-0">
-            {isPublicStatus(campaign.status) && (
-              <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary">
-                Xem trang
+            <div className="flex flex-wrap gap-3 sm:shrink-0">
+              {isPublicStatus(campaign.status) && (
+                <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary">
+                  Xem trang<span className="sr-only">{`: ${campaign.title}`}</span>
+                </ButtonLink>
+              )}
+              <ButtonLink href={`/me/campaigns/${campaign.id}`} variant="secondary">
+                Quản lý<span className="sr-only">{`: ${campaign.title}`}</span>
               </ButtonLink>
-            )}
-            <ButtonLink href={`/me/campaigns/${campaign.id}`} variant="secondary">
-              Quản lý
-            </ButtonLink>
-          </div>
-        </li>
-      ))}
+            </div>
+          </li>
+        )
+      })}
     </ul>
   )
 }
