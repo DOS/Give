@@ -61,35 +61,60 @@ export function dateCell(value: Date): LocalDate {
 export const MAX_SHEET_ROWS = 20000
 export const MAX_SHEET_COLUMNS = 100
 
-const NAME = /[\w.:-]*/y
-const ATTRIBUTE = /(?:^|\s)(?:[A-Za-z_][\w.-]*:)?(r|t|ref)\s*=\s*(?:"([^"]*)"|'([^']*)')/g
+const TAG_NAME = /^[A-Za-z_][\w.:-]*/
+const ATTRIBUTE = /\s+([A-Za-z_][\w.:-]*)\s*=\s*(?:"([^"<>]*)"|'([^'<>]*)')/y
+const CLOSING_TAG = /^\/[A-Za-z_][\w.:-]*$/
 const SHEET_TAGS = new Set(["row", "c", "dimension"])
 
+function local(name: string): string {
+  return name.slice(name.lastIndexOf(":") + 1)
+}
+
+function malformed(): SheetReadError {
+  return new SheetReadError("workbook XML outside the plain form Excel writes")
+}
+
 /**
- * Every start tag named row, c or dimension (namespace prefix dropped, as
- * the reader drops it) with its attribute text, in one pass over the XML:
- * each character is read once, quotes are honoured, so no input makes it
- * slow. Tags inside comments or CDATA are included, which only over-checks.
+ * Every start tag of a workbook XML part with its attributes, read
+ * strictly: after the "<?xml …?>" prolog, the part may hold only plain
+ * elements, each tag running to the first ">" with no "<" in it, and
+ * attributes written name="value" or name='value'. Comments, CDATA,
+ * processing instructions, unquoted or unbalanced attributes are refused,
+ * so this scan and the reader's parser can never disagree on where a tag
+ * is or what it holds (Excel writes none of them). Namespace prefixes are
+ * dropped from names, as the reader drops them. One pass, linear.
  */
-function* sheetTags(xml: string): Generator<[string, string]> {
-  let i = xml.indexOf("<")
-  while (i >= 0) {
-    NAME.lastIndex = i + 1
-    NAME.exec(xml)
-    const nameEnd = NAME.lastIndex
-    const name = xml.slice(i + 1, nameEnd)
-    let end = nameEnd
-    let quote = ""
-    for (; end < xml.length; end++) {
-      const c = xml[end]
-      if (quote) {
-        if (c === quote) quote = ""
-      } else if (c === '"' || c === "'") quote = c
-      else if (c === ">") break
+function* xmlTags(xml: string): Generator<[string, [string, string][]]> {
+  let i = xml.charCodeAt(0) === 0xfeff ? 1 : 0
+  if (xml.startsWith("<?xml", i)) {
+    const end = xml.indexOf("?>", i)
+    if (end < 0) throw malformed()
+    i = end + 2
+  }
+  for (;;) {
+    const open = xml.indexOf("<", i)
+    if (open < 0) return
+    const close = xml.indexOf(">", open)
+    if (close < 0) throw malformed()
+    const inner = xml.slice(open + 1, close)
+    if (inner.includes("<")) throw malformed()
+    i = close + 1
+    if (inner.startsWith("/")) {
+      if (!CLOSING_TAG.test(inner.trimEnd())) throw malformed()
+      continue
     }
-    const local = name.slice(name.lastIndexOf(":") + 1)
-    if (SHEET_TAGS.has(local) && /^[\s/>]?$/.test(xml.charAt(nameEnd))) yield [local, xml.slice(nameEnd, end)]
-    i = xml.indexOf("<", end + 1)
+    const name = TAG_NAME.exec(inner)?.[0]
+    if (name === undefined) throw malformed()
+    const attributes: [string, string][] = []
+    ATTRIBUTE.lastIndex = name.length
+    let at = name.length
+    for (let match = ATTRIBUTE.exec(inner); match; match = ATTRIBUTE.exec(inner)) {
+      attributes.push([match[1], match[2] ?? match[3]])
+      at = ATTRIBUTE.lastIndex
+    }
+    const rest = inner.slice(at).trim()
+    if (rest !== "" && rest !== "/") throw malformed()
+    yield [local(name), attributes]
   }
 }
 
@@ -109,23 +134,27 @@ function checkAddress(address: string): void {
 
 /**
  * Checks the XML of every part of a workbook before the reader parses it:
- * at most MAX_SHEET_ROWS rows, every row and cell address within the
- * bounds, a `<dimension>` within them, and no date (`t="d"`) or error
- * (`t="e"`) cells. A date cell holds a zoneless ISO text the reader parses
- * in the server's time zone; an error cell (#N/A, #REF!) would silently
- * read as empty and could hide a donation code. The scan matches more than
- * the XML parser would (tags inside comments, say), which can only refuse
- * a file, never let one through.
+ * the plain form of `xmlTags`, at most MAX_SHEET_ROWS rows, every row and
+ * cell address within the bounds, a `<dimension>` within them, and no date
+ * (`t="d"`) or error (`t="e"`) cells. A date cell holds a zoneless ISO text
+ * the reader parses in the server's time zone; an error cell (#N/A, #REF!)
+ * would silently read as empty and could hide a donation code.
  */
 export function checkSheetXml(xml: string): void {
   let rows = 0
-  for (const [tag, attributes] of sheetTags(xml)) {
+  for (const [tag, attributes] of xmlTags(xml)) {
+    if (!SHEET_TAGS.has(tag)) continue
+    // The reader keys attributes by name without prefix, so "x:r" is "r";
+    // a name given twice could be read either way, so it is refused.
     const values = new Map<string, string>()
-    for (const [, name, double, single] of attributes.matchAll(ATTRIBUTE)) {
-      const value = double ?? single
+    for (const [name, value] of attributes) {
+      const key = local(name)
+      if (values.has(key)) throw malformed()
+      values.set(key, value)
+    }
+    for (const key of ["r", "t", "ref"]) {
       // The reader decodes entities; real files never put one in these.
-      if (value.includes("&")) throw new SheetReadError("entity in a cell address")
-      values.set(name, value)
+      if (values.get(key)?.includes("&")) throw new SheetReadError("entity in a cell address")
     }
     if (tag === "row") {
       rows++

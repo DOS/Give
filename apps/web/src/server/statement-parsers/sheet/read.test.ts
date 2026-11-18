@@ -90,6 +90,21 @@ describe("readGrid refuses worksheets larger than a statement, before the reader
     ],
     ["a date cell stored as text", `<row r="1"><c r="A1" t="d"><v>2026-11-17T03:00:00</v></c></row>`],
     ["an error cell", `<row r="1"><c r="A1" t="e"><v>#N/A</v></c></row>`],
+    // Shapes the reader and a looser scan would read differently.
+    ["a prefixed row number before a plain one", `<row x:r="60000" r="2"></row>`],
+    [
+      "a prefixed cell address before a plain one",
+      `<row r="1"><c x:r="XFD1" r="A1" t="inlineStr"><is><t>x</t></is></c></row>`,
+    ],
+    [
+      "a prefixed date type before a plain one",
+      `<row r="1"><c r="A1" x:t="d" t="n"><v>2026-11-02T09:00:00</v></c></row>`,
+    ],
+    ["an unbalanced quote hiding later tags", `<foo a='b></foo><row r="60000"></row>`],
+    ["a comment", `<!-- it's --><row r="1">${'<c r="A1"/>'}</row>`],
+    ["CDATA", `<row r="1"><c r="A1" t="inlineStr"><is><t><![CDATA[x]]></t></is></c></row>`],
+    ["a processing instruction", `<?x y?><row r="1"></row>`],
+    ["an unquoted attribute", `<row r=1></row>`],
   ])("refuses %s", async (_, sheetData) => {
     await expect(readGrid(xlsxFromSheetData(sheetData))).rejects.toBeInstanceOf(SheetReadError)
   })
@@ -101,8 +116,14 @@ describe("readGrid refuses worksheets larger than a statement, before the reader
 
   it("scans hostile XML in linear time", () => {
     const started = performance.now()
-    expect(() => checkSheetXml('<c a="'.repeat(200000))).not.toThrow()
-    expect(() => checkSheetXml("<".repeat(1000000))).not.toThrow()
+    for (const xml of [
+      '<c a="'.repeat(200000),
+      "<".repeat(1000000),
+      `<row${" ".repeat(1000000)}x>`,
+      `<row r="1"${" r".repeat(300000)}>`,
+    ]) {
+      expect(() => checkSheetXml(xml)).toThrow(SheetReadError)
+    }
     expect(performance.now() - started).toBeLessThan(2000)
   })
 })
