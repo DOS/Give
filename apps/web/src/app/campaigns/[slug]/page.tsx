@@ -68,14 +68,36 @@ const loadCampaign = cache(
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const loaded = await loadCampaign((await params).slug)
-  if (!loaded) return { title: "Không tìm thấy" }
+  if (!loaded) {
+    return {
+      title: "Không tìm thấy",
+      robots: { index: false, follow: false },
+    }
+  }
   const { campaign, preview } = loaded
+  const description = campaign.summary || undefined
+  const unindexed = preview || campaign.status === "suspended"
+  if (unindexed) {
+    return {
+      title: campaign.title,
+      ...(description ? { description } : {}),
+      robots: { index: false, follow: false },
+    }
+  }
+  const canonicalPath = `/campaigns/${encodeURIComponent(campaign.slug)}`
   return {
     title: campaign.title,
-    description: campaign.summary ?? undefined,
-    robots: preview ? { index: false, follow: false } : undefined,
-    openGraph:
-      campaign.cover?.storage_path && !preview ? { images: [publicCoverUrl(campaign.cover.storage_path)] } : undefined,
+    ...(description ? { description } : {}),
+    alternates: { canonical: canonicalPath },
+    openGraph: {
+      type: "website",
+      siteName: "Give",
+      locale: "vi_VN",
+      title: campaign.title,
+      ...(description ? { description } : {}),
+      url: canonicalPath,
+      ...(campaign.cover?.storage_path ? { images: [publicCoverUrl(campaign.cover.storage_path)] } : {}),
+    },
   }
 }
 
