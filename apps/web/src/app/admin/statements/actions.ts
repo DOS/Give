@@ -173,6 +173,6 @@ export async function restoreCampaignTrust(
 
   revalidatePath("/admin/statements")
   return done(
-    "Đã khôi phục tin cậy của chiến dịch. Các lần tải sau của người tổ chức lại theo ngưỡng duyệt như trước; một dòng bị từ chối nữa sẽ chặn lại."
+    "Đã khôi phục tin cậy của chiến dịch. Nếu chiến dịch đã có lần tải được duyệt trọn vẹn, các lần tải sau của người tổ chức lại theo ngưỡng duyệt; nếu chưa, lần tải tiếp theo vẫn chờ duyệt. Một dòng bị từ chối nữa sẽ chặn lại."
   )
 }

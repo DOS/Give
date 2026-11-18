@@ -358,15 +358,17 @@ function QueueCard({
  * Campaigns whose trust a rejected row blocks (DOS/Give#57): every organizer
  * upload of them waits for review until finance restores the trust.
  */
-function TrustBlocks({ blocks }: { blocks: TrustBlock[] }) {
+function TrustBlocks({ blocks }: { blocks: TrustBlock[] | null }) {
   return (
     <AdminSection
       id="trust-blocks"
       title="Chiến dịch bị chặn tin cậy sao kê"
-      count={blocks.length}
+      count={blocks?.length}
       lead="Một dòng sao kê do người tổ chức tải lên đã bị từ chối, nên mọi lần tải sau của chiến dịch đều chờ đội tài chính duyệt. Chỉ khôi phục khi đã xác minh với người tổ chức và sao kê thật của ngân hàng."
     >
-      {blocks.length === 0 ? (
+      {blocks === null ? (
+        <Callout tone="warning">Chưa đọc được danh sách chiến dịch bị chặn. Hãy tải lại trang sau.</Callout>
+      ) : blocks.length === 0 ? (
         <EmptyState title="Không có chiến dịch nào bị chặn." />
       ) : (
         <ItemList>

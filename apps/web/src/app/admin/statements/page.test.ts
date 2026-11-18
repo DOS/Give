@@ -19,7 +19,7 @@ const state = vi.hoisted(() => ({
     dailyLimitVnd: number
   } | null,
   queue: [] as unknown[],
-  blocks: [] as unknown[],
+  blocks: [] as unknown[] | null,
 }))
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
@@ -178,5 +178,12 @@ describe("AdminStatementsPage finance review (DOS/Give#57)", () => {
     expect(doc.querySelector('section[aria-labelledby="trust-blocks"]')?.textContent).toContain(
       "Không có chiến dịch nào bị chặn"
     )
+  })
+
+  it("says the blocks list is unavailable when it cannot be read, not that none is blocked", async () => {
+    state.blocks = null
+    const text = (await render()).querySelector('section[aria-labelledby="trust-blocks"]')?.textContent ?? ""
+    expect(text).toContain("Chưa đọc được danh sách")
+    expect(text).not.toContain("Không có chiến dịch nào bị chặn")
   })
 })

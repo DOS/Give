@@ -340,7 +340,7 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
   })
 
   it.each<[string, XlsxCell[], string]>([
-    ["an empty cell then a time", [null, "14:30"], "ends_early"],
+    ["an empty cell then a time", [null, "14:30"], "partial"],
     ["a dash then a time", ["-", "14:30"], "partial"],
     ["a time zone then a time", ["(GMT+7)", "14:30"], "partial"],
     ["a cell lúc 14:30", ["lúc 14:30"], "partial"],
@@ -438,6 +438,55 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     expect(parsed.coverage).toBe(coverage)
   })
 
+  // Review of #245: any time left on a row above the table bounds the export.
+  it.each<[string, XlsxCell[], string]>([
+    ["a start ending in :00 next to 23:59", ["Giờ/Time: 20:00 - 23:59"], "partial"],
+    ["10:00 - 23:59 after the to-date", ["10:00 - 23:59"], "partial"],
+    ["From 08:00 to 14:30", ["From 08:00 to 14:30"], "partial"],
+    ["Ca 08:00 - 14:30", ["Ca 08:00 - 14:30"], "partial"],
+    ["Hours: 08:00-14:30", ["Hours: 08:00-14:30"], "partial"],
+    ["Thời điểm: 08:00 - 14:30", ["Thời điểm: 08:00 - 14:30"], "partial"],
+    ["a whole day with an exception", ["00:00 - 23:59 trừ 12:00-13:00"], "partial"],
+    ["08:00 -> 14:30", ["08:00 -> 14:30"], "partial"],
+    ["08:00 till 14:30", ["08:00 till 14:30"], "partial"],
+    ["hour-only times", ["Giờ/Time: 8h - 14h"], "partial"],
+    ["8 giờ đến 14 giờ", ["Khung giờ: 8 giờ đến 14 giờ"], "partial"],
+    [
+      "a colon print label then a time cell",
+      ["Ngày giờ in/Printed on: 18/11/2026 08:45", "Giờ/Time: 08:00 - 14:30"],
+      "partial",
+    ],
+    ["an English 'in' before the range", ["Giờ/Time (in GMT+7): 08:00 - 14:30"], "partial"],
+    ["a separate whole-day range after the to-date", ["00:00 - 23:59"], "full"],
+    ["a 12-hour whole-day range", ["12:00 SA - 11:59 CH"], "full"],
+    ["a print time split over two cells", ["Ngày giờ in/Printed on", "18/11/2026", "08:45"], "full"],
+    ["an export time with a comma", ["Ngày giờ xuất/Exported at", "18/11/2026, 08:45"], "full"],
+    ["an export time written time first", ["Ngày giờ xuất/Exported at", "08:45 18/11/2026"], "full"],
+    ["an amount", ["1.000.000"], "full"],
+  ])("reads the period row with %s", async (_, extra, coverage) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", ...extra],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe(coverage)
+  })
+
+  it.each<[string, XlsxCell[], string]>([
+    ["a bare range", ["08:00 - 14:30"], "partial"],
+    ["Hours and a range", ["Hours", "08:00 - 14:30"], "partial"],
+    ["Timeframe: 08:00-14:30", ["Timeframe: 08:00-14:30"], "partial"],
+    ["8h-14h", ["Giờ/Time", "8h-14h"], "partial"],
+    ["Khung giờ 10:00 - 23:59", ["Khung giờ", "10:00 - 23:59"], "partial"],
+    ["an enquiry time and an amount", ["Số dư tại thời điểm truy vấn/Balance at enquiry time", "1.000.000"], "full"],
+  ])("reads a row above the table with %s", async (_, extra, coverage) => {
+    const parsed = await tcbBusinessParser.parse(statement({ top: [...withBalances("10,000", "11,000"), extra] }))
+    expect(parsed.coverage).toBe(coverage)
+  })
+
   it.each<[string, XlsxCell[], string]>([
     ["Khoảng thời gian with a range", ["Khoảng thời gian/Time range", "08:00 - 14:30"], "partial"],
     ["Khung giờ with a range", ["Khung giờ", "08:00 → 14:30"], "partial"],
@@ -489,7 +538,7 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     ["a period heading", ["Thời gian/Time period"]],
     ["an account name with SA", ["QUY TU THIEN SA PA"]],
     ["an account name with CH", ["CONG TY CH 3 MIEN"]],
-    ["an address with 12h45", ["12h45 Lê Lợi"]],
+    ["an address", ["Số 12 Lê Lợi, Hà Nội"]],
     ["an amount with separators", ["1.000.000"]],
   ])("keeps a full statement full when the period row also carries %s", async (_, extra) => {
     const parsed = await tcbBusinessParser.parse(

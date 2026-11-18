@@ -332,4 +332,13 @@ describe("restoreCampaignTrust (DOS/Give#57)", () => {
     state.serviceHandler = () => ({ error: { code: "P0001", message: "GIVE_TRUST_NOT_REVOKED" } })
     expect((await restoreCampaignTrust(CAMPAIGN, null, form({ note: "x" })))?.message).toContain("không bị chặn")
   })
+
+  it("refuses a user who is not finance or admin, and a note over 1000 characters, before any call", async () => {
+    state.userHandler = (call) => (call.target === "rpc:is_admin" ? { data: false } : undefined)
+    expect((await restoreCampaignTrust(CAMPAIGN, null, form({ note: "x" })))?.message).toContain(
+      "Chỉ nhân viên tài chính"
+    )
+    expect((await restoreCampaignTrust(CAMPAIGN, null, form({ note: "x".repeat(1001) })))?.ok).toBe(false)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
 })

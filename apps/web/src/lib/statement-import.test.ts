@@ -629,7 +629,7 @@ describe("listTrustBlocks (DOS/Give#57)", () => {
     expect(calls[0].target).toBe("rpc:statement_trust_blocks")
   })
 
-  it("gives none when the list cannot be read", async () => {
-    expect(await listTrustBlocks(fakeDb(() => ({ error: { code: "PGRST202" } })) as unknown as Db)).toEqual([])
+  it("gives null, not an empty list, when the list cannot be read", async () => {
+    expect(await listTrustBlocks(fakeDb(() => ({ error: { code: "PGRST202" } })) as unknown as Db)).toBeNull()
   })
 })

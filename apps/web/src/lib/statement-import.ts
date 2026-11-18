@@ -95,14 +95,15 @@ export interface TrustBlock {
 
 /**
  * Campaigns whose trust a rejection blocks, until finance restores it
- * (give.statement_trust_blocks: rows for finance/admin staff only). Empty
- * when it cannot be read (the database migration is not applied yet).
+ * (give.statement_trust_blocks: rows for finance/admin staff only). Null when
+ * it cannot be read (the database migration is not applied yet, an outage),
+ * so the page says so instead of "none blocked".
  */
-export async function listTrustBlocks(db: Db): Promise<TrustBlock[]> {
+export async function listTrustBlocks(db: Db): Promise<TrustBlock[] | null> {
   const { data, error } = await db.rpc("statement_trust_blocks")
   if (error) {
     console.error("statement_trust_blocks failed:", error.code ?? "unknown")
-    return []
+    return null
   }
   return ((data ?? []) as TrustBlock[]).map((row) => ({ ...row, rejected: Number(row.rejected) }))
 }
