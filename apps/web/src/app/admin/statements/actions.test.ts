@@ -305,10 +305,11 @@ describe("setReviewDailyLimit (DOS/Give#57)", () => {
 
 describe("restoreCampaignTrust (DOS/Give#57)", () => {
   const CAMPAIGN = "88888888-8888-4888-8888-888888888888"
+  const SEEN = "2026-11-18T02:00:00.123456+00:00"
 
   it("restores with the note, after a role check with the user's own token", async () => {
     state.serviceHandler = () => ({ data: { restored_at: "2026-11-18T03:00:00Z" } })
-    const result = await restoreCampaignTrust(CAMPAIGN, null, form({ note: "  Đã xác minh với ngân hàng  " }))
+    const result = await restoreCampaignTrust(CAMPAIGN, SEEN, null, form({ note: "  Đã xác minh với ngân hàng  " }))
     expect(result?.ok).toBe(true)
     expect(op(state.userCalls[0], "args")).toEqual([{ p_roles: ["finance", "admin"] }])
     expect(
@@ -316,29 +317,41 @@ describe("restoreCampaignTrust (DOS/Give#57)", () => {
         state.serviceCalls.find((c) => c.target === "rpc:restore_campaign_statement_trust"),
         "args"
       )?.[0]
-    ).toEqual({ p_actor_id: REVIEWER, p_campaign_id: CAMPAIGN, p_note: "Đã xác minh với ngân hàng" })
+    ).toEqual({
+      p_actor_id: REVIEWER,
+      p_campaign_id: CAMPAIGN,
+      p_note: "Đã xác minh với ngân hàng",
+      p_expected_last_rejected_at: SEEN,
+    })
   })
 
   it("needs a note and a campaign id, before any call", async () => {
-    expect((await restoreCampaignTrust(CAMPAIGN, null, form({ note: " " })))?.ok).toBe(false)
-    expect((await restoreCampaignTrust("nope", null, form({ note: "x" })))?.ok).toBe(false)
+    expect((await restoreCampaignTrust(CAMPAIGN, SEEN, null, form({ note: " " })))?.ok).toBe(false)
+    expect((await restoreCampaignTrust("nope", SEEN, null, form({ note: "x" })))?.ok).toBe(false)
     expect(state.serviceCalls).toHaveLength(0)
   })
 
   it("words the database's refusals", async () => {
     state.serviceHandler = () => ({ error: { code: "P0001", message: "GIVE_SELF_REVIEW" } })
-    const result = await restoreCampaignTrust(CAMPAIGN, null, form({ note: "x" }))
+    const result = await restoreCampaignTrust(CAMPAIGN, SEEN, null, form({ note: "x" }))
     expect(result?.message).toContain("chiến dịch do bạn tổ chức")
     state.serviceHandler = () => ({ error: { code: "P0001", message: "GIVE_TRUST_NOT_REVOKED" } })
-    expect((await restoreCampaignTrust(CAMPAIGN, null, form({ note: "x" })))?.message).toContain("không bị chặn")
+    expect((await restoreCampaignTrust(CAMPAIGN, SEEN, null, form({ note: "x" })))?.message).toContain("không bị chặn")
   })
 
   it("refuses a user who is not finance or admin, and a note over 1000 characters, before any call", async () => {
     state.userHandler = (call) => (call.target === "rpc:is_admin" ? { data: false } : undefined)
-    expect((await restoreCampaignTrust(CAMPAIGN, null, form({ note: "x" })))?.message).toContain(
+    expect((await restoreCampaignTrust(CAMPAIGN, SEEN, null, form({ note: "x" })))?.message).toContain(
       "Chỉ nhân viên tài chính"
     )
-    expect((await restoreCampaignTrust(CAMPAIGN, null, form({ note: "x".repeat(1001) })))?.ok).toBe(false)
+    expect((await restoreCampaignTrust(CAMPAIGN, SEEN, null, form({ note: "x".repeat(1001) })))?.ok).toBe(false)
     expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("says a newer rejection came in when the database refuses a stale restore", async () => {
+    state.serviceHandler = () => ({ error: { code: "P0001", message: "GIVE_TRUST_CHANGED" } })
+    expect((await restoreCampaignTrust(CAMPAIGN, SEEN, null, form({ note: "x" })))?.message).toContain(
+      "vừa bị từ chối thêm"
+    )
   })
 })

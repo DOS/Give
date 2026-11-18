@@ -152,12 +152,15 @@ async function setReviewSetting(
  */
 export async function restoreCampaignTrust(
   campaignId: string,
+  /** The latest rejection the staff member saw: a newer one refuses the restore (GIVE_TRUST_CHANGED). */
+  lastRejectedAt: string,
   _state: ActionResult,
   form: FormData
 ): Promise<ActionResult> {
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
   if (!isUuid(campaignId)) return fail(RESTORE_TRUST_MESSAGES.GIVE_CAMPAIGN_NOT_FOUND)
+  if (!Number.isFinite(Date.parse(lastRejectedAt))) return fail(RESTORE_TRUST_MESSAGES.GIVE_TRUST_CHANGED)
   const note = String(form.get("note") ?? "").trim()
   if (!note) return fail(RESTORE_TRUST_MESSAGES.GIVE_SETTING_NOTE_REQUIRED)
   if (note.length > 1000) return fail("Ghi chú tối đa 1.000 ký tự.")
@@ -167,7 +170,12 @@ export async function restoreCampaignTrust(
   if (role.data !== true) return fail(RESTORE_TRUST_MESSAGES.GIVE_NOT_ALLOWED)
 
   const { error } = await dbService()
-    .rpc("restore_campaign_statement_trust", { p_actor_id: session.user.id, p_campaign_id: campaignId, p_note: note })
+    .rpc("restore_campaign_statement_trust", {
+      p_actor_id: session.user.id,
+      p_campaign_id: campaignId,
+      p_note: note,
+      p_expected_last_rejected_at: lastRejectedAt,
+    })
     .single()
   if (error) return fail(dbErrorMessage(error, RESTORE_TRUST_MESSAGES))
 

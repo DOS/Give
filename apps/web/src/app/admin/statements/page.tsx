@@ -39,7 +39,7 @@ import {
   type TrustBlock,
   type StatementRowView,
 } from "@/lib/statement-import"
-import { dbAs } from "@/lib/supabase"
+import { dbAs, dbService } from "@/lib/supabase"
 
 import { AdminPage, AdminSection, DataTable, ItemActions, ItemCard, ItemList } from "../_components/ui"
 import { resolveStatementRow, restoreCampaignTrust, setReviewDailyLimit, setReviewThreshold } from "./actions"
@@ -62,7 +62,8 @@ export default async function AdminStatementsPage() {
     listResolvedRows(db),
     isStaff(db, ["admin"]),
     getReviewSettings(db),
-    listTrustBlocks(db),
+    // Finance/admin only: the page returned 404 to anyone else above.
+    listTrustBlocks(dbService(), session.user.id),
   ])
   const accountIds = queue.map((row) => row.batch.receiving_account_id)
   // Void candidates (not_a_transaction rows) are never offered (DOS/Give#78).
@@ -387,7 +388,7 @@ function TrustBlocks({ blocks }: { blocks: TrustBlock[] | null }) {
               </div>
               <ItemActions>
                 <ActionForm
-                  action={restoreCampaignTrust.bind(null, block.campaign_id)}
+                  action={restoreCampaignTrust.bind(null, block.campaign_id, block.last_rejected_at)}
                   confirm="Khôi phục tin cậy sao kê của chiến dịch này?"
                   className="space-y-4"
                 >

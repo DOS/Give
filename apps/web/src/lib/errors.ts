@@ -379,6 +379,8 @@ export const RESTORE_TRUST_MESSAGES: Record<string, string> = {
   GIVE_SELF_REVIEW:
     "Bạn không khôi phục được chiến dịch do bạn tổ chức hoặc gắn với tài khoản của bạn. Một nhân viên tài chính khác cần làm.",
   GIVE_TRUST_NOT_REVOKED: "Chiến dịch này không bị chặn tin cậy, không có gì để khôi phục. Hãy tải lại trang.",
+  GIVE_TRUST_CHANGED:
+    "Có dòng sao kê của chiến dịch vừa bị từ chối thêm sau khi bạn mở trang. Hãy tải lại trang, xem lại rồi mới khôi phục.",
   GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch.",
 }
 

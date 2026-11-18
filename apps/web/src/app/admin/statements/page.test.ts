@@ -34,7 +34,7 @@ vi.mock("@/lib/auth/session", () => ({
   requireSession: vi.fn(async () => ({ user: { id: VIEWER, email: null, name: null }, accessToken: "token" })),
   getSession: vi.fn(async () => null),
 }))
-vi.mock("@/lib/supabase", () => ({ dbAs: vi.fn(() => ({})) }))
+vi.mock("@/lib/supabase", () => ({ dbAs: vi.fn(() => ({})), dbService: vi.fn(() => ({})) }))
 vi.mock("@/lib/campaigns", async (original) => ({
   ...(await original<typeof import("@/lib/campaigns")>()),
   isStaff: vi.fn(async () => true),

@@ -625,11 +625,13 @@ describe("listTrustBlocks (DOS/Give#57)", () => {
       last_restored_at: null,
     }
     const db = fakeDb(() => ({ data: [row] }), calls) as unknown as Db
-    expect(await listTrustBlocks(db)).toEqual([{ ...row, rejected: 2 }])
+    expect(await listTrustBlocks(db, "11111111-1111-4111-8111-111111111111")).toEqual([{ ...row, rejected: 2 }])
     expect(calls[0].target).toBe("rpc:statement_trust_blocks")
+    expect(op(calls[0], "args")).toEqual([{ p_actor_id: "11111111-1111-4111-8111-111111111111" }])
   })
 
   it("gives null, not an empty list, when the list cannot be read", async () => {
-    expect(await listTrustBlocks(fakeDb(() => ({ error: { code: "PGRST202" } })) as unknown as Db)).toBeNull()
+    const failing = fakeDb(() => ({ error: { code: "PGRST202" } })) as unknown as Db
+    expect(await listTrustBlocks(failing, "11111111-1111-4111-8111-111111111111")).toBeNull()
   })
 })
