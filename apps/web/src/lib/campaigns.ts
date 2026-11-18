@@ -531,12 +531,10 @@ export async function getPublicOrganizer(db: Db, campaignId: string): Promise<Pu
   return rows[0] ?? null
 }
 
+const ORGANIZER_COLUMNS = "user_id, kind, legal_name, display_name, phone, verification_status, verified_at, created_at"
+
 export async function getOrganizer(db: Db, userId: string): Promise<Organizer | null> {
-  const { data, error } = await db
-    .from("organizers")
-    .select("user_id, kind, legal_name, display_name, phone, verification_status, verified_at, created_at")
-    .eq("user_id", userId)
-    .maybeSingle()
+  const { data, error } = await db.from("organizers").select(ORGANIZER_COLUMNS).eq("user_id", userId).maybeSingle()
   if (error) throw error
   return data as Organizer | null
 }
@@ -750,14 +748,21 @@ export async function listWaitingForAccount(db: Db): Promise<WaitingForAccount[]
     account_has_transactions: boolean
   }[]
   if (rows.length === 0) return []
-  const { data, error } = await managedCampaigns(db)
-    .select(`${CAMPAIGN_WITH_REFS}, organizer:organizers(user_id, kind, legal_name, display_name, verification_status)`)
-    .in(
-      "id",
-      rows.map((r) => r.campaign_id)
+  const ids = [...new Set(rows.map((r) => r.campaign_id))]
+  const byId = new Map<string, ReviewItem>()
+  const reads = await Promise.all(
+    chunks(ids, IDS_PER_REQUEST).map((chunk) =>
+      managedCampaigns(db)
+        .select(
+          `${CAMPAIGN_WITH_REFS}, organizer:organizers(user_id, kind, legal_name, display_name, verification_status)`
+        )
+        .in("id", chunk)
     )
-  if (error) throw error
-  const byId = new Map(((data ?? []) as ReviewItem[]).map((c) => [c.id, c]))
+  )
+  for (const read of reads) {
+    if (read.error) throw read.error
+    for (const campaign of (read.data ?? []) as ReviewItem[]) byId.set(campaign.id, campaign)
+  }
   return rows.flatMap((r) => {
     const campaign = byId.get(r.campaign_id)
     return campaign
@@ -767,16 +772,34 @@ export async function listWaitingForAccount(db: Db): Promise<WaitingForAccount[]
 }
 
 /**
- * Organizers who are not verified, oldest first (staff only under RLS).
- * Rejected ones stay listed so a moderator can verify them once fixed.
+ * Organizers who are not verified, actionable (`pending` / `unverified`)
+ * oldest-first ahead of `rejected` so rejected profiles never starve fresh
+ * organizers, using `rejected` only to fill remaining slots up to `limit`
+ * (staff only under RLS).
  */
 export async function listOrganizersToVerify(db: Db, limit = 50): Promise<Organizer[]> {
-  const { data, error } = await db
+  if (limit <= 0) return []
+  const actionable = await db
     .from("organizers")
-    .select("user_id, kind, legal_name, display_name, phone, verification_status, verified_at, created_at")
-    .in("verification_status", ["unverified", "pending", "rejected"])
+    .select(ORGANIZER_COLUMNS)
+    .in("verification_status", ["pending", "unverified"])
     .order("created_at", { ascending: true })
+    .order("user_id", { ascending: true })
     .limit(limit)
-  if (error) throw error
-  return (data ?? []) as Organizer[]
+  if (actionable.error) throw actionable.error
+  const pendingRows = (actionable.data ?? []) as Organizer[]
+  const remaining = limit - pendingRows.length
+  if (remaining <= 0) return pendingRows.slice(0, limit)
+
+  const rejected = await db
+    .from("organizers")
+    .select(ORGANIZER_COLUMNS)
+    .eq("verification_status", "rejected")
+    .order("created_at", { ascending: true })
+    .order("user_id", { ascending: true })
+    .limit(remaining)
+  if (rejected.error) throw rejected.error
+  const seen = new Set(pendingRows.map((o) => o.user_id))
+  const rejectedRows = ((rejected.data ?? []) as Organizer[]).filter((o) => !seen.has(o.user_id))
+  return [...pendingRows, ...rejectedRows].slice(0, limit)
 }

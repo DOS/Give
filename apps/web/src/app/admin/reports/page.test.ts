@@ -238,6 +238,15 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
     // 1. Live campaign with both open and awaiting reports: ask_organizer + dismiss + suspend; at most 1 primary button.
     const liveCard = cards[0]
     expect(liveCard.textContent).toContain("Trường học Vùng Cao")
+    expect(liveCard.querySelector('a[href="/campaigns/chien-dich-aaaa"]')?.textContent).toBe(
+      "Xem chiến dịch: Trường học Vùng Cao (mở thẻ mới)"
+    )
+    const liveNote = liveCard.querySelector(`textarea#note-${LIVE_ID}`)!
+    const liveHintId = liveNote.getAttribute("aria-describedby")!
+    expect(liveHintId).toBe(`note-hint-${LIVE_ID}`)
+    expect(liveCard.querySelector(`#${liveHintId}`)?.textContent).toBe(
+      "Người tổ chức chỉ nhận câu hỏi của bạn, không biết ai báo cáo hay nội dung người báo cáo viết."
+    )
     expect(liveCard.textContent).toContain("1 chờ xem xét · 1 chờ người tổ chức phản hồi")
     expect(liveCard.textContent).toContain("Đề nghị gửi giấy xác nhận bệnh viện.")
     expect(liveCard.querySelector('button[value="ask_organizer"]')?.textContent).toBe("Hỏi người tổ chức")
@@ -249,6 +258,9 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
     // 2. Closed give campaign (open report): neither suspend nor stop_payment_requests; explains why.
     const closedCard = cards[1]
     expect(closedCard.textContent).toContain("Chiến dịch Đã Đóng")
+    expect(closedCard.querySelector('a[href="/campaigns/chien-dich-cccc"]')?.textContent).toBe(
+      "Xem chiến dịch: Chiến dịch Đã Đóng (mở thẻ mới)"
+    )
     expect(closedCard.textContent).toContain("Chiến dịch đã kết thúc gây quỹ nên không còn tạm dừng được")
     expect(closedCard.querySelector('input[name="action"][value="suspend"]')).toBeNull()
     expect(closedCard.querySelector('input[name="action"][value="stop_payment_requests"]')).toBeNull()
@@ -256,6 +268,9 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
     // 3. Moderator's own campaign (open report): hides all forms and warns against self-review.
     const ownCard = cards[2]
     expect(ownCard.textContent).toContain("Chiến dịch Của Tôi")
+    expect(ownCard.querySelector('a[href="/campaigns/chien-dich-dddd"]')?.textContent).toBe(
+      "Xem chiến dịch: Chiến dịch Của Tôi (mở thẻ mới)"
+    )
     expect(ownCard.textContent).toContain("Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý")
     expect(ownCard.querySelectorAll("form")).toHaveLength(0)
 
@@ -263,6 +278,15 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
     // sorted after open campaigns, hides ask_organizer, shows stop_payment_requests with prefilled public_note.
     const backCard = cards[3]
     expect(backCard.textContent).toContain("Đèn bàn thủ công")
+    expect(backCard.querySelector('a[href="/campaigns/chien-dich-bbbb"]')?.textContent).toBe(
+      "Xem chiến dịch: Đèn bàn thủ công (mở thẻ mới)"
+    )
+    const backNote = backCard.querySelector(`textarea#note-${BACK_ID}`)!
+    const backHintId = backNote.getAttribute("aria-describedby")!
+    expect(backHintId).toBe(`note-hint-${BACK_ID}`)
+    expect(backCard.querySelector(`#${backHintId}`)?.textContent).toBe(
+      "Tất cả báo cáo đang mở đều đã được gửi câu hỏi cho người tổ chức."
+    )
     expect(backCard.textContent).toContain("(không ghi chi tiết)")
     expect(backCard.querySelector('button[value="ask_organizer"]')).toBeNull()
     expect(backCard.querySelector('button[value="dismiss"]')).not.toBeNull()
@@ -270,9 +294,12 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
     expect(backCard.querySelector('textarea[name="public_note"]')?.textContent).toBe("Tạm dừng để xác minh.")
     expect(backCard.querySelectorAll(".btn-primary")).toHaveLength(0)
 
-    // Resolved section: read-only summary with decision badge and moderator note.
+    // Resolved section: read-only summary with decision badge, contextualized campaign link, and moderator note.
     const resolvedSection = doc.querySelector('section[aria-labelledby="resolved"]')!
     expect(resolvedSection.textContent).toContain("Chiến dịch Đã Xử Lý")
+    expect(resolvedSection.querySelector('a[href="/campaigns/chien-dich-eeee"]')?.textContent).toBe(
+      "Xem chiến dịch: Chiến dịch Đã Xử Lý (mở thẻ mới)"
+    )
     expect(resolvedSection.textContent).toContain("Bác bỏ báo cáo")
     expect(resolvedSection.textContent).toContain("Chứng từ đầy đủ, không vi phạm.")
     expect(resolvedSection.querySelectorAll("form")).toHaveLength(0)
