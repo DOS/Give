@@ -499,6 +499,7 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
   it.each<[string, XlsxCell[][]]>([
     ["a zero fee total", [["Tổng phí/Total fees", "0.00"]]],
     ["a zero VAT total", [["Total VAT", "0.00"]]],
+    ["a total with its amount in the label cell", [["Tổng ghi có/Total credits: 1,500,000"]]],
     ["a credit total with decimals", [["Tổng ghi có/Total credits", "1,500,000.00"]]],
   ])("keeps a full statement full with %s after the table", async (_, bottom) => {
     const parsed = await tcbBusinessParser.parse(statement({ bottom }))
@@ -536,6 +537,7 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
       [],
     ],
     ["dotted times after a footer total", [], [["Tổng ghi có/Total credits", "1,000", "Lọc giờ", "08.00", "14.00"]]],
+    ["a time range in a total label's own cell", [], [["Tổng ghi có/Total credits: 1,000 (08:00 - 14:30)"]]],
   ])("reads %s as partial", async (_, top, bottom) => {
     const parsed = await tcbBusinessParser.parse(
       statement({ top: [...withBalances("10,000", "11,000"), ...top], bottom })
