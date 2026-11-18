@@ -6,11 +6,13 @@
 > design mapping in section 8 is a proposal. It does not change
 > `docs/Give-Technical-Design.md` beyond the note recording the switch (D8).
 >
-> **Blocker for the Techcombank plan:** Tingee does not send balance-change
-> webhooks for Techcombank accounts (section 4). Techcombank Business stays on
-> statement import (DOS/Give#231). The Tingee channel works only for
-> organizers whose receiving account is at one of the 16 banks Tingee connects
-> to.
+> **Techcombank:** Tingee does not send balance-change webhooks for
+> Techcombank accounts (section 4).
+>
+> **Decided (JOY, 2026-11-18, via the PO): keep Tingee for M2.** Tingee covers
+> organizers whose receiving account is at one of its 16 listed banks. Every
+> other bank, Techcombank included, stays on statement import. That covers
+> Give's Techcombank Business verification account (DOS/Give#46, #231).
 
 ## 1. Scope and method
 
@@ -519,26 +521,35 @@ which must change for `tingee` accounts once this rule exists:
   and nothing new is needed. This must be shown per bank with a real webhook
   and statement row of the same transfer. The `tcb-business` parser has
   `providerTxId: null`, but Techcombank is not a Tingee bank.
-- **No common id**, so statement rows stage without one. The rule below
-  pairs by amount, day and content, which is the fingerprinting that design
-  5.2 forbids as a transaction identity ("Fingerprint không được dùng làm
-  danh tính giao dịch"), and design test 2 assumes a shared transaction
-  number. It is therefore a **design change that needs a PO decision**. It
-  never creates or drops a transaction by itself: a unique pair only links
-  two sightings, and anything else goes to staff.
-  - An `in` row of a Tingee-linked account that matches **exactly one**
-    not-yet-paired Tingee transaction (same account, amount and direction;
-    booking day within ±1 day; the statement description contains the
-    Tingee `content`, or both contain the same Give reference code) becomes
-    `duplicate` of that transaction.
+- **No common id**, so statement rows stage without one. Pairing then uses
+  amount, day and content. Design 5.2 forbids that kind of match as a
+  transaction identity ("Fingerprint không được dùng làm danh tính giao
+  dịch"). **Decided (PO, 2026-11-18):** cross-source pairing is allowed only
+  as a **link between two records of the same transaction**:
+  - The link never creates a transaction, never drops one, and never changes
+    an amount.
+  - Any ambiguous pair goes to finance staff. Ambiguous means more than one
+    candidate, or a partial match. Ambiguous pairs are never linked
+    automatically.
+  - Each record keeps its own source-native identity: the Tingee API row's
+    id, or the statement row's identity. The pair is stored as a link
+    between the two; neither record takes the other's id.
+
+  How it applies:
+  - An `in` row of a Tingee-linked account may be linked to a Tingee
+    transaction only if it matches **exactly one** that is not yet paired:
+    same account, amount and direction; booking day within ±1 day; and the
+    statement description contains the Tingee `content`, or both contain the
+    same Give reference code.
   - Pairing is one-to-one and occurrence-aware, like the `group_key` rule in
     design 5.2.
-  - More than one candidate, or a partial match → `ambiguous`, for staff.
-  - Never silently dropped.
+  - A row is never dropped silently.
+
 - **Reverse order** (statement first, webhook later; retries can arrive
   hours late): before recording, the Tingee processor looks for exactly one
-  unpaired statement-imported transaction with the same keys and attaches
-  to it instead of creating a new one. Ambiguous → final error, for staff.
+  unpaired statement-imported transaction with the same keys. If it finds
+  one, it links the Tingee record to it instead of posting a new
+  transaction. Ambiguous → finance staff, by the same rule.
 - **Storage**: both sightings must point at one `bank_transactions` row, for
   example `give.bank_transaction_sources (bank_transaction_id, source,
 provider_tx_id, inbound_event_id)`, unique per account, source and id.
@@ -596,7 +607,8 @@ account's outflows wait for a parser of its bank.
 
 1. **Techcombank is not supported** (section 4). Give's chosen bank
    (verification account #46, first parser #231) gets no live channel from
-   Tingee. Organizers at Techcombank stay on statement import.
+   Tingee. Decided (JOY, 2026-11-18): Techcombank and every bank outside
+   Tingee's 16 stay on statement import.
 2. **Outflows at non-ACB banks**:
    - Tingee does not report them.
    - Give has a statement parser only for Techcombank, which Tingee does not
