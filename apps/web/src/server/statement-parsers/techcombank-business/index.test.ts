@@ -496,6 +496,30 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     expect([parsed.coverage, parsed.coverageDetail]).toEqual(["partial", "unplaced_time"])
   })
 
+  it.each<[string, XlsxCell[][]]>([
+    ["a zero fee total", [["Tổng phí/Total fees", "0.00"]]],
+    ["a zero VAT total", [["Total VAT", "0.00"]]],
+    ["a credit total with decimals", [["Tổng ghi có/Total credits", "1,500,000.00"]]],
+  ])("keeps a full statement full with %s after the table", async (_, bottom) => {
+    const parsed = await tcbBusinessParser.parse(statement({ bottom }))
+    expect([parsed.coverage, parsed.coverageDetail]).toEqual(["full", undefined])
+  })
+
+  it.each<[string, XlsxCell[]]>([
+    ["Thời gian in báo cáo", ["Thời gian in báo cáo", "18/11/2026 08:45"]],
+    ["Printed date", ["Printed date", "18/11/2026 08:45"]],
+  ])("keeps a full statement full with a print time labelled %s", async (_, row) => {
+    const parsed = await tcbBusinessParser.parse(statement({ top: [...withBalances("10,000", "11,000"), row] }))
+    expect(parsed.coverage).toBe("full")
+  })
+
+  it("still reads a time beside a total-like amount as partial", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({ top: [...withBalances("10,000", "11,000"), ["Bộ lọc", "0.00", "14:30"]] })
+    )
+    expect(parsed.coverage).toBe("partial")
+  })
+
   it("keeps a full statement full with a print time after the table", async () => {
     const parsed = await tcbBusinessParser.parse(
       statement({ bottom: [["Ngày giờ in/Printed on", "18/11/2026 08:45"]] })
