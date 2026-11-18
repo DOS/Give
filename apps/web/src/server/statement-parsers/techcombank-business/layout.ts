@@ -1,7 +1,7 @@
 import type { NormalizedTx } from "@/server/channels/types"
 
 import type { Cell, Grid } from "../sheet/read"
-import { bankDate, label, vnd, vnInstant, type LocalDate } from "../sheet/text"
+import { bankDate, label, vnd, vnInstant, wholeNumber, type LocalDate } from "../sheet/text"
 import type { ParsedStatement } from "../types"
 
 /**
@@ -71,6 +71,16 @@ const CURRENCY = /^(loai tien|currency)$/
 /** "Ngày giờ in/Printed on: 02/02/2023 08:45" (monthly statement). */
 const PRINTED = /^(ngay gio in|printed on)$/
 const UNIT = /\(?\s*vn[dđ]\s*\)?/gi
+/**
+ * Labels of the summary lines a file may carry outside the table (header
+ * block of the download, summary of the monthly statement). After the table
+ * only these may hold an amount; any other row with an amount or a date
+ * there is refused, so a transaction row is never silently left out.
+ */
+const SUMMARY =
+  /^(so du (dau|cuoi) (ngay|ky)|so du hien tai|tong (ghi no|ghi co|phi|vat|thue gtgt|phat sinh no|phat sinh co|lenh ghi no|lenh ghi co)|(opening|closing|ending|actual) balance|total (debits|credits|fees|vat|debit transaction|credit transaction))$/
+/** The period line is short; the pattern runs on this much of a row at most. */
+const PERIOD_SCAN_CHARS = 300
 
 /** A file this parser does not recognise, or a cell it cannot read. Messages never carry cell contents. */
 export class TcbLayoutError extends Error {
@@ -84,9 +94,14 @@ export class TcbLayoutError extends Error {
   }
 }
 
+function isDate(cell: Cell | undefined): cell is LocalDate {
+  return cell !== null && cell !== undefined && typeof cell === "object" && "day" in cell
+}
+
 function cellText(cell: Cell | undefined): string {
   if (cell === null || cell === undefined) return ""
   if (typeof cell === "string") return cell.trim()
+  if (!isDate(cell)) return cell.number
   // A date the file stored as a date, written back day first.
   const [y, m, d] = cell.day.split("-")
   return cell.time === null ? `${d}/${m}/${y}` : `${d}/${m}/${y} ${cell.time}`
@@ -101,14 +116,25 @@ function parts(text: string): string[] {
 }
 
 function cellDate(cell: Cell | undefined): LocalDate {
-  if (cell !== null && cell !== undefined && typeof cell === "object") return cell
+  if (isDate(cell)) return cell
   if (typeof cell !== "string") throw new Error("not a date")
   return bankDate(cell)
 }
 
+/** Whole VND: a number cell in plain numeric form, or text with thousands separators. */
 function cellAmount(cell: Cell | undefined): bigint | null {
-  if (cell !== null && cell !== undefined && typeof cell === "object") throw new Error("not an amount")
-  return vnd(cell === undefined || cell === null ? null : cell.trim())
+  if (cell === undefined || cell === null) return null
+  if (isDate(cell)) throw new Error("not an amount")
+  if (typeof cell === "object") return wholeNumber(cell.number)
+  return vnd(cell.trim())
+}
+
+function readsAs(read: () => unknown): boolean {
+  try {
+    return read() !== null
+  } catch {
+    return false
+  }
 }
 
 function isBlank(row: readonly Cell[]): boolean {
@@ -163,7 +189,7 @@ function balanceAt(rows: Grid, pattern: RegExp): bigint | null {
 
 function headerPeriod(rows: Grid): { from: string; to: string } | null {
   for (const row of rows) {
-    const match = PERIOD.exec(label(row.map(cellText).join(" ")))
+    const match = PERIOD.exec(label(row.map(cellText).join(" ").slice(0, PERIOD_SCAN_CHARS)))
     if (match) return { from: bankDate(match[1]).day, to: bankDate(match[2]).day }
   }
   return null
@@ -188,26 +214,29 @@ function signed(tx: NormalizedTx): bigint {
   return tx.direction === "in" ? tx.amount : -tx.amount
 }
 
-function chainBreak(entries: readonly Entry[], opening: bigint | null): number {
+function chainBreak(entries: readonly Entry[], opening: bigint): number {
   for (let i = 0; i < entries.length; i++) {
     const before = i === 0 ? opening : entries[i - 1].tx.balanceAfter!
-    if (before !== null && before + signed(entries[i].tx) !== entries[i].tx.balanceAfter) return i
+    if (before + signed(entries[i].tx) !== entries[i].tx.balanceAfter) return i
   }
   return -1
 }
 
 /**
  * Puts the entries oldest first: the order in which every balance follows
- * from the one before (and from the opening balance). The file's order is
- * tried first, then the reverse (exports often list the newest first);
- * dates must agree with the order chosen.
+ * from the one before, starting from the opening balance. The file's order
+ * and its reverse are tried (exports often list the newest first); dates
+ * must agree with the order chosen, and when both orders hold and differ
+ * the file is refused rather than one picked.
  */
-function oldestFirst(entries: Entry[], opening: bigint | null): Entry[] {
+function oldestFirst(entries: Entry[], opening: bigint): Entry[] {
   const reversed = [...entries].reverse()
   const ascending = (list: readonly Entry[]) => list.every((e, i) => i === 0 || e.date.day >= list[i - 1].date.day)
-  for (const candidate of [entries, reversed]) {
-    if (ascending(candidate) && chainBreak(candidate, opening) < 0) return candidate
+  const holds = [entries, reversed].filter((list) => ascending(list) && chainBreak(list, opening) < 0)
+  if (holds.length === 2 && holds[0].some((entry, i) => entry !== holds[1][i])) {
+    throw new TcbLayoutError("row order is ambiguous")
   }
+  if (holds.length > 0) return holds[0]
   const inDateOrder = ascending(entries) ? entries : ascending(reversed) ? reversed : null
   if (inDateOrder === null) throw new TcbLayoutError("rows are not in date order")
   const at = chainBreak(inDateOrder, opening)
@@ -233,9 +262,11 @@ export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
   const headerLabels = grid[headerIndex].map(cellText)
   const above = grid.slice(0, headerIndex)
 
+  // The download states its currency ("Loại tiền/Currency"); without it, a
+  // foreign-currency file with "1,000.00" amounts could pass as VND.
   const currency = labelled(above, CURRENCY)
-  if (currency !== undefined && currency !== null && label(cellText(currency)) !== "vnd") {
-    throw new TcbLayoutError("not a VND account")
+  if (currency === undefined || currency === null || label(cellText(currency)) !== "vnd") {
+    throw new TcbLayoutError("not a VND statement")
   }
 
   const entries: Entry[] = []
@@ -275,11 +306,13 @@ export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
     }
 
     const text = (column: Column) => (columns[column] === undefined ? "" : cellText(row[columns[column]!]))
+    // Only the columns read above, under their labels in the file: an
+    // unrecognised column could hold an account number nothing would mask.
     const cells: Record<string, string> = {}
-    headerLabels.forEach((name, i) => {
-      const value = cellText(row[i])
-      if (name !== "" && value !== "") cells[name] = value
-    })
+    for (const index of Object.values(columns) as number[]) {
+      const value = cellText(row[index])
+      if (headerLabels[index] !== "" && value !== "") cells[headerLabels[index]] = value
+    }
     const ref = text("ref")
     entries.push({
       date,
@@ -302,31 +335,26 @@ export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
   }
   if (entries.length === 0) throw new TcbLayoutError("no transactions")
 
-  // A row that still looks like a transaction after the table ended means
-  // the table was not read to its end: refuse rather than drop it.
+  // After the table, only summary lines may carry an amount or a date. A
+  // row that does means the table was not read to its end (a row with an
+  // unreadable or missing date): refuse rather than drop it.
   const after = grid.slice(end)
   for (const row of after) {
-    const dated = row.some((cell) => {
-      try {
-        cellDate(cell)
-        return true
-      } catch {
-        return false
-      }
-    })
-    const amounts = row.filter((cell) => {
-      try {
-        return cellAmount(cell) !== null
-      } catch {
-        return false
-      }
-    })
-    if (dated && amounts.length >= 2) throw new TcbLayoutError("rows after the end of the table")
+    const first = row.find((cell) => cellText(cell) !== "")
+    const names = parts(cellText(first))
+    if (names.length > 0 && names.every((name) => SUMMARY.test(name) || PRINTED.test(name))) continue
+    if (row.some((cell) => readsAs(() => cellAmount(cell)) || readsAs(() => cellDate(cell)))) {
+      throw new TcbLayoutError("rows after the end of the table")
+    }
   }
 
+  // Both balances are in the download's header block. The opening one
+  // checks the first row's amount, the closing one that no row is missing
+  // at the end; together with the chain they check every row.
   const outside = [...above, ...after]
   const opening = balanceAt(outside, OPENING)
   const closing = balanceAt(outside, CLOSING)
+  if (opening === null || closing === null) throw new TcbLayoutError("no opening or closing balance")
   let period: { from: string; to: string } | null
   try {
     period = headerPeriod(above)
@@ -336,7 +364,7 @@ export function parseTcbBusinessGrid(grid: Grid): ParsedStatement {
 
   const rows = oldestFirst(entries, opening)
   const last = rows[rows.length - 1].tx.balanceAfter!
-  if (closing !== null && closing !== last) throw new TcbLayoutError("closing balance does not match the last row")
+  if (closing !== last) throw new TcbLayoutError("closing balance does not match the last row")
   for (let i = 1; i < rows.length; i++) {
     const [a, b] = [rows[i - 1].date, rows[i].date]
     if (a.time !== null && b.time !== null && `${b.day} ${b.time}` < `${a.day} ${a.time}`) {

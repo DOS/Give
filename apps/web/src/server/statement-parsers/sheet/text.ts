@@ -9,15 +9,18 @@
  * "Số dư đầu kỳ (VND):" -> "so du dau ky".
  */
 export function label(text: string): string {
-  return text
+  const folded = text
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .replace(/[đĐ]/g, "d")
     .toLowerCase()
     .replace(/\s+/g, " ")
     .replace(/\(\s*vn[dđ]\s*\)/g, "")
-    .replace(/[\s:]+$/g, "")
-    .trim()
+  // Trailing spaces and colons, stripped by hand: /[\s:]+$/ is quadratic on
+  // a long run of colons that does not end the string.
+  let end = folded.length
+  while (end > 0 && (folded[end - 1] === " " || folded[end - 1] === ":")) end--
+  return folded.slice(0, end).trim()
 }
 
 /**
@@ -38,6 +41,29 @@ export function vnd(cell: string | number | null): bigint | null {
   const match = /^(-?)(\d{1,3}(?:([.,])\d{3})?(?:\3\d{3})*|\d+)(?:[.,]0{1,2})?$/.exec(text)
   if (!match) throw new Error("amount is not whole VND")
   return BigInt(`${match[1]}${match[2].replace(/[.,]/g, "")}`)
+}
+
+/**
+ * Whole VND from a spreadsheet number cell, as the file stores the number:
+ * plain digits with an optional fraction and exponent ("1500000",
+ * "500.000", "1.05E7"). Never read with thousands separators, since a
+ * number cell has none. Throws unless the value is a whole number.
+ */
+export function wholeNumber(text: string): bigint {
+  const match = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d{1,3}))?$/.exec(text.trim())
+  if (!match) throw new Error("not a number")
+  const [, sign, whole, fraction = "", exponent = "0"] = match
+  let digits = whole + fraction
+  let point = whole.length + Number(exponent)
+  if (point < 0) {
+    digits = "0".repeat(-point) + digits
+    point = 0
+  }
+  if (point > 30) throw new Error("number too large")
+  const integer = digits.slice(0, point).padEnd(point, "0") || "0"
+  if (/[1-9]/.test(digits.slice(point))) throw new Error("amount is not whole VND")
+  const value = BigInt(integer)
+  return sign === "-" ? -value : value
 }
 
 export interface LocalDate {

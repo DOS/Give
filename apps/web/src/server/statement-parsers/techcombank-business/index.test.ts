@@ -136,7 +136,12 @@ describe.each(Object.keys(FILES))("tcbBusinessParser on %s", (name) => {
 
 /** A small XLSX in the fixture layout, to vary one thing at a time. */
 function statement({
-  top = [["Từ ngày/From", "2026-11-01", "Đến ngày/To", "2026-11-15"]] as XlsxCell[][],
+  top = [
+    ["Từ ngày/From", "2026-11-01", "Đến ngày/To", "2026-11-15"],
+    ["Loại tiền/Currency", "VND"],
+    ["Số dư đầu ngày/Opening balance", "10,000"],
+    ["Số dư cuối ngày/ Closing balance", "11,000"],
+  ] as XlsxCell[][],
   header = [
     "Ngày giao dịch/Transaction date",
     "Diễn giải/Description",
@@ -148,8 +153,15 @@ function statement({
   rows = [["02/11/2026", "UNG HO", null, "1,000", null, "11,000"]] as XlsxCell[][],
   bottom = [] as XlsxCell[][],
 } = {}): Uint8Array {
-  return xlsxFile([...top, ["Số dư đầu ngày/Opening balance", "10,000"], [], header, ...rows, ...bottom])
+  return xlsxFile([...top, [], header, ...rows, ...bottom])
 }
+
+const withBalances = (opening: string, closing: string) => [
+  ["Từ ngày/From", "2026-11-01", "Đến ngày/To", "2026-11-15"],
+  ["Loại tiền/Currency", "VND"],
+  ["Số dư đầu ngày/Opening balance", opening],
+  ["Số dư cuối ngày/ Closing balance", closing],
+]
 
 describe("tcbBusinessParser refuses what it does not recognise", () => {
   it("reads the small statement it varies", async () => {
@@ -164,20 +176,57 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     ],
     [
       "a non-VND account",
-      statement({
-        top: [
-          ["Loại tiền/Currency", "USD"],
-          ["Từ ngày/From", "2026-11-01", "Đến ngày/To", "2026-11-15"],
-        ],
-      }),
+      statement({ top: withBalances("10,000", "11,000").map((r) => (r[1] === "VND" ? [r[0], "USD"] : r)) }),
+    ],
+    [
+      "a file that does not state its currency",
+      statement({ top: withBalances("10,000", "11,000").filter((r) => r[1] !== "VND") }),
+    ],
+    [
+      "a file without an opening balance",
+      statement({ top: withBalances("10,000", "11,000").filter((r) => !String(r[0]).startsWith("Số dư đầu")) }),
+    ],
+    [
+      "a file without a closing balance",
+      statement({ top: withBalances("10,000", "11,000").filter((r) => !String(r[0]).startsWith("Số dư cuối")) }),
     ],
     [
       "a transaction row after the table ended",
       statement({ bottom: [["Cộng"], ["03/11/2026", "X", null, "1,000", null, "12,000"]] }),
     ],
     [
-      "a closing balance other than the last row's",
-      statement({ bottom: [["Số dư cuối ngày/ Closing balance", "11,001"]] }),
+      "a row without a date after a good row",
+      statement({
+        top: withBalances("10,000", "13,000"),
+        rows: [
+          ["02/11/2026", "UNG HO", null, "1,000", null, "11,000"],
+          [null, "UNG HO B", null, "2,000", null, "13,000"],
+        ],
+      }),
+    ],
+    [
+      "a row with an unreadable date after a good row",
+      statement({
+        top: withBalances("10,000", "13,000"),
+        rows: [
+          ["02/11/2026", "UNG HO", null, "1,000", null, "11,000"],
+          ["2026/11/03", "UNG HO B", null, "2,000", null, "13,000"],
+        ],
+      }),
+    ],
+    ["a closing balance other than the last row's", statement({ top: withBalances("10,000", "11,001") })],
+    [
+      "two orders that both add up",
+      statement({
+        // In, out, in of one amount on one day: read either way round, every
+        // balance follows from the opening one, so the order is unknowable.
+        top: withBalances("10,000", "11,000"),
+        rows: [
+          ["02/11/2026", "UNG HO A", null, "1,000", null, "11,000"],
+          ["02/11/2026", "HOAN TIEN", "1,000", null, null, "10,000"],
+          ["02/11/2026", "UNG HO B", null, "1,000", null, "11,000"],
+        ],
+      }),
     ],
     ["an old binary .xls", new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])],
   ])("refuses %s", async (_, file) => {
@@ -194,8 +243,44 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     expect([err.code, err.row]).toEqual(["STATEMENT_ROW_INVALID", 1])
   })
 
+  it("reads the summary and print lines after the table", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        bottom: [
+          ["Tổng ghi có/ Total credits", "1,000"],
+          ["Ngày giờ in/Printed on", "16/11/2026 08:45"],
+        ],
+      })
+    )
+    expect(parsed.exportedAt).toEqual(new Date("2026-11-16T08:45:00+07:00"))
+  })
+
+  it("reads number cells as plain numbers, never with thousands separators", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({ rows: [["02/11/2026", "UNG HO", null, { n: "1000.000" }, null, { n: "1.1E4" }]] })
+    )
+    expect([parsed.rows[0].amount, parsed.rows[0].balanceAfter]).toEqual([BigInt(1000), BigInt(11000)])
+  })
+
+  it("keeps only the columns it reads in raw, never an unrecognised one", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        header: [
+          "Ngày giao dịch/Transaction date",
+          "Diễn giải/Description",
+          "Nợ/Debit",
+          "Có/Credit",
+          "Số dư/Running balance",
+          "STK người gửi",
+        ],
+        rows: [["02/11/2026", "UNG HO", null, "1,000", "11,000", "0123456789012"]],
+      })
+    )
+    expect(JSON.stringify(parsed.rows[0].raw)).not.toContain("0123456789012")
+  })
+
   it("leaves the period empty when the file does not state it, which the pipeline then refuses", async () => {
-    const parsed = await tcbBusinessParser.parse(statement({ top: [] }))
+    const parsed = await tcbBusinessParser.parse(statement({ top: withBalances("10,000", "11,000").slice(1) }))
     expect([parsed.periodFrom, parsed.periodTo]).toEqual([null, null])
     expect(() => normalizeStatement(tcbBusinessParser, parsed, NOW)).toThrow("STATEMENT_PERIOD_REQUIRED")
   })

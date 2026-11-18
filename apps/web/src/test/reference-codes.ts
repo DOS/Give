@@ -13,7 +13,7 @@ export function normalizeTransferContent(content: string | null): string {
   return (content ?? "")
     .replace(/[đĐ]/g, (c) => (c === "đ" ? "d" : "D"))
     .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
+    .replace(/[\u0300-\u036f]/g, "")
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "")
 }

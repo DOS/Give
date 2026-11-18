@@ -1,16 +1,23 @@
 import { readSheet } from "read-excel-file/node"
 
 import type { LocalDate } from "./text"
+import { isZip, storedZip, unzipXml, ZipError } from "./zip"
 
 /**
  * Bank statement spreadsheets as a grid of cells, whatever the file type:
- * XLSX (through `read-excel-file`) or CSV (read here). The legacy binary
+ * XLSX (unpacked under a size cap by `./zip`, then read by
+ * `read-excel-file`) or CSV (read here). The legacy binary
  * `.xls` format is not read: no npm package reads it without an open
  * advisory, and the banks built so far export CSV or XLSX.
  */
 
-/** One cell: text, a whole or decimal number as written, or a date the file stored as a date. */
-export type Cell = string | LocalDate | null
+/** A number cell of an XLSX file, as the digits the file stores ("1500000", "500.000", "1.05E7"). */
+export interface NumberCell {
+  number: string
+}
+
+/** One cell: text, a number cell, or a date the file stored as a date. */
+export type Cell = string | NumberCell | LocalDate | null
 export type Grid = (readonly Cell[])[]
 
 /** A file that is neither a readable XLSX nor a readable CSV. Never carries file contents. */
@@ -21,53 +28,8 @@ export class SheetReadError extends Error {
   }
 }
 
-// An XLSX file is a ZIP archive. Statements are small XML; refuse archives
-// that would inflate past this, before the reader inflates anything.
-const MAX_XLSX_INFLATED_BYTES = 64 * 1024 * 1024
-const MAX_XLSX_ENTRIES = 200
-
-function u16(bytes: Uint8Array, at: number): number {
-  return bytes[at] | (bytes[at + 1] << 8)
-}
-
-function u32(bytes: Uint8Array, at: number): number {
-  return (bytes[at] | (bytes[at + 1] << 8) | (bytes[at + 2] << 16)) + bytes[at + 3] * 0x1000000
-}
-
-/** True when the bytes start like a ZIP archive ("PK\x03\x04"). */
-export function isZip(file: Uint8Array): boolean {
-  return file.length >= 4 && file[0] === 0x50 && file[1] === 0x4b && file[2] === 0x03 && file[3] === 0x04
-}
-
-/**
- * Reads the archive's central directory and refuses an archive with too
- * many entries, ZIP64 records, or a declared inflated size above the limit,
- * so a small upload cannot inflate into gigabytes of XML.
- */
-export function checkZipSize(file: Uint8Array): void {
-  // End of central directory: signature 0x06054b50, at most 64 KiB of comment after it.
-  let end = -1
-  for (let i = file.length - 22; i >= Math.max(0, file.length - 22 - 0xffff); i--) {
-    if (u32(file, i) === 0x06054b50) {
-      end = i
-      break
-    }
-  }
-  if (end < 0) throw new SheetReadError("not a ZIP archive")
-  const entries = u16(file, end + 10)
-  const size = u32(file, end + 12)
-  const offset = u32(file, end + 16)
-  if (entries === 0xffff || size === 0xffffffff || offset === 0xffffffff) throw new SheetReadError("ZIP64 archive")
-  if (entries > MAX_XLSX_ENTRIES || offset + size > end) throw new SheetReadError("unexpected ZIP archive")
-  let at = offset
-  let inflated = 0
-  for (let n = 0; n < entries; n++) {
-    if (at + 46 > end || u32(file, at) !== 0x02014b50) throw new SheetReadError("broken ZIP directory")
-    inflated += u32(file, at + 24)
-    if (inflated > MAX_XLSX_INFLATED_BYTES) throw new SheetReadError("ZIP archive too large once inflated")
-    at += 46 + u16(file, at + 28) + u16(file, at + 30) + u16(file, at + 32)
-  }
-}
+/** No statement cell is this long; refusing early keeps every later pattern cheap. */
+export const MAX_CELL_CHARS = 5000
 
 function pad(n: number): string {
   return String(n).padStart(2, "0")
@@ -76,33 +38,55 @@ function pad(n: number): string {
 /**
  * A date cell as its local wall-clock date. `read-excel-file` turns the
  * Excel serial into a Date whose UTC fields are the wall-clock fields
- * (Excel dates carry no time zone), so those are read back as local
- * Asia/Ho_Chi_Minh time. Midnight exactly counts as a date without time.
+ * (Excel dates carry no time zone), rounding down; Excel stores serials to
+ * 15 significant digits, so 09:15:02 can arrive as 09:15:01.9996. The time
+ * is rounded to the nearest second first. Midnight exactly counts as a
+ * date without time.
  */
-function dateCell(value: Date): LocalDate {
+export function dateCell(value: Date): LocalDate {
   if (!Number.isFinite(value.getTime())) throw new SheetReadError("unreadable date cell")
-  const day = `${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())}`
-  const [h, m, s] = [value.getUTCHours(), value.getUTCMinutes(), value.getUTCSeconds()]
+  const at = new Date(Math.round(value.getTime() / 1000) * 1000)
+  const day = `${at.getUTCFullYear()}-${pad(at.getUTCMonth() + 1)}-${pad(at.getUTCDate())}`
+  const [h, m, s] = [at.getUTCHours(), at.getUTCMinutes(), at.getUTCSeconds()]
   return { day, time: h === 0 && m === 0 && s === 0 ? null : `${pad(h)}:${pad(m)}:${pad(s)}` }
 }
 
+function checkLength(text: string): string {
+  if (text.length > MAX_CELL_CHARS) throw new SheetReadError("cell too long")
+  return text
+}
+
 async function readXlsx(file: Uint8Array): Promise<Grid> {
-  checkZipSize(file)
+  // Inflate under a hard cap and rebuild a plain archive first (sheet/zip.ts):
+  // the reader itself trusts the sizes the archive declares.
+  let archive: Buffer
+  try {
+    archive = storedZip(unzipXml(file))
+  } catch (err) {
+    if (err instanceof ZipError) throw new SheetReadError(err.message)
+    throw err
+  }
   let rows: unknown[][]
   try {
     // A Buffer, never a string: the reader takes a string as a file path.
-    // Numbers come back as the digits the file stores, so no amount passes
-    // through a float.
-    rows = (await readSheet(Buffer.from(file), { parseNumber: (text: string) => text, trim: false })) as unknown[][]
+    // Number cells come back as the text the file stores, marked as numbers,
+    // so no amount passes through a float or a locale's separators.
+    rows = (await readSheet(archive, {
+      parseNumber: (text: string): NumberCell => ({ number: text }),
+      trim: false,
+    })) as unknown[][]
   } catch {
     throw new SheetReadError("unreadable XLSX file")
   }
   return rows.map((row) =>
     row.map((value): Cell => {
       if (value === null || value === undefined) return null
-      if (typeof value === "string") return value
+      if (typeof value === "string") return checkLength(value)
       if (typeof value === "boolean") return value ? "TRUE" : "FALSE"
       if (value instanceof Date) return dateCell(value)
+      if (typeof value === "object" && typeof (value as NumberCell).number === "string") {
+        return { number: checkLength((value as NumberCell).number) }
+      }
       throw new SheetReadError("unexpected XLSX cell")
     })
   )
@@ -181,7 +165,9 @@ function guessDelimiter(text: string): string {
 function readCsv(file: Uint8Array): Grid {
   const text = decodeText(file)
   if (/\u0000/.test(text)) throw new SheetReadError("binary file")
-  return parseCsv(text, guessDelimiter(text)).map((row) => row.map((field) => (field === "" ? null : field)))
+  return parseCsv(text, guessDelimiter(text)).map((row) =>
+    row.map((field) => (field === "" ? null : checkLength(field)))
+  )
 }
 
 /**

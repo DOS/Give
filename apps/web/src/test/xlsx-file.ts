@@ -23,11 +23,12 @@ function column(index: number): string {
   return name
 }
 
-/** Days since 1899-12-30 (the Excel 1900 date system), wall-clock fields taken as given. */
+/** Days since 1899-12-30 (the Excel 1900 date system), wall-clock fields taken as given, as Excel stores it. */
 function serial(wallClock: string): string {
   const ms = Date.parse(`${wallClock}Z`)
   if (!Number.isFinite(ms)) throw new Error(`bad fixture date ${wallClock}`)
-  return String((ms - Date.UTC(1899, 11, 30)) / 86400000)
+  // Excel keeps 15 significant digits, so a serial is rarely the exact time.
+  return String(Number(((ms - Date.UTC(1899, 11, 30)) / 86400000).toPrecision(15)))
 }
 
 function cellXml(cell: XlsxCell, ref: string): string {

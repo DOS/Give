@@ -374,9 +374,15 @@ cell naming two columns, as the PDF stacks them, is not read); dates day
 first or year first; money out = "Nợ" + "Phí" + "Thuế GTGT" on the row (a
 credit row with a charge is refused); the period from "Từ ngày/From …
 Đến ngày/To …" (a file without it is refused, as a format without row ids
-needs one); "Loại tiền" VND only; and the rows put oldest first by
-following the running balance. CSV must be UTF-8 or UTF-16; the old binary
-`.xls` is not read. Its fixtures are synthetic.
+needs one); "Loại tiền" stated and VND; "Số dư đầu ngày" and "Số dư cuối
+ngày" stated, read as the balances before the first and after the last
+row of the file; and the rows put oldest first by following the running
+balance. After the table only the summary and print lines may hold an
+amount or a date. That the header block's "đầu ngày"/"cuối ngày" balances
+are the period's, and not today's (the block also shows "Số dư hiện
+tại"), is **unconfirmed**: if they are today's, files whose period ends
+before today are refused, never misread. CSV must be UTF-8 or UTF-16; the
+old binary `.xls` is not read. Its fixtures are synthetic.
 
 ## 7. Sample files needed from JOY for DOS/Give#17
 

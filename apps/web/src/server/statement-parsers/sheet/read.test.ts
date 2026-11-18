@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { xlsxFile } from "@/test/xlsx-file"
 
-import { checkZipSize, parseCsv, readGrid, SheetReadError } from "./read"
+import { dateCell, MAX_CELL_CHARS, parseCsv, readGrid, SheetReadError } from "./read"
 
 const text = (s: string) => new TextEncoder().encode(s)
 
@@ -15,8 +15,8 @@ describe("readGrid on XLSX", () => {
     ])
     expect(await readGrid(file)).toEqual([
       ["Ngày giao dịch", "Số tiền", "Mô tả", null],
-      [{ day: "2026-11-02", time: "08:15:30" }, "1500000", "Ủng hộ đồng bào & bà con", null],
-      [{ day: "2026-11-03", time: null }, "123456789012", null, "x"],
+      [{ day: "2026-11-02", time: "08:15:30" }, { number: "1500000" }, "Ủng hộ đồng bào & bà con", null],
+      [{ day: "2026-11-03", time: null }, { number: "123456789012" }, null, "x"],
     ])
   })
 
@@ -29,17 +29,36 @@ describe("readGrid on XLSX", () => {
     await expect(readGrid(file)).rejects.toBeInstanceOf(SheetReadError)
   })
 
-  it("refuses an archive that declares too much inflated data", () => {
-    const file = xlsxFile([["a"]])
-    const view = Buffer.from(file.buffer, file.byteOffset, file.byteLength)
-    const directory = view.readUInt32LE(file.length - 22 + 16)
-    view.writeUInt32LE(0x7fffffff, directory + 24) // first entry's uncompressed size
-    expect(() => checkZipSize(file)).toThrow("too large once inflated")
-  })
-
   it("refuses a truncated archive", async () => {
     const file = xlsxFile([["a"]])
     await expect(readGrid(file.slice(0, file.length - 30))).rejects.toThrow("not a ZIP archive")
+  })
+
+  it("keeps the number text a file stores, without reading separators into it", async () => {
+    const file = xlsxFile([[{ n: "500.000" }, { n: "1.05E7" }, { n: "-1200" }]])
+    expect(await readGrid(file)).toEqual([[{ number: "500.000" }, { number: "1.05E7" }, { number: "-1200" }]])
+  })
+
+  it("reads a 15-digit Excel serial to the right second", async () => {
+    // 09:15:02 as Excel stores it; read-excel-file alone rounds it down to 09:15:01.
+    const file = xlsxFile([[{ date: "2026-11-02T09:15:02" }, { date: "2026-11-02T23:59:59" }]])
+    expect(await readGrid(file)).toEqual([
+      [
+        { day: "2026-11-02", time: "09:15:02" },
+        { day: "2026-11-02", time: "23:59:59" },
+      ],
+    ])
+  })
+
+  it("refuses a cell longer than any statement cell", async () => {
+    await expect(readGrid(xlsxFile([["x".repeat(MAX_CELL_CHARS + 1)]]))).rejects.toThrow("cell too long")
+  })
+})
+
+describe("dateCell", () => {
+  it("rounds to the nearest second, so a serial just short of midnight is the next day", () => {
+    expect(dateCell(new Date(Date.UTC(2026, 10, 2) - 1))).toEqual({ day: "2026-11-02", time: null })
+    expect(dateCell(new Date(Date.UTC(2026, 10, 2, 9, 15, 1, 999)))).toEqual({ day: "2026-11-02", time: "09:15:02" })
   })
 })
 
@@ -79,6 +98,7 @@ describe("readGrid on CSV", () => {
     ["Windows-1258 text", new Uint8Array([0x4e, 0x67, 0xe0, 0x79])],
     ["an old binary .xls", new Uint8Array([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00, 0x00])],
     ["an empty file", new Uint8Array()],
+    ["a cell longer than any statement cell", text(`a,${"x".repeat(MAX_CELL_CHARS + 1)}\n`)],
   ])("refuses %s", async (_, file) => {
     await expect(readGrid(file)).rejects.toBeInstanceOf(SheetReadError)
   })

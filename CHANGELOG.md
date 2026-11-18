@@ -234,9 +234,11 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   from Techcombank's public guides with synthetic fixtures; the export's
   table header and both format flags stay unconfirmed until JOY's
   anonymized samples arrive. `hasRunningBalance` is set and checked on
-  every file (balances must add up row by row), `hasStableRowId` is not.
-  Shared spreadsheet reading in `statement-parsers/sheet` (XLSX through
-  the `read-excel-file` package, CSV in-house). ACB research is kept in
+  every file (opening and closing balances required, every row's balance
+  must follow from the one before), `hasStableRowId` is not. Shared
+  spreadsheet reading in `statement-parsers/sheet`: XLSX unpacked under a
+  32 MB inflate cap and rebuilt before the `read-excel-file` package reads
+  it, CSV in-house. ACB research is kept in
   `docs/research/bank-statements.md` 6.1; no ACB parser yet (#17 / #231).
 - Refusal reasons on `/admin/unmatched`: each transaction under "Tiền vào
   không thuộc chiến dịch nào" shows why it was not given to a campaign

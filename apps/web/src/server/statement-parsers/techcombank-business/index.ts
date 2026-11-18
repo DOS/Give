@@ -19,9 +19,12 @@ export const TECHCOMBANK_BIN = "970407"
  * - hasRunningBalance: true. Techcombank's statement and transaction list
  *   show a balance after every row ("Số dư"), but the export file is
  *   UNCONFIRMED until JOY's anonymized samples arrive. The parser does not
- *   take the flag on trust: it refuses a file in which any row lacks a
- *   balance or in which the balances do not add up row by row, so a file
- *   without a real running balance can never be imported under this flag.
+ *   take the flag on trust: it needs the opening and closing balances of
+ *   the download's header block, and every row's balance must follow from
+ *   the one before, starting at the opening balance and ending at the
+ *   closing one. A file that fails any of this is refused, so no file
+ *   without a real running balance is imported under this flag, and no
+ *   row is left out unnoticed.
  * - hasStableRowId: false. Rows carry a transaction number (often "FT…"),
  *   but nothing public says every row has one or that it is unique; the
  *   flag stays false (the safe value) until the samples show it. A wrong

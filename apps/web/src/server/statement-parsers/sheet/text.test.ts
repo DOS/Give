@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { bankDate, dayFirstDate, label, vnd, vnInstant } from "./text"
+import { bankDate, dayFirstDate, label, vnd, vnInstant, wholeNumber } from "./text"
 
 describe("label", () => {
   it.each([
@@ -10,6 +10,32 @@ describe("label", () => {
     ["Ghi có (VNĐ)", "ghi co"],
   ])("%j -> %j", (text, expected) => {
     expect(label(text)).toBe(expected)
+  })
+})
+
+describe("label on hostile input", () => {
+  it("stays linear on a long run of colons", () => {
+    const started = performance.now()
+    expect(label(`${":".repeat(200000)}x`)).toBe(`${":".repeat(200000)}x`)
+    expect(performance.now() - started).toBeLessThan(1000)
+  })
+})
+
+describe("wholeNumber", () => {
+  it.each([
+    ["1500000", BigInt(1500000)],
+    ["500.000", BigInt(500)],
+    ["1.05E7", BigInt(10500000)],
+    ["1.5e3", BigInt(1500)],
+    ["-1200", BigInt(-1200)],
+    ["0", BigInt(0)],
+    ["120000E-2", BigInt(1200)],
+  ] as const)("reads %j", (text, expected) => {
+    expect(wholeNumber(text)).toBe(expected)
+  })
+
+  it.each(["1,500,000", "1.5", "1.05E1", "12E-2", "1e40", "", "abc", "1.2.3"])("refuses %j", (text) => {
+    expect(() => wholeNumber(text)).toThrow()
   })
 })
 
