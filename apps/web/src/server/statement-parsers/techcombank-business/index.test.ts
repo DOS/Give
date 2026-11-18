@@ -337,6 +337,47 @@ describe("tcbBusinessParser refuses what it does not recognise", () => {
     expect(parsed.coverage).toBe("partial")
   })
 
+  it.each<[string, XlsxCell[], string]>([
+    ["an empty cell then a time", [null, "14:30"], "ends_early"],
+    ["a dash then a time", ["-", "14:30"], "partial"],
+    ["a time zone then a time", ["(GMT+7)", "14:30"], "partial"],
+  ])("reads a time after the to-date with %s between as not full", async (_, extra, coverage) => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026", ...extra],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).toBe(coverage)
+    expect(() => normalizeStatement(tcbBusinessParser, parsed, NOW)).toThrow("STATEMENT_PARTIAL_EXPORT")
+  })
+
+  it("reads a period line with empty cells between its parts", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["Từ ngày/From", null, "01/11/2026", null, "Đến ngày/To", null, "15/11/2026"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect([parsed.periodFrom, parsed.periodTo, parsed.coverage]).toEqual(["2026-11-01", "2026-11-15", "full"])
+  })
+
+  it("checks the whole to-date cell even after long text on the row", async () => {
+    const parsed = await tcbBusinessParser.parse(
+      statement({
+        top: [
+          ["x".repeat(255), "Từ ngày/From", "01/11/2026", "Đến ngày/To", "15/11/2026 lúc 14:30"],
+          ...withBalances("10,000", "11,000").slice(1),
+        ],
+      })
+    )
+    expect(parsed.coverage).not.toBe("full")
+  })
+
   it.each<[string, XlsxCell[]]>([
     ["a print time", ["Ngày giờ in/Printed on", "18/11/2026 08:45"]],
     ["a period heading", ["Thời gian/Time period"]],

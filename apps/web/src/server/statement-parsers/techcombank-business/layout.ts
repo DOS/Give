@@ -224,30 +224,33 @@ interface HeaderPeriod {
 
 function headerPeriod(rows: Grid): HeaderPeriod | null {
   for (const [index, row] of rows.entries()) {
-    // Cell by cell, so the period's own cells can be told from the rest of
-    // the row (a print time, an account name).
-    const cells = row.map((cell) => label(cellText(cell)))
-    const text = cells.join(" ").slice(0, PERIOD_SCAN_CHARS)
-    const match = PERIOD.exec(text)
+    // Non-empty cells, folded one by one, so the period's own cells can be
+    // told from the rest of the row (a print time, an account name).
+    const cells = row.map((cell) => label(cellText(cell))).filter((cell) => cell !== "")
+    const text = cells.join(" ")
+    const match = PERIOD.exec(text.slice(0, PERIOD_SCAN_CHARS))
     if (!match) continue
-    // The period's stretch: from "tu ngay" to the end of the to-date's cell,
-    // and the next non-empty cell when it is a time or a time label.
+    // The period's stretch: from "tu ngay" to the end of the to-date's cell.
     const end = match.index + match[0].length
-    let stretch = text.slice(match.index, end)
+    let toCell = cells.length - 1
     let offset = 0
     for (const [i, cell] of cells.entries()) {
-      const cellEnd = offset + cell.length
-      if (end <= cellEnd) {
-        stretch += text.slice(end, Math.min(cellEnd, text.length))
-        const next = cells.slice(i + 1).find((c) => c !== "")
-        if (next !== undefined && TIME_CELL.test(next)) stretch += ` ${next}`
+      if (end <= offset + cell.length) {
+        toCell = i
         break
       }
-      offset = cellEnd + 1
+      offset += cell.length + 1
     }
+    const stretch = text.slice(match.index, cells.slice(0, toCell + 1).join(" ").length)
+    // Cells after it, up to a print-time label: a cell that is only a time
+    // (other than 23:59) or a time label bounds the export by a time.
+    const after = cells.slice(toCell + 1)
+    const printed = after.findIndex((cell) => cell.split("/").some((part) => PRINTED.test(part.trim())))
+    const following = printed < 0 ? after : after.slice(0, printed)
     return {
       otherTime:
         TIME_LIKE.test(stretch.replace(PERIOD_DATE, " ")) ||
+        following.some((cell) => TIME_CELL.test(cell) && !END_OF_DAY.test(cell)) ||
         rows.some((other, i) => i !== index && other.some((cell) => TIME_RANGE.test(label(cellText(cell))))),
       from: bankDate(match[1]).day,
       fromTime: match[2] ?? null,
