@@ -20,6 +20,7 @@ import {
 export const PREVIEW_ROWS = 5
 
 function rowText(row: StatementRow): string {
+  if (row.own_transfer_label) return row.own_transfer_label
   if (row.direction === "out" && row.explained && row.purpose) return row.purpose
   return counterpartyLabel(row)
 }
@@ -42,16 +43,15 @@ function RowNote({ row }: { row: StatementRow }) {
   }
   // A transfer out that a bank returned (DOS/Give#72).
   if (row.returned_by) return <Badge tone="info">Bị ngân hàng trả lại</Badge>
-  if (row.is_refund) return <Badge>Hoàn tiền</Badge>
+  if (row.is_refund) return <Badge tone="info">Hoàn tiền</Badge>
   return row.explained ? <Badge tone="brand">Đã giải trình</Badge> : <Badge tone="warning">Chưa giải trình</Badge>
 }
 
 function Amount({ row }: { row: StatementRow }) {
   const incoming = row.direction === "in"
+  const donationTone = incoming && !row.own_transfer_label && !row.return_of && !explainedNotDonation(row)
   return (
-    <span
-      className={`font-semibold whitespace-nowrap tabular-nums ${incoming && !row.own_transfer_label ? "text-primary" : "text-fg"}`}
-    >
+    <span className={`font-semibold whitespace-nowrap tabular-nums ${donationTone ? "text-primary" : "text-fg"}`}>
       {incoming ? "+" : "−"}
       {formatVnd(row.amount)}
     </span>

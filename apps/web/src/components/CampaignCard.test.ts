@@ -3,12 +3,16 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 
 import type { ListedCampaign } from "@/lib/campaigns"
+import { publicCoverUrl } from "@/lib/cover-urls"
 
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: unknown }) =>
     createElement("a", { href, ...rest }, children as never),
 }))
-vi.mock("next/image", () => ({ default: () => null }))
+vi.mock("next/image", () => ({
+  default: ({ priority, fill: _fill, ...rest }: { src: string; alt: string; priority?: boolean; fill?: boolean }) =>
+    createElement("img", { ...rest, ...(priority ? { "data-priority": "true" } : {}) }),
+}))
 
 const { CampaignCard } = await import("./CampaignCard")
 
@@ -75,5 +79,97 @@ describe("CampaignCard", () => {
     // A live campaign past its end date (before the closing job runs) still says so.
     expect(ended("live", past)).toContain("Đã hết hạn")
     expect(ended("live", "2999-01-01T00:00:00Z")).toMatch(/Còn \d+ ngày/)
+  })
+
+  it("renders back campaign copy ('Dự án sáng tạo', 'đã cam kết', 'người đồng hành') and headingLevel={2}", () => {
+    const html = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, {
+          type: "back",
+          slug: "sach-anh",
+          title: "Sách ảnh thiếu nhi",
+          ends_at: "2999-01-01T00:00:00Z",
+        }),
+        raised: 35_000_000,
+        people: 14,
+        headingLevel: 2,
+      })
+    )
+    expect(html).toContain(">Dự án sáng tạo<")
+    expect(html).toMatch(/<h2[^>]*><a href="\/campaigns\/sach-anh"[^>]*>Sách ảnh thiếu nhi<\/a><\/h2>/)
+    expect(html).not.toContain("<h3")
+    expect(html).toContain("đã cam kết · 35%")
+    expect(html).toMatch(/14 người đồng hành · Còn \d+ ngày/)
+  })
+
+  it("renders public cover image with priority when cover.storage_path is set and CoverPlaceholder otherwise", () => {
+    const path = "campaigns/1060c000-0000-4000-8000-000000000001/cover.webp"
+    const withCover = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, { cover: { storage_path: path, alt: "Ảnh bìa" } }),
+        priority: true,
+      })
+    )
+    expect(withCover).toContain(`src="${publicCoverUrl(path)}"`)
+    expect(withCover).toContain('alt=""')
+    expect(withCover).toContain('data-priority="true"')
+
+    const withNullPath = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, { cover: { storage_path: null, alt: null } }),
+      })
+    )
+    expect(withNullPath).not.toContain("<img")
+    expect(withNullPath).toContain("<svg")
+  })
+
+  it("guards null display_options and removes mt-3 above the raised line when progress_bar is false", () => {
+    const nullOptions = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, {
+          display_options: null as never,
+          ends_at: "2999-01-01T00:00:00Z",
+        }),
+        raised: 50_000_000,
+        people: 6,
+      })
+    )
+    expect(nullOptions).toContain("h-1.5")
+    expect(nullOptions).toContain('<p class="mt-3">')
+    expect(nullOptions).toContain("đã nhận · 50%")
+    expect(nullOptions).toMatch(/6 người ủng hộ · Còn \d+ ngày/)
+
+    const hiddenProgress = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, {
+          display_options: { progress_bar: false, backers_count: false, time_remaining: false },
+          ends_at: "2999-01-01T00:00:00Z",
+        }),
+        raised: 50_000_000,
+        people: 6,
+      })
+    )
+    expect(hiddenProgress).not.toContain("h-1.5")
+    expect(hiddenProgress).not.toContain("mt-3")
+    expect(hiddenProgress).toContain('<div class="mt-auto pt-2"><p><span class="figure">')
+    expect(hiddenProgress).toContain("đã nhận</span>")
+    expect(hiddenProgress).not.toContain("50%")
+    expect(hiddenProgress).not.toContain("6 người ủng hộ")
+    expect(hiddenProgress).not.toContain("Còn ")
+
+    // Ended status still renders in meta even when time_remaining is false.
+    const endedHiddenTime = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, {
+          status: "succeeded",
+          ends_at: "2026-01-01T00:00:00Z",
+          display_options: { progress_bar: false, backers_count: false, time_remaining: false },
+        }),
+        raised: 100_000_000,
+        people: 6,
+      })
+    )
+    expect(endedHiddenTime).toContain("Thành công")
+    expect(endedHiddenTime).not.toContain("6 người ủng hộ")
   })
 })

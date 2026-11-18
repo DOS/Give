@@ -5,7 +5,7 @@ import { TypeBadge } from "@/components/badges"
 import { ProgressBar } from "@/components/ProgressBar"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { CheckIcon } from "@/components/ui/icons"
-import { STATUS_LABELS, type ListedCampaign } from "@/lib/campaigns"
+import { STATUS_LABELS, type DisplayOptions, type ListedCampaign } from "@/lib/campaigns"
 import { publicCoverUrl } from "@/lib/cover-urls"
 import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
 
@@ -38,7 +38,8 @@ export function CampaignCard({
 }) {
   const percent = progressPercent(raised, campaign.goal_amount)
   const days = daysLeft(campaign.ends_at)
-  const options = campaign.display_options
+  const options: Partial<DisplayOptions> = campaign.display_options ?? {}
+  const showProgress = options.progress_bar !== false
   const organizer = campaign.organizer
   const isGive = campaign.type === "give"
   const Heading = headingLevel === 2 ? "h2" : "h3"
@@ -100,12 +101,12 @@ export function CampaignCard({
           </p>
         )}
         <div className="mt-auto pt-2">
-          {options.progress_bar !== false && <ProgressBar percent={percent} size="sm" />}
-          <p className="mt-3">
+          {showProgress && <ProgressBar percent={percent} size="sm" />}
+          <p className={showProgress ? "mt-3" : undefined}>
             <span className="figure">{formatVnd(raised)}</span>{" "}
             <span className="text-muted">
               {isGive ? "đã nhận" : "đã cam kết"}
-              {options.progress_bar !== false && ` · ${percent}%`}
+              {showProgress && ` · ${percent}%`}
             </span>
           </p>
           {meta.length > 0 && <p className="text-sm text-muted">{meta.join(" · ")}</p>}

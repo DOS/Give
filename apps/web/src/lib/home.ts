@@ -1,5 +1,4 @@
 import type { CardCampaign } from "@/lib/campaigns"
-import { progressPercent } from "@/lib/format"
 import { raisedAmount, type MoneyTotals } from "@/lib/statement"
 
 export interface HomeSections<C extends CardCampaign = CardCampaign> {
@@ -21,14 +20,16 @@ export function homeSections<C extends CardCampaign>(
   trendingCount = 3
 ): HomeSections<C> {
   const raised = (c: CardCampaign) => raisedAmount(totals.get(c.id), c.type)
+  const progress = (c: CardCampaign) => (c.goal_amount > 0 ? raised(c) / c.goal_amount : 0)
+  const limit = trendingCount > 0 ? trendingCount : 0
   const give = campaigns.filter((c) => c.type === "give")
   const featured =
     give.length > 0 ? give.reduce((best, c) => (raised(c) > raised(best) ? c : best)) : (campaigns[0] ?? null)
   const rest = campaigns.filter((c) => c !== featured)
   const trending = [...rest]
     .filter((c) => raised(c) > 0)
-    .sort((a, b) => progressPercent(raised(b), b.goal_amount) - progressPercent(raised(a), a.goal_amount))
-    .slice(0, trendingCount)
+    .sort((a, b) => progress(b) - progress(a) || raised(b) - raised(a))
+    .slice(0, limit)
   const newest = rest.filter((c) => !trending.includes(c))
   return { featured, trending, newest }
 }
