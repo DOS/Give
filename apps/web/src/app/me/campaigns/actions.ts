@@ -17,6 +17,11 @@ const SIGNED_OUT = "Phiên đăng nhập đã hết. Hãy đăng nhập lại."
 const NOT_EDITABLE = "Chỉ sửa được chiến dịch đang là bản nháp hoặc cần chỉnh sửa."
 const NOT_FOUND = "Không tìm thấy chiến dịch của bạn."
 
+const CANCEL_MESSAGES: Record<string, string> = {
+  GIVE_TRANSITION_NOT_ALLOWED:
+    "Không hủy được chiến dịch: chiến dịch không còn ở trạng thái cho phép hủy (có thể vừa được mở công khai). Hãy tải lại trang.",
+}
+
 interface OwnedCampaign {
   id: string
   slug: string
@@ -195,7 +200,11 @@ export async function uploadCover(campaignId: string, _state: ActionResult, form
     .from("campaign_media")
     .insert({ id: mediaId, campaign_id: campaign.id, kind: "image", storage_path: path, alt, sort_order: 0 })
   if (inserted.error) {
-    await storage.remove([path])
+    try {
+      await storage.remove([path])
+    } catch {
+      // Best-effort rollback cleanup.
+    }
     return fail(dbErrorMessage(inserted.error))
   }
 
@@ -205,21 +214,39 @@ export async function uploadCover(campaignId: string, _state: ActionResult, form
     .eq("id", campaign.id)
     .select("id")
   if (updated.error || !updated.data?.length) {
-    await service.from("campaign_media").delete().eq("id", mediaId)
-    await storage.remove([path])
+    try {
+      await service.from("campaign_media").delete().eq("id", mediaId)
+    } catch {
+      // Best-effort rollback cleanup.
+    }
+    try {
+      await storage.remove([path])
+    } catch {
+      // Best-effort rollback cleanup.
+    }
     return fail(updated.error ? dbErrorMessage(updated.error) : NOT_EDITABLE)
   }
 
-  // Drop the previous cover; it is no longer referenced.
-  if (campaign.cover_media_id && campaign.cover_media_id !== mediaId) {
-    const old = await service
-      .from("campaign_media")
-      .delete()
-      .eq("id", campaign.cover_media_id)
-      .eq("campaign_id", campaign.id)
-      .select("storage_path")
-    const oldPath = (old.data?.[0] as { storage_path: string | null } | undefined)?.storage_path
-    if (oldPath) await storage.remove([oldPath])
+  // Re-read the active cover_media_id so overlapping cover replacements drop
+  // every superseded image row without deleting whichever upload won last.
+  try {
+    const active = await service.from("campaigns").select("cover_media_id").eq("id", campaign.id).maybeSingle()
+    const activeCoverId = (active.data as { cover_media_id: string | null } | null)?.cover_media_id
+    if (!active.error && activeCoverId) {
+      const stale = await service
+        .from("campaign_media")
+        .delete()
+        .eq("campaign_id", campaign.id)
+        .eq("kind", "image")
+        .neq("id", activeCoverId)
+        .select("storage_path")
+      const stalePaths = ((stale.data ?? []) as { storage_path: string | null }[])
+        .map((row) => row.storage_path)
+        .filter((p): p is string => Boolean(p))
+      if (stalePaths.length > 0) await storage.remove(stalePaths)
+    }
+  } catch (error) {
+    console.error("uploadCover cleanup failed", error)
   }
 
   refresh(campaign)
@@ -230,14 +257,15 @@ async function transition(
   session: Session,
   campaign: OwnedCampaign,
   toStatus: CampaignStatus,
-  reason?: string | null
+  reason?: string | null,
+  messages?: Record<string, string>
 ): Promise<ActionResult | null> {
   const { error } = await dbAs(session.accessToken).rpc("transition_campaign", {
     p_campaign_id: campaign.id,
     p_to_status: toStatus,
     p_reason: reason ?? null,
   })
-  return error ? fail(dbErrorMessage(error, SUBMIT_MESSAGES)) : null
+  return error ? fail(dbErrorMessage(error, messages)) : null
 }
 
 export async function submitForReview(
@@ -264,9 +292,10 @@ export async function submitForReview(
     return fail(dbErrorMessage(error as { message?: string; code?: string }))
   }
   if (problem) return fail(problem)
-  const failed = await transition(session, campaign, "in_review")
+  const failed = await transition(session, campaign, "in_review", null, SUBMIT_MESSAGES)
   if (failed) return failed
   refresh(campaign)
+  revalidatePath("/admin")
   return done("Đã gửi duyệt. Kiểm duyệt viên sẽ xem chiến dịch của bạn.")
 }
 
@@ -275,12 +304,14 @@ export async function cancelCampaign(campaignId: string, _state: ActionResult, f
   if (!session) return fail(SIGNED_OUT)
   const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
-  const reason = String(form.get("reason") ?? "")
-    .trim()
-    .slice(0, 500)
-  const failed = await transition(session, campaign, "cancelled", reason)
+  const reason =
+    String(form.get("reason") ?? "")
+      .trim()
+      .slice(0, 500) || null
+  const failed = await transition(session, campaign, "cancelled", reason, CANCEL_MESSAGES)
   if (failed) return failed
   refresh(campaign)
+  revalidatePath("/admin")
   return done("Đã hủy chiến dịch.")
 }
 
@@ -304,11 +335,15 @@ export async function deleteDraft(campaignId: string, _state: ActionResult, _for
   // RLS allowed the delete, so the caller owned everything under the
   // campaign's prefix; removing by prefix also catches covers uploaded
   // concurrently. Best effort: the draft is already gone.
-  const storage = dbService().storage.from(MEDIA_BUCKET)
-  const prefix = campaignMediaPrefix(campaign.id)
-  const listed = await storage.list(prefix, { limit: 1000 })
-  const paths = (listed.data ?? []).map((object) => `${prefix}/${object.name}`)
-  if (paths.length) await storage.remove(paths)
+  try {
+    const storage = dbService().storage.from(MEDIA_BUCKET)
+    const prefix = campaignMediaPrefix(campaign.id)
+    const listed = await storage.list(prefix, { limit: 1000 })
+    const paths = (listed.data ?? []).map((object) => `${prefix}/${object.name}`)
+    if (paths.length) await storage.remove(paths)
+  } catch (error) {
+    console.error("deleteDraft cleanup failed", error)
+  }
 
   revalidatePath("/me/campaigns")
   redirect("/me/campaigns")

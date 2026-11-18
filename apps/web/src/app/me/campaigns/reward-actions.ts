@@ -61,6 +61,7 @@ async function ownTiers(accessToken: string, userId: string, campaignId: string)
 function refresh(campaign: Pick<CampaignWithRefs, "id" | "slug">) {
   revalidatePath(`/me/campaigns/${campaign.id}`)
   revalidatePath(`/campaigns/${campaign.slug}`)
+  revalidatePath(`/campaigns/${campaign.slug}/pledge`)
 }
 
 /** Creates a tier (tierId null, placed last) or updates one, while the campaign is editable. */

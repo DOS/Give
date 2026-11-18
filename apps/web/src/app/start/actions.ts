@@ -27,12 +27,21 @@ export async function saveOrganizer(_state: ActionResult, form: FormData): Promi
     return fail(dbErrorMessage(error as { message?: string }))
   }
   // Column grants allow user_id on insert only, so this is not an upsert.
-  const { error } = existing
+  let { error } = existing
     ? await db.from("organizers").update(parsed.data).eq("user_id", session.user.id)
     : await db.from("organizers").insert({ user_id: session.user.id, ...parsed.data })
+  if (!existing && error?.code === "23505") {
+    ;({ error } = await db.from("organizers").update(parsed.data).eq("user_id", session.user.id))
+  }
   if (error) return fail(dbErrorMessage(error))
 
   revalidatePath("/start")
+  revalidatePath("/")
+  revalidatePath("/campaigns")
+  revalidatePath("/campaigns/[slug]", "page")
+  revalidatePath("/me/campaigns/[id]", "page")
+  revalidatePath("/admin")
+  revalidatePath("/admin/reports")
   // Mirrors give.organizers_reset_verification.
   const reset =
     (existing?.verification_status === "verified" || existing?.verification_status === "pending") &&
