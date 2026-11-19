@@ -68,8 +68,9 @@ dịch kết thúc, và người ủng hộ hủy được bất cứ lúc nào.
    cáo đối soát liệt kê các lần thu trong khoản quyết toán)? Nền tảng có đặt
    được **ngày kết thúc** cho từng lịch thu định kỳ không?
 
-Chúng tôi muốn trích dẫn câu trả lời trong tài liệu thiết kế nội bộ. Xin cho
-biết phần nào của câu trả lời là bảo mật và không được trích dẫn.
+Tài liệu thiết kế của Give là công khai (mã nguồn mở). Chúng tôi chỉ muốn ghi
+vào đó bản tóm tắt kết luận từ câu trả lời của [Tên cổng]. Xin cho biết phần
+nào của câu trả lời là bảo mật và không được trích dẫn.
 
 Ngoài ra, nếu [Tên cổng] có mẫu hợp đồng nền tảng (platform) hoặc tài liệu kỹ
 thuật về thu định kỳ và mô hình merchant con, xin gửi kèm để chúng tôi tham
@@ -185,11 +186,12 @@ khớp được tiền nếu mã đó tới tài khoản nhận nguyên vẹn m�
 **Kết luận của phép thử**
 
 - Ngân hàng **qua** cổng (a) khi một lệnh **liên ngân hàng, hằng tháng** chạy
-  hai lần và ở cả hai lần nội dung bên nhận còn nguyên mã thử.
+  hai lần và ở cả hai lần nội dung bên nhận còn nguyên mã thử. Ghi ngân hàng
+  đó vào danh sách đã xác minh (mục 4.3.5), kèm đường đi trong app để tạo và
+  hủy lệnh, và giờ chót hủy.
 - Lệnh trong cùng ngân hàng, hay lệnh hằng ngày, hằng tuần, đạt điều kiện
   trên chỉ là **tạm qua**: ghi lại, nhưng ngân hàng chỉ vào danh sách đã xác
-  minh sau khi có ít nhất một lệnh liên ngân hàng hằng tháng được kiểm tra. Ghi ngân hàng đó vào danh sách đã xác minh (mục 4.3.5), kèm
-  đường đi trong app để tạo và hủy lệnh, và giờ chót hủy.
+  minh sau khi có ít nhất một lệnh liên ngân hàng hằng tháng được kiểm tra.
 - Ngân hàng **không qua** nếu mã bị cắt, đổi, hay chỉ còn ở lần chạy đầu.
 - Gửi bảng kết quả và ảnh cho PO. Cổng (a) cần ít nhất **một ngân hàng lớn**
   qua; mỗi ngân hàng thêm vào danh sách thì người góp dùng ngân hàng đó mới
