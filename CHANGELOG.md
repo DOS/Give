@@ -21,7 +21,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 này."` on non-actionable statuses while sitting cleanly above `"Gửi duyệt"`
   and `"Hủy chiến dịch"` when status actions are available, with RSC Vitest
   coverage for rendered transitions and failed `campaign_status_events` reads
-  (#287).
+  (#287 / #288).
 - Organizer draft campaign updates workflow: `/me/campaigns/[id]` extends
   `postUpdate` with `intent = "draft" | "publish"` (preserving immediate
   publish when `intent` is omitted, inserting `published_at: null` across all
