@@ -35,6 +35,8 @@ export const SEND_TIMEOUT_MS = 15_000
 /** Tries at recording one result before leaving the row to its lease. */
 export const COMPLETE_TRIES = 3
 const COMPLETE_RETRY_MS = [250, 1_000]
+/** complete_outbox without p_hold: PostgREST finds no such function (PGRST202), Postgres neither (42883). */
+const NO_HOLD_FUNCTION = new Set(["PGRST202", "42883"])
 /** Each RPC after a send (complete, release) is abandoned after this long. */
 export const RPC_TIMEOUT_MS = 5_000
 /** A claim is abandoned after this long (it may wait on locks while it settles rows). */
@@ -58,6 +60,8 @@ export interface OutboxRunResult {
   claimed: number
   sent: number
   retrying: number
+  /** Throttled by the provider for the whole account: back in an hour, the attempt not counted. */
+  held: number
   dead: number
   stale: number
   /** Leased rows given back for the next run. */
@@ -138,7 +142,8 @@ function errorText(error: string, row: OutboxEmail): string {
 }
 
 type Result =
-  { ok: true; messageId: string | null } | { ok: false; permanent: boolean; error: string; outcomeUnknown?: boolean }
+  | { ok: true; messageId: string | null }
+  | { ok: false; permanent: boolean; error: string; outcomeUnknown?: boolean; hold?: boolean; stop?: boolean }
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -160,7 +165,7 @@ function isTransient(error: { code?: string }): boolean {
 }
 
 async function complete(db: Db, row: OutboxEmail, result: Result, clock: Clock): Promise<string | null> {
-  const args = {
+  const args: Record<string, unknown> = {
     p_id: row.id,
     p_attempt: row.attempt,
     p_ok: result.ok,
@@ -168,13 +173,28 @@ async function complete(db: Db, row: OutboxEmail, result: Result, clock: Clock):
     p_provider_message_id: result.ok ? result.messageId : null,
     p_permanent: result.ok ? false : result.permanent,
     p_outcome_unknown: result.ok ? false : result.outcomeUnknown === true,
+    // Sent only for a hold, so an ordinary result also works against a
+    // database from before p_hold (DOS.Me 20261124090000).
+    ...(!result.ok && result.hold === true ? { p_hold: true } : {}),
   }
   for (let tryNo = 1; ; tryNo++) {
     const { data, error } = await db.rpc("complete_outbox", args).abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS))
+    if (error && args.p_hold === true && NO_HOLD_FUNCTION.has(error.code ?? "")) {
+      // A database from before p_hold: record an ordinary, counted failure
+      // rather than leave the row to its lease (which would end it dead
+      // after 7 leases, about 35 minutes).
+      console.error("complete_outbox has no p_hold; recording an ordinary failure", row.id)
+      delete args.p_hold
+      // Not held after all, so the row must not look held on /admin/emails.
+      if (typeof args.p_error === "string") args.p_error = args.p_error.replace(/^THROTTLE:\s*/, "")
+      tryNo -= 1
+      continue
+    }
     if (!error) {
       // 'stale' on a later try: an earlier try may have committed and only
       // its answer was lost. The row says what that try recorded.
-      if (data === "stale" && tryNo > 1) return (fits(clock) ? await recorded(db, row) : null) ?? "stale"
+      if (data === "stale" && tryNo > 1)
+        return (fits(clock) ? await recorded(db, row, args.p_hold === true) : null) ?? "stale"
       return typeof data === "string" ? data : null
     }
     console.error("complete_outbox failed", row.id, tryNo, error.code, error.message)
@@ -187,8 +207,11 @@ async function complete(db: Db, row: OutboxEmail, result: Result, clock: Clock):
   return null
 }
 
-/** The status this attempt left on the row, if it is settled. */
-async function recorded(db: Db, row: OutboxEmail): Promise<string | null> {
+/**
+ * The status this attempt left on the row, if it is settled. A hold puts
+ * the attempt count back, so a held row shows the count before the claim.
+ */
+async function recorded(db: Db, row: OutboxEmail, held: boolean): Promise<string | null> {
   const { data } = await db
     .from("outbox")
     .select("status, attempts")
@@ -196,11 +219,13 @@ async function recorded(db: Db, row: OutboxEmail): Promise<string | null> {
     .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS))
     .maybeSingle()
   const settled = data as { status?: unknown; attempts?: unknown } | null
+  if (held) return settled?.status === "pending" && settled.attempts === row.attempt - 1 ? "held" : null
   if (settled?.attempts !== row.attempt) return null
   return settled.status === "sent" || settled.status === "pending" || settled.status === "dead" ? settled.status : null
 }
 
-type SendOutcome = { status: string | null; timedOut: boolean }
+/** stop: the run should send nothing more (the send timed out, or the provider throttles the whole account). */
+type SendOutcome = { status: string | null; stop: boolean }
 
 async function sendOne(
   db: Db,
@@ -218,7 +243,7 @@ async function sendOne(
     console.error("outbox email could not be rendered", row.id, row.kind, reason)
     return {
       status: await complete(db, row, { ok: false, permanent: true, error: `render: ${reason}` }, clock),
-      timedOut: false,
+      stop: false,
     }
   }
   let result: Result
@@ -244,8 +269,12 @@ async function sendOne(
       result = { ok: false, permanent: false, error: error instanceof Error ? error.message : "send_failed" }
     }
   }
-  if (!result.ok) console.warn("outbox send failed", row.id, row.kind, result.permanent ? "permanent" : "retry")
-  return { status: await complete(db, row, result, clock), timedOut }
+  if (!result.ok) {
+    const how = result.hold ? "hold" : result.permanent ? "permanent" : "retry"
+    console.warn("outbox send failed", row.id, row.kind, how)
+  }
+  const stop = !result.ok && (result.hold === true || result.stop === true)
+  return { status: await complete(db, row, result, clock), stop: timedOut || stop }
 }
 
 /** Gives rows back while time allows; the rest wait out their lease. */
@@ -266,7 +295,13 @@ async function release(db: Db, rows: OutboxEmail[], clock: Clock): Promise<numbe
  * One send-outbox run. Throws only when the first claim fails. After a send
  * times out its connection is cut off (transport.abort), the attempt is
  * recorded as outcome unknown, and the run stops and gives back the rest of
- * its batch: the provider may be stuck.
+ * its batch: the provider may be stuck. The run also stops when the provider
+ * throttles the whole account (SES: per-second rate or 24-hour quota
+ * exceeded; smtp.ts says which replies mean that), since every other row
+ * would fail the same way, and gives back the rest uncounted. A rate
+ * failure counts as usual (retried after a minute). A quota failure is held
+ * (complete_outbox p_hold: back in an hour, the attempt not counted, so it
+ * never ends dead, though it still expires at its kind's maximum age).
  */
 export async function sendDueEmails(
   db: Db,
@@ -277,7 +312,7 @@ export async function sendDueEmails(
   const started = now()
   const clock: Clock = { now, started }
   const budget = options.budgetMs ?? RUN_BUDGET_MS
-  const result: OutboxRunResult = { claimed: 0, sent: 0, retrying: 0, dead: 0, stale: 0, released: 0 }
+  const result: OutboxRunResult = { claimed: 0, sent: 0, retrying: 0, held: 0, dead: 0, stale: 0, released: 0 }
 
   try {
     run: while (now() - started < budget) {
@@ -303,12 +338,13 @@ export async function sendDueEmails(
           result.released += await release(db, rows.slice(i), clock)
           break run
         }
-        const { status, timedOut } = await sendOne(db, transport, rows[i], options, clock)
+        const { status, stop } = await sendOne(db, transport, rows[i], options, clock)
         if (status === "sent") result.sent += 1
         else if (status === "pending") result.retrying += 1
+        else if (status === "held") result.held += 1
         else if (status === "dead") result.dead += 1
         else if (status === "stale") result.stale += 1
-        if (timedOut) {
+        if (stop) {
           result.released += await release(db, rows.slice(i + 1), clock)
           break run
         }

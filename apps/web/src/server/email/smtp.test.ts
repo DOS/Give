@@ -20,7 +20,8 @@ vi.mock("nodemailer", () => ({
   },
 }))
 
-const { createSmtpTransport, envelopeWatch, sesMessageId, smtpFailure, socketTracker } = await import("./smtp")
+const { createSmtpTransport, envelopeWatch, sesMessageId, smtpFailure, smtpProvider, socketTracker } =
+  await import("./smtp")
 
 const CONFIG = { host: "email-smtp.ap-southeast-1.amazonaws.com", port: 587, user: "u", pass: "p" }
 const EMAIL = {
@@ -70,6 +71,19 @@ describe("createSmtpTransport", () => {
   })
 })
 
+describe("createSmtpTransport against SES", () => {
+  it("holds a send SES throttles for the whole account", async () => {
+    mailer.sendMail.mockRejectedValue({
+      code: "EENVELOPE",
+      command: "MAIL FROM",
+      responseCode: 454,
+      response: "454 Throttling failure: Daily message quota exceeded.",
+    })
+    expect(await createSmtpTransport(CONFIG).send(EMAIL)).toMatchObject({ ok: false, hold: true })
+    expect(await createSmtpTransport({ ...CONFIG, host: "smtp.example.net" }).send(EMAIL)).not.toHaveProperty("hold")
+  })
+})
+
 describe("smtpFailure", () => {
   it.each([
     ["EENVELOPE", "RCPT TO", 550, true],
@@ -113,6 +127,46 @@ describe("smtpFailure", () => {
     expect(
       smtpFailure({ code: "EMESSAGE", command: "DATA", responseCode: 554, response: "554 rejected" }).outcomeUnknown
     ).toBeUndefined()
+  })
+
+  it("holds SES's documented account-wide throttles, and only SES's", () => {
+    const daily = { responseCode: 454, response: "454 Throttling failure: Daily message quota exceeded." }
+    const rate = {
+      responseCode: 454,
+      command: "DATA",
+      response: "454 Throttling failure: Maximum sending rate exceeded.",
+    }
+    expect(smtpFailure(daily, true, "ses")).toEqual({
+      ok: false,
+      permanent: false,
+      hold: true,
+      error: "THROTTLE: SMTP 454: 454 Throttling failure: Daily message quota exceeded.",
+    })
+    expect(smtpFailure(rate, false, "ses")).toEqual({
+      ok: false,
+      permanent: false,
+      stop: true,
+      error: "SMTP 454: 454 Throttling failure: Maximum sending rate exceeded.",
+    })
+    expect(smtpFailure(daily, true, "other")).not.toHaveProperty("hold")
+    expect(
+      smtpFailure({ responseCode: 454, response: "454 Temporary service failure" }, true, "ses")
+    ).not.toHaveProperty("hold")
+    expect(
+      smtpFailure({ responseCode: 554, response: "554 Throttling failure: Daily message quota exceeded" }, true, "ses")
+    ).not.toHaveProperty("hold")
+    expect(
+      smtpFailure({ responseCode: 554, response: "554 Message rejected: Email address is not verified." }, true, "ses")
+    ).toEqual({ ok: false, permanent: false, error: "SMTP 554: 554 Message rejected: Email address is not verified." })
+  })
+
+  it("knows SES by its SMTP endpoints", () => {
+    expect(smtpProvider("email-smtp.ap-southeast-1.amazonaws.com")).toBe("ses")
+    expect(smtpProvider(" EMAIL-SMTP.us-east-1.AMAZONAWS.com. ")).toBe("ses")
+    expect(smtpProvider("email-smtp-fips.us-gov-west-1.amazonaws.com")).toBe("ses")
+    expect(smtpProvider("email-smtp.cn-northwest-1.amazonaws.com.cn")).toBe("ses")
+    expect(smtpProvider("email-smtp.ap-southeast-1.amazonaws.com.example.net")).toBe("other")
+    expect(smtpProvider("smtp.example.net")).toBe("other")
   })
 
   it("names connection errors without a reply code", () => {

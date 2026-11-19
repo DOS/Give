@@ -4,15 +4,24 @@ import net, { type Socket } from "node:net"
 
 import nodemailer from "nodemailer"
 
+import { THROTTLE_HOLD_PREFIX } from "@/lib/email-outbox"
+
 import type { EmailTransport, OutgoingEmail, SendResult } from "./transport"
 
 /**
  * SMTP to AWS SES, the provider DOS.Me already uses (apps/api EmailService,
- * nodemailer). Only a recipient the server refused outright at RCPT TO
- * counts as permanent; every other failure (timeouts, 4xx, throttling, a
- * 5xx about the sender, auth or account problems) is retried by the outbox
- * and ends 'dead' after the last attempt, where an admin can send it again
- * once fixed.
+ * nodemailer). Host, port, login and key all come from the env (provider.ts);
+ * only the reading of a few documented replies depends on the provider
+ * (smtpProvider).
+ *
+ * Only a recipient the server refused outright at RCPT TO counts as
+ * permanent. SES's documented 454 "Daily message quota exceeded" is held:
+ * the run stops and the row waits an hour without spending an attempt. Its
+ * 454 "Maximum sending rate exceeded" stops the run but counts as an
+ * ordinary failure (retried after a minute). Every other
+ * failure (timeouts, other 4xx, a 5xx about the sender, 535 auth, 554
+ * unverified address or access denied) is retried by the outbox and ends
+ * 'dead' after the last attempt, where an admin can send it again once fixed.
  */
 
 export interface SmtpConfig {
@@ -21,6 +30,24 @@ export interface SmtpConfig {
   user: string
   pass: string
 }
+
+/** Whose documented replies to recognise; everything else is the same for any SMTP server. */
+export type SmtpProvider = "ses" | "other"
+
+export function smtpProvider(host: string): SmtpProvider {
+  const name = host.trim().toLowerCase().replace(/\.$/, "")
+  return /^email-smtp(-fips)?\.[a-z0-9-]+\.amazonaws\.com(\.cn)?$/.test(name) ? "ses" : "other"
+}
+
+/**
+ * SES's account-wide throttles (docs.aws.amazon.com/ses/latest/dg/troubleshoot-smtp.html),
+ * both shared with DOS.Me. The 24-hour quota fails every email until it
+ * frees up, so the row is held. The per-second rate clears in seconds, so
+ * that failure counts as usual (retried after a minute) and only the run
+ * stops.
+ */
+const SES_DAILY_QUOTA = /Throttling failure: Daily message quota exceeded/i
+const SES_SEND_RATE = /Throttling failure: Maximum sending rate exceeded/i
 
 /** Opening the TCP connection may take this long (nodemailer's connectionTimeout covers the rest of its setup). */
 export const CONNECT_TIMEOUT_MS = 10_000
@@ -42,18 +69,32 @@ interface SmtpError {
 /**
  * afterEnvelope: the message had reached MAIL FROM. A connection lost before
  * that (connect, greeting, STARTTLS, AUTH) cannot have delivered anything.
+ * provider: whose documented account-wide throttles to recognise: SES's
+ * daily quota is held (`hold`, last_error `THROTTLE: ...`) instead of
+ * counted; its per-second rate stops the run (`stop`) and counts as usual.
  */
-export function smtpFailure(error: unknown, afterEnvelope = true): Extract<SendResult, { ok: false }> {
+export function smtpFailure(
+  error: unknown,
+  afterEnvelope = true,
+  provider: SmtpProvider = "other"
+): Extract<SendResult, { ok: false }> {
   const e = (error ?? {}) as SmtpError
   const code = typeof e.responseCode === "number" ? e.responseCode : null
   const detail = (e.response ?? e.message ?? "send_failed").replace(/\s+/g, " ").slice(0, 200)
   const refusedRecipient = e.code === "EENVELOPE" && e.command === "RCPT TO"
   const lost = afterEnvelope && code === null && e.command === "CONN" && LOST_CONNECTION_CODES.has(e.code ?? "")
+  const text = code !== null ? `SMTP ${code}: ${detail}` : `${e.code ?? "SMTP"}: ${detail}`
+  if (provider === "ses" && code === 454 && SES_DAILY_QUOTA.test(detail)) {
+    return { ok: false, permanent: false, hold: true, error: `${THROTTLE_HOLD_PREFIX} ${text}` }
+  }
+  if (provider === "ses" && code === 454 && SES_SEND_RATE.test(detail)) {
+    return { ok: false, permanent: false, stop: true, error: text }
+  }
   return {
     ok: false,
     permanent: refusedRecipient && code !== null && PERMANENT_RCPT_CODES.has(code),
     ...(lost ? { outcomeUnknown: true } : {}),
-    error: code !== null ? `SMTP ${code}: ${detail}` : `${e.code ?? "SMTP"}: ${detail}`,
+    error: text,
   }
 }
 
@@ -156,6 +197,7 @@ export function envelopeWatch() {
 }
 
 export function createSmtpTransport(config: SmtpConfig): EmailTransport {
+  const provider = smtpProvider(config.host)
   const sockets = socketTracker(config)
   const envelope = envelopeWatch()
   const transporter = nodemailer.createTransport({
@@ -205,7 +247,7 @@ export function createSmtpTransport(config: SmtpConfig): EmailTransport {
         }
         return { ok: true, messageId: sesMessageId(info.response, info.messageId) }
       } catch (error) {
-        return smtpFailure(error, envelope.started)
+        return smtpFailure(error, envelope.started, provider)
       }
     },
   }

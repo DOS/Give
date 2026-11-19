@@ -545,6 +545,19 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Platform
 
+- Email throttling hold: the SMTP transport stays on AWS SES (host, port,
+  login and key from env). When SES answers 454 "Daily message quota
+  exceeded" (a quota shared with DOS.Me), the email is now held instead of
+  counting an attempt: the run stops, the email waits an hour and never
+  ends dead, and `/admin/emails` lists held emails (`THROTTLE:` errors) with
+  when each will be dropped at its maximum age. SES's per-second 454
+  "Maximum sending rate exceeded" stops the run and is retried after a
+  minute as an ordinary failure. Every other error keeps the normal retry
+  and permanent rules. A run against a database without the hold records an
+  ordinary failure instead. Retrying emails with no recorded error stay
+  listed. The shared DOS Brevo account was considered and not used (design
+  §2.5.1). Needs DOS/DOS.Me `give.complete_outbox(..., p_hold)` first
+  (#254).
 - Email outbox (M4): Give sends email through `give.outbox`, filled in the
   same transaction as the event: a donation turning `received` (a receipt to
   the guest's donation email or the donor's account, with a fresh 7-day

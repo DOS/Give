@@ -36,6 +36,27 @@ export const OUTBOX_SKIP_LABELS: Record<string, string> = {
   not_due: "cam kết không còn đến hạn thanh toán",
 }
 
+/**
+ * Prefix of last_error when the provider throttled the whole account (SES:
+ * 24-hour quota exceeded; server/email/smtp.ts). Such a row
+ * is held: pending again every hour, the attempt not counted, so it never
+ * ends dead, but it is skipped once past its kind's maximum age.
+ */
+export const THROTTLE_HOLD_PREFIX = "THROTTLE:"
+
+/** Days before an email is too late to send; mirrors give.outbox_max_age (DOS.Me). */
+export function outboxMaxAgeDays(kind: string): number {
+  if (kind === "pledge_payment_reminder") return 2
+  if (kind === "pledge_payment_due" || kind === "campaign_ended") return 14
+  return 7
+}
+
+/** When claim_outbox will skip the row as expired: max age after it was queued, or after its last deferral. */
+export function outboxExpiresAt(row: Pick<OutboxRow, "kind" | "created_at" | "deferred_at">): Date {
+  const from = Math.max(Date.parse(row.created_at), row.deferred_at ? Date.parse(row.deferred_at) : 0)
+  return new Date(from + outboxMaxAgeDays(row.kind) * 24 * 60 * 60 * 1000)
+}
+
 export interface OutboxRow {
   id: string
   kind: string
@@ -50,10 +71,11 @@ export interface OutboxRow {
   created_at: string
   updated_at: string
   dead_at: string | null
+  deferred_at: string | null
 }
 
 const COLUMNS =
-  "id, kind, status, attempts, max_attempts, last_error, recipient_email, recipient_user_id, campaign_id, next_attempt_at, created_at, updated_at, dead_at"
+  "id, kind, status, attempts, max_attempts, last_error, recipient_email, recipient_user_id, campaign_id, next_attempt_at, created_at, updated_at, dead_at, deferred_at"
 
 /** Dead rows, newest first, and how many there are. */
 export async function listDeadEmails(service: Db): Promise<{ rows: OutboxRow[]; total: number }> {
@@ -67,14 +89,33 @@ export async function listDeadEmails(service: Db): Promise<{ rows: OutboxRow[]; 
   return { rows: (data ?? []) as OutboxRow[], total: count ?? 0 }
 }
 
-/** Rows waiting for a retry after a failed attempt, oldest first. */
+/** Rows waiting for a retry after a counted failed attempt, oldest first (held rows are listed apart). */
 export async function listRetryingEmails(service: Db): Promise<{ rows: OutboxRow[]; total: number }> {
   const { data, error, count } = await service
     .from("outbox")
     .select(COLUMNS, { count: "exact" })
     .eq("status", "pending")
     .gt("attempts", 0)
+    // NOT LIKE alone would drop rows with no last_error (a lease that ran out).
+    .or(`last_error.is.null,last_error.not.like.${THROTTLE_HOLD_PREFIX}*`)
     .order("next_attempt_at", { ascending: true })
+    .limit(OUTBOX_LIST_LIMIT)
+  if (error) throw error
+  return { rows: (data ?? []) as OutboxRow[], total: count ?? 0 }
+}
+
+/**
+ * Rows held because the provider throttled the whole account
+ * (THROTTLE_HOLD_PREFIX), oldest first: the soonest to expire, give or take
+ * their kind. Each is sent once sending frees up, unless it expires first.
+ */
+export async function listHeldEmails(service: Db): Promise<{ rows: OutboxRow[]; total: number }> {
+  const { data, error, count } = await service
+    .from("outbox")
+    .select(COLUMNS, { count: "exact" })
+    .eq("status", "pending")
+    .like("last_error", `${THROTTLE_HOLD_PREFIX}%`)
+    .order("created_at", { ascending: true })
     .limit(OUTBOX_LIST_LIMIT)
   if (error) throw error
   return { rows: (data ?? []) as OutboxRow[], total: count ?? 0 }
