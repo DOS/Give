@@ -30,7 +30,10 @@ export const OUTBOX_STATUS_LABELS: Record<string, string> = {
 export const OUTBOX_SKIP_LABELS: Record<string, string> = {
   no_recipient: "không còn địa chỉ nhận (tài khoản đã xóa)",
   unsubscribed: "người nhận đã hủy đăng ký",
-  payment_requests_stopped: "yêu cầu thanh toán của dự án đang tạm dừng",
+  payment_requests_stopped: "yêu cầu thanh toán của dự án đang tạm dừng; gửi lại khi được mở lại",
+  expired: "đã quá lâu nên không còn đúng lúc",
+  not_received: "khoản ủng hộ không còn ở trạng thái đã nhận",
+  not_due: "cam kết không còn đến hạn thanh toán",
 }
 
 export interface OutboxRow {

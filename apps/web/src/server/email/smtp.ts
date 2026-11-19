@@ -22,8 +22,11 @@ export interface SmtpConfig {
   pass: string
 }
 
-/** Opening the TCP connection may take this long (nodemailer's own limit does not apply to a socket we hand it). */
+/** Opening the TCP connection may take this long (nodemailer's connectionTimeout covers the rest of its setup). */
 export const CONNECT_TIMEOUT_MS = 10_000
+
+/** Connection-level failures with no SMTP reply: the server may have taken the message before the line dropped. */
+const LOST_CONNECTION_CODES = new Set(["ECONNECTION", "ESOCKET", "ETIMEDOUT"])
 
 /** Replies to RCPT TO that mean this address can never be delivered to. */
 const PERMANENT_RCPT_CODES = new Set([501, 550, 551, 553])
@@ -41,9 +44,11 @@ export function smtpFailure(error: unknown): Extract<SendResult, { ok: false }> 
   const code = typeof e.responseCode === "number" ? e.responseCode : null
   const detail = (e.response ?? e.message ?? "send_failed").replace(/\s+/g, " ").slice(0, 200)
   const refusedRecipient = e.code === "EENVELOPE" && e.command === "RCPT TO"
+  const lost = code === null && e.command === "CONN" && LOST_CONNECTION_CODES.has(e.code ?? "")
   return {
     ok: false,
     permanent: refusedRecipient && code !== null && PERMANENT_RCPT_CODES.has(code),
+    ...(lost ? { outcomeUnknown: true } : {}),
     error: code !== null ? `SMTP ${code}: ${detail}` : `${e.code ?? "SMTP"}: ${detail}`,
   }
 }
@@ -69,6 +74,7 @@ export function socketTracker(
   timeoutMs = CONNECT_TIMEOUT_MS
 ) {
   const open = new Set<Socket>()
+  const connecting = new Set<(err: Error) => void>()
   return {
     getSocket(_options: unknown, callback: SocketCallback): void {
       const socket = connect(config.port, config.host)
@@ -79,6 +85,7 @@ export function socketTracker(
         if (settled) return
         settled = true
         clearTimeout(timer)
+        connecting.delete(finish)
         socket.off("error", onError)
         if (err) {
           socket.destroy()
@@ -87,6 +94,7 @@ export function socketTracker(
           callback(null, { connection: socket })
         }
       }
+      connecting.add(finish)
       const onError = (err: Error) => finish(err)
       const timer = setTimeout(
         () => finish(Object.assign(new Error("Connection timeout"), { code: "ETIMEDOUT" })),
@@ -95,8 +103,16 @@ export function socketTracker(
       socket.once("connect", () => finish(null))
       socket.once("error", onError)
     },
+    /**
+     * Resets every connection (TCP RST, so nothing still buffered, such as
+     * the final "." of a message, goes out) and fails any still opening.
+     */
     abort(): void {
-      for (const socket of open) socket.destroy()
+      for (const fail of [...connecting]) fail(Object.assign(new Error("Connection aborted"), { code: "ECONNECTION" }))
+      for (const socket of open) {
+        if (typeof socket.resetAndDestroy === "function") socket.resetAndDestroy()
+        else socket.destroy()
+      }
       open.clear()
     },
     get openCount(): number {

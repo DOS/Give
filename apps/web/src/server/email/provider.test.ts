@@ -149,6 +149,7 @@ describe("a deployment outside Production on the Production database", () => {
   it("knows the Production database by its vanity domain too", () => {
     for (const url of [
       "https://dos.supabase.co",
+      "https://dos.supabase.co.",
       "https://DOS.supabase.co/",
       "https://gulptwduchsjcsbndmua.supabase.co",
     ]) {

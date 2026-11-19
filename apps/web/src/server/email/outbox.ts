@@ -14,8 +14,9 @@ import type { EmailTransport, OutgoingEmail } from "./transport"
  *
  * Delivery is at least once, not exactly once. Enqueueing is exactly once
  * (one row per event), but a row is sent again when the provider took the
- * message and its answer never reached us: a send that timed out (recorded
- * as outcome unknown and retried only after an hour or more), or a result
+ * message and its answer never reached us: a send that timed out or lost
+ * its connection before the provider answered (recorded as outcome unknown
+ * and retried only after an hour or more), or a result
  * that could not be recorded (complete_outbox is retried a few times, then
  * the lease runs out and the next run sends the row again). The recipient
  * may then get the same email twice.
@@ -34,6 +35,15 @@ export const SEND_TIMEOUT_MS = 15_000
 /** Tries at recording one result before leaving the row to its lease. */
 export const COMPLETE_TRIES = 3
 const COMPLETE_RETRY_MS = [250, 1_000]
+/** Each RPC after a send (complete, release) is abandoned after this long. */
+export const RPC_TIMEOUT_MS = 5_000
+/**
+ * No retry or release starts unless it can finish by this point, under the
+ * 60 s function limit: a run killed mid-batch loses its results and leaves
+ * the rest of its rows to their 5-minute lease. A send ends by
+ * SEND_DEADLINE_MS, its first complete_outbox by 50 s.
+ */
+export const RUN_LIMIT_MS = 55_000
 /**
  * No send starts unless it can time out by this point, well inside the 60 s
  * function limit (route maxDuration). Rows the run cannot reach in time are
@@ -130,7 +140,24 @@ type Result =
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-async function complete(db: Db, row: OutboxEmail, result: Result): Promise<string | null> {
+/** The run's clock: whether another RPC (after `wait` ms) still fits before RUN_LIMIT_MS. */
+interface Clock {
+  now: () => number
+  started: number
+}
+const fits = (clock: Clock, wait = 0) => clock.now() - clock.started + wait + RPC_TIMEOUT_MS <= RUN_LIMIT_MS
+
+/**
+ * Errors a second try cannot fix: bad data, constraints, permissions, an
+ * exception the function raised (GIVE_OUTBOX_NOT_FOUND), a request
+ * PostgREST refused. Everything else (network, timeout, abort, connection,
+ * serialization, server overload) is worth another try.
+ */
+function isTransient(error: { code?: string }): boolean {
+  return !/^(22|23|42|P0|PGRST1|PGRST2)/.test(error.code ?? "")
+}
+
+async function complete(db: Db, row: OutboxEmail, result: Result, clock: Clock): Promise<string | null> {
   const args = {
     p_id: row.id,
     p_attempt: row.attempt,
@@ -140,15 +167,35 @@ async function complete(db: Db, row: OutboxEmail, result: Result): Promise<strin
     p_permanent: result.ok ? false : result.permanent,
     p_outcome_unknown: result.ok ? false : result.outcomeUnknown === true,
   }
-  for (let tryNo = 1; tryNo <= COMPLETE_TRIES; tryNo++) {
-    const { data, error } = await db.rpc("complete_outbox", args)
-    if (!error) return typeof data === "string" ? data : null
+  for (let tryNo = 1; ; tryNo++) {
+    const { data, error } = await db.rpc("complete_outbox", args).abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS))
+    if (!error) {
+      // 'stale' on a later try: an earlier try may have committed and only
+      // its answer was lost. The row says what that try recorded.
+      if (data === "stale" && tryNo > 1) return (await recorded(db, row)) ?? "stale"
+      return typeof data === "string" ? data : null
+    }
     console.error("complete_outbox failed", row.id, tryNo, error.code, error.message)
-    if (tryNo < COMPLETE_TRIES) await pause(COMPLETE_RETRY_MS[tryNo - 1] ?? 1_000)
+    const wait = COMPLETE_RETRY_MS[tryNo - 1] ?? 1_000
+    if (tryNo >= COMPLETE_TRIES || !isTransient(error) || !fits(clock, wait)) break
+    await pause(wait)
   }
   // The lease runs out and the next run takes the row again: a sent email
   // goes out a second time.
   return null
+}
+
+/** The status this attempt left on the row, if it is settled. */
+async function recorded(db: Db, row: OutboxEmail): Promise<string | null> {
+  const { data } = await db
+    .from("outbox")
+    .select("status, attempts")
+    .eq("id", row.id)
+    .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS))
+    .maybeSingle()
+  const settled = data as { status?: unknown; attempts?: unknown } | null
+  if (settled?.attempts !== row.attempt) return null
+  return settled.status === "sent" || settled.status === "pending" || settled.status === "dead" ? settled.status : null
 }
 
 type SendOutcome = { status: string | null; timedOut: boolean }
@@ -157,7 +204,8 @@ async function sendOne(
   db: Db,
   transport: EmailTransport,
   row: OutboxEmail,
-  options: OutboxRunOptions
+  options: OutboxRunOptions,
+  clock: Clock
 ): Promise<SendOutcome> {
   let email: OutgoingEmail
   try {
@@ -167,7 +215,7 @@ async function sendOne(
     const reason = error instanceof EmailRenderError ? error.message : "render_failed"
     console.error("outbox email could not be rendered", row.id, row.kind, reason)
     return {
-      status: await complete(db, row, { ok: false, permanent: true, error: `render: ${reason}` }),
+      status: await complete(db, row, { ok: false, permanent: true, error: `render: ${reason}` }, clock),
       timedOut: false,
     }
   }
@@ -192,13 +240,17 @@ async function sendOne(
     }
   }
   if (!result.ok) console.warn("outbox send failed", row.id, row.kind, result.permanent ? "permanent" : "retry")
-  return { status: await complete(db, row, result), timedOut }
+  return { status: await complete(db, row, result, clock), timedOut }
 }
 
-async function release(db: Db, rows: OutboxEmail[]): Promise<number> {
+/** Gives rows back while time allows; the rest wait out their lease. */
+async function release(db: Db, rows: OutboxEmail[], clock: Clock): Promise<number> {
   let released = 0
   for (const row of rows) {
-    const { data, error } = await db.rpc("release_outbox", { p_id: row.id, p_attempt: row.attempt })
+    if (!fits(clock)) break
+    const { data, error } = await db
+      .rpc("release_outbox", { p_id: row.id, p_attempt: row.attempt })
+      .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS))
     if (error) console.error("release_outbox failed", row.id, error.code, error.message)
     else if (data === true) released += 1
   }
@@ -218,6 +270,7 @@ export async function sendDueEmails(
 ): Promise<OutboxRunResult> {
   const now = options.now ?? Date.now
   const started = now()
+  const clock: Clock = { now, started }
   const budget = options.budgetMs ?? RUN_BUDGET_MS
   const result: OutboxRunResult = { claimed: 0, sent: 0, retrying: 0, dead: 0, stale: 0, released: 0 }
 
@@ -240,16 +293,16 @@ export async function sendDueEmails(
       }
       for (let i = 0; i < rows.length; i++) {
         if (now() - started + SEND_TIMEOUT_MS > SEND_DEADLINE_MS) {
-          result.released += await release(db, rows.slice(i))
+          result.released += await release(db, rows.slice(i), clock)
           break run
         }
-        const { status, timedOut } = await sendOne(db, transport, rows[i], options)
+        const { status, timedOut } = await sendOne(db, transport, rows[i], options, clock)
         if (status === "sent") result.sent += 1
         else if (status === "pending") result.retrying += 1
         else if (status === "dead") result.dead += 1
         else if (status === "stale") result.stale += 1
         if (timedOut) {
-          result.released += await release(db, rows.slice(i + 1))
+          result.released += await release(db, rows.slice(i + 1), clock)
           break run
         }
       }

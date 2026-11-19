@@ -451,7 +451,9 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   credentials, and `EMAIL_DELIVERY=log` is refused there. Delivery is at
   least once: each event queues exactly one email, but a send whose result
   was lost, or that timed out (its connection is cut off and it waits an
-  hour before the next attempt), can reach the recipient twice (#254 / #257).
+  hour before the next attempt), can reach the recipient twice. A daily
+  `/api/cron/purge-outbox` clears old addresses and payloads and expired
+  tracking tokens (#254 / #257).
 - Contact: Give staff are reached at `hi@give.vn` (Give's own domain; it
   replaced the first choice, DOS.Me's `help@dos.me`), kept in one constant
   (`apps/web/src/lib/contact.ts`). The site footer shows
@@ -476,11 +478,17 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 - Email outbox: `give.outbox` (unique idempotency key, lease, attempts,
   backoff, dead), `give.email_suppressions`, `give.contribution_access_tokens`;
   enqueue triggers on `contributions`, `notices` and `campaign_status_events`;
-  `give.claim_outbox` (records the address it sends to),
+  `give.claim_outbox` (re-checks each row: a receipt whose donation is no
+  longer received, a payment request no longer due and rows past their
+  kind's maximum age are skipped; payment requests wait while a campaign's
+  requests are stopped; records the address it sends to),
   `give.complete_outbox` (an outcome-unknown timeout waits at least an hour),
-  `give.release_outbox`, `give.retry_outbox` (admin, audited),
-  `give.unsubscribe_email` (suppresses the address the email went to),
-  `give.enqueue_email`. RLS on, service role only (#254 / DOS/DOS.Me#1782). Migration
+  `give.release_outbox`, `give.retry_outbox` (admin, audited, not past the
+  maximum age), `give.unsubscribe_email` (suppresses the address the email
+  went to; suppressions are stored as SHA-256), `give.purge_outbox`
+  (retention). Only the triggers enqueue, validating rows instead of
+  catching errors; `recipient_user_id` has no foreign key to `auth.users`.
+  RLS on, service role only (#254 / DOS/DOS.Me#1782). Migration
   `20261123090000_give_email_outbox`.
 - Finance can read why a bank transaction was refused:
   `give.bank_transaction_refusal_reasons(uuid[])`, finance and admin only,

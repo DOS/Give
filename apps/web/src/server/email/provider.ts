@@ -74,7 +74,8 @@ export function emailLinkOrigin(env: Env = process.env): string | null {
 export function usesProductionDatabase(env: Env = process.env): boolean {
   let host: string
   try {
-    host = new URL(env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname.toLowerCase()
+    // A trailing dot (fully qualified name) reaches the same host.
+    host = new URL(env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname.toLowerCase().replace(/\.+$/, "")
   } catch {
     return false
   }

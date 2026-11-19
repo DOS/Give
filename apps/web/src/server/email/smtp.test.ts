@@ -84,6 +84,18 @@ describe("smtpFailure", () => {
     expect(smtpFailure({ code, command, responseCode, response: `${responseCode} x` }).permanent).toBe(permanent)
   })
 
+  it("calls a connection lost mid-conversation outcome unknown, but not a refused connect", () => {
+    expect(smtpFailure({ code: "ECONNECTION", command: "CONN", message: "Connection closed" })).toMatchObject({
+      permanent: false,
+      outcomeUnknown: true,
+    })
+    expect(smtpFailure({ code: "ETIMEDOUT", command: "CONN", message: "Timeout" }).outcomeUnknown).toBe(true)
+    expect(smtpFailure({ code: "ECONNREFUSED", message: "connect ECONNREFUSED" }).outcomeUnknown).toBeUndefined()
+    expect(
+      smtpFailure({ code: "EMESSAGE", command: "DATA", responseCode: 554, response: "554 rejected" }).outcomeUnknown
+    ).toBeUndefined()
+  })
+
   it("names connection errors without a reply code", () => {
     expect(smtpFailure({ code: "ETIMEDOUT", message: "Connection\ntimeout" })).toEqual({
       ok: false,
@@ -103,10 +115,15 @@ describe("sesMessageId", () => {
 
 class FakeSocket extends EventEmitter {
   destroyed = false
+  reset = false
   destroy() {
     this.destroyed = true
     this.emit("close")
     return this
+  }
+  resetAndDestroy() {
+    this.reset = true
+    return this.destroy()
   }
 }
 
@@ -129,8 +146,19 @@ describe("socketTracker", () => {
     expect(callback).toHaveBeenCalledWith(null, { connection: sockets[0] })
     expect(tracker.openCount).toBe(1)
     tracker.abort()
-    expect(sockets[0].destroyed).toBe(true)
+    expect(sockets[0].reset).toBe(true)
     expect(tracker.openCount).toBe(0)
+  })
+
+  it("abort fails a connection still opening instead of leaving it to its timer", () => {
+    const { tracker, sockets } = tracked()
+    const callback = vi.fn()
+    tracker.getSocket({}, callback)
+    tracker.abort()
+    expect(callback).toHaveBeenCalledWith(expect.objectContaining({ code: "ECONNECTION" }))
+    expect(sockets[0].destroyed).toBe(true)
+    sockets[0].emit("connect")
+    expect(callback).toHaveBeenCalledTimes(1)
   })
 
   it("fails a connection that errors or does not open in time", () => {
@@ -157,7 +185,7 @@ describe("socketTracker", () => {
 })
 
 /** Any static, dynamic or require import of nodemailer or a subpath of it. */
-const NODEMAILER_IMPORT = /(from\s+|import\s*\(\s*|require\s*\(\s*)["']nodemailer(\/[^"']*)?["']/
+const NODEMAILER_IMPORT = /(from\s+|import\s*\(\s*|require\s*\(\s*|import\s+)["'`]nodemailer(\/[^"'`]*)?["'`]/
 
 /** A "use client" directive, allowing comments and blank lines before it. */
 function isClientModule(source: string): boolean {
@@ -171,6 +199,8 @@ describe("the import guard itself", () => {
     "const m = await import('nodemailer')",
     'import SMTPPool from "nodemailer/lib/smtp-pool"',
     'const m = require ( "nodemailer" )',
+    'import "nodemailer"',
+    "const m = await import(`nodemailer`)",
   ])("catches %s", (line) => {
     expect(NODEMAILER_IMPORT.test(line)).toBe(true)
   })

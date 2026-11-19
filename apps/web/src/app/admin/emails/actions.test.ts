@@ -65,4 +65,10 @@ describe("retryEmail", () => {
     expect(result?.ok).toBe(false)
     expect(result?.message).toContain("có người đã gửi lại")
   })
+
+  it("explains a row too old to send again", async () => {
+    state.serviceHandler = () => ({ error: { code: "23514", message: "GIVE_OUTBOX_EXPIRED" } })
+    const result = await retryEmail(ROW, null, new FormData())
+    expect(result?.message).toContain("đã quá lâu")
+  })
 })

@@ -20,8 +20,12 @@ export interface OutgoingEmail {
 
 export type SendResult =
   | { ok: true; messageId: string | null }
-  /** permanent: the provider refused this message for good (bad address); retrying cannot help. */
-  | { ok: false; permanent: boolean; error: string }
+  /**
+   * permanent: the provider refused this message for good (bad address);
+   * retrying cannot help. outcomeUnknown: the connection was lost before
+   * the provider answered, so it may have accepted the message.
+   */
+  | { ok: false; permanent: boolean; error: string; outcomeUnknown?: boolean }
 
 export interface EmailTransport {
   send(email: OutgoingEmail): Promise<SendResult>

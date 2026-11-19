@@ -2,7 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
-import { CLAIM_BATCH, COMPLETE_TRIES, SEND_DEADLINE_MS, SEND_TIMEOUT_MS, sendDueEmails } from "./outbox"
+import {
+  CLAIM_BATCH,
+  COMPLETE_TRIES,
+  RPC_TIMEOUT_MS,
+  RUN_LIMIT_MS,
+  SEND_DEADLINE_MS,
+  SEND_TIMEOUT_MS,
+  sendDueEmails,
+} from "./outbox"
 import type { EmailTransport, OutgoingEmail, SendResult } from "./transport"
 
 const OPTIONS = { origin: "https://give.vn", from: "Give <no-reply@give.vn>", replyTo: "hi@give.vn" }
@@ -158,6 +166,63 @@ describe("sendDueEmails", () => {
       const tries = (id: string) => completes().filter((a) => (a as { p_id: string }).p_id === id).length
       expect(tries(row(6).id)).toBe(COMPLETE_TRIES)
       expect(tries(row(9).id)).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("does not retry an error a second try cannot fix", async () => {
+    claims = [[row(90)]]
+    const db = fakeDb((call) => {
+      if (call.target === "rpc:complete_outbox") return { error: { code: "P0002", message: "GIVE_OUTBOX_NOT_FOUND" } }
+      return handler(call)
+    }, calls)
+    const outcome = await sendDueEmails(db as never, transport, OPTIONS)
+    expect(outcome).toMatchObject({ sent: 0, stale: 0 })
+    expect(completes()).toHaveLength(1)
+  })
+
+  it("reads the row when a retry finds its earlier try already recorded", async () => {
+    vi.useFakeTimers()
+    try {
+      claims = [[row(91)]]
+      let n = 0
+      const db = fakeDb((call) => {
+        if (call.target === "rpc:complete_outbox") {
+          n += 1
+          return n === 1 ? { error: { code: "", message: "TypeError: fetch failed" } } : { data: "stale" }
+        }
+        if (call.target === "outbox") return { data: { status: "sent", attempts: 1 } }
+        return handler(call)
+      }, calls)
+      const run = sendDueEmails(db as never, transport, OPTIONS)
+      await vi.runAllTimersAsync()
+      expect(await run).toMatchObject({ sent: 1, stale: 0 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("near the function limit, neither retries a result nor releases rows it has no time for", async () => {
+    vi.useFakeTimers()
+    try {
+      const late: EmailTransport = { send: () => new Promise(() => {}), close: vi.fn(), abort: vi.fn() }
+      claims = [[row(92), row(93)]]
+      const db = fakeDb((call) => {
+        if (call.target === "rpc:complete_outbox") return { error: { code: "57014", message: "timeout" } }
+        return handler(call)
+      }, calls)
+      // The send starts in time; after its timeout the clock reads 1 s short of the limit.
+      let t = 0
+      const run = sendDueEmails(db as never, late, { ...OPTIONS, now: () => t })
+      t = 0
+      await vi.advanceTimersByTimeAsync(1)
+      t = RUN_LIMIT_MS - RPC_TIMEOUT_MS + 1
+      await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS)
+      const outcome = await run
+      expect(completes()).toHaveLength(1)
+      expect(calls.filter((c) => c.target === "rpc:release_outbox")).toHaveLength(0)
+      expect(outcome).toMatchObject({ claimed: 2, released: 0 })
     } finally {
       vi.useRealTimers()
     }

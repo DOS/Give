@@ -19,11 +19,13 @@ import { dbAs, dbService } from "@/lib/supabase"
 const SIGNED_OUT = "Phiên đăng nhập đã hết. Hãy đăng nhập lại."
 const NOT_ALLOWED = "Chỉ quản trị viên mới gửi lại được email."
 const NOT_DEAD = "Email này không còn ở trạng thái không gửi được: có người đã gửi lại. Hãy tải lại trang."
+const EXPIRED = "Email này đã quá lâu nên không gửi lại được: nội dung có thể không còn đúng."
 
 const MESSAGES: Record<string, string> = {
   GIVE_NOT_ALLOWED: NOT_ALLOWED,
   GIVE_OUTBOX_NOT_DEAD: NOT_DEAD,
   GIVE_OUTBOX_NOT_FOUND: NOT_DEAD,
+  GIVE_OUTBOX_EXPIRED: EXPIRED,
 }
 
 export async function retryEmail(outboxId: string, _state: ActionResult, _form: FormData): Promise<ActionResult> {
