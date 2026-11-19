@@ -99,7 +99,13 @@ beforeEach(() => {
   state.session = null
   state.anonHandler = (call) => {
     if (call.target === "campaigns") return { data: campaignFixture("live") }
-    if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+    if (
+      call.target === "campaign_milestones" ||
+      call.target === "campaign_updates" ||
+      call.target === "campaign_media"
+    ) {
+      return { data: [] }
+    }
     if (call.target === "rpc:public_organizer")
       return { data: [{ display_name: "Quỹ Bản Mây", kind: "organization", verification_status: "verified" }] }
     if (call.target === "public_campaigns")
@@ -224,7 +230,12 @@ describe("CampaignPage report flow (DOS/Give#98)", () => {
     state.anonHandler = () => ({ data: null })
     state.userHandler = (call) => {
       if (call.target === "campaigns") return { data: campaignFixture("in_review") }
-      if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media"
+      )
+        return { data: [] }
       return undefined
     }
 
@@ -428,7 +439,12 @@ describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/
 
       state.userHandler = (call) => {
         if (call.target === "campaigns") return { data: campaignFixture(status) }
-        if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+        if (
+          call.target === "campaign_milestones" ||
+          call.target === "campaign_updates" ||
+          call.target === "campaign_media"
+        )
+          return { data: [] }
         return undefined
       }
       const giveHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
@@ -440,7 +456,12 @@ describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/
         if (call.target === "campaigns") {
           return { data: { ...campaignFixture(status), type: "back", funding_model: "all_or_nothing" } }
         }
-        if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+        if (
+          call.target === "campaign_milestones" ||
+          call.target === "campaign_updates" ||
+          call.target === "campaign_media"
+        )
+          return { data: [] }
         if (call.target === "reward_tiers") return { data: [TIER_FIXTURE] }
         return undefined
       }
@@ -474,7 +495,12 @@ describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/
     ]) {
       state.userHandler = (call) => {
         if (call.target === "campaigns") return { data: campaignFixture(status) }
-        if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+        if (
+          call.target === "campaign_milestones" ||
+          call.target === "campaign_updates" ||
+          call.target === "campaign_media"
+        )
+          return { data: [] }
         return undefined
       }
       const giveHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
@@ -491,7 +517,12 @@ describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/
         if (call.target === "campaigns") {
           return { data: { ...campaignFixture(status), type: "back", funding_model: "all_or_nothing" } }
         }
-        if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+        if (
+          call.target === "campaign_milestones" ||
+          call.target === "campaign_updates" ||
+          call.target === "campaign_media"
+        )
+          return { data: [] }
         if (call.target === "reward_tiers") return { data: [TIER_FIXTURE] }
         return undefined
       }
@@ -611,5 +642,198 @@ describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/
     }
     const zeroDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
     expect(zeroDoc.querySelector('section[aria-label="Ủng hộ chiến dịch"] dl')).toBeNull()
+  })
+})
+
+describe("CampaignPage pitch video & milestones (DOS/Give#268)", () => {
+  const VIDEO_ID = "dQw4w9WgXcQ"
+  const MILESTONES = [
+    {
+      id: "ms-1",
+      campaign_id: CAMPAIGN,
+      title: "Đổ móng phòng học",
+      description: "Hoàn thành nền móng bê tông.",
+      target_amount: 30_000_000,
+      unlock_note: "Công bố biên bản nghiệm thu móng\nKèm ảnh công trường tuần 1.",
+      sort_order: 1,
+    },
+    {
+      id: "ms-2",
+      campaign_id: CAMPAIGN,
+      title: "Lợp mái tôn chống nóng",
+      description: "Lắp khung kèo thép và mái tôn.",
+      target_amount: 60_000_000,
+      unlock_note: "Mở đăng ký tình nguyện viên sơn tường.",
+      sort_order: 2,
+    },
+  ]
+
+  it("queries campaign_media for youtube pitch video and renders CampaignVideo poster + MilestoneList reached state on public campaigns", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_media") {
+        return {
+          data: [{ id: "media-1", youtube_id: VIDEO_ID, alt: "Phóng sự Điểm trường Bản Mây", sort_order: 0 }],
+        }
+      }
+      if (call.target === "campaign_milestones") return { data: MILESTONES }
+      if (call.target === "public_campaigns") {
+        return {
+          data: {
+            campaign_id: CAMPAIGN,
+            paid_amount: 45_000_000,
+            other_in_amount: 5_000_000,
+            disbursed_amount: 0,
+            refunded_amount: 0,
+            unexplained_out_amount: 0,
+            unexplained_out_count: 0,
+            supporters_count: 12,
+            pledged_amount: 0,
+            refund_owed_amount: 0,
+            backers_count: 0,
+            payments_stopped_at: null,
+            payments_stopped_note: null,
+            own_transfer_amount: 0,
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    const doc = parseDoc(html)
+
+    // Exact query shape on campaign_media.
+    const mediaCall = state.anonCalls.find((c) => c.target === "campaign_media")
+    expect(mediaCall?.ops).toEqual([
+      ["select", "id, youtube_id, alt, sort_order"],
+      ["eq", "campaign_id", CAMPAIGN],
+      ["eq", "kind", "youtube"],
+      ["order", "sort_order", { ascending: true }],
+      ["order", "created_at", { ascending: true }],
+      ["limit", 1],
+    ])
+
+    // Story section renders CampaignVideo poster with zero iframe requests.
+    const storySection = doc.querySelector('section[aria-labelledby="story-heading"]')!
+    expect(storySection.querySelector("iframe")).toBeNull()
+    const posterImg = storySection.querySelector("img")
+    expect(posterImg?.getAttribute("src")).toContain(
+      `/_next/image?url=${encodeURIComponent(`https://i.ytimg.com/vi/${VIDEO_ID}/hqdefault.jpg`)}`
+    )
+    const playBtn = storySection.querySelector('button[aria-label="Phát video: Phóng sự Điểm trường Bản Mây"]')
+    expect(playBtn).not.toBeNull()
+    expect(playBtn?.className).toContain("min-h-11")
+    expect(storySection.textContent).toContain("Bấm để phát video từ YouTube")
+    const watchLink = storySection.querySelector(`a[href="https://www.youtube.com/watch?v=${VIDEO_ID}"]`)
+    expect(watchLink?.textContent).toBe("Mở trên YouTube")
+
+    // Raised = paid_amount (45M) - other_in_amount (5M) = 40M: ms-1 (30M) reached, ms-2 (60M) unreached.
+    const msItems = [...doc.querySelectorAll('section[aria-labelledby="milestones-heading"] ol > li')]
+    expect(msItems).toHaveLength(2)
+    expect(msItems[0].textContent).toContain("Đã đạt mốc")
+    expect(msItems[0].textContent).toContain("Công bố biên bản nghiệm thu móng")
+    expect(msItems[1].textContent).not.toContain("Đã đạt mốc")
+    expect(msItems[1].textContent).not.toContain("Mở đăng ký tình nguyện viên sơn tường.")
+  })
+
+  it("uses pledged_amount on public back campaigns and switches MilestoneList to preview mode on unpublished previews", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return { data: { ...campaignFixture("live"), type: "back", funding_model: "all_or_nothing" } }
+      }
+      if (call.target === "campaign_milestones") return { data: MILESTONES }
+      if (call.target === "public_campaigns") {
+        return {
+          data: {
+            campaign_id: CAMPAIGN,
+            paid_amount: 0,
+            other_in_amount: 0,
+            disbursed_amount: 0,
+            refunded_amount: 0,
+            unexplained_out_amount: 0,
+            unexplained_out_count: 0,
+            supporters_count: 0,
+            pledged_amount: 60_000_000,
+            refund_owed_amount: 0,
+            backers_count: 20,
+            payments_stopped_at: null,
+            payments_stopped_note: null,
+            own_transfer_amount: 0,
+          },
+        }
+      }
+      if (call.target === "reward_tiers") return { data: [] }
+      return baseAnon(call)
+    }
+
+    const backDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const backItems = [...backDoc.querySelectorAll('section[aria-labelledby="milestones-heading"] ol > li')]
+    expect(backItems[0].textContent).toContain("Đã đạt mốc")
+    expect(backItems[1].textContent).toContain("Đã đạt mốc")
+    expect(backItems[1].textContent).toContain("Mở đăng ký tình nguyện viên sơn tường.")
+
+    // Preview mode: raisedAmount is null -> no 'Đã đạt mốc', unlock_note prefixed with 'Khi đạt mốc:', and pitch video still previews.
+    state.session = {
+      user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
+      accessToken: "org-token",
+    }
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("in_review") }
+      if (call.target === "campaign_media") {
+        return { data: [{ id: "media-1", youtube_id: VIDEO_ID, alt: null, sort_order: 0 }] }
+      }
+      if (call.target === "campaign_milestones") return { data: MILESTONES }
+      if (call.target === "campaign_updates") return { data: [] }
+      return undefined
+    }
+
+    const previewHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    const previewDoc = parseDoc(previewHtml)
+    expect(previewDoc.body.textContent).not.toContain("Đã đạt mốc")
+    expect(previewDoc.body.textContent).toContain("Khi đạt mốc: Công bố biên bản nghiệm thu móng")
+    expect(previewDoc.body.textContent).toContain("Khi đạt mốc: Mở đăng ký tình nguyện viên sơn tường.")
+    expect(previewDoc.querySelector('button[aria-label="Phát video: Xây trường Bản Mây"]')).not.toBeNull()
+  })
+
+  it("keeps rendering the campaign page cleanly when campaign_media fails, throws, or returns an invalid youtube_id", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_media") {
+        return { data: null, error: { code: "57014", message: "statement timeout" } }
+      }
+      return baseAnon(call)
+    }
+
+    const failedHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(failedHtml).toContain("Xây trường Bản Mây")
+    expect(failedHtml).not.toContain("Bấm để phát video từ YouTube")
+    expect(failedHtml).not.toContain("Mở trên YouTube")
+
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_media") {
+        throw new Error("network reset")
+      }
+      return baseAnon(call)
+    }
+
+    const thrownHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(thrownHtml).toContain("Xây trường Bản Mây")
+    expect(thrownHtml).not.toContain("Bấm để phát video từ YouTube")
+    expect(thrownHtml).not.toContain("Mở trên YouTube")
+
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_media") {
+        return { data: [{ id: "media-bad", youtube_id: "not-valid!!", alt: "Bad", sort_order: 0 }] }
+      }
+      return baseAnon(call)
+    }
+
+    const invalidHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(invalidHtml).toContain("Xây trường Bản Mây")
+    expect(invalidHtml).not.toContain("Bấm để phát video từ YouTube")
+    expect(invalidHtml).not.toContain("Mở trên YouTube")
   })
 })
