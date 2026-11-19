@@ -561,3 +561,292 @@ describe("EditCampaignPage YouTube pitch video and inline milestone editing (DOS
     }
   })
 })
+
+const UPDATE_DRAFT = "55555555-5555-4555-8555-555555555555"
+const UPDATE_PUBLISHED = "66666666-6666-4666-8666-666666666666"
+
+describe("EditCampaignPage draft and published campaign updates (DOS/Give#281)", () => {
+  it("renders draft-only preparation before approval, full draft/publish controls on live campaigns, and read-only history when suspended", async () => {
+    const sampleUpdates = [
+      {
+        id: UPDATE_DRAFT,
+        campaign_id: CAMPAIGN,
+        title: "Chuẩn bị trao đợt 2",
+        body: "Đang chốt danh sách điểm trường xã vùng cao.",
+        visibility: "public" as const,
+        published_at: null,
+        created_at: "2026-11-18T08:00:00.000Z",
+      },
+      {
+        id: UPDATE_PUBLISHED,
+        campaign_id: CAMPAIGN,
+        title: "Đã trao đợt 1",
+        body: "50 phần sách giáo khoa đã tới tay học sinh.",
+        visibility: "public" as const,
+        published_at: "2026-11-16T10:30:00.000Z",
+        created_at: "2026-11-16T10:00:00.000Z",
+      },
+    ]
+
+    // Pre-approval (in_review): #updates allows saving/editing/deleting drafts without offering premature public publish.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("in_review", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: sampleUpdates }
+      if (call.target === "receiving_accounts") return { data: [] }
+      return undefined
+    }
+
+    const reviewDoc = new Window().document
+    reviewDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    expect(reviewDoc.querySelector('nav a[href="#updates"]')?.textContent).toBe("Cập nhật")
+    const reviewButtons = [...reviewDoc.querySelectorAll('#updates button[type="submit"]')].map((b) =>
+      b.textContent?.trim()
+    )
+    expect(reviewButtons).toEqual([
+      "Lưu bản nháp",
+      "Xóa bản nháp: Chuẩn bị trao đợt 2",
+      "Lưu bản nháp: Chuẩn bị trao đợt 2",
+    ])
+    expect(reviewDoc.querySelector("#updates")?.textContent).not.toContain("Đăng công khai")
+
+    // Live campaign: offers "Lưu bản nháp" (secondary, first) and single primary "Đăng công khai",
+    // distinguishes <Badge>Bản nháp</Badge> from published dates, and omits controls on published rows.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: sampleUpdates }
+      if (call.target === "receiving_accounts") return { data: [] }
+      return undefined
+    }
+
+    const liveDoc = new Window().document
+    liveDoc.body.innerHTML = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+    const createBody = liveDoc.querySelector('#updates textarea#update_body[name="body"]')
+    expect(createBody?.getAttribute("aria-describedby")).toBe("update_body_hint")
+    expect(liveDoc.querySelector("#update_body_hint")?.textContent).toContain("không thể sửa hay xóa")
+
+    const primaryButtonsInUpdates = [...liveDoc.querySelectorAll('#updates button[type="submit"]')].filter((b) =>
+      b.className.includes("btn-primary")
+    )
+    expect(primaryButtonsInUpdates).toHaveLength(1)
+    expect(primaryButtonsInUpdates[0].textContent).toBe("Đăng công khai")
+
+    const rows = [...liveDoc.querySelectorAll("#updates ol > li")]
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain("Bản nháp")
+    expect(rows[0].querySelector("details summary")?.textContent).toBe("Sửa bản nháp: Chuẩn bị trao đợt 2")
+    expect(rows[0].querySelector("details summary .sr-only")?.textContent).toBe(": Chuẩn bị trao đợt 2")
+    expect(rows[1].textContent).toContain("Đã đăng 16/11/2026")
+    expect(rows[1].textContent).not.toContain("Bản nháp")
+    expect(rows[1].querySelector("details")).toBeNull()
+    expect(rows[1].querySelector("button")).toBeNull()
+
+    // Suspended campaign: hides #updates when empty, shows read-only list when updates exist.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("suspended", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      return undefined
+    }
+    const suspendedEmptyDoc = new Window().document
+    suspendedEmptyDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    expect(suspendedEmptyDoc.querySelector("#updates")).toBeNull()
+
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("suspended", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: sampleUpdates }
+      if (call.target === "receiving_accounts") return { data: [] }
+      return undefined
+    }
+    const suspendedWithUpdatesDoc = new Window().document
+    suspendedWithUpdatesDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    expect(suspendedWithUpdatesDoc.querySelector("#updates")).not.toBeNull()
+    expect(suspendedWithUpdatesDoc.querySelectorAll('#updates button[type="submit"]')).toHaveLength(0)
+    expect(suspendedWithUpdatesDoc.querySelector("#updates details")).toBeNull()
+  })
+
+  it("saves drafts without confirm, edits drafts inline, and guards publishDraftUpdate and deleteDraftUpdate with window.confirm", async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") {
+        if (op(call, "insert")) return { data: [{ id: UPDATE_DRAFT }] }
+        if (op(call, "update")) return { data: [{ id: UPDATE_DRAFT }] }
+        if (op(call, "delete")) return { data: [{ id: UPDATE_DRAFT }] }
+        return {
+          data: [
+            {
+              id: UPDATE_DRAFT,
+              campaign_id: CAMPAIGN,
+              title: "Chuẩn bị trao đợt 2",
+              body: "Đang chốt danh sách điểm trường.",
+              visibility: "public",
+              published_at: null,
+              created_at: "2026-11-18T08:00:00.000Z",
+            },
+          ],
+        }
+      }
+      if (call.target === "receiving_accounts") return { data: [] }
+      return undefined
+    }
+
+    const container = document.createElement("div")
+    document.body.append(container)
+    const root = createRoot(container)
+    const originalConfirm = window.confirm
+    const confirmMock = vi.fn<(message?: string) => boolean>()
+    window.confirm = confirmMock
+
+    try {
+      const pageElement = await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+      await act(async () => {
+        root.render(pageElement)
+      })
+
+      const newTitle = container.querySelector<HTMLInputElement>('#updates #update_title[name="title"]')!
+      const newBody = container.querySelector<HTMLTextAreaElement>('#updates #update_body[name="body"]')!
+      newTitle.value = "Cập nhật mới"
+      newBody.value = "Nội dung bản nháp mới."
+
+      const createSaveDraftBtn = [
+        ...container.querySelectorAll<HTMLButtonElement>('#updates > div > form button[type="submit"]'),
+      ].find((b) => b.textContent === "Lưu bản nháp")!
+      const createPublishBtn = [
+        ...container.querySelectorAll<HTMLButtonElement>('#updates > div > form button[type="submit"]'),
+      ].find((b) => b.textContent === "Đăng công khai")!
+      expect(createSaveDraftBtn).toBeDefined()
+      expect(createPublishBtn).toBeDefined()
+
+      // Saving a draft does not prompt window.confirm and inserts published_at: null.
+      state.calls.length = 0
+      await act(async () => {
+        createSaveDraftBtn.click()
+      })
+      expect(confirmMock).not.toHaveBeenCalled()
+      const insertDraftCall = state.calls.find((c) => c.target === "campaign_updates" && Boolean(op(c, "insert")))
+      expect(op(insertDraftCall, "insert")).toEqual([
+        expect.objectContaining({
+          campaign_id: CAMPAIGN,
+          title: "Cập nhật mới",
+          body: "Nội dung bản nháp mới.",
+          published_at: null,
+        }),
+      ])
+
+      // Immediate publish from the create form inserts a non-null published_at timestamp.
+      newTitle.value = "Cập nhật công khai"
+      newBody.value = "Nội dung đăng công khai ngay."
+      state.calls.length = 0
+      await act(async () => {
+        createPublishBtn.click()
+      })
+      const insertPublishCall = state.calls.find((c) => c.target === "campaign_updates" && Boolean(op(c, "insert")))
+      expect(op(insertPublishCall, "insert")).toEqual([
+        expect.objectContaining({
+          campaign_id: CAMPAIGN,
+          title: "Cập nhật công khai",
+          body: "Nội dung đăng công khai ngay.",
+          published_at: expect.any(String),
+        }),
+      ])
+
+      // Inline <details> "Sửa bản nháp" edits title and body without confirm and filters published_at IS NULL.
+      const editTitle = container.querySelector<HTMLInputElement>(
+        `#updates #update_${UPDATE_DRAFT}_title[name="title"]`
+      )!
+      const editBody = container.querySelector<HTMLTextAreaElement>(
+        `#updates #update_${UPDATE_DRAFT}_body[name="body"]`
+      )!
+      expect(editTitle.value).toBe("Chuẩn bị trao đợt 2")
+      expect(editBody.value).toBe("Đang chốt danh sách điểm trường.")
+      editTitle.value = "Chuẩn bị trao đợt 2 (đã chốt)"
+
+      const inlineSaveBtn = container.querySelector<HTMLButtonElement>('#updates ol details button[type="submit"]')!
+      expect(inlineSaveBtn.textContent).toBe("Lưu bản nháp: Chuẩn bị trao đợt 2")
+      state.calls.length = 0
+      await act(async () => {
+        inlineSaveBtn.click()
+      })
+      expect(confirmMock).not.toHaveBeenCalled()
+      const editUpdateCall = state.calls.find((c) => c.target === "campaign_updates" && Boolean(op(c, "update")))
+      expect(op(editUpdateCall, "update")).toEqual([
+        {
+          title: "Chuẩn bị trao đợt 2 (đã chốt)",
+          body: "Đang chốt danh sách điểm trường.",
+        },
+      ])
+      expect(editUpdateCall?.ops).toContainEqual(["eq", "id", UPDATE_DRAFT])
+      expect(editUpdateCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+      expect(editUpdateCall?.ops).toContainEqual(["is", "published_at", null])
+
+      // Publishing a draft row prompts window.confirm reminding that published updates cannot be edited or deleted.
+      const rowButtons = [...container.querySelectorAll<HTMLButtonElement>('#updates ol button[type="submit"]')]
+      const publishDraftBtn = rowButtons.find((b) => b.textContent === "Đăng công khai: Chuẩn bị trao đợt 2")!
+      const deleteDraftBtn = rowButtons.find((b) => b.textContent === "Xóa bản nháp: Chuẩn bị trao đợt 2")!
+      expect(publishDraftBtn).toBeDefined()
+      expect(deleteDraftBtn).toBeDefined()
+
+      state.calls.length = 0
+      confirmMock.mockReturnValueOnce(false)
+      await act(async () => {
+        publishDraftBtn.click()
+      })
+      expect(confirmMock).toHaveBeenCalledWith(
+        "Đăng công khai bản nháp “Chuẩn bị trao đợt 2”? Cập nhật đã đăng sẽ hiện công khai và không thể sửa hay xóa."
+      )
+      expect(state.calls).toHaveLength(0)
+
+      confirmMock.mockReturnValueOnce(true)
+      await act(async () => {
+        publishDraftBtn.click()
+      })
+      const publishCall = state.calls.find((c) => c.target === "campaign_updates" && Boolean(op(c, "update")))
+      expect(op(publishCall, "update")?.[0]).toEqual({ published_at: expect.any(String) })
+      expect(publishCall?.ops).toContainEqual(["eq", "id", UPDATE_DRAFT])
+      expect(publishCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+      expect(publishCall?.ops).toContainEqual(["is", "published_at", null])
+
+      // Deleting a draft row prompts window.confirm before executing deleteDraftUpdate.
+      confirmMock.mockClear()
+      state.calls.length = 0
+      confirmMock.mockReturnValueOnce(false)
+      await act(async () => {
+        deleteDraftBtn.click()
+      })
+      expect(confirmMock).toHaveBeenCalledWith("Xóa bản nháp “Chuẩn bị trao đợt 2”?")
+      expect(state.calls).toHaveLength(0)
+
+      confirmMock.mockReturnValueOnce(true)
+      await act(async () => {
+        deleteDraftBtn.click()
+      })
+      const deleteCall = state.calls.find((c) => c.target === "campaign_updates" && Boolean(op(c, "delete")))
+      expect(deleteCall).toBeDefined()
+      expect(deleteCall?.ops).toContainEqual(["eq", "id", UPDATE_DRAFT])
+      expect(deleteCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+      expect(deleteCall?.ops).toContainEqual(["is", "published_at", null])
+    } finally {
+      window.confirm = originalConfirm
+      act(() => root.unmount())
+      container.remove()
+    }
+  })
+})

@@ -7,6 +7,7 @@ import type { ReactNode } from "react"
 import { AccountStatusBadge, StatusBadge, TypeBadge } from "@/components/badges"
 import { ContactEmailLink, ContactText } from "@/components/ContactText"
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { Badge } from "@/components/ui/Badge"
 import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Callout, type CalloutTone } from "@/components/ui/Callout"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
@@ -28,6 +29,7 @@ import {
   canPostUpdate,
   type CampaignStatus,
   type CampaignType,
+  type CampaignUpdate,
   categoriesFor,
   type Db,
   getCampaignById,
@@ -60,12 +62,15 @@ import {
   addMilestone,
   cancelCampaign,
   deleteDraft,
+  deleteDraftUpdate,
   deleteMilestone,
   postUpdate,
+  publishDraftUpdate,
   removeYoutubeVideo,
   saveContent,
   saveYoutubeVideo,
   submitForReview,
+  updateDraftUpdate,
   updateMilestone,
   uploadCover,
 } from "../actions"
@@ -118,7 +123,9 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   const youtubeVideo = youtubeState?.video ?? null
   const editable = isEditableStatus(campaign.status)
   const submitBlocked = accounts?.submitBlocked ?? null
-  const showUpdates = canPostUpdate(campaign.status) && !editable && campaign.status !== "in_review"
+  const canUpdate = canPostUpdate(campaign.status)
+  const canPublish = canUpdate && !editable && campaign.status !== "in_review"
+  const showUpdates = canUpdate || updates.length > 0
 
   const showMoney = Boolean(totals) || !editable
   const showFulfillment = !isGive && canUpdateFulfillment(campaign)
@@ -698,41 +705,108 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             <Panel
               id="updates"
               title="Cập nhật cho người ủng hộ"
-              description="Cập nhật hiện công khai trên trang chiến dịch ngay khi đăng và không sửa được."
+              description={
+                !canUpdate
+                  ? "Chiến dịch không còn nhận cập nhật mới."
+                  : canPublish
+                    ? "Lưu bản nháp để kiểm tra và sửa lại trước khi đăng. Cập nhật đã đăng công khai trên trang chiến dịch là hồ sơ vĩnh viễn, không thể sửa hay xóa."
+                    : "Bạn có thể soạn sẵn bản nháp cập nhật; cập nhật chỉ đăng công khai được sau khi chiến dịch được duyệt và một khi đã đăng sẽ không thể sửa hay xóa."
+              }
             >
-              <ActionForm
-                action={postUpdate.bind(null, campaign.id)}
-                resetOnSuccess
-                className="max-w-160 space-y-6"
-                confirm="Cập nhật sẽ công khai ngay và không sửa được. Đăng?"
-              >
-                <div>
-                  <label htmlFor="update_title" className="label">
-                    Tiêu đề
-                  </label>
-                  <input id="update_title" name="title" className="field" required minLength={2} maxLength={200} />
-                </div>
-                <div>
-                  <label htmlFor="update_body" className="label">
-                    Nội dung
-                  </label>
-                  <textarea id="update_body" name="body" className="field" rows={5} required maxLength={50000} />
-                </div>
-                <SubmitButton className={buttonClass()}>Đăng cập nhật</SubmitButton>
-              </ActionForm>
+              {canUpdate && (
+                <ActionForm action={postUpdate.bind(null, campaign.id)} resetOnSuccess className="max-w-160 space-y-6">
+                  <UpdateFields
+                    prefix="update"
+                    update={null}
+                    bodyHint={
+                      canPublish
+                        ? "Bản nháp chỉ mình bạn thấy và có thể sửa hoặc xóa bất cứ lúc nào. Cập nhật đã đăng công khai không thể sửa hay xóa."
+                        : "Bản nháp chỉ mình bạn thấy; sau khi chiến dịch được duyệt, bạn có thể đăng công khai."
+                    }
+                  />
+                  <div className="flex flex-wrap gap-3">
+                    <SubmitButton name="intent" value="draft" className={buttonClass({ variant: "secondary" })}>
+                      Lưu bản nháp
+                    </SubmitButton>
+                    {canPublish && (
+                      <SubmitButton name="intent" value="publish" className={buttonClass()}>
+                        Đăng công khai
+                      </SubmitButton>
+                    )}
+                  </div>
+                </ActionForm>
+              )}
+
               {updates.length > 0 && (
-                <div className="mt-6 border-t border-border pt-6">
-                  <h3 className="text-h3">Đã đăng ({updates.length})</h3>
-                  <ul className="mt-3 space-y-2">
-                    {updates.map((update) => (
-                      <li key={update.id} className="flex flex-wrap gap-x-3">
-                        <span className="text-muted tabular-nums">
-                          {formatDate(update.published_at ?? update.created_at)}
-                        </span>
-                        <span className="min-w-0 break-words text-fg">{update.title}</span>
-                      </li>
-                    ))}
-                  </ul>
+                <div className={canUpdate ? "mt-6 border-t border-border pt-6" : undefined}>
+                  <h3 className="text-h3">Các cập nhật ({updates.length})</h3>
+                  <ol className="mt-3 divide-y divide-border rounded-md border border-border">
+                    {updates.map((update) => {
+                      const isDraft = update.published_at === null
+                      return (
+                        <li key={update.id} className="min-w-0 space-y-3 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                            <div className="min-w-0 flex-1 basis-56">
+                              <div className="flex flex-wrap items-center gap-2">
+                                {isDraft ? (
+                                  <Badge>Bản nháp</Badge>
+                                ) : (
+                                  <span className="text-sm text-muted tabular-nums">
+                                    Đã đăng {formatDate(update.published_at)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-1 font-semibold break-words text-fg">{update.title}</p>
+                              <p className="mt-1 max-w-[68ch] break-words whitespace-pre-line text-fg">{update.body}</p>
+                            </div>
+                            {isDraft && canUpdate && (
+                              <div className="flex flex-wrap items-center gap-2">
+                                {canPublish && (
+                                  <ActionForm
+                                    action={publishDraftUpdate.bind(null, campaign.id, update.id)}
+                                    confirm={`Đăng công khai bản nháp “${update.title}”? Cập nhật đã đăng sẽ hiện công khai và không thể sửa hay xóa.`}
+                                  >
+                                    <SubmitButton className={buttonClass({ variant: "secondary", size: "sm" })}>
+                                      Đăng công khai<span className="sr-only">: {update.title}</span>
+                                    </SubmitButton>
+                                  </ActionForm>
+                                )}
+                                <ActionForm
+                                  action={deleteDraftUpdate.bind(null, campaign.id, update.id)}
+                                  confirm={`Xóa bản nháp “${update.title}”?`}
+                                >
+                                  <SubmitButton className={buttonClass({ variant: "danger", size: "sm" })}>
+                                    Xóa bản nháp<span className="sr-only">: {update.title}</span>
+                                  </SubmitButton>
+                                </ActionForm>
+                              </div>
+                            )}
+                          </div>
+                          {isDraft && canUpdate && (
+                            <details className="group">
+                              <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 link [&::-webkit-details-marker]:hidden">
+                                Sửa bản nháp<span className="sr-only">: {update.title}</span>
+                                <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
+                              </summary>
+                              <ActionForm
+                                action={updateDraftUpdate.bind(null, campaign.id, update.id)}
+                                className="mt-3 max-w-160 space-y-6"
+                              >
+                                <UpdateFields prefix={`update_${update.id}`} update={update} />
+                                <SubmitButton
+                                  name="intent"
+                                  value="draft"
+                                  className={buttonClass({ variant: "secondary" })}
+                                >
+                                  Lưu bản nháp<span className="sr-only">: {update.title}</span>
+                                </SubmitButton>
+                              </ActionForm>
+                            </details>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ol>
                 </div>
               )}
             </Panel>
@@ -1145,6 +1219,46 @@ function MilestoneFields({ prefix, milestone }: { prefix: string; milestone: Mil
           maxLength={500}
           aria-describedby={unlockHintId}
           defaultValue={milestone?.unlock_note ?? ""}
+        />
+      </Field>
+    </div>
+  )
+}
+
+function UpdateFields({
+  prefix,
+  update,
+  bodyHint,
+}: {
+  prefix: string
+  update: CampaignUpdate | null
+  bodyHint?: string
+}) {
+  const bodyHintId = bodyHint ? `${prefix}_body_hint` : undefined
+  const fieldKey = update ? `${update.title}:${update.body}` : "new"
+  return (
+    <div key={fieldKey} className="space-y-6">
+      <Field htmlFor={`${prefix}_title`} label="Tiêu đề">
+        <input
+          id={`${prefix}_title`}
+          name="title"
+          className="field"
+          required
+          minLength={2}
+          maxLength={200}
+          defaultValue={update?.title ?? ""}
+        />
+      </Field>
+      <Field htmlFor={`${prefix}_body`} label="Nội dung" hintId={bodyHintId} hint={bodyHint}>
+        <textarea
+          id={`${prefix}_body`}
+          name="body"
+          className="field"
+          rows={5}
+          required
+          maxLength={50000}
+          aria-describedby={bodyHintId}
+          defaultValue={update?.body ?? ""}
         />
       </Field>
     </div>

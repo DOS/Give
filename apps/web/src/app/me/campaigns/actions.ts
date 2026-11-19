@@ -20,6 +20,12 @@ const INVALID_YOUTUBE =
   "Liên kết YouTube không hợp lệ. Hãy dán liên kết của một video YouTube (không phải danh sách phát hay kênh) hoặc mã video 11 ký tự."
 const YOUTUBE_ALT_TOO_LONG = "Mô tả video tối đa 200 ký tự."
 const UNLOCK_NOTE_TOO_LONG = "Ghi chú khi đạt mốc tối đa 500 ký tự."
+const CANNOT_POST_UPDATE = "Không thể đăng cập nhật cho chiến dịch đã hủy hoặc đang tạm dừng."
+const CANNOT_PUBLISH_YET =
+  "Chỉ đăng công khai được cập nhật sau khi chiến dịch đã được duyệt. Hiện bạn có thể lưu bản nháp."
+const DRAFT_UPDATE_NOT_FOUND =
+  "Không tìm thấy bản nháp cập nhật này (có thể đã được đăng hoặc đã xóa). Hãy tải lại trang."
+const INVALID_UPDATE_INTENT = "Dữ liệu không hợp lệ."
 
 const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/
 const YOUTUBE_HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com"])
@@ -580,13 +586,25 @@ export async function deleteDraft(campaignId: string, _state: ActionResult, _for
   redirect("/me/campaigns")
 }
 
-/** Publishes an update right away; published updates cannot be edited. */
+function canPublishUpdate(status: CampaignStatus): boolean {
+  return canPostUpdate(status) && !isEditableStatus(status) && status !== "in_review"
+}
+
+/** Saves an update as a draft or publishes it right away; published updates cannot be edited or deleted. */
 export async function postUpdate(campaignId: string, _state: ActionResult, form: FormData): Promise<ActionResult> {
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
   const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
-  if (!canPostUpdate(campaign.status)) return fail("Không thể đăng cập nhật cho chiến dịch đã hủy hoặc đang tạm dừng.")
+  if (!canPostUpdate(campaign.status)) return fail(CANNOT_POST_UPDATE)
+
+  const rawIntent = String(form.get("intent") ?? "").trim()
+  if (rawIntent !== "" && rawIntent !== "publish" && rawIntent !== "draft") {
+    return fail(INVALID_UPDATE_INTENT)
+  }
+  const publish = rawIntent !== "draft"
+  if (publish && !canPublishUpdate(campaign.status)) return fail(CANNOT_PUBLISH_YET)
+
   const parsed = updateSchema.safeParse(formFields(form, ["title", "body"]))
   if (!parsed.success) return fail(firstError(parsed.error))
 
@@ -597,9 +615,104 @@ export async function postUpdate(campaignId: string, _state: ActionResult, form:
       author_id: session.user.id,
       ...parsed.data,
       visibility: "public",
-      published_at: new Date().toISOString(),
+      published_at: publish ? new Date().toISOString() : null,
     })
   if (error) return fail(dbErrorMessage(error))
   refresh(campaign)
+  return done(publish ? "Đã đăng cập nhật." : "Đã lưu bản nháp cập nhật.")
+}
+
+export async function updateDraftUpdate(
+  campaignId: string,
+  updateId: string,
+  _state: ActionResult,
+  form: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  if (!isUuid(campaignId) || !isUuid(updateId)) return fail(NOT_FOUND)
+  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  if (!campaign) return fail(loadError)
+  if (!canPostUpdate(campaign.status)) return fail(CANNOT_POST_UPDATE)
+
+  const rawIntent = String(form.get("intent") ?? "").trim()
+  if (rawIntent !== "" && rawIntent !== "draft" && rawIntent !== "publish") {
+    return fail(INVALID_UPDATE_INTENT)
+  }
+  const publish = rawIntent === "publish"
+  if (publish && !canPublishUpdate(campaign.status)) return fail(CANNOT_PUBLISH_YET)
+
+  const parsed = updateSchema.safeParse(formFields(form, ["title", "body"]))
+  if (!parsed.success) return fail(firstError(parsed.error))
+
+  const { data, error } = await dbAs(session.accessToken)
+    .from("campaign_updates")
+    .update({
+      ...parsed.data,
+      ...(publish ? { published_at: new Date().toISOString() } : {}),
+    })
+    .eq("id", updateId)
+    .eq("campaign_id", campaign.id)
+    .is("published_at", null)
+    .select("id")
+  if (error) return fail(dbErrorMessage(error))
+  if (!data?.length) return fail(DRAFT_UPDATE_NOT_FOUND)
+
+  refresh(campaign)
+  return done(publish ? "Đã đăng cập nhật." : "Đã lưu bản nháp cập nhật.")
+}
+
+export async function publishDraftUpdate(
+  campaignId: string,
+  updateId: string,
+  _state: ActionResult = null,
+  _form?: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  if (!isUuid(campaignId) || !isUuid(updateId)) return fail(NOT_FOUND)
+  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  if (!campaign) return fail(loadError)
+  if (!canPostUpdate(campaign.status)) return fail(CANNOT_POST_UPDATE)
+  if (!canPublishUpdate(campaign.status)) return fail(CANNOT_PUBLISH_YET)
+
+  const { data, error } = await dbAs(session.accessToken)
+    .from("campaign_updates")
+    .update({ published_at: new Date().toISOString() })
+    .eq("id", updateId)
+    .eq("campaign_id", campaign.id)
+    .is("published_at", null)
+    .select("id")
+  if (error) return fail(dbErrorMessage(error))
+  if (!data?.length) return fail(DRAFT_UPDATE_NOT_FOUND)
+
+  refresh(campaign)
   return done("Đã đăng cập nhật.")
+}
+
+export async function deleteDraftUpdate(
+  campaignId: string,
+  updateId: string,
+  _state: ActionResult = null,
+  _form?: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  if (!isUuid(campaignId) || !isUuid(updateId)) return fail(NOT_FOUND)
+  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  if (!campaign) return fail(loadError)
+  if (!canPostUpdate(campaign.status)) return fail(CANNOT_POST_UPDATE)
+
+  const { data, error } = await dbAs(session.accessToken)
+    .from("campaign_updates")
+    .delete()
+    .eq("id", updateId)
+    .eq("campaign_id", campaign.id)
+    .is("published_at", null)
+    .select("id")
+  if (error) return fail(dbErrorMessage(error))
+  if (!data?.length) return fail(DRAFT_UPDATE_NOT_FOUND)
+
+  refresh(campaign)
+  return done("Đã xóa bản nháp cập nhật.")
 }
