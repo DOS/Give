@@ -49,11 +49,11 @@ accepted are not published by any of them.
 
 ## 3. How other platforms do it
 
-| Platform                     | Mechanism                                                                                                              | Processor and who holds funds                                                                                                                                                                          | Fees                                                                                                   | Failure or stop rules                                                                                                                                                               |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GoFundMe monthly             | Donor authorises "GoFundMe or its vendors" to charge the payment method each month (ToS 6.2(b)) [read, P1].            | Adyen, Stripe, PayPal, PayPal Giving Fund (ToS 5). ToS 3.2: GoFundMe does not "receive, hold, process… or exercise custody" over funds; the organizer gives bank details to the processors [read, P1]. | 2.9% + USD 0.30 per donation in the US [read, P2]; ToS 2.17 allows a "recurring fixed fee" [read, P1]. | Stops when the fundraiser is no longer "valid, active", or when the donor cancels (6.2(b)) [read, P1].                                                                              |
-| Kickstarter Pledge Over Time | Three equal charges: at successful end, then monthly. Creator opts in. Minimum USD 125 / EUR 125 / GBP 100 [read, P3]. | Stripe Connect "to route funds to creators" [read, P4].                                                                                                                                                | No extra fee for backers [read, P3]; creator fees not verified (page 403).                             | 7 or 14 days to fix a failed charge, then the pledge is dropped; amounts collected "may be considered bonus support" [read, P3], so the creator gets less than pledged [inference]. |
-| Patreon                      | Monthly, per-creation or annual billing [read, P5].                                                                    | "Patreon is the billing entity", handles chargebacks, and holds creator balances before payout [read, P5; search, P6].                                                                                 | Platform fee as a percentage [read, P5].                                                               | No refunds as policy [read, P5].                                                                                                                                                    |
+| Platform                     | Mechanism                                                                                                              | Processor and who holds funds                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Fees                                                                                                   | Failure or stop rules                                                                                                                                                               |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GoFundMe monthly             | Donor authorises "GoFundMe or its vendors" to charge the payment method each month (ToS 6.2(b)) [read, P1].            | Adyen, Stripe, PayPal, PayPal Giving Fund (ToS 5). ToS 3.2: GoFundMe does not "receive, hold, process… or exercise custody" over funds; the organizer gives bank details to the processors [read, P1]. But the processors hold the funds until the beneficiary transfers them out ("Transfers", ToS 2.24 [read, P1]); funds not transferred within 120 days may be refunded or escheated (ToS 7.1(b), 7.1(c)) [read via a tool summary of P1, section 7 wording not seen verbatim]. | 2.9% + USD 0.30 per donation in the US [read, P2]; ToS 2.17 allows a "recurring fixed fee" [read, P1]. | Stops when the fundraiser is no longer "valid, active", or when the donor cancels (6.2(b)) [read, P1].                                                                              |
+| Kickstarter Pledge Over Time | Three equal charges: at successful end, then monthly. Creator opts in. Minimum USD 125 / EUR 125 / GBP 100 [read, P3]. | Stripe Connect "to route funds to creators" [read, P4]; that Pledge Over Time also runs on Stripe Connect is [inference]. Payouts are not immediate: the first about 14 days after the campaign ends, the second and third about 8 and 12 weeks after it ends [read, P3].                                                                                                                                                                                                           | No extra fee for backers [read, P3]; creator fees not verified (page 403).                             | 7 or 14 days to fix a failed charge, then the pledge is dropped; amounts collected "may be considered bonus support" [read, P3], so the creator gets less than pledged [inference]. |
+| Patreon                      | Monthly, per-creation or annual billing [read, P5].                                                                    | "Patreon is the billing entity", handles chargebacks, and holds creator balances before payout [read, P5; search, P6].                                                                                                                                                                                                                                                                                                                                                              | Platform fee as a percentage [read, P5].                                                               | No refunds as policy [read, P5].                                                                                                                                                    |
 
 **Stripe Connect charge types** [read, P7]: with **direct charges** the charge
 sits in the connected account's balance, refunds and chargebacks reduce that
@@ -61,6 +61,12 @@ account, and funds settle in the connected account's country. With
 destination charges and "separate charges and transfers", the payment appears
 in the platform's balance, and disputes debit the platform even with
 `on_behalf_of`. Only direct charges keep money out of the platform.
+
+**The common market model is a processor-held balance, not direct
+settlement.** GoFundMe and Kickstarter both leave funds in a balance at the
+processor before paying the organizer (above). Whether such a balance, held
+for the organizer and not controlled by Give, is acceptable under D3 and
+Decree 93 Art. 17.2 is a question for counsel (design P4(j)) [inference].
 
 ## 4. Vietnamese law
 
@@ -86,24 +92,35 @@ in the platform's balance, and disputes debit the platform even with
 - **Circular 15/2024, consolidated 26/VBHN-NHNN** [read, L5]: a merchant is a
   "tổ chức, cá nhân cung cấp hàng hóa, dịch vụ" accepting cashless payment
   under a contract (Art. 3.8). Onboarding needs a written contract, checks and
-  a payment account to receive funds (Art. 20.3).
-- **Circular 18/2024 on bank cards** [read, L6]: acquirers require proof of
-  lawful business (Art. 17.3(b)) and must refuse a "giao dịch thanh toán khống",
-  a payment with no real sale of goods or services (Art. 3.9, 25.1(a)). A
+  a payment account to receive funds (Art. 20.3; article number not
+  re-verified).
+- **Circular 18/2024 on bank cards** [read, L6], amended by Circular
+  45/2025 and consolidated as 30/VBHN-NHNN of 2025-12-19 [search, L12; the
+  consolidated text was not read]: acquirers require proof of lawful
+  business (Art. 17.3(b)) and must refuse a "giao dịch thanh toán khống",
+  a payment with no real sale of goods or services (Art. 3.9, 25.1(a)).
+  These article numbers come from the original text and are **not verified**
+  against the consolidated text. A
   donation is not a sale, so whether an individual charity organizer can be a
   card or wallet merchant is doubtful [inference]. No guidance on donations
   as merchant transactions was found. Card use for e-transactions needs a
-  one-time biometric check of the cardholder (Art. 16.6) [search, L7].
-- **Circular 50/2024**: biometrics or a safe e-signature above 50M VND per
-  transaction or 100M VND per day [search, L8]. Whether registered recurring
-  debits are exempt: not found. No article requiring a per-charge
+  one-time biometric check of the cardholder, with exemptions (Art. 16.6,
+  not verified) [search, L7].
+- **Circular 50/2024**, amended by Circular 77/2025 [search, L13]: sets
+  authentication thresholds for online banking transactions [search, L8].
+  The exact thresholds and which customers they apply to were not read, so
+  they are not relied on here. Whether registered recurring debits are
+  exempt: not found. No article requiring a per-charge
   authorisation for wallet auto-debit was found; the binding or first payment
   is the donor's authorisation [inference].
 - **Decree 93/2021 Art. 17.2** [read, L9]: an individual campaigner receives
   money into a separate account at a commercial bank for each campaign and
   stops receiving after the committed period. Gateway settlement must
   therefore land in that account, and charges must stop at the campaign's end
-  [inference].
+  [inference]. A MoMo `subscription` has an expiry date
+  (`subscriptionInfo.expiryDate`; charges are refused from that date)
+  [search, S1]; set it
+  no later than the campaign's `ends_at` as a second stop [inference].
 - **E-commerce:** Law 122/2025/QH15, in force 2026-07-01 [read, L10].
   Decree 248/2026/ND-CP [read, L11]: disclose payment and refund methods
   (Art. 10); electronic identity checks of sellers from 2027-01-01
@@ -115,7 +132,9 @@ in the platform's balance, and disputes debit the platform even with
 
 1. C does not breach D3 if the gateway settles directly into each campaign's
    own account, fees are deducted by the gateway or billed separately, and
-   refunds and chargebacks hit the organizer's side, never a Give balance. If the gateway runs the schedule (MoMo `subscription`), stopping on time needs a confirmed cancel call before the next charge. This mirrors Stripe direct charges and GoFundMe's ToS 3.2 [inference].
+   refunds and chargebacks hit the organizer's side, never a Give balance. If the gateway runs the schedule (MoMo `subscription`), stopping on time needs a confirmed cancel call before the next charge. This mirrors Stripe direct charges [inference]. It is not how GoFundMe or
+   Kickstarter work: both use a processor-held balance (section 3), whose
+   fit with D3 and Decree 93 Art. 17.2 is design P4(j).
 2. C breaches D3 if money passes through a Give balance, or through a balance
    at the gateway whose payout Give controls. Bảo Kim's webhook shows a sub-merchant balance exists [read]; who controls payouts from it is unknown [inference].
 3. The biggest risk is legal, not technical: merchants are defined as sellers
@@ -124,12 +143,16 @@ in the platform's balance, and disputes debit the platform even with
    merchants for donations; does Give need its own intermediary licence when
    it only initiates charges; is Give an e-commerce platform under Law
    122/2025 and Decree 248/2026; can gateway fees be deducted from Decree 93
-   receipts; must settlement land in the Decree 93 campaign account.
+   receipts; must settlement land in the Decree 93 campaign account, or is a
+   gateway-held balance for the organizer acceptable.
 5. Questions for MoMo, ZaloPay and Bảo Kim, in writing: (1) settlement
    straight to each sub-merchant's own bank account; (2) individual
    sub-merchants without business registration, and KYC; (3) merchant-initiated
    charges without the donor present; (4) donation or charity accepted as a
-   category; (5) who bears chargebacks, fees and T+n.
+   category; (5) who bears chargebacks, fees and T+n; (6) does money settle
+   to the sub-merchant's own bank account or to a balance held at the
+   gateway, and on what schedule. The ready-to-send letter is
+   `docs/research/recurring-step2-outreach.md` part A.
 
 ## Sources
 
@@ -187,3 +210,5 @@ Law:
 - L9 Decree 93/2021 text, read on caselaw.vn (document 408210); the sources in `docs/research/legal-charity-campaigns.md` section 2 cover the same text
 - L10 https://luatvietnam.vn/tin-van-ban-moi/da-co-luat-thuong-mai-dien-tu-2025-so-122-2025-qh15-186-106402-article.html
 - L11 https://hethongphapluat.com/nghi-dinh-248-2026-nd-cp-huong-dan-luat-thuong-mai-dien-tu.html
+- L12 https://luatvietnam.vn/tai-chinh/van-ban-hop-nhat-30-vbhn-nhnn-2025-quy-dinh-hoat-dong-the-ngan-hang-422842-d5.html
+- L13 https://luatvietnam.vn/linh-vuc-khac/diem-moi-thong-tu-77-2025-tt-nhnn-ve-bao-mat-online-banking-883-106480-article.html
