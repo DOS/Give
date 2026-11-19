@@ -100,7 +100,8 @@ export async function listRetryingEmails(service: Db): Promise<{ rows: OutboxRow
     .select(COLUMNS, { count: "exact" })
     .eq("status", "pending")
     .gt("attempts", 0)
-    .not("last_error", "like", `${ACCOUNT_HOLD_PREFIX}%`)
+    // NOT LIKE alone would drop rows with no last_error (a lease that ran out).
+    .or(`last_error.is.null,last_error.not.like.${ACCOUNT_HOLD_PREFIX}*`)
     .order("next_attempt_at", { ascending: true })
     .limit(OUTBOX_LIST_LIMIT)
   if (error) throw error

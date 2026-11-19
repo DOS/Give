@@ -42,7 +42,7 @@ describe("held emails", () => {
     await listRetryingEmails(db as never)
     expect(calls[0].ops).toContainEqual(["like", "last_error", "ACCOUNT:%"])
     expect(calls[0].ops).toContainEqual(["eq", "status", "pending"])
-    expect(calls[1].ops).toContainEqual(["not", "last_error", "like", "ACCOUNT:%"])
+    expect(calls[1].ops).toContainEqual(["or", "last_error.is.null,last_error.not.like.ACCOUNT:*"])
     expect(calls[1].ops).toContainEqual(["gt", "attempts", 0])
   })
 })

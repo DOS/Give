@@ -35,6 +35,8 @@ export const SEND_TIMEOUT_MS = 15_000
 /** Tries at recording one result before leaving the row to its lease. */
 export const COMPLETE_TRIES = 3
 const COMPLETE_RETRY_MS = [250, 1_000]
+/** complete_outbox without p_hold: PostgREST finds no such function (PGRST202), Postgres neither (42883). */
+const NO_HOLD_FUNCTION = new Set(["PGRST202", "42883"])
 /** Each RPC after a send (complete, release) is abandoned after this long. */
 export const RPC_TIMEOUT_MS = 5_000
 /** A claim is abandoned after this long (it may wait on locks while it settles rows). */
@@ -163,7 +165,7 @@ function isTransient(error: { code?: string }): boolean {
 }
 
 async function complete(db: Db, row: OutboxEmail, result: Result, clock: Clock): Promise<string | null> {
-  const args = {
+  const args: Record<string, unknown> = {
     p_id: row.id,
     p_attempt: row.attempt,
     p_ok: result.ok,
@@ -177,6 +179,15 @@ async function complete(db: Db, row: OutboxEmail, result: Result, clock: Clock):
   }
   for (let tryNo = 1; ; tryNo++) {
     const { data, error } = await db.rpc("complete_outbox", args).abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS))
+    if (error && args.p_hold === true && NO_HOLD_FUNCTION.has(error.code ?? "")) {
+      // A database from before p_hold: record an ordinary, counted failure
+      // rather than leave the row to its lease (which would end it dead
+      // after 7 leases, about 35 minutes).
+      console.error("complete_outbox has no p_hold; recording an ordinary failure", row.id)
+      delete args.p_hold
+      tryNo -= 1
+      continue
+    }
     if (!error) {
       // 'stale' on a later try: an earlier try may have committed and only
       // its answer was lost. The row says what that try recorded.

@@ -361,6 +361,26 @@ describe("sendDueEmails", () => {
     expect(calls.filter((c) => c.target === "rpc:claim_outbox")).toHaveLength(1)
   })
 
+  it("against a database from before p_hold, records the hold as an ordinary failure", async () => {
+    claims = [[row(66), row(67)]]
+    result = { ok: false, permanent: false, hold: true, error: "ACCOUNT: SMTP 450" }
+    const seen: Record<string, unknown>[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "rpc:complete_outbox") {
+        const args = op(call, "args")?.[0] as Record<string, unknown>
+        seen.push({ ...args })
+        return "p_hold" in args
+          ? { error: { code: "PGRST202", message: "Could not find the function" } }
+          : { data: "pending" }
+      }
+      return handler(call)
+    }, calls)
+    const outcome = await sendDueEmails(db as never, transport, OPTIONS)
+    expect(outcome).toMatchObject({ retrying: 1, held: 0, released: 1 })
+    expect(seen.map((a) => "p_hold" in a)).toEqual([true, false])
+    expect(seen[1]).toMatchObject({ p_ok: false, p_error: "ACCOUNT: SMTP 450", p_permanent: false })
+  })
+
   it("reads back a hold whose answer was lost: the row shows the count before the claim", async () => {
     vi.useFakeTimers()
     try {

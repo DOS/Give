@@ -165,7 +165,9 @@ describe("smtpFailure", () => {
     expect(smtpProvider("smtp-relay.brevo.com")).toBe("brevo")
     expect(smtpProvider(" SMTP-RELAY.BREVO.COM. ")).toBe("brevo")
     expect(smtpProvider("email-smtp.ap-southeast-1.amazonaws.com")).toBe("other")
+    expect(smtpProvider("smtp-relay.sendinblue.com")).toBe("brevo")
     expect(smtpProvider("brevo.com.example.net")).toBe("other")
+    expect(smtpProvider("notbrevo.com")).toBe("other")
   })
 
   it("names connection errors without a reply code", () => {

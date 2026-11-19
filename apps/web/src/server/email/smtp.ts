@@ -46,7 +46,8 @@ export type SmtpProvider = "brevo" | "other"
 
 export function smtpProvider(host: string): SmtpProvider {
   const name = host.trim().toLowerCase().replace(/\.$/, "")
-  return name === "brevo.com" || name.endsWith(".brevo.com") ? "brevo" : "other"
+  // sendinblue.com: Brevo's former name, whose relay host still works.
+  return /(^|\.)(brevo|sendinblue)\.com$/.test(name) ? "brevo" : "other"
 }
 
 /**

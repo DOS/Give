@@ -63,9 +63,10 @@ export default async function AdminEmailsPage() {
             <p className="text-sm">
               Nhà cung cấp email từ chối mọi email của Give (lỗi bắt đầu bằng <MachineId>ACCOUNT:</MachineId>), nên Give
               giữ các email dưới đây và thử lại mỗi giờ mà không tính lượt thử. Email nào quá hạn trước khi tài khoản
-              hoạt động lại sẽ bị bỏ, không gửi nữa: biên nhận và phần lớn email sau{" "}
-              {outboxMaxAgeDays("donation_received")} ngày, nhắc thanh toán sau{" "}
-              {outboxMaxAgeDays("pledge_payment_reminder")} ngày. Chủ tài khoản cần kiểm tra tài khoản ở nhà cung cấp.
+              hoạt động lại sẽ bị bỏ, không gửi nữa: nhắc thanh toán sau {outboxMaxAgeDays("pledge_payment_reminder")}{" "}
+              ngày, yêu cầu thanh toán và tổng kết chiến dịch sau {outboxMaxAgeDays("pledge_payment_due")} ngày, các
+              email khác (biên nhận, quyết định kiểm duyệt) sau {outboxMaxAgeDays("donation_received")} ngày; hạn của
+              từng email ở cột cuối. Chủ tài khoản cần kiểm tra tài khoản ở nhà cung cấp.
             </p>
           </Callout>
           <DataTable
