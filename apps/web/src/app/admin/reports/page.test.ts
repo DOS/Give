@@ -12,8 +12,11 @@ import { Window } from "happy-dom"
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import type { CampaignStatusEvent } from "@/components/campaign/StatusHistory"
 import { UNRESOLVED_CAMPAIGNS_PER_PAGE, type CampaignReport, type ReportedCampaign } from "@/lib/campaign-reports"
+import { STATUS_LABELS } from "@/lib/campaigns"
 import { MODERATION_ROLES } from "@/lib/evidence-moderation"
+import { formatDateTime } from "@/lib/format"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
@@ -228,6 +231,7 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
         }
       }
       if (call.target === "rpc:managed_campaigns") return { data: campaigns }
+      if (call.target === "campaign_status_events") return { data: [] }
       return undefined
     }
 
@@ -323,6 +327,7 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
         return { data: campaignFilter ? rows.filter((r) => campaignFilter.includes(r.campaign_id)) : rows }
       }
       if (call.target === "rpc:managed_campaigns") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: [] }
       return undefined
     }
 
@@ -341,6 +346,137 @@ describe("AdminReportsPage (DOS/Give#98)", () => {
     await expect(AdminReportsPage({ searchParams: Promise.resolve({ page: "5" }) })).rejects.toThrow(
       "NEXT_REDIRECT:/admin/reports?page=2"
     )
+  })
+
+  it("batch-loads campaign_status_events for #unresolved only (never actor_id or #resolved) and renders <StatusHistory> with fallback ID support", async () => {
+    const unresolvedRows: CampaignReport[] = [
+      reportRow("r-live", LIVE_ID, { created_at: "2026-11-16T01:00:00.000Z" }),
+      reportRow("r-closed", CLOSED_ID, { created_at: "2026-11-16T02:00:00.000Z" }),
+      reportRow("r-missing", BACK_ID, { created_at: "2026-11-16T03:00:00.000Z" }),
+    ]
+    const resolvedRows: CampaignReport[] = [
+      reportRow("r-done", RESOLVED_ID, {
+        status: "dismissed",
+        action_taken: "dismissed",
+        resolution_note: "Đã kiểm tra.",
+        handled_at: "2026-11-16T06:00:00.000Z",
+      }),
+    ]
+    // BACK_ID is intentionally absent from managed_campaigns to exercise fallback campaignTitle = item.campaign_id.
+    const campaigns: ReportedCampaign[] = [
+      campaignRow(LIVE_ID, { title: "Trường học Vùng Cao", status: "live" }),
+      campaignRow(CLOSED_ID, { title: "Chiến dịch Đã Đóng", status: "closed" }),
+      campaignRow(RESOLVED_ID, { title: "Chiến dịch Đã Xử Lý", status: "live" }),
+    ]
+    const statusEvents: CampaignStatusEvent[] = [
+      {
+        id: 55,
+        campaign_id: LIVE_ID,
+        from_status: "suspended",
+        to_status: "live",
+        reason: "Đã đối chiếu giấy xác nhận hợp lệ.\nMở lại gây quỹ.",
+        created_at: "2026-11-15T10:00:00.000Z",
+      },
+      {
+        id: 41,
+        campaign_id: LIVE_ID,
+        from_status: "live",
+        to_status: "suspended",
+        reason: "Tạm dừng chờ người tổ chức giải trình.",
+        created_at: "2026-11-14T08:00:00.000Z",
+      },
+      {
+        id: 33,
+        campaign_id: BACK_ID,
+        from_status: "in_review",
+        to_status: "approved",
+        reason: null,
+        created_at: "2026-11-12T04:00:00.000Z",
+      },
+    ]
+
+    state.handler = (call) => {
+      if (call.target === "rpc:is_admin") return { data: true }
+      if (call.target === "campaign_reports") {
+        const eqStatus = call.ops.find(([n, col]) => n === "eq" && col === "status")?.[2] as string | undefined
+        if (eqStatus) return { data: unresolvedRows.filter((r) => r.status === eqStatus) }
+        const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
+        if (!statusFilter?.includes("open")) return { data: resolvedRows }
+        return { data: unresolvedRows }
+      }
+      if (call.target === "rpc:managed_campaigns") return { data: campaigns }
+      if (call.target === "campaign_status_events") {
+        const ids = (op(call, "in")?.[1] ?? []) as string[]
+        return { data: statusEvents.filter((event) => ids.includes(event.campaign_id)) }
+      }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(await AdminReportsPage()).replace(/\u00a0/g, " ")
+    const doc = parseDoc(html)
+
+    const historyCalls = state.calls.filter((c) => c.target === "campaign_status_events")
+    expect(historyCalls).toHaveLength(1)
+    const selectCols = String(op(historyCalls[0], "select")?.[0] ?? "")
+    expect(selectCols).toBe("id, campaign_id, from_status, to_status, reason, created_at")
+    expect(selectCols).not.toContain("actor_id")
+    expect(op(historyCalls[0], "in")).toEqual(["campaign_id", [LIVE_ID, CLOSED_ID, BACK_ID]])
+    expect(op(historyCalls[0], "order")).toEqual(["id", { ascending: false }])
+
+    const cards = [...doc.querySelectorAll('section[aria-labelledby="unresolved"] > ul > li')]
+    expect(cards).toHaveLength(3)
+
+    // 1) LIVE_ID renders <details> with 2 transitions and multiline reason.
+    const liveDetails = cards[0]!.querySelector("details")!
+    expect(liveDetails).toBeTruthy()
+    expect(liveDetails.querySelector("summary")?.textContent).toContain("Lịch sử trạng thái (2): Trường học Vùng Cao")
+    expect(liveDetails.querySelector("summary .sr-only")?.textContent).toBe(": Trường học Vùng Cao")
+    const liveItems = [...liveDetails.querySelectorAll("ol > li")]
+    expect(liveItems).toHaveLength(2)
+    expect(liveItems[0]!.textContent).toContain(`${STATUS_LABELS.suspended} → ${STATUS_LABELS.live}`)
+    expect(liveItems[0]!.textContent).toContain(formatDateTime("2026-11-15T10:00:00.000Z"))
+    const liveReason = liveItems[0]!.querySelector("p")!
+    expect(liveReason.className).toContain("whitespace-pre-line")
+    expect(liveReason.className).toContain("max-w-[68ch]")
+    expect(liveReason.textContent).toBe("Đã đối chiếu giấy xác nhận hợp lệ.\nMở lại gây quỹ.")
+
+    // 2) CLOSED_ID has 0 events -> no <details>.
+    expect(cards[1]!.querySelector("details")).toBeNull()
+
+    // 3) Missing campaign metadata falls back to item.campaign_id in sr-only summary context.
+    const fallbackDetails = cards[2]!.querySelector("details")!
+    expect(fallbackDetails).toBeTruthy()
+    expect(fallbackDetails.querySelector("summary .sr-only")?.textContent).toBe(`: ${BACK_ID}`)
+
+    // #resolved never renders <StatusHistory>.
+    const resolvedSection = doc.querySelector('section[aria-labelledby="resolved"]')!
+    expect(resolvedSection.querySelector("details")).toBeNull()
+  })
+
+  it("keeps /admin/reports usable when campaign_status_events fails (.catch(() => new Map()))", async () => {
+    const unresolvedRows: CampaignReport[] = [reportRow("r-live", LIVE_ID)]
+    const campaigns: ReportedCampaign[] = [campaignRow(LIVE_ID, { title: "Trường học Vùng Cao" })]
+
+    state.handler = (call) => {
+      if (call.target === "rpc:is_admin") return { data: true }
+      if (call.target === "campaign_reports") {
+        const eqStatus = call.ops.find(([n, col]) => n === "eq" && col === "status")?.[2] as string | undefined
+        if (eqStatus) return { data: unresolvedRows.filter((r) => r.status === eqStatus) }
+        const statusFilter = call.ops.find(([n, col]) => n === "in" && col === "status")?.[2] as string[] | undefined
+        if (!statusFilter?.includes("open")) return { data: [] }
+        return { data: unresolvedRows }
+      }
+      if (call.target === "rpc:managed_campaigns") return { data: campaigns }
+      if (call.target === "campaign_status_events") {
+        return { error: { code: "42501", message: "permission denied" } }
+      }
+      return undefined
+    }
+
+    const doc = parseDoc(renderToStaticMarkup(await AdminReportsPage()))
+    const unresolvedSection = doc.querySelector('section[aria-labelledby="unresolved"]')!
+    expect(unresolvedSection.textContent).toContain("Trường học Vùng Cao")
+    expect(unresolvedSection.querySelector("details")).toBeNull()
   })
 })
 
