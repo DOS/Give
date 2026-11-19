@@ -7,6 +7,8 @@ import { cache, type ReactNode } from "react"
 
 import { AccountChanges } from "@/components/AccountChanges"
 import { StatusBadge, TypeBadge } from "@/components/badges"
+import { CampaignVideo, isValidYoutubeId } from "@/components/campaign/CampaignVideo"
+import { MilestoneList } from "@/components/campaign/MilestoneList"
 import { RecentSupporters } from "@/components/campaign/RecentSupporters"
 import { StatementPreview } from "@/components/campaign/StatementPreview"
 import { StickyAside } from "@/components/campaign/StickyAside"
@@ -105,6 +107,26 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 /** "Từ thiện" for give, "Dự án sáng tạo" for back, as discovery names them. */
 const TYPE_NAMES = { give: "Từ thiện", back: "Dự án sáng tạo" } as const
 
+interface YoutubeMediaRow {
+  id: string
+  youtube_id: string | null
+  alt: string | null
+  sort_order: number
+}
+
+async function listYoutubeMedia(db: Db, campaignId: string): Promise<YoutubeMediaRow[]> {
+  const { data, error } = await db
+    .from("campaign_media")
+    .select("id, youtube_id, alt, sort_order")
+    .eq("campaign_id", campaignId)
+    .eq("kind", "youtube")
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(1)
+  if (error) throw error
+  return (data ?? []) as YoutubeMediaRow[]
+}
+
 /**
  * The campaign page (DESIGN.md 8): breadcrumb, H1 and the organizer line,
  * then an 8/4 grid from 1024px: cover, tabs, story, statement and updates in
@@ -124,56 +146,69 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   const donationsOpen = !preview && acceptsDonations(campaign)
   const pledgesOpen = !preview && acceptsPledges(campaign)
   const sessionPromise = getSession()
-  const [milestones, updates, organizer, account, session, ownCampaign, totals, accountChanges, tiers, statementRows] =
-    await Promise.all([
-      listMilestones(db, campaign.id),
-      listPublishedUpdates(db, campaign.id),
-      preview
-        ? Promise.resolve(null)
-        : getPublicOrganizer(db, campaign.id).catch((error: unknown) => {
-            console.error("campaign page: public organizer lookup failed", error)
-            return null
-          }),
-      donationsOpen
-        ? paymentAccount(dbService(), campaign.id).catch((error: unknown) => {
-            // The page still renders, without the donate form.
-            console.error("campaign page: payment account lookup failed", error)
-            return null
-          })
-        : Promise.resolve(null),
-      sessionPromise,
-      // The organizer cannot back or report their own campaign (the database refuses both).
-      preview
-        ? Promise.resolve(false)
-        : sessionPromise.then((s) =>
-            s ? organizesCampaign(dbAs(s.accessToken), campaign.id, s.user.id).catch(() => false) : false
-          ),
-      // Public views only: a preview has no public totals yet.
-      preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
-      // A failed read hides the notice rather than the page; the statement shows it too.
-      preview ? Promise.resolve([]) : listPublicAccountChanges(dbAs(), campaign.id).catch(() => []),
-      // Reward tiers (DOS/Give#83): the public view, or the organizer's own active tiers in a preview.
-      // A failed read hides the tiers rather than the page.
-      isGive
-        ? Promise.resolve([])
-        : (preview
-            ? listCampaignTiers(db, campaign.id).then(previewTiers)
-            : listPublicTiers(dbAs(), campaign.id)
-          ).catch((error: unknown) => {
+  const [
+    milestones,
+    updates,
+    youtubeMedia,
+    organizer,
+    account,
+    session,
+    ownCampaign,
+    totals,
+    accountChanges,
+    tiers,
+    statementRows,
+  ] = await Promise.all([
+    listMilestones(db, campaign.id),
+    listPublishedUpdates(db, campaign.id),
+    listYoutubeMedia(db, campaign.id).catch(() => [] as YoutubeMediaRow[]),
+    preview
+      ? Promise.resolve(null)
+      : getPublicOrganizer(db, campaign.id).catch((error: unknown) => {
+          console.error("campaign page: public organizer lookup failed", error)
+          return null
+        }),
+    donationsOpen
+      ? paymentAccount(dbService(), campaign.id).catch((error: unknown) => {
+          // The page still renders, without the donate form.
+          console.error("campaign page: payment account lookup failed", error)
+          return null
+        })
+      : Promise.resolve(null),
+    sessionPromise,
+    // The organizer cannot back or report their own campaign (the database refuses both).
+    preview
+      ? Promise.resolve(false)
+      : sessionPromise.then((s) =>
+          s ? organizesCampaign(dbAs(s.accessToken), campaign.id, s.user.id).catch(() => false) : false
+        ),
+    // Public views only: a preview has no public totals yet.
+    preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
+    // A failed read hides the notice rather than the page; the statement shows it too.
+    preview ? Promise.resolve([]) : listPublicAccountChanges(dbAs(), campaign.id).catch(() => []),
+    // Reward tiers (DOS/Give#83): the public view, or the organizer's own active tiers in a preview.
+    // A failed read hides the tiers rather than the page.
+    isGive
+      ? Promise.resolve([])
+      : (preview ? listCampaignTiers(db, campaign.id).then(previewTiers) : listPublicTiers(dbAs(), campaign.id)).catch(
+          (error: unknown) => {
             console.error("campaign page: reward tiers lookup failed", error)
             return []
+          }
+        ),
+    // The newest rows of the public statement, for its preview and the recent supporters.
+    // A failed read leaves them out; the statement page has them all.
+    preview
+      ? Promise.resolve(null)
+      : listStatement(dbAs(), campaign.id, "all", 1)
+          .then(({ rows }) => rows)
+          .catch((error: unknown) => {
+            console.error("campaign page: statement lookup failed", error)
+            return null
           }),
-      // The newest rows of the public statement, for its preview and the recent supporters.
-      // A failed read leaves them out; the statement page has them all.
-      preview
-        ? Promise.resolve(null)
-        : listStatement(dbAs(), campaign.id, "all", 1)
-            .then(({ rows }) => rows)
-            .catch((error: unknown) => {
-              console.error("campaign page: statement lookup failed", error)
-              return null
-            }),
-    ])
+  ])
+  const pitchVideo =
+    youtubeMedia.find((m): m is YoutubeMediaRow & { youtube_id: string } => isValidYoutubeId(m.youtube_id)) ?? null
   const canDonate = donationsOpen && account !== null
   const ownProject = pledgesOpen && ownCampaign
   const canPledge = pledgesOpen && !ownProject
@@ -480,14 +515,21 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               <h2 id="story-heading" className="sr-only">
                 Câu chuyện
               </h2>
-              {campaign.story || campaign.summary ? (
-                <div className="max-w-[68ch] space-y-4">
-                  {campaign.summary && <p className="text-lg font-medium">{campaign.summary}</p>}
-                  {campaign.story && <Markdown>{campaign.story}</Markdown>}
-                </div>
-              ) : (
-                <EmptyState title="Chưa có câu chuyện">Người tổ chức chưa viết nội dung cho chiến dịch này.</EmptyState>
-              )}
+              <div className="space-y-6">
+                {pitchVideo && (
+                  <CampaignVideo youtubeId={pitchVideo.youtube_id} title={campaign.title} alt={pitchVideo.alt} />
+                )}
+                {campaign.story || campaign.summary ? (
+                  <div className="max-w-[68ch] space-y-4">
+                    {campaign.summary && <p className="text-lg font-medium">{campaign.summary}</p>}
+                    {campaign.story && <Markdown>{campaign.story}</Markdown>}
+                  </div>
+                ) : (
+                  <EmptyState title="Chưa có câu chuyện">
+                    Người tổ chức chưa viết nội dung cho chiến dịch này.
+                  </EmptyState>
+                )}
+              </div>
             </section>
 
             {canDonate && (
@@ -509,17 +551,11 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 <h2 id="milestones-heading" className="text-h2">
                   Các mốc mục tiêu
                 </h2>
-                <ol className="mt-6">
-                  {milestones.map((milestone) => (
-                    <li key={milestone.id} className="border-b border-border py-3">
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <h3 className="font-semibold">{milestone.title}</h3>
-                        <span className="font-semibold tabular-nums">{formatVnd(milestone.target_amount)}</span>
-                      </div>
-                      {milestone.description && <p className="mt-1 text-muted">{milestone.description}</p>}
-                    </li>
-                  ))}
-                </ol>
+                <MilestoneList
+                  milestones={milestones}
+                  raisedAmount={preview || !totals ? null : raised}
+                  preview={preview}
+                />
               </section>
             )}
           </div>
