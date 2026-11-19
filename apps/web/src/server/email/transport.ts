@@ -37,4 +37,9 @@ export interface EmailTransport {
    * the outbox has recorded a failure.
    */
   abort?(): void
+  /**
+   * Whether the last send reached the SMTP envelope (MAIL FROM). A send cut
+   * off before that cannot have been delivered. Unknown (absent) counts as yes.
+   */
+  reachedEnvelope?(): boolean
 }

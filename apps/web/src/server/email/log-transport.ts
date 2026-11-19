@@ -57,8 +57,13 @@ export function allowlistTransport(
     const address = to.toLowerCase()
     return entries.some((e) => (e.startsWith("@") ? address.endsWith(e) : address === e))
   }
+  let last: EmailTransport | null = null
   return {
-    send: (email) => (allowed(email.to) ? real.send(email) : fallback.send(email)),
+    send: (email) => {
+      last = allowed(email.to) ? real : fallback
+      return last.send(email)
+    },
+    reachedEnvelope: () => last?.reachedEnvelope?.() ?? true,
     close: () => {
       real.close?.()
       fallback.close?.()

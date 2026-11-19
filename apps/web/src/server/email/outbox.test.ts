@@ -171,6 +171,30 @@ describe("sendDueEmails", () => {
     }
   })
 
+  it("a send that timed out before MAIL FROM is a plain failure, not outcome unknown", async () => {
+    vi.useFakeTimers()
+    try {
+      const early: EmailTransport = {
+        send: () => new Promise(() => {}),
+        close: vi.fn(),
+        abort: vi.fn(),
+        reachedEnvelope: () => false,
+      }
+      claims = [[row(94)]]
+      completeStatus = "pending"
+      const run = sendDueEmails(fakeDb(handler, calls) as never, early, { ...OPTIONS, now: () => 0 })
+      await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS)
+      await run
+      expect(completes()[0]).toMatchObject({
+        p_outcome_unknown: false,
+        p_error: "send_timeout: before the message was sent",
+      })
+      expect(early.abort).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("does not retry an error a second try cannot fix", async () => {
     claims = [[row(90)]]
     const db = fakeDb((call) => {

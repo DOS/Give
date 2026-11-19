@@ -231,12 +231,15 @@ async function sendOne(
       // Cut the connection now, before recording anything, so a message
       // still in flight cannot land after the failure is on the row.
       transport.abort?.()
-      result = {
-        ok: false,
-        permanent: false,
-        outcomeUnknown: true,
-        error: "send_timeout: outcome unknown, the provider may have accepted it",
-      }
+      result =
+        (transport.reachedEnvelope?.() ?? true)
+          ? {
+              ok: false,
+              permanent: false,
+              outcomeUnknown: true,
+              error: "send_timeout: outcome unknown, the provider may have accepted it",
+            }
+          : { ok: false, permanent: false, error: "send_timeout: before the message was sent" }
     } else {
       result = { ok: false, permanent: false, error: error instanceof Error ? error.message : "send_failed" }
     }

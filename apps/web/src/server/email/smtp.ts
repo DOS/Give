@@ -182,6 +182,7 @@ export function createSmtpTransport(config: SmtpConfig): EmailTransport {
       sockets.abort()
       transporter.close()
     },
+    reachedEnvelope: () => envelope.started,
     async send(email: OutgoingEmail): Promise<SendResult> {
       const { "Message-ID": messageId, ...headers } = email.headers
       envelope.reset()
