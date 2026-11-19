@@ -17,7 +17,9 @@ const LINK = '<a href="mailto:hi@give.vn" class="font-medium underline">hi@give.
 
 const state = vi.hoisted(() => ({
   handler: (() => undefined) as Handler,
+  serviceHandler: (() => undefined) as Handler,
   calls: [] as Call[],
+  serviceCalls: [] as Call[],
 }))
 
 vi.mock("next/navigation", () => ({
@@ -35,7 +37,7 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/supabase", () => ({
   MEDIA_BUCKET: "give-media",
   dbAs: () => fakeDb((call) => state.handler(call), state.calls),
-  dbService: () => fakeDb(() => undefined),
+  dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
 }))
 
 const { default: EditCampaignPage } = await import("./page")
@@ -110,6 +112,8 @@ function setupUnusableWithTransactions(status: CampaignStatus, type: CampaignTyp
 
 beforeEach(() => {
   state.calls.length = 0
+  state.serviceCalls.length = 0
+  state.serviceHandler = () => undefined
 })
 
 describe("EditCampaignPage unusable bound account with recorded transactions (DOS/Give#77)", () => {
@@ -332,16 +336,21 @@ describe("EditCampaignPage stopped payments, post-live StatusNotice, and form/mi
       const milestoneButtons = [
         ...container.querySelectorAll<HTMLButtonElement>('#milestones ol button[type="submit"]'),
       ]
-      expect(milestoneButtons).toHaveLength(2)
-      expect(milestoneButtons[0].textContent).toBe("Xóa mốc Mua vật liệu")
-      expect(milestoneButtons[0].querySelector(".sr-only")?.textContent).toBe(" mốc Mua vật liệu")
-      expect(milestoneButtons[1].textContent).toBe("Xóa mốc Lắp đặt tại điểm trường")
+      const deleteButtons = milestoneButtons.filter((button) => button.textContent?.startsWith("Xóa"))
+      const saveButtons = milestoneButtons.filter((button) => button.textContent?.startsWith("Lưu mốc"))
+      expect(deleteButtons).toHaveLength(2)
+      expect(deleteButtons[0].textContent).toBe("Xóa mốc Mua vật liệu")
+      expect(deleteButtons[0].querySelector(".sr-only")?.textContent).toBe(" mốc Mua vật liệu")
+      expect(deleteButtons[1].textContent).toBe("Xóa mốc Lắp đặt tại điểm trường")
+      expect(saveButtons).toHaveLength(2)
+      expect(saveButtons[0].textContent).toBe("Lưu mốc: Mua vật liệu")
+      expect(saveButtons[1].textContent).toBe("Lưu mốc: Lắp đặt tại điểm trường")
 
       // Declining confirmation prevents deleteMilestone from executing.
       state.calls.length = 0
       confirmMock.mockReturnValueOnce(false)
       await act(async () => {
-        milestoneButtons[0].click()
+        deleteButtons[0].click()
       })
       expect(confirmMock).toHaveBeenCalledWith("Xóa mốc “Mua vật liệu”?")
       expect(state.calls).toHaveLength(0)
@@ -349,9 +358,202 @@ describe("EditCampaignPage stopped payments, post-live StatusNotice, and form/mi
       // Accepting confirmation submits deleteMilestone for MILESTONE_1.
       confirmMock.mockReturnValueOnce(true)
       await act(async () => {
-        milestoneButtons[0].click()
+        deleteButtons[0].click()
       })
       expect(state.calls.some((c) => c.target === "campaign_milestones" && Boolean(op(c, "delete")))).toBe(true)
+    } finally {
+      window.confirm = originalConfirm
+      act(() => root.unmount())
+      container.remove()
+    }
+  })
+})
+
+describe("EditCampaignPage YouTube pitch video and inline milestone editing (DOS/Give#269)", () => {
+  it("renders editable #pitch-video form without remove button when no video exists, and read-only states when locked", async () => {
+    setupUnusableWithTransactions("draft", "give")
+    const emptyDraftDoc = new Window().document
+    emptyDraftDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+
+    expect(emptyDraftDoc.querySelector('nav a[href="#pitch-video"]')?.textContent).toBe("Video giới thiệu")
+    const ytInput = emptyDraftDoc.querySelector('#pitch-video input#youtube_id[name="youtube_id"]')
+    expect(ytInput).not.toBeNull()
+    expect(ytInput?.getAttribute("aria-describedby")).toBe("youtube_id_hint")
+    expect(emptyDraftDoc.querySelector("#youtube_id_hint")?.textContent).toContain("11 ký tự")
+    expect(emptyDraftDoc.querySelector('#pitch-video input#youtube_alt[name="alt"]')?.getAttribute("maxlength")).toBe(
+      "200"
+    )
+    expect(emptyDraftDoc.querySelector("#pitch-video")?.textContent).toContain("Lưu video")
+    expect(emptyDraftDoc.querySelector("#pitch-video")?.textContent).not.toContain("Gỡ video")
+
+    // Locked campaign with a saved YouTube video renders read-only summary link and hides edit/remove forms.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("in_review", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") {
+        return {
+          data: [
+            {
+              id: MILESTONE_1,
+              campaign_id: CAMPAIGN,
+              title: "Mua vật liệu",
+              description: " Xi măng và gạch ",
+              target_amount: 3_000_000,
+              unlock_note: "Đăng ảnh hóa đơn vật liệu",
+              sort_order: 0,
+            },
+          ],
+        }
+      }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_media") {
+        return { data: [{ id: "yt-1", youtube_id: "dQw4w9WgXcQ", alt: "Video khảo sát thực tế" }] }
+      }
+      return undefined
+    }
+
+    const lockedWithVideoDoc = new Window().document
+    lockedWithVideoDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    const link = lockedWithVideoDoc.querySelector("#pitch-video a")
+    expect(link?.getAttribute("href")).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    expect(lockedWithVideoDoc.querySelector("#pitch-video")?.textContent).toContain("Mô tả: Video khảo sát thực tế")
+    expect(lockedWithVideoDoc.querySelector('#pitch-video input[name="youtube_id"]')).toBeNull()
+    expect(lockedWithVideoDoc.querySelector("#pitch-video")?.textContent).not.toContain("Gỡ video")
+    expect(lockedWithVideoDoc.querySelector("#milestones")?.textContent).toContain(
+      "Khi đạt mốc: Đăng ảnh hóa đơn vật liệu"
+    )
+    expect(lockedWithVideoDoc.querySelector("#milestones details")).toBeNull()
+
+    // Failed campaign_media read degrades only #pitch-video with a danger Callout instead of crashing or lying.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("draft", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_media") return { error: { code: "57014", message: "timeout" } }
+      return undefined
+    }
+    const degradedDoc = new Window().document
+    degradedDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    expect(degradedDoc.querySelector("#pitch-video")?.textContent).toContain(
+      "Không tải được video giới thiệu. Hãy tải lại trang."
+    )
+    expect(degradedDoc.querySelector('#pitch-video input[name="youtube_id"]')).toBeNull()
+  })
+
+  it("guards removeYoutubeVideo with window.confirm and submits inline milestone edits with unlock_note", async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") {
+        return { data: { ...campaignRow("draft", "give"), cover_media_id: null } }
+      }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") {
+        if (op(call, "update")) return { data: [{ id: MILESTONE_1 }] }
+        return {
+          data: [
+            {
+              id: MILESTONE_1,
+              campaign_id: CAMPAIGN,
+              title: "Mua vật liệu",
+              description: "Đợt đầu",
+              target_amount: 3_000_000,
+              unlock_note: "Gửi biên nhận mua hàng",
+              sort_order: 0,
+            },
+          ],
+        }
+      }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_media") {
+        return { data: [{ id: "yt-1", youtube_id: "dQw4w9WgXcQ", alt: "Giới thiệu điểm trường" }] }
+      }
+      return undefined
+    }
+
+    const container = document.createElement("div")
+    document.body.append(container)
+    const root = createRoot(container)
+    const originalConfirm = window.confirm
+    const confirmMock = vi.fn<(message?: string) => boolean>()
+    window.confirm = confirmMock
+
+    try {
+      const pageElement = await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+      await act(async () => {
+        root.render(pageElement)
+      })
+
+      // Add-milestone form includes unlock_note field.
+      const addUnlock = container.querySelector<HTMLTextAreaElement>(
+        '#milestones #milestone_unlock_note[name="unlock_note"]'
+      )
+      expect(addUnlock).not.toBeNull()
+      expect(addUnlock?.getAttribute("maxlength")).toBe("500")
+      expect(addUnlock?.getAttribute("aria-describedby")).toBe("milestone_unlock_note_hint")
+
+      // Inline <details> "Sửa mốc" renders contextualized summary and prefilled fields.
+      const summary = container.querySelector("#milestones ol details summary")
+      expect(summary?.textContent).toBe("Sửa mốc: Mua vật liệu")
+      expect(summary?.querySelector(".sr-only")?.textContent).toBe(": Mua vật liệu")
+
+      const editUnlock = container.querySelector<HTMLTextAreaElement>(
+        `#milestones #milestone_${MILESTONE_1}_unlock_note[name="unlock_note"]`
+      )
+      expect(editUnlock?.value).toBe("Gửi biên nhận mua hàng")
+
+      // Submit inline milestone edit form.
+      const saveMilestoneBtn = [
+        ...container.querySelectorAll<HTMLButtonElement>('#milestones ol details button[type="submit"]'),
+      ][0]
+      state.calls.length = 0
+      await act(async () => {
+        saveMilestoneBtn.click()
+      })
+      const updateCall = state.calls.find((c) => c.target === "campaign_milestones" && Boolean(op(c, "update")))
+      expect(op(updateCall, "update")).toEqual([
+        {
+          title: "Mua vật liệu",
+          target_amount: 3_000_000,
+          description: "Đợt đầu",
+          unlock_note: "Gửi biên nhận mua hàng",
+        },
+      ])
+      expect(updateCall?.ops).toContainEqual(["eq", "id", MILESTONE_1])
+      expect(updateCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+
+      // Guard removeYoutubeVideo with window.confirm.
+      const removeBtn = [...container.querySelectorAll<HTMLButtonElement>('#pitch-video button[type="submit"]')].find(
+        (b) => b.textContent === "Gỡ video"
+      )!
+      expect(removeBtn).toBeDefined()
+
+      state.calls.length = 0
+      state.serviceCalls.length = 0
+      confirmMock.mockReturnValueOnce(false)
+      await act(async () => {
+        removeBtn.click()
+      })
+      expect(confirmMock).toHaveBeenCalledWith("Gỡ video giới thiệu khỏi chiến dịch?")
+      expect(state.serviceCalls).toHaveLength(0)
+
+      confirmMock.mockReturnValueOnce(true)
+      await act(async () => {
+        removeBtn.click()
+      })
+      expect(state.serviceCalls).toHaveLength(1)
+      expect(state.serviceCalls[0].target).toBe("campaign_media")
+      expect(state.serviceCalls[0].ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+      expect(state.serviceCalls[0].ops).toContainEqual(["eq", "kind", "youtube"])
     } finally {
       window.confirm = originalConfirm
       act(() => root.unmount())
