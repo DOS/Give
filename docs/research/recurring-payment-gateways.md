@@ -149,9 +149,15 @@ Decree 93 Art. 17.2 is a question for counsel (design P4(j)) [inference].
    straight to each sub-merchant's own bank account; (2) individual
    sub-merchants without business registration, and KYC; (3) merchant-initiated
    charges without the donor present; (4) donation or charity accepted as a
-   category; (5) who bears chargebacks, fees and T+n; (6) does money settle
-   to the sub-merchant's own bank account or to a balance held at the
-   gateway, and on what schedule. The ready-to-send letter is
+   category (MCC 8398), for individual and organisation organizers; (5) who
+   bears chargebacks, fees and T+n; (6) does money settle to the
+   sub-merchant's own bank account or to a balance held at the gateway, and on
+   what schedule; (7) per-charge and settlement data, and a per-schedule end
+   date; (8) contract structure: who is the đơn vị chấp nhận thanh toán,
+   whether DOS signs for, guarantees or carries chargebacks of sub-merchants,
+   and whether DOS needs its own licence; (9) per-charge and per-day limits,
+   and the authentication needed for merchant-initiated charges. The
+   ready-to-send letter is
    `docs/research/recurring-step2-outreach.md` part A.
 
 ## Sources

@@ -54,8 +54,10 @@ dịch kết thúc, và người ủng hộ hủy được bất cứ lúc nào.
    hoặc nền tảng khởi tạo, hoặc lịch thu chạy ở phía cổng) không? Nếu lịch
    chạy ở phía cổng, nền tảng hủy lịch qua API được không, và cổng xác nhận
    việc hủy thế nào?
-4. [Tên cổng] có nhận ngành hàng **ủng hộ, từ thiện** cho merchant con là cá
-   nhân không?
+4. [Tên cổng] có nhận ngành hàng **ủng hộ, từ thiện** (mã ngành thẻ MCC 8398,
+   "Charitable and Social Service Organizations") cho merchant con là **cá
+   nhân** không? Còn với người tổ chức là **tổ chức** (quỹ, hội, tổ chức xã
+   hội có tư cách pháp nhân) thì sao, và hồ sơ khác nhau thế nào?
 5. Khi có **hoàn tiền hay khiếu nại (chargeback)**, bên nào chịu? **Phí** mỗi
    giao dịch là bao nhiêu, và phí được **trừ vào tiền quyết toán** hay **tính
    riêng** cho merchant con? Sau bao lâu thì tiền về (T+n)?
@@ -67,6 +69,15 @@ dịch kết thúc, và người ủng hộ hủy được bất cứ lúc nào.
    mã giao dịch, kết quả thành công hay lỗi) và cho từng lần quyết toán (báo
    cáo đối soát liệt kê các lần thu trong khoản quyết toán)? Nền tảng có đặt
    được **ngày kết thúc** cho từng lịch thu định kỳ không?
+8. **Cấu trúc hợp đồng:** trong mô hình này, ai là **đơn vị chấp nhận thanh
+   toán**: người tổ chức (merchant con) hay DOS? DOS có phải ký hợp đồng thay
+   cho merchant con, bảo lãnh, hay chịu trách nhiệm về hoàn tiền và khiếu nại
+   (chargeback) của merchant con không? DOS có cần **giấy phép** riêng nào (ví
+   dụ giấy phép trung gian thanh toán) để làm nền tảng trong mô hình này không?
+9. **Hạn mức và xác thực:** hạn mức **mỗi lần thu** và **mỗi ngày** (theo
+   người góp, theo merchant con) là bao nhiêu? Với lần thu do merchant hay nền
+   tảng khởi tạo khi người góp không có mặt, cần **xác thực** gì: chỉ lần đăng
+   ký đầu (OTP, 3-D Secure) hay cả từng lần thu?
 
 Tài liệu thiết kế của Give là công khai (mã nguồn mở). Chúng tôi chỉ muốn ghi
 vào đó bản tóm tắt kết luận từ câu trả lời của [Tên cổng]. Xin cho biết phần
@@ -86,10 +97,14 @@ Trân trọng,
 
 ---
 
-**Cách đọc câu trả lời.** Cổng đầu tiên trả lời "có" cho câu 1, 2, 3 và 4, và ở
-câu 6 nói tiền về thẳng tài khoản ngân hàng, là ứng viên làm trước. Nếu câu 6
-là "số dư giữ tại cổng" mà nền tảng không điều khiển việc chi ra, ghi lại và
-chờ luật sư trả lời P4(j) (mục 9 của thiết kế).
+**Cách đọc câu trả lời.** Cổng đầu tiên trả lời "có" cho câu 1, 2, 3 và 4, ở
+câu 6 nói tiền về thẳng tài khoản ngân hàng, và ở câu 8 nói người tổ chức (không
+phải DOS) là đơn vị chấp nhận thanh toán, DOS không chịu chargeback của merchant
+con và không cần giấy phép riêng, là ứng viên làm trước. Nếu câu 6 là "số dư
+giữ tại cổng" mà nền tảng không điều khiển việc chi ra, hoặc câu 8 đòi DOS ký
+thay, bảo lãnh hay chịu chargeback, ghi lại và chờ luật sư trả lời P4 (mục 9
+của thiết kế; câu (j) cho số dư). Câu 9 không loại cổng nào, nhưng hạn mức và
+cách xác thực quyết định người góp dùng được tới mức nào.
 
 **Lưu ở đâu.** Repo DOS/Give là repo công khai. Lưu thư trả lời ở nơi riêng tư
 của DOS (không đưa vào issue hay repo), vì biểu phí và điều khoản hợp đồng có
@@ -111,9 +126,15 @@ khớp được tiền nếu mã đó tới tài khoản nhận nguyên vẹn m�
   thường chuyển liên ngân hàng tới tài khoản của chiến dịch, và cổng (a) đòi
   lệnh liên ngân hàng. Nếu chỉ thử được trong cùng ngân hàng, vẫn làm, nhưng
   kết quả chỉ là "tạm qua" (xem phần kết luận).
-- Nếu được, chọn tài khoản nhận ở ngân hàng mà Give đọc được giao dịch (qua
-  Tingee, hoặc qua import sao kê), để xem nội dung đúng như kênh của Give sẽ
-  thấy. Tránh VietinBank qua Tingee, vì kênh đó làm mất nội dung chuyển khoản.
+- Tài khoản nhận **không được đang gắn với Give** trên bản chính thức
+  (production): không phải tài khoản của một chiến dịch, và không phải tài
+  khoản dùng để xác minh ở DOS/Give#46 nếu tài khoản đó đang gắn. Nếu không,
+  tiền thử với mã `GM…` sẽ đi vào luồng khớp và báo tiền chuyển nhầm của Give
+  thật.
+- Chỉ đọc nội dung giao dịch ở **app ngân hàng** hoặc **file sao kê tải về**.
+  Nếu muốn xem Give đọc nội dung đó thế nào, chỉ tải sao kê lên bản **beta**
+  hoặc **preview** của Give, **không bao giờ** lên bản chính thức. Vì vậy nên
+  chọn tài khoản nhận ở ngân hàng có định dạng sao kê mà Give import được.
 - Lệnh liên ngân hàng có thể mất phí chuyển mỗi lần chạy; ghi lại phí nếu có.
 - Tài khoản nhận phải xem được **chi tiết giao dịch** trong app và **tải được
   sao kê** (file hoặc trang internet banking).
@@ -154,8 +175,8 @@ khớp được tiền nếu mã đó tới tài khoản nhận nguyên vẹn m�
    - Bên nhận: thông báo biến động số dư, và chi tiết giao dịch trong app
      (thấy nội dung).
    - Bên nhận: dòng tương ứng trên **sao kê** (tải file sao kê nếu được).
-   - Nếu tài khoản nhận nối với Give (Tingee hay import sao kê): nội dung giao
-     dịch như Give ghi nhận.
+   - Nếu đã tải sao kê lên Give bản beta hay preview (không phải bản chính
+     thức): nội dung giao dịch như Give ghi nhận.
 5. **Kiểm tra nội dung bên nhận** ở mỗi lần chạy và ghi vào bảng dưới:
    - mã thử còn **đầy đủ, đúng thứ tự**, không bị cắt hay đổi ký tự;
    - ngân hàng có thêm chữ nào trước hoặc sau mã không (thường có, ví dụ mã
@@ -178,6 +199,9 @@ khớp được tiền nếu mã đó tới tài khoản nhận nguyên vẹn m�
 
 - Che số tài khoản (chỉ để lại 4 số cuối), số dư, tên đầy đủ và mã giao dịch
   của ngân hàng.
+- Ở **ảnh bên nhận**, bôi đen **họ tên đầy đủ của người chuyển**: ngân hàng
+  nhận thường tự thêm tên người chuyển vào nội dung. Chép nội dung vào bảng thì
+  thay tên đó bằng `[TÊN NGƯỜI CHUYỂN]`, giữ nguyên mọi chữ khác.
 - Không gửi mã OTP, mật khẩu hay ảnh chứa mã QR đăng nhập.
 - Gửi ảnh cho PO qua kênh riêng tư, **không** đăng lên issue hay repo (repo
   DOS/Give là công khai). Trong repo chỉ ghi kết luận: ngân hàng nào qua, đường
@@ -185,10 +209,14 @@ khớp được tiền nếu mã đó tới tài khoản nhận nguyên vẹn m�
 
 **Kết luận của phép thử**
 
-- Ngân hàng **qua** cổng (a) khi một lệnh **liên ngân hàng, hằng tháng** chạy
-  hai lần và ở cả hai lần nội dung bên nhận còn nguyên mã thử. Ghi ngân hàng
-  đó vào danh sách đã xác minh (mục 4.3.5), kèm đường đi trong app để tạo và
-  hủy lệnh, và giờ chót hủy.
+- Ngân hàng chuyển **qua** cổng (a) với một ngân hàng nhận khi một lệnh
+  **liên ngân hàng, hằng tháng** chạy hai lần và ở cả hai lần nội dung bên nhận
+  còn nguyên mã thử. Ghi vào danh sách đã xác minh (mục 4.3.5) **cặp ngân hàng
+  chuyển và ngân hàng nhận**, kèm đường đi trong app để tạo và hủy lệnh, và giờ
+  chót hủy. Một ngân hàng chuyển chỉ là **đã xác minh đầy đủ** khi có thêm ít
+  nhất **một ngân hàng nhận khác** cũng qua, vì nội dung có thể bị cắt hay đổi
+  ở phía ngân hàng nhận; trước đó, nó chỉ được dùng cho tài khoản chiến dịch ở
+  đúng ngân hàng nhận đã thử.
 - Lệnh trong cùng ngân hàng, hay lệnh hằng ngày, hằng tuần, đạt điều kiện
   trên chỉ là **tạm qua**: ghi lại, nhưng ngân hàng chỉ vào danh sách đã xác
   minh sau khi có ít nhất một lệnh liên ngân hàng hằng tháng được kiểm tra.
