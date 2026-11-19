@@ -837,3 +837,149 @@ describe("CampaignPage pitch video & milestones (DOS/Give#268)", () => {
     expect(invalidHtml).not.toContain("Mở trên YouTube")
   })
 })
+
+describe("CampaignPage BreadcrumbList JSON-LD (DOS/Give#283)", () => {
+  it("emits absolute schema.org BreadcrumbList JSON-LD with category when siteOrigin() is configured", async () => {
+    const prevSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
+    process.env.NEXT_PUBLIC_SITE_URL = "https://give.vn/ignored-path"
+
+    try {
+      const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+      const doc = parseDoc(html)
+      const scripts = doc.querySelectorAll('script[type="application/ld+json"]')
+      expect(scripts).toHaveLength(1)
+
+      expect(JSON.parse(scripts[0].textContent ?? "")).toStrictEqual({
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Trang chủ", item: "https://give.vn/" },
+          { "@type": "ListItem", position: 2, name: "Khám phá", item: "https://give.vn/campaigns" },
+          { "@type": "ListItem", position: 3, name: "Từ thiện", item: "https://give.vn/campaigns?type=give" },
+          {
+            "@type": "ListItem",
+            position: 4,
+            name: "Giáo dục",
+            item: "https://give.vn/campaigns?type=give&category=giao-duc",
+          },
+          { "@type": "ListItem", position: 5, name: "Xây trường Bản Mây" },
+        ],
+      })
+    } finally {
+      if (prevSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
+      else process.env.NEXT_PUBLIC_SITE_URL = prevSiteUrl
+    }
+  })
+
+  it("omits the category crumb with contiguous positions when category is null and falls back to relative URLs when siteOrigin() is unset", async () => {
+    const prevSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
+    delete process.env.NEXT_PUBLIC_SITE_URL
+
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("succeeded"),
+            type: "back",
+            funding_model: "all_or_nothing",
+            category_id: null,
+            category: null,
+          },
+        }
+      }
+      if (call.target === "reward_tiers") return { data: [] }
+      return baseAnon(call)
+    }
+
+    try {
+      const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+      const doc = parseDoc(html)
+      const scripts = doc.querySelectorAll('script[type="application/ld+json"]')
+      expect(scripts).toHaveLength(1)
+
+      expect(JSON.parse(scripts[0].textContent ?? "")).toStrictEqual({
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Trang chủ", item: "/" },
+          { "@type": "ListItem", position: 2, name: "Khám phá", item: "/campaigns" },
+          { "@type": "ListItem", position: 3, name: "Dự án sáng tạo", item: "/campaigns?type=back" },
+          { "@type": "ListItem", position: 4, name: "Xây trường Bản Mây" },
+        ],
+      })
+    } finally {
+      if (prevSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
+      else process.env.NEXT_PUBLIC_SITE_URL = prevSiteUrl
+    }
+  })
+
+  it("escapes < as \\u003c so </script> or <!-- in campaign title or category cannot break out of application/ld+json", async () => {
+    const xssTitle = 'Xây trường </script><script>alert("xss")</script> <!-- Bản Mây'
+    const xssCategoryName = "Giáo dục </script><!--"
+
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        const base = campaignFixture("live")
+        return {
+          data: {
+            ...base,
+            title: xssTitle,
+            category: { ...base.category!, name: xssCategoryName },
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(html).not.toContain('</script><script>alert("xss")</script>')
+    expect(html).toContain('\\u003c/script>\\u003cscript>alert(\\"xss\\")\\u003c/script> \\u003c!-- Bản Mây')
+    expect(html).toContain("Giáo dục \\u003c/script>\\u003c!--")
+
+    const doc = parseDoc(html)
+    const allScripts = doc.querySelectorAll("script")
+    expect(allScripts).toHaveLength(1)
+    expect(allScripts[0].getAttribute("type")).toBe("application/ld+json")
+
+    const parsed = JSON.parse(allScripts[0].textContent ?? "")
+    expect(parsed.itemListElement[3].name).toBe(xssCategoryName)
+    expect(parsed.itemListElement[4].name).toBe(xssTitle)
+  })
+
+  it.each(["draft", "in_review", "changes_requested", "approved", "suspended", "cancelled"] as const)(
+    "omits BreadcrumbList JSON-LD on non-public and halted status %s",
+    async (status) => {
+      const prevSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
+      process.env.NEXT_PUBLIC_SITE_URL = "https://give.vn"
+
+      state.session = {
+        user: { id: VIEWER, email: "mod@dos.me", name: "Kiểm duyệt viên" },
+        accessToken: "mod-token",
+      }
+      state.anonHandler = () => ({ data: null })
+      state.userHandler = (call) => {
+        if (call.target === "campaigns") return { data: campaignFixture(status) }
+        if (
+          call.target === "campaign_milestones" ||
+          call.target === "campaign_updates" ||
+          call.target === "campaign_media"
+        )
+          return { data: [] }
+        return undefined
+      }
+
+      try {
+        const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+        const doc = parseDoc(html)
+        expect(doc.querySelector('script[type="application/ld+json"]')).toBeNull()
+        expect(html).not.toContain("application/ld+json")
+        expect(html).not.toContain("BreadcrumbList")
+      } finally {
+        if (prevSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
+        else process.env.NEXT_PUBLIC_SITE_URL = prevSiteUrl
+      }
+    }
+  )
+})
