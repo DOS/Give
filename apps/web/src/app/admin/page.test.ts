@@ -16,11 +16,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   accountProblemLabel,
+  STATUS_LABELS,
   waitingAdvice,
   type Organizer,
   type ReviewItem,
   type WaitingForAccount,
 } from "@/lib/campaigns"
+import type { CampaignStatusEvent } from "@/components/campaign/StatusHistory"
+import { formatDateTime } from "@/lib/format"
 import { FINANCE_ROLES } from "@/lib/receiving-accounts"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
@@ -148,6 +151,8 @@ function setupAdmin({
   waiting = [] as WaitingForAccount[],
   waitingError = null as { code?: string; message?: string } | null,
   organizers = [] as Organizer[],
+  statusEvents = [] as CampaignStatusEvent[],
+  statusEventsError = null as { code?: string; message?: string } | null,
 } = {}) {
   state.handler = (call) => {
     if (call.target === "rpc:is_admin") {
@@ -171,6 +176,11 @@ function setupAdmin({
           data: waiting.map(({ account_problem: _p, account_has_transactions: _t, ...campaign }) => campaign),
         }
       }
+    }
+    if (call.target === "campaign_status_events") {
+      if (statusEventsError) return { error: statusEventsError }
+      const ids = (op(call, "in")?.[1] ?? []) as string[]
+      return { data: statusEvents.filter((event) => ids.includes(event.campaign_id)) }
     }
     if (call.target === "organizers") {
       const inStatuses = op(call, "in")?.[1] as string[] | undefined
@@ -563,6 +573,111 @@ describe("AdminReviewPage (/admin, DOS/Give#218)", () => {
         act(() => root.unmount())
         container.remove()
       }
+    })
+  })
+
+  describe("campaign status & review history disclosure (DOS/Give#282)", () => {
+    it("batch-loads campaign_status_events across #queue and #waiting without actor_id and renders <StatusHistory> only where events exist", async () => {
+      const queuedWithHistory = reviewRow("12121212-1212-4212-8212-121212121212", {
+        title: "Xây lớp học Điểm Cao",
+      })
+      const queuedWithoutHistory = reviewRow("34343434-3434-4434-8434-343434343434", {
+        title: "Giếng nước sạch Bản Xa",
+      })
+      const waitingWithHistory = waitingRow("56565656-5656-4656-8656-565656565656", "account_not_owned", {
+        title: "Sách giáo khoa vùng lũ",
+      })
+
+      setupAdmin({
+        queue: [queuedWithHistory, queuedWithoutHistory],
+        waiting: [waitingWithHistory],
+        statusEvents: [
+          {
+            id: 30,
+            campaign_id: queuedWithHistory.id,
+            from_status: "changes_requested",
+            to_status: "in_review",
+            reason: "Đã đính kèm văn bản xác nhận của xã.",
+            created_at: "2026-11-18T06:00:00.000Z",
+          },
+          {
+            id: 22,
+            campaign_id: queuedWithHistory.id,
+            from_status: "in_review",
+            to_status: "changes_requested",
+            reason: "Bổ sung dự toán vật tư.\nNêu rõ đơn vị thi công.",
+            created_at: "2026-11-17T02:30:00.000Z",
+          },
+          {
+            id: 18,
+            campaign_id: waitingWithHistory.id,
+            from_status: "in_review",
+            to_status: "approved",
+            reason: null,
+            created_at: "2026-11-12T09:00:00.000Z",
+          },
+        ],
+      })
+
+      const { queueSection, waitingSection } = await renderAdmin()
+
+      const historyCalls = state.calls.filter((c) => c.target === "campaign_status_events")
+      expect(historyCalls).toHaveLength(1)
+      const selectCols = String(op(historyCalls[0], "select")?.[0] ?? "")
+      expect(selectCols).toBe("id, campaign_id, from_status, to_status, reason, created_at")
+      expect(selectCols).not.toContain("actor_id")
+      expect(op(historyCalls[0], "in")).toEqual([
+        "campaign_id",
+        [queuedWithHistory.id, queuedWithoutHistory.id, waitingWithHistory.id],
+      ])
+      expect(op(historyCalls[0], "order")).toEqual(["id", { ascending: false }])
+
+      const queueCards = Array.from(queueSection.querySelector("ul")!.children)
+      expect(queueCards).toHaveLength(2)
+
+      // Queued campaign with 2 events renders <details> with sr-only title, transitions and multiline reason.
+      const qDetails = queueCards[0]!.querySelector("details")!
+      expect(qDetails).toBeTruthy()
+      expect(qDetails.querySelector("summary")?.textContent).toContain("Lịch sử trạng thái (2): Xây lớp học Điểm Cao")
+      expect(qDetails.querySelector("summary .sr-only")?.textContent).toBe(": Xây lớp học Điểm Cao")
+      const qEvents = Array.from(qDetails.querySelectorAll("ol > li"))
+      expect(qEvents).toHaveLength(2)
+      expect(qEvents[0]!.textContent).toContain(`${STATUS_LABELS.changes_requested} → ${STATUS_LABELS.in_review}`)
+      expect(qEvents[0]!.textContent).toContain(formatDateTime("2026-11-18T06:00:00.000Z"))
+      expect(qEvents[1]!.textContent).toContain(`${STATUS_LABELS.in_review} → ${STATUS_LABELS.changes_requested}`)
+      const qReason = qEvents[1]!.querySelector("p")!
+      expect(qReason.className).toContain("whitespace-pre-line")
+      expect(qReason.className).toContain("max-w-[68ch]")
+      expect(qReason.textContent).toBe("Bổ sung dự toán vật tư.\nNêu rõ đơn vị thi công.")
+
+      // Queued campaign with 0 events renders no <details>.
+      expect(queueCards[1]!.querySelector("details")).toBeNull()
+
+      // Waiting campaign with 1 event renders <details>.
+      const waitingCards = Array.from(waitingSection.querySelector("ul")!.children)
+      const wDetails = waitingCards[0]!.querySelector("details")!
+      expect(wDetails).toBeTruthy()
+      expect(wDetails.querySelector("summary")?.textContent).toContain("Lịch sử trạng thái (1): Sách giáo khoa vùng lũ")
+      expect(wDetails.textContent).toContain(`${STATUS_LABELS.in_review} → ${STATUS_LABELS.approved}`)
+    })
+
+    it("keeps /admin usable when campaign_status_events fails (.catch(() => new Map()))", async () => {
+      const queued = reviewRow("78787878-7878-4878-8878-787878787878", { title: "Áo mưa cho học trò" })
+      const waitingItem = waitingRow("90909090-9090-4090-8090-909090909090", "account_not_owned", {
+        title: "Cầu dân sinh Xóm Bến",
+      })
+      setupAdmin({
+        queue: [queued],
+        waiting: [waitingItem],
+        statusEventsError: { code: "42501", message: "permission denied" },
+      })
+
+      const { queueSection, waitingSection } = await renderAdmin()
+
+      expect(queueSection.textContent).toContain("Áo mưa cho học trò")
+      expect(queueSection.querySelector("details")).toBeNull()
+      expect(waitingSection.textContent).toContain("Cầu dân sinh Xóm Bến")
+      expect(waitingSection.querySelector("details")).toBeNull()
     })
   })
 })

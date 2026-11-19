@@ -3,6 +3,11 @@ import { notFound, redirect } from "next/navigation"
 import type { ReactNode } from "react"
 
 import { TypeBadge, VerificationBadge } from "@/components/badges"
+import {
+  listStatusEventsByCampaign,
+  StatusHistory,
+  type CampaignStatusEvent,
+} from "@/components/campaign/StatusHistory"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { ButtonLink } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
@@ -49,6 +54,11 @@ export default async function AdminReviewPage() {
     }),
     listOrganizersToVerify(db),
   ])
+
+  const statusEventsByCampaign = await listStatusEventsByCampaign(db, [
+    ...queue.map((campaign) => campaign.id),
+    ...(waiting ?? []).map((campaign) => campaign.id),
+  ]).catch(() => new Map<string, CampaignStatusEvent[]>())
 
   return (
     <AdminPage title="Kiểm duyệt">
@@ -100,6 +110,10 @@ export default async function AdminReviewPage() {
                       </Fact>
                     )}
                   </Facts>
+                  <StatusHistory
+                    events={statusEventsByCampaign.get(campaign.id) ?? []}
+                    campaignTitle={campaign.title}
+                  />
                   {own ? (
                     <Callout tone="warning">Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần duyệt.</Callout>
                   ) : (
@@ -180,6 +194,10 @@ export default async function AdminReviewPage() {
                       </Fact>
                     )}
                   </Facts>
+                  <StatusHistory
+                    events={statusEventsByCampaign.get(campaign.id) ?? []}
+                    campaignTitle={campaign.title}
+                  />
                   {advice.note && <Callout tone="warning">{advice.note}</Callout>}
                   {advice.sendBackReason === null ? null : own ? (
                     <Callout tone="warning">Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý.</Callout>
