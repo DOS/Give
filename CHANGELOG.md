@@ -433,6 +433,27 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Platform
 
+- Email outbox (M4): Give sends email through `give.outbox`, filled in the
+  same transaction as the event: a donation turning `received` (a receipt to
+  the guest's donation email or the donor's account, with a fresh 7-day
+  tracking link for guests), pledge `payment_due`, `payment_reminder` and
+  `pledge_lapsed` notices, and campaign approved, changes requested,
+  suspended and ended (organizer). `/api/cron/send-outbox` (every minute)
+  leases due rows, sends them through AWS SES over SMTP (DOS.Me's provider,
+  `nodemailer` 10.3.1, server-only) from `Give <no-reply@give.vn>`, retries
+  after 1, 5, 15, 60, 180 and 360 minutes and marks a row dead after 7
+  attempts; `/admin/emails` (admins) lists dead and retrying emails and sends
+  a dead one again (audited). The campaign end summary is the only
+  notification email: it carries an unsubscribe link (`/email/unsubscribe`,
+  one-click `List-Unsubscribe`). No images or tracking pixels. Outside
+  Production a log transport mails nobody unless `EMAIL_DELIVERY=smtp`, and
+  then only `EMAIL_ALLOWLIST`; in Production sending waits for the SES
+  credentials, and `EMAIL_DELIVERY=log` is refused there. Delivery is at
+  least once: each event queues exactly one email, but a send whose result
+  was lost, or that timed out (its connection is cut off and it waits an
+  hour before the next attempt), can reach the recipient twice. A daily
+  `/api/cron/purge-outbox` clears old addresses and payloads and expired
+  tracking tokens (#254 / #257).
 - Contact: Give staff are reached at `hi@give.vn` (Give's own domain; it
   replaced the first choice, DOS.Me's `help@dos.me`), kept in one constant
   (`apps/web/src/lib/contact.ts`). The site footer shows
@@ -454,6 +475,21 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Database (DOS.Me)
 
+- Email outbox: `give.outbox` (unique idempotency key, lease, attempts,
+  backoff, dead), `give.email_suppressions`, `give.contribution_access_tokens`;
+  enqueue triggers on `contributions`, `notices` and `campaign_status_events`;
+  `give.claim_outbox` (re-checks each row: a receipt whose donation is no
+  longer received, a payment request no longer due and rows past their
+  kind's maximum age are skipped; payment requests wait while a campaign's
+  requests are stopped; records the address it sends to),
+  `give.complete_outbox` (an outcome-unknown timeout waits at least an hour),
+  `give.release_outbox`, `give.retry_outbox` (admin, audited, not past the
+  maximum age), `give.unsubscribe_email` (suppresses the address the email
+  went to; suppressions are stored as SHA-256), `give.purge_outbox`
+  (retention). Only the triggers enqueue, validating rows instead of
+  catching errors; `recipient_user_id` has no foreign key to `auth.users`.
+  RLS on, service role only (#254 / DOS/DOS.Me#1782). Migration
+  `20261123090000_give_email_outbox`.
 - Finance can read why a bank transaction was refused:
   `give.bank_transaction_refusal_reasons(uuid[])`, finance and admin only,
   returns the `bank_transaction.account_owner_mismatch` and

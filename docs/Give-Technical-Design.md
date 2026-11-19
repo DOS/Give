@@ -325,9 +325,21 @@ View công khai (client chỉ được đọc các view này):
 ```sql
 give.reports (id, campaign_id, reporter_id NULL, reason, details, status ('open','reviewing','actioned','dismissed'), handled_by)
 give.audit_log (id, actor_id, action, entity, entity_id, before jsonb, after jsonb, at)   -- chỉ ghi thêm
-give.outbox (id, kind, payload, status, attempts, next_attempt_at)   -- email/thông báo, job gửi lại khi lỗi
+give.outbox (id, kind, category, idempotency_key UNIQUE, recipient_user_id | recipient_email, payload,
+             status ('pending','sending','sent','dead','skipped'), attempts, max_attempts, next_attempt_at,
+             locked_until, last_error, unsubscribe_token)   -- email, mục 2.5.1
 give.admins (user_id PK, role ('moderator','finance','admin'))       -- hoặc dùng role chung của DOS nếu đã có
 ```
+
+#### 2.5.1 Email (DOS/Give#254)
+
+- **Ghi vào hàng chờ cùng transaction với sự kiện.** Trigger trên `contributions` (donation chuyển sang `received`: biên nhận), `notices` (`payment_due`, `payment_reminder`, `pledge_lapsed`) và `campaign_status_events` (duyệt, yêu cầu sửa, tạm dừng, kết thúc: gửi người tổ chức) ghi `give.outbox` với `idempotency_key` duy nhất và `ON CONFLICT DO NOTHING`. Vì vậy một dòng sao kê import lại, cron chạy lại hay một lần khớp bị hủy rồi khớp lại không bao giờ tạo email thứ hai. Dòng được kiểm tra trước khi ghi (`give.outbox_enqueue`, chỉ trigger gọi được): dữ liệu sai thì bỏ qua và ghi cảnh báo, không mở subtransaction, không làm hỏng giao dịch tiền. `recipient_user_id` không có khóa ngoại tới `auth.users` (như `ledger_entries.actor_id`), nên ghi hàng chờ không khóa dòng người dùng: xóa tài khoản người tổ chức trong lúc duyệt chiến dịch không gây deadlock.
+- **Gửi.** Job `send-outbox` gọi `give.claim_outbox` (khóa `FOR UPDATE SKIP LOCKED`, thuê dòng 5 phút, tăng `attempts`), gửi qua AWS SES bằng SMTP (nhà cung cấp DOS.Me đang dùng), rồi `give.complete_outbox` ghi kết quả của đúng lần thử đang giữ dòng. Lỗi thì thử lại sau 1, 5, 15, 60, 180, 360 phút; lần thứ 7 vẫn lỗi, hoặc máy chủ nhận từ chối hẳn địa chỉ người nhận ở bước `RCPT TO`, thì `dead`. Quản trị viên xem và gửi lại ở `/admin/emails` (`give.retry_outbox`, ghi `audit_log`).
+- **Kiểm tra lại lúc gửi.** `claim_outbox` bỏ qua (`skipped`) email đã cũ: biên nhận mà khoản ủng hộ không còn `received` (`not_received`), yêu cầu hoặc nhắc thanh toán mà cam kết không còn `payment_due`/`partially_paid` với hạn còn phía trước (`not_due`), và mọi dòng quá tuổi tối đa của loại đó (`expired`: nhắc thanh toán 2 ngày, yêu cầu thanh toán và tổng kết 14 ngày, còn lại 7 ngày). Trong lúc dự án tạm dừng yêu cầu thanh toán, email yêu cầu thanh toán của cam kết còn `payment_due`/`partially_paid` chờ thêm từng giờ thay vì bị bỏ, kể cả khi hạn cũ đã qua trong lúc tạm dừng (mở lại thì hạn được dời) hay khi tạm dừng lâu hơn tuổi tối đa (tuổi tính từ lần giữ lại cuối, `deferred_at`), và được gửi khi dự án mở lại. Email cam kết nêu số tiền và hạn của cam kết lúc gửi, không phải lúc xếp hàng. Quản trị viên không gửi lại được dòng đã quá tuổi.
+- **Gửi ít nhất một lần, không phải đúng một lần.** Mỗi sự kiện chỉ ghi một dòng hàng chờ, nhưng người nhận có thể nhận trùng email trong hai trường hợp. Thứ nhất, SES đã nhận thư nhưng không ghi được kết quả: `complete_outbox` được thử lại vài lần, sau đó hết thời hạn thuê dòng thì lần chạy sau gửi lại. Thứ hai, lần gửi đã tới `MAIL FROM` rồi quá 15 giây hoặc mất kết nối mà SES chưa trả lời: job cắt kết nối ngay (TCP reset), ghi lỗi "không rõ kết quả" (`p_outcome_unknown`) và chờ ít nhất 1 giờ mới thử lại. SES thay `Message-ID` của Give bằng mã riêng, nên header `X-Give-Outbox-Id` mới là thứ nối một email đã nhận với dòng hàng chờ.
+- **Loại email.** `transactional` (biên nhận, yêu cầu thanh toán, quyết định kiểm duyệt) luôn gửi. `notification` (tổng kết khi chiến dịch kết thúc) có link hủy đăng ký và header `List-Unsubscribe` một chạm; địa chỉ đã hủy nằm trong `give.email_suppressions`. Hủy đăng ký chặn đúng địa chỉ email đã được gửi tới (`claim_outbox` lưu `to_email` và SHA-256 của nó, `to_email_hash`), không phải email hiện tại của tài khoản; bảng chặn chỉ lưu SHA-256, và link vẫn dùng được sau khi địa chỉ bị xóa khỏi dòng. Không có ảnh, pixel theo dõi hay nội dung tải từ xa.
+- **Link theo dõi cho khách.** Mỗi lần gửi biên nhận cho khách vãng lai, `claim_outbox` sinh một token mới 32 byte, chỉ lưu SHA-256 trong `give.contribution_access_tokens` (hết hạn sau 7 ngày, như token trạng thái), và trả token một lần để đưa vào email. Chỉ sinh khi khoản ủng hộ vẫn là của khách đó: không gắn tài khoản, chưa ẩn danh và cùng địa chỉ email.
+- **Lưu trữ.** Job `purge-outbox` (mỗi ngày) gọi `give.purge_outbox`: xóa tài khoản, địa chỉ và payload của dòng mà tài khoản đã bị xóa, và của dòng đã xong (`sent`, `skipped`, `dead`) quá 30 ngày; dòng và `idempotency_key` vẫn giữ để sự kiện không tạo email thứ hai, nên bảng lớn dần, mỗi email một dòng nhỏ. Token theo dõi đã hết hạn bị xóa. Mỗi lần gọi chạy khoảng 4 giây rồi commit (dưới giới hạn 8 giây của API); job gọi lại tới 45 giây, phần còn lại để hôm sau.
 
 ### 2.6 RLS
 
@@ -517,7 +529,8 @@ Kênh crypto nằm sau M4, nhưng schema đã có sẵn chỗ (`asset`, `vnd_equ
 | `remind-pledges`     | 1 giờ    | `remind_pledge_payments`: nhắc thanh toán cam kết vào ngày 1, 3 và 6 của hạn thanh toán (mỗi ngày một lần)            |
 | `reprocess-inbound`  | 5 phút   | Xử lý lại `inbound_events` còn treo; đỗ sự kiện sau 10 lần thử                                                        |
 | `reconcile-accounts` | 1 ngày   | `fetchTransactions` cho các kênh có hỗ trợ; báo lệch khi số dư không khớp                                             |
-| `send-outbox`        | 1 phút   | Gửi email/thông báo, có retry và backoff                                                                              |
+| `send-outbox`        | 1 phút   | Gửi email trong `give.outbox`, thử lại 1, 5, 15, 60, 180, 360 phút rồi `dead` (mục 2.5.1)                             |
+| `purge-outbox`       | 1 ngày   | Xóa địa chỉ và payload email cũ, token theo dõi hết hạn (mục 2.5.1)                                                   |
 | `remind-unexplained` | 1 ngày   | Nhắc người tổ chức giải trình các khoản chi                                                                           |
 
 Mọi job đều idempotent. Nếu một lần chạy bị trùng hoặc bị bỏ lỡ, lần chạy sau sửa lại được.
