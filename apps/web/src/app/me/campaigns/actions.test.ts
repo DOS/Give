@@ -40,8 +40,11 @@ const {
   deleteDraft,
   deleteMilestone,
   postUpdate,
+  removeYoutubeVideo,
   saveContent,
+  saveYoutubeVideo,
   submitForReview,
+  updateMilestone,
   uploadCover,
 } = await import("./actions")
 
@@ -637,7 +640,11 @@ describe("addMilestone", () => {
   it("inserts the parsed milestone payload and revalidates editor, list and public campaign paths", async () => {
     state.userHandler = (call) =>
       op(call, "maybeSingle") ? { data: owned({ status: "changes_requested" }) } : undefined
-    const result = await addMilestone(CAMPAIGN, null, milestoneForm())
+    const result = await addMilestone(
+      CAMPAIGN,
+      null,
+      milestoneForm({ unlock_note: "  Công bố danh sách 50 học sinh nhận sách  " })
+    )
     expect(result).toEqual({ ok: true, message: "Đã thêm mốc." })
 
     const insert = state.userCalls.find((c) => c.target === "campaign_milestones")
@@ -647,6 +654,7 @@ describe("addMilestone", () => {
         title: "Mua sách giáo khoa",
         target_amount: 15_000_000,
         description: "Trao cho 50 học sinh vùng cao",
+        unlock_note: "Công bố danh sách 50 học sinh nhận sách",
         sort_order: 0,
       },
     ])
@@ -657,9 +665,15 @@ describe("addMilestone", () => {
     ])
   })
 
-  it("normalizes an empty description to null and surfaces database insert errors without revalidating", async () => {
+  it("normalizes empty description and unlock_note to null, rejects unlock_note > 500 chars, and surfaces DB errors without revalidating", async () => {
     state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : undefined)
-    await addMilestone(CAMPAIGN, null, milestoneForm({ description: "   " }))
+    expect(await addMilestone(CAMPAIGN, null, milestoneForm({ unlock_note: "x".repeat(501) }))).toEqual({
+      ok: false,
+      message: "Ghi chú khi đạt mốc tối đa 500 ký tự.",
+    })
+    expect(state.userCalls.some((c) => c.target === "campaign_milestones")).toBe(false)
+
+    await addMilestone(CAMPAIGN, null, milestoneForm({ description: "   ", unlock_note: "   " }))
     const insert = state.userCalls.find((c) => c.target === "campaign_milestones")
     expect(op(insert, "insert")).toEqual([
       {
@@ -667,6 +681,7 @@ describe("addMilestone", () => {
         title: "Mua sách giáo khoa",
         target_amount: 15_000_000,
         description: null,
+        unlock_note: null,
         sort_order: 0,
       },
     ])
@@ -682,6 +697,272 @@ describe("addMilestone", () => {
     const failed = await addMilestone(CAMPAIGN, null, milestoneForm())
     expect(failed?.ok).toBe(false)
     expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled()
+  })
+})
+
+describe("updateMilestone", () => {
+  const MILESTONE = "44444444-4444-4444-8444-444444444444"
+
+  function editMilestoneForm(overrides: Record<string, string> = {}) {
+    const form = new FormData()
+    const values: Record<string, string> = {
+      title: "  Mua bàn ghế mới  ",
+      target_amount: "25.000.000",
+      description: "  Bàn ghế cho 2 phòng học  ",
+      unlock_note: "  Gửi ảnh nghiệm thu tại điểm trường  ",
+      ...overrides,
+    }
+    for (const [key, value] of Object.entries(values)) form.set(key, value)
+    return form
+  }
+
+  it("refuses signed-out callers and invalid UUIDs before querying", async () => {
+    vi.mocked(getSession).mockResolvedValueOnce(null)
+    expect(await updateMilestone(CAMPAIGN, MILESTONE, null, editMilestoneForm())).toEqual({
+      ok: false,
+      message: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+    })
+    expect(state.userCalls).toHaveLength(0)
+
+    expect((await updateMilestone("not-a-uuid", MILESTONE, null, editMilestoneForm()))?.ok).toBe(false)
+    expect((await updateMilestone(CAMPAIGN, "not-a-uuid", null, editMilestoneForm()))?.ok).toBe(false)
+    expect(state.userCalls).toHaveLength(0)
+  })
+
+  it("refuses non-owners, non-editable statuses, and invalid fields without updating", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle") ? { data: owned({ organizer_id: "other-user" }) } : undefined
+    expect((await updateMilestone(CAMPAIGN, MILESTONE, null, editMilestoneForm()))?.ok).toBe(false)
+
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "live" }) } : undefined)
+    expect(await updateMilestone(CAMPAIGN, MILESTONE, null, editMilestoneForm())).toEqual({
+      ok: false,
+      message: "Chỉ sửa được chiến dịch đang là bản nháp hoặc cần chỉnh sửa.",
+    })
+
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : undefined)
+    expect(
+      await updateMilestone(CAMPAIGN, MILESTONE, null, editMilestoneForm({ unlock_note: "y".repeat(501) }))
+    ).toEqual({
+      ok: false,
+      message: "Ghi chú khi đạt mốc tối đa 500 ký tự.",
+    })
+    expect(state.userCalls.some((c) => c.target === "campaign_milestones")).toBe(false)
+  })
+
+  it("updates title, target_amount, description and unlock_note scoped to id and campaign_id, and revalidates", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: owned({ status: "changes_requested" }) }
+        : call.target === "campaign_milestones" && op(call, "update")
+          ? { data: [{ id: MILESTONE }] }
+          : undefined
+
+    expect(await updateMilestone(CAMPAIGN, MILESTONE, null, editMilestoneForm())).toEqual({
+      ok: true,
+      message: "Đã lưu mốc.",
+    })
+
+    const updateCall = state.userCalls.find((c) => c.target === "campaign_milestones")
+    expect(op(updateCall, "update")).toEqual([
+      {
+        title: "Mua bàn ghế mới",
+        target_amount: 25_000_000,
+        description: "Bàn ghế cho 2 phòng học",
+        unlock_note: "Gửi ảnh nghiệm thu tại điểm trường",
+      },
+    ])
+    expect(updateCall?.ops).toContainEqual(["eq", "id", MILESTONE])
+    expect(updateCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+    expect(updateCall?.ops).toContainEqual(["select", "id"])
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual([
+      [`/me/campaigns/${CAMPAIGN}`],
+      ["/me/campaigns"],
+      ["/campaigns/quy-hoc-bong-abcde"],
+    ])
+  })
+
+  it("reports a clear error without revalidating when 0 rows match or DB fails", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : { data: [] })
+    expect(await updateMilestone(CAMPAIGN, MILESTONE, null, editMilestoneForm())).toEqual({
+      ok: false,
+      message: "Không lưu được mốc này. Hãy tải lại trang.",
+    })
+    expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled()
+  })
+})
+
+describe("saveYoutubeVideo and removeYoutubeVideo", () => {
+  function videoForm(youtube_id: string, alt = "") {
+    const form = new FormData()
+    form.set("youtube_id", youtube_id)
+    form.set("alt", alt)
+    return form
+  }
+
+  it.each([
+    ["raw 11-char ID", "  dQw4w9WgXcQ  ", "dQw4w9WgXcQ"],
+    ["raw ID with _ and -", "_aB-09_Zz12", "_aB-09_Zz12"],
+    ["youtu.be link", "https://youtu.be/dQw4w9WgXcQ?si=abc&t=15", "dQw4w9WgXcQ"],
+    ["bare youtu.be link", "youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"],
+    ["youtube.com/watch", "https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=30s", "dQw4w9WgXcQ"],
+    ["m.youtube.com/watch", "https://m.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"],
+    ["youtube.com/shorts", "https://www.youtube.com/shorts/dQw4w9WgXcQ?feature=share", "dQw4w9WgXcQ"],
+    ["youtube.com/embed", "https://www.youtube.com/embed/dQw4w9WgXcQ", "dQw4w9WgXcQ"],
+    ["youtube-nocookie.com/embed", "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0", "dQw4w9WgXcQ"],
+  ])(
+    "parses %s, inserts kind=youtube first, cleans up only older kind=youtube rows, and revalidates",
+    async (_label, input, expectedId) => {
+      state.userCalls.length = 0
+      state.serviceCalls.length = 0
+      vi.mocked(revalidatePath).mockClear()
+      state.userHandler = (call) =>
+        op(call, "maybeSingle") ? { data: owned({ cover_media_id: OLD_COVER }) } : undefined
+      state.serviceHandler = (call) =>
+        call.target === "campaign_media" && op(call, "insert")
+          ? { data: { created_at: "2026-11-19T12:00:00.123456+00:00" } }
+          : undefined
+
+      const result = await saveYoutubeVideo(CAMPAIGN, null, videoForm(input, "  Video giới thiệu điểm trường  "))
+      expect(result).toEqual({ ok: true, message: "Đã lưu video giới thiệu." })
+
+      const insertCall = state.serviceCalls.find((c) => c.target === "campaign_media" && op(c, "insert"))
+      const [insertedRow] = op(insertCall, "insert") as [
+        { id: string; campaign_id: string; kind: string; youtube_id: string; alt: string | null; sort_order: number },
+      ]
+      expect(insertedRow).toMatchObject({
+        campaign_id: CAMPAIGN,
+        kind: "youtube",
+        youtube_id: expectedId,
+        alt: "Video giới thiệu điểm trường",
+        sort_order: 0,
+      })
+
+      const deleteCalls = state.serviceCalls.filter((c) => c.target === "campaign_media" && op(c, "delete"))
+      expect(deleteCalls).toHaveLength(1)
+      expect(deleteCalls[0].ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+      expect(deleteCalls[0].ops).toContainEqual(["eq", "kind", "youtube"])
+      expect(deleteCalls[0].ops).toContainEqual(["neq", "id", insertedRow.id])
+      expect(deleteCalls[0].ops).toContainEqual(["lte", "created_at", "2026-11-19T12:00:00.123456+00:00"])
+      expect(state.serviceCalls.some((c) => c.target.startsWith("storage:"))).toBe(false)
+      expect(vi.mocked(revalidatePath).mock.calls).toEqual([
+        [`/me/campaigns/${CAMPAIGN}`],
+        ["/me/campaigns"],
+        ["/campaigns/quy-hoc-bong-abcde"],
+      ])
+    }
+  )
+
+  it.each([
+    ["empty", "   "],
+    ["too short", "abc123"],
+    ["too long", "dQw4w9WgXcQ_extra"],
+    ["playlist page", "https://www.youtube.com/playlist?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"],
+    [
+      "watch with playlist param",
+      "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf",
+    ],
+    ["short link with playlist param", "https://youtu.be/dQw4w9WgXcQ?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"],
+    ["videoseries embed", "https://www.youtube.com/embed/videoseries?list=PLrAXtmErZgOeiKm4sgNOknGvNjby9efdf"],
+    ["raw videoseries keyword", "videoseries"],
+    ["watch videoseries keyword", "https://www.youtube.com/watch?v=videoseries"],
+    ["channel handle", "https://www.youtube.com/@GiveVietnam"],
+    ["channel id", "https://www.youtube.com/channel/UCuAXFkgsw1L7xaCfnd5JJOw"],
+    ["live_stream embed", "https://www.youtube.com/embed/live_stream?channel=UCuAXFkgsw1L7xaCfnd5JJOw"],
+    ["non-standard port", "https://www.youtube.com:8080/watch?v=dQw4w9WgXcQ"],
+    ["non-YouTube URL", "https://vimeo.com/12345678901"],
+    ["lookalike host", "https://evil-youtube.com/watch?v=dQw4w9WgXcQ"],
+    ["javascript scheme", "javascript:dQw4w9WgXcQ"],
+  ])("rejects invalid YouTube input (%s) without touching the service role", async (_label, badInput) => {
+    state.serviceCalls.length = 0
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : undefined)
+    const result = await saveYoutubeVideo(CAMPAIGN, null, videoForm(badInput))
+    expect(result?.ok).toBe(false)
+    expect(result?.message).toContain("Liên kết YouTube không hợp lệ")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("validates alt <= 200 chars, normalizes empty alt to null, and enforces auth/ownership/editable status", async () => {
+    vi.mocked(getSession).mockResolvedValueOnce(null)
+    expect((await saveYoutubeVideo(CAMPAIGN, null, videoForm("dQw4w9WgXcQ")))?.ok).toBe(false)
+    expect(state.serviceCalls).toHaveLength(0)
+
+    state.userHandler = (call) =>
+      op(call, "maybeSingle") ? { data: owned({ organizer_id: "someone-else" }) } : undefined
+    expect((await saveYoutubeVideo(CAMPAIGN, null, videoForm("dQw4w9WgXcQ")))?.ok).toBe(false)
+    expect(state.serviceCalls).toHaveLength(0)
+
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "in_review" }) } : undefined)
+    expect((await saveYoutubeVideo(CAMPAIGN, null, videoForm("dQw4w9WgXcQ")))?.ok).toBe(false)
+    expect(state.serviceCalls).toHaveLength(0)
+
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : undefined)
+    expect(await saveYoutubeVideo(CAMPAIGN, null, videoForm("dQw4w9WgXcQ", "a".repeat(201)))).toEqual({
+      ok: false,
+      message: "Mô tả video tối đa 200 ký tự.",
+    })
+    expect(state.serviceCalls).toHaveLength(0)
+
+    expect(await saveYoutubeVideo(CAMPAIGN, null, videoForm("dQw4w9WgXcQ", "   "))).toEqual({
+      ok: true,
+      message: "Đã lưu video giới thiệu.",
+    })
+    const [insertedRow] = op(
+      state.serviceCalls.find((c) => c.target === "campaign_media" && op(c, "insert")),
+      "insert"
+    ) as [{ alt: string | null }]
+    expect(insertedRow.alt).toBeNull()
+  })
+
+  it("rolls back the inserted YouTube row if deleting older kind=youtube rows fails", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : undefined)
+    let deletes = 0
+    state.serviceHandler = (call) => {
+      if (call.target === "campaign_media" && op(call, "delete")) {
+        deletes += 1
+        return deletes === 1 ? { error: { code: "57014", message: "statement timeout" } } : {}
+      }
+      return undefined
+    }
+
+    const result = await saveYoutubeVideo(CAMPAIGN, null, videoForm("dQw4w9WgXcQ"))
+    expect(result?.ok).toBe(false)
+    expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled()
+
+    const [insertedRow] = op(
+      state.serviceCalls.find((c) => c.target === "campaign_media" && op(c, "insert")),
+      "insert"
+    ) as [{ id: string }]
+    const deleteCalls = state.serviceCalls.filter((c) => c.target === "campaign_media" && op(c, "delete"))
+    expect(deleteCalls).toHaveLength(2)
+    expect(deleteCalls[1].ops).toContainEqual(["eq", "id", insertedRow.id])
+    expect(deleteCalls[1].ops).toContainEqual(["eq", "kind", "youtube"])
+  })
+
+  it("removes only kind=youtube rows for the owned editable campaign and revalidates", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "live" }) } : undefined)
+    expect(await removeYoutubeVideo(CAMPAIGN)).toEqual({
+      ok: false,
+      message: "Chỉ sửa được chiến dịch đang là bản nháp hoặc cần chỉnh sửa.",
+    })
+    expect(state.serviceCalls).toHaveLength(0)
+
+    state.userHandler = (call) =>
+      op(call, "maybeSingle") ? { data: owned({ status: "changes_requested", cover_media_id: OLD_COVER }) } : undefined
+    expect(await removeYoutubeVideo(CAMPAIGN)).toEqual({
+      ok: true,
+      message: "Đã gỡ video giới thiệu.",
+    })
+
+    expect(state.serviceCalls).toHaveLength(1)
+    expect(state.serviceCalls[0].target).toBe("campaign_media")
+    expect(state.serviceCalls[0].ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+    expect(state.serviceCalls[0].ops).toContainEqual(["eq", "kind", "youtube"])
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual([
+      [`/me/campaigns/${CAMPAIGN}`],
+      ["/me/campaigns"],
+      ["/campaigns/quy-hoc-bong-abcde"],
+    ])
   })
 })
 

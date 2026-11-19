@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { fakeDb, type Call } from "@/test/fake-db"
 
-import { isAccountHold, listHeldEmails, listRetryingEmails, outboxExpiresAt, outboxMaxAgeDays } from "./email-outbox"
+import { listHeldEmails, listRetryingEmails, outboxExpiresAt, outboxMaxAgeDays } from "./email-outbox"
 
 describe("outbox maximum age", () => {
   it("mirrors give.outbox_max_age", () => {
@@ -29,20 +29,14 @@ describe("outbox maximum age", () => {
 })
 
 describe("held emails", () => {
-  it("are recognised by the ACCOUNT: prefix only", () => {
-    expect(isAccountHold("ACCOUNT: SMTP 450: disabled")).toBe(true)
-    expect(isAccountHold("SMTP 450: ACCOUNT: x")).toBe(false)
-    expect(isAccountHold(null)).toBe(false)
-  })
-
   it("are listed apart from the emails waiting for an ordinary retry", async () => {
     const calls: Call[] = []
     const db = fakeDb(() => ({ data: [], count: 0 }), calls)
     await listHeldEmails(db as never)
     await listRetryingEmails(db as never)
-    expect(calls[0].ops).toContainEqual(["like", "last_error", "ACCOUNT:%"])
+    expect(calls[0].ops).toContainEqual(["like", "last_error", "THROTTLE:%"])
     expect(calls[0].ops).toContainEqual(["eq", "status", "pending"])
-    expect(calls[1].ops).toContainEqual(["or", "last_error.is.null,last_error.not.like.ACCOUNT:*"])
+    expect(calls[1].ops).toContainEqual(["or", "last_error.is.null,last_error.not.like.THROTTLE:*"])
     expect(calls[1].ops).toContainEqual(["gt", "attempts", 0])
   })
 })

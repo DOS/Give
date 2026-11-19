@@ -14,6 +14,36 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Campaign `BreadcrumbList` JSON-LD structured data: public non-preview,
+  non-halted `/campaigns/[slug]` views emit a `schema.org` `BreadcrumbList`
+  `<script type="application/ld+json">` matching the breadcrumb trail (`Trang
+chủ` -> `Khám phá` -> `Từ thiện` / `Dự án sáng tạo` -> optional
+  `campaign.category` -> `campaign.title`, resolving absolute `item` URLs
+  against `siteOrigin()` when configured and omitting `item` on the final
+  current-page `ListItem`), serialized with `.replace(/</g, "\\u003c")` so
+  `</script>` or `<!--` in campaign text cannot break out of the script tag, and
+  suppressed on `preview`, `suspended` and `cancelled` views, with Vitest
+  coverage (#283 / #285).
+- Organizer YouTube pitch video editor and inline milestone editing:
+  `/me/campaigns/[id]` adds a `#pitch-video` (`"Video giới thiệu"`) panel
+  (`saveYoutubeVideo` and `removeYoutubeVideo` validating `youtu.be`,
+  `youtube.com` `watch` / `shorts` / `embed`, `youtube-nocookie.com/embed` and
+  11-character IDs, inserting `kind = 'youtube'` in `give.campaign_media` and
+  deleting only older YouTube rows with rollback on cleanup failure while
+  leaving cover images untouched, plus isolated section degradation on read
+  failure) and extends milestones with optional `unlock_note` (`<= 500` chars)
+  and contextual inline `<details>` `"Sửa mốc"` editing (`updateMilestone`)
+  while editable, with Vitest suites (#269 / #274).
+- Public campaign pitch video player and milestone completion states:
+  `/campaigns/[slug]` renders `CampaignVideo` for valid 11-character
+  `kind = 'youtube'` media rows (a zero-tracker click-to-play `16:9` poster
+  card proxying `i.ytimg.com` via `next/image` with a secondary `min-h-11` play
+  button and `"Mở trên YouTube"` fallback that mounts
+  `youtube-nocookie.com/embed` only on click, degrading cleanly on media query
+  errors) and `MilestoneList` (`"Đã đạt mốc"` `brand` badge and `unlock_note`
+  disclosure once ledger-derived `raisedAmount >= target_amount`, or
+  `"Khi đạt mốc:"` preview copy without reached badges on unpublished
+  previews), with Vitest suites (#268 / #272).
 - Campaign share timer and shared component tests: `ShareButtons` tracks its
   3-second clipboard status timeout in a `useRef`, clearing any pending timer
   before scheduling a new one on rapid clicks and cleaning up on unmount.
@@ -29,12 +59,13 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   `cover_media_id` so superseded or orphaned draft cover uploads return `404`
   after launch, opening `dbService` lazily and adding `nosniff` and private
   `noindex, noimageindex` headers with 3-segment path bounds. `uploadCover`
-  re-reads the committed `cover_media_id` before best-effort stale Storage
-  deletion, `deleteDraft` guards post-commit cleanup, `cancelCampaign`
-  normalizes blank reasons and maps `CANCEL_MESSAGES`, `saveOrganizer` recovers
-  from `23505` insert races, and downstream `revalidatePath` coverage and route
-  tests harden `submitForReview`, `cancelCampaign`, `reward-actions`,
-  `fulfillment/actions` and `GET /api/cron/activate` (#258 / #267).
+  swaps `cover_media_id` via optimistic compare-and-swap (CAS) and best-effort
+  deletes only the exact replaced cover row and Storage object, `deleteDraft`
+  guards post-commit cleanup, `cancelCampaign` normalizes blank reasons and
+  maps `CANCEL_MESSAGES`, `saveOrganizer` recovers from `23505` insert races,
+  and downstream `revalidatePath` coverage and route tests harden
+  `submitForReview`, `cancelCampaign`, `reward-actions`, `fulfillment/actions`
+  and `GET /api/cron/activate` (#258 / #267).
 - Organizer campaign list, `CampaignCard`, statement preview and home ranking:
   `/me/campaigns` redirects expired or rejected JWTs (`PGRST301` / `PGRST303`)
   to `/auth/login?return_path=%2Fme%2Fcampaigns`, renders `review_note` on
@@ -484,24 +515,26 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Platform
 
-- Email provider: Give sends through SMTP set entirely from env (host, port,
-  login, key), by default Brevo's relay (`smtp-relay.brevo.com:587`,
-  STARTTLS) on the Brevo account and 10k-emails-a-month plan DOS shares,
-  instead of AWS SES. Brevo's two documented account-wide refusals (`450`
-  platform not activated or disabled) hold the email instead of counting an
-  attempt: the run stops, the email waits an hour and never ends dead, and
-  `/admin/emails` lists held emails (`ACCOUNT:` errors) with when each will
-  be dropped at its maximum age. Every other error keeps the normal retry and
-  permanent rules. When credits run out Brevo accepts and queues email on its
-  side, so Give cannot see it; reading the remaining credits is DOS/Give#273.
-  Needs DOS/DOS.Me `give.complete_outbox(..., p_hold)` first (#254).
+- Email throttling hold: the SMTP transport stays on AWS SES (host, port,
+  login and key from env). When SES answers 454 "Daily message quota
+  exceeded" (a quota shared with DOS.Me), the email is now held instead of
+  counting an attempt: the run stops, the email waits an hour and never
+  ends dead, and `/admin/emails` lists held emails (`THROTTLE:` errors) with
+  when each will be dropped at its maximum age. SES's per-second 454
+  "Maximum sending rate exceeded" stops the run and is retried after a
+  minute as an ordinary failure. Every other error keeps the normal retry
+  and permanent rules. A run against a database without the hold records an
+  ordinary failure instead. Retrying emails with no recorded error stay
+  listed. The shared DOS Brevo account was considered and not used (design
+  §2.5.1). Needs DOS/DOS.Me `give.complete_outbox(..., p_hold)` first
+  (#254).
 - Email outbox (M4): Give sends email through `give.outbox`, filled in the
   same transaction as the event: a donation turning `received` (a receipt to
   the guest's donation email or the donor's account, with a fresh 7-day
   tracking link for guests), pledge `payment_due`, `payment_reminder` and
   `pledge_lapsed` notices, and campaign approved, changes requested,
   suspended and ended (organizer). `/api/cron/send-outbox` (every minute)
-  leases due rows, sends them over SMTP (first AWS SES, now Brevo, above;
+  leases due rows, sends them through AWS SES over SMTP (DOS.Me's provider,
   `nodemailer` 10.3.1, server-only) from `Give <no-reply@give.vn>`, retries
   after 1, 5, 15, 60, 180 and 360 minutes and marks a row dead after 7
   attempts; `/admin/emails` (admins) lists dead and retrying emails and sends
@@ -509,7 +542,7 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   notification email: it carries an unsubscribe link (`/email/unsubscribe`,
   one-click `List-Unsubscribe`). No images or tracking pixels. Outside
   Production a log transport mails nobody unless `EMAIL_DELIVERY=smtp`, and
-  then only `EMAIL_ALLOWLIST`; in Production sending waits for the SMTP
+  then only `EMAIL_ALLOWLIST`; in Production sending waits for the SES
   credentials, and `EMAIL_DELIVERY=log` is refused there. Delivery is at
   least once: each event queues exactly one email, but a send whose result
   was lost, or that timed out (its connection is cut off and it waits an

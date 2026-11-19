@@ -137,12 +137,14 @@ the Qwen Code PO, and Platform by the Give Product Owner.
 - local_reviews: a fresh-context subagent review; Money changes also get a
   second independent review before merge.
 - agent_effort: high
+- agent_model: sonnet
 
 ## Sessions
 
 - sub_sessions_normal: 3
 - sub_sessions_max: 5
 - check_in_minutes: 30
+- gatekeeper_model: haiku
 - executors: Codex, "Claude Code", Antigravity, Cursor
 
 ## Owner instructions

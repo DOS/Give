@@ -2,7 +2,7 @@ import "server-only"
 
 /**
  * How the outbox hands an email to a provider. The send-outbox job only
- * needs `send`; the provider (Brevo's SMTP relay, DOS/Give#254) is chosen in
+ * needs `send`; the provider (DOS.Me's AWS SES, DOS/Give#254) is chosen in
  * `emailSettingsFromEnv` (provider.ts).
  */
 
@@ -24,10 +24,11 @@ export type SendResult =
    * permanent: the provider refused this message for good (bad address);
    * retrying cannot help. outcomeUnknown: the connection was lost before
    * the provider answered, so it may have accepted the message. hold: the
-   * provider refuses every message for now, not only this one (its account
-   * is disabled or not yet activated); the run stops and the row is held.
+   * provider refuses every message for now, not only this one (the
+   * account's daily quota is used up); the run stops and the row is held. stop: the run should send nothing more now, though this
+   * failure counts as usual (a per-second rate limit that clears in seconds).
    */
-  | { ok: false; permanent: boolean; error: string; outcomeUnknown?: boolean; hold?: boolean }
+  | { ok: false; permanent: boolean; error: string; outcomeUnknown?: boolean; hold?: boolean; stop?: boolean }
 
 export interface EmailTransport {
   send(email: OutgoingEmail): Promise<SendResult>

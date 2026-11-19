@@ -20,10 +20,10 @@ vi.mock("nodemailer", () => ({
   },
 }))
 
-const { createSmtpTransport, envelopeWatch, sentMessageId, smtpFailure, smtpProvider, socketTracker } =
+const { createSmtpTransport, envelopeWatch, sesMessageId, smtpFailure, smtpProvider, socketTracker } =
   await import("./smtp")
 
-const CONFIG = { host: "smtp-relay.brevo.com", port: 587, user: "u", pass: "p" }
+const CONFIG = { host: "email-smtp.ap-southeast-1.amazonaws.com", port: 587, user: "u", pass: "p" }
 const EMAIL = {
   from: "Give <no-reply@give.vn>",
   to: "mai@example.com",
@@ -40,10 +40,10 @@ beforeEach(() => {
 })
 
 describe("createSmtpTransport", () => {
-  it("talks STARTTLS to Brevo with timeouts and sends the stable Message-ID", async () => {
-    mailer.sendMail.mockResolvedValue({ response: "250 2.0.0 OK", messageId: "<outbox-1@give.vn>", rejected: [] })
+  it("talks STARTTLS to SES with timeouts and sends the stable Message-ID", async () => {
+    mailer.sendMail.mockResolvedValue({ response: "250 Ok 0100019a-abc", messageId: "<x>", rejected: [] })
     const result = await createSmtpTransport(CONFIG).send(EMAIL)
-    expect(result).toEqual({ ok: true, messageId: "<outbox-1@give.vn>" })
+    expect(result).toEqual({ ok: true, messageId: "0100019a-abc" })
     expect(mailer.options[0]).toMatchObject({ host: CONFIG.host, port: 587, secure: false, requireTLS: true })
     expect((mailer.options[0] as { getSocket?: unknown }).getSocket).toBeTypeOf("function")
     expect(mailer.options[0]).toMatchObject({ transactionLog: true })
@@ -71,13 +71,13 @@ describe("createSmtpTransport", () => {
   })
 })
 
-describe("createSmtpTransport against Brevo", () => {
-  it("holds a send Brevo refuses for the whole account", async () => {
+describe("createSmtpTransport against SES", () => {
+  it("holds a send SES throttles for the whole account", async () => {
     mailer.sendMail.mockRejectedValue({
       code: "EENVELOPE",
       command: "MAIL FROM",
-      responseCode: 450,
-      response: "450 Your sending platform is currently disabled",
+      responseCode: 454,
+      response: "454 Throttling failure: Daily message quota exceeded.",
     })
     expect(await createSmtpTransport(CONFIG).send(EMAIL)).toMatchObject({ ok: false, hold: true })
     expect(await createSmtpTransport({ ...CONFIG, host: "smtp.example.net" }).send(EMAIL)).not.toHaveProperty("hold")
@@ -129,45 +129,44 @@ describe("smtpFailure", () => {
     ).toBeUndefined()
   })
 
-  it("holds Brevo's documented account-wide 450 refusals, and only Brevo's", () => {
-    const disabled = {
-      responseCode: 450,
-      command: "MAIL FROM",
-      response: "450 Your sending platform is currently disabled",
+  it("holds SES's documented account-wide throttles, and only SES's", () => {
+    const daily = { responseCode: 454, response: "454 Throttling failure: Daily message quota exceeded." }
+    const rate = {
+      responseCode: 454,
+      command: "DATA",
+      response: "454 Throttling failure: Maximum sending rate exceeded.",
     }
-    const inactive = { responseCode: 450, response: "450 Your SMTP account is not yet activated. Please contact us" }
-    expect(smtpFailure(disabled, true, "brevo")).toEqual({
+    expect(smtpFailure(daily, true, "ses")).toEqual({
       ok: false,
       permanent: false,
       hold: true,
-      error: "ACCOUNT: SMTP 450: 450 Your sending platform is currently disabled",
+      error: "THROTTLE: SMTP 454: 454 Throttling failure: Daily message quota exceeded.",
     })
-    expect(smtpFailure(inactive, false, "brevo")).toMatchObject({ hold: true })
-    expect(smtpFailure(disabled, true, "other")).not.toHaveProperty("hold")
-    expect(
-      smtpFailure(
-        { ...disabled, responseCode: 550, response: "550 Your sending platform is currently disabled" },
-        true,
-        "brevo"
-      )
-    ).not.toHaveProperty("hold")
-    expect(smtpFailure({ responseCode: 450, response: "450 mailbox busy" }, true, "brevo")).not.toHaveProperty("hold")
-    expect(
-      smtpFailure({ code: "EAUTH", responseCode: 535, response: "535 5.7.8 Authentication failed" }, false, "brevo")
-    ).toEqual({
+    expect(smtpFailure(rate, false, "ses")).toEqual({
       ok: false,
       permanent: false,
-      error: "SMTP 535: 535 5.7.8 Authentication failed",
+      stop: true,
+      error: "SMTP 454: 454 Throttling failure: Maximum sending rate exceeded.",
     })
+    expect(smtpFailure(daily, true, "other")).not.toHaveProperty("hold")
+    expect(
+      smtpFailure({ responseCode: 454, response: "454 Temporary service failure" }, true, "ses")
+    ).not.toHaveProperty("hold")
+    expect(
+      smtpFailure({ responseCode: 554, response: "554 Throttling failure: Daily message quota exceeded" }, true, "ses")
+    ).not.toHaveProperty("hold")
+    expect(
+      smtpFailure({ responseCode: 554, response: "554 Message rejected: Email address is not verified." }, true, "ses")
+    ).toEqual({ ok: false, permanent: false, error: "SMTP 554: 554 Message rejected: Email address is not verified." })
   })
 
-  it("knows Brevo by its hosts", () => {
-    expect(smtpProvider("smtp-relay.brevo.com")).toBe("brevo")
-    expect(smtpProvider(" SMTP-RELAY.BREVO.COM. ")).toBe("brevo")
-    expect(smtpProvider("email-smtp.ap-southeast-1.amazonaws.com")).toBe("other")
-    expect(smtpProvider("smtp-relay.sendinblue.com")).toBe("brevo")
-    expect(smtpProvider("brevo.com.example.net")).toBe("other")
-    expect(smtpProvider("notbrevo.com")).toBe("other")
+  it("knows SES by its SMTP endpoints", () => {
+    expect(smtpProvider("email-smtp.ap-southeast-1.amazonaws.com")).toBe("ses")
+    expect(smtpProvider(" EMAIL-SMTP.us-east-1.AMAZONAWS.com. ")).toBe("ses")
+    expect(smtpProvider("email-smtp-fips.us-gov-west-1.amazonaws.com")).toBe("ses")
+    expect(smtpProvider("email-smtp.cn-northwest-1.amazonaws.com.cn")).toBe("ses")
+    expect(smtpProvider("email-smtp.ap-southeast-1.amazonaws.com.example.net")).toBe("other")
+    expect(smtpProvider("smtp.example.net")).toBe("other")
   })
 
   it("names connection errors without a reply code", () => {
@@ -179,11 +178,11 @@ describe("smtpFailure", () => {
   })
 })
 
-describe("sentMessageId", () => {
-  it("keeps the Message-ID the message was sent with", () => {
-    expect(sentMessageId("<x>")).toBe("<x>")
-    expect(sentMessageId("")).toBeNull()
-    expect(sentMessageId(undefined)).toBeNull()
+describe("sesMessageId", () => {
+  it("keeps SES's id, else nodemailer's", () => {
+    expect(sesMessageId("250 Ok 0100-abc", "<x>")).toBe("0100-abc")
+    expect(sesMessageId("250 2.0.0 OK", "<x>")).toBe("<x>")
+    expect(sesMessageId(undefined, undefined)).toBeNull()
   })
 })
 

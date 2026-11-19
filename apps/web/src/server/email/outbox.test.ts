@@ -334,10 +334,15 @@ describe("sendDueEmails", () => {
       vi.useRealTimers()
     }
   })
-  it("when the provider refuses every email: holds that row, gives back the rest, claims no more", async () => {
+  it("when the provider throttles the whole account: holds that row, gives back the rest, claims no more", async () => {
     claims = [[row(60), row(61), row(62)], [row(63)]]
     completeStatus = "held"
-    result = { ok: false, permanent: false, hold: true, error: "ACCOUNT: SMTP 450: disabled for org60@example.com" }
+    result = {
+      ok: false,
+      permanent: false,
+      hold: true,
+      error: "THROTTLE: SMTP 454: Throttling failure: Daily message quota exceeded for org60@example.com",
+    }
     const outcome = await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
 
     expect(outcome).toEqual({ claimed: 3, sent: 0, retrying: 0, held: 1, dead: 0, stale: 0, released: 2 })
@@ -347,7 +352,7 @@ describe("sendDueEmails", () => {
         p_id: row(60).id,
         p_attempt: 1,
         p_ok: false,
-        p_error: "ACCOUNT: SMTP 450: disabled for [recipient]",
+        p_error: "THROTTLE: SMTP 454: Throttling failure: Daily message quota exceeded for [recipient]",
         p_provider_message_id: null,
         p_permanent: false,
         p_outcome_unknown: false,
@@ -361,9 +366,24 @@ describe("sendDueEmails", () => {
     expect(calls.filter((c) => c.target === "rpc:claim_outbox")).toHaveLength(1)
   })
 
+  it("on a per-second rate limit: counts the failure, gives back the rest, claims no more", async () => {
+    claims = [[row(70), row(71)], [row(72)]]
+    completeStatus = "pending"
+    result = {
+      ok: false,
+      permanent: false,
+      stop: true,
+      error: "SMTP 454: Throttling failure: Maximum sending rate exceeded",
+    }
+    const outcome = await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
+    expect(outcome).toMatchObject({ claimed: 2, retrying: 1, held: 0, released: 1 })
+    expect(completes()[0]).not.toHaveProperty("p_hold")
+    expect(calls.filter((c) => c.target === "rpc:claim_outbox")).toHaveLength(1)
+  })
+
   it("against a database from before p_hold, records the hold as an ordinary failure", async () => {
     claims = [[row(66), row(67)]]
-    result = { ok: false, permanent: false, hold: true, error: "ACCOUNT: SMTP 450" }
+    result = { ok: false, permanent: false, hold: true, error: "THROTTLE: SMTP 454" }
     const seen: Record<string, unknown>[] = []
     const db = fakeDb((call) => {
       if (call.target === "rpc:complete_outbox") {
@@ -378,14 +398,14 @@ describe("sendDueEmails", () => {
     const outcome = await sendDueEmails(db as never, transport, OPTIONS)
     expect(outcome).toMatchObject({ retrying: 1, held: 0, released: 1 })
     expect(seen.map((a) => "p_hold" in a)).toEqual([true, false])
-    expect(seen[1]).toMatchObject({ p_ok: false, p_error: "ACCOUNT: SMTP 450", p_permanent: false })
+    expect(seen[1]).toMatchObject({ p_ok: false, p_error: "SMTP 454", p_permanent: false })
   })
 
   it("reads back a hold whose answer was lost: the row shows the count before the claim", async () => {
     vi.useFakeTimers()
     try {
       claims = [[row(64, { attempt: 3 })]]
-      result = { ok: false, permanent: false, hold: true, error: "ACCOUNT: SMTP 450" }
+      result = { ok: false, permanent: false, hold: true, error: "THROTTLE: SMTP 454" }
       let n = 0
       const db = fakeDb((call) => {
         if (call.target === "rpc:complete_outbox") {

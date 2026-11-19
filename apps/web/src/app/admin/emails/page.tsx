@@ -56,17 +56,18 @@ export default async function AdminEmailsPage() {
       {held.total > 0 && (
         <AdminSection
           id="held"
-          title="Đang giữ: nhà cung cấp email từ chối mọi email"
+          title="Đang giữ: nhà cung cấp email đang giới hạn gửi"
           count={held.total > held.rows.length ? `${held.rows.length} / ${held.total}` : held.total}
         >
-          <Callout tone="danger" title="Tài khoản gửi email đang bị tắt hoặc chưa được kích hoạt">
+          <Callout tone="danger" title="Tài khoản gửi email đã chạm giới hạn gửi">
             <p className="text-sm">
-              Nhà cung cấp email từ chối mọi email của Give (lỗi bắt đầu bằng <MachineId>ACCOUNT:</MachineId>), nên Give
-              giữ các email dưới đây và thử lại mỗi giờ mà không tính lượt thử. Email nào quá hạn trước khi tài khoản
-              hoạt động lại sẽ bị bỏ, không gửi nữa: nhắc thanh toán sau {outboxMaxAgeDays("pledge_payment_reminder")}{" "}
-              ngày, yêu cầu thanh toán và tổng kết chiến dịch sau {outboxMaxAgeDays("pledge_payment_due")} ngày, các
-              email khác (biên nhận, quyết định kiểm duyệt) sau {outboxMaxAgeDays("donation_received")} ngày; hạn của
-              từng email ở cột cuối. Chủ tài khoản cần kiểm tra tài khoản ở nhà cung cấp.
+              Amazon SES đang từ chối mọi email vì tài khoản đã hết hạn mức gửi trong 24 giờ (lỗi bắt đầu bằng{" "}
+              <MachineId>THROTTLE:</MachineId>), nên Give giữ các email dưới đây và thử lại mỗi giờ mà không tính lượt
+              thử. Email nào quá hạn trước khi gửi được sẽ bị bỏ, không gửi nữa: nhắc thanh toán sau{" "}
+              {outboxMaxAgeDays("pledge_payment_reminder")} ngày, yêu cầu thanh toán và tổng kết chiến dịch sau{" "}
+              {outboxMaxAgeDays("pledge_payment_due")} ngày, các email khác (biên nhận, quyết định kiểm duyệt) sau{" "}
+              {outboxMaxAgeDays("donation_received")} ngày; hạn của từng email ở cột cuối. Hạn mức SES dùng chung với
+              DOS.Me; nếu kéo dài, chủ tài khoản cần xin tăng hạn mức trong AWS SES.
             </p>
           </Callout>
           <DataTable

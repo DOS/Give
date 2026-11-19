@@ -4,7 +4,7 @@ import type { OutgoingEmail } from "./transport"
 
 const smtp = vi.hoisted(() => ({
   configs: [] as unknown[],
-  send: vi.fn(async (_email: unknown) => ({ ok: true, messageId: "<m>" })),
+  send: vi.fn(async (_email: unknown) => ({ ok: true, messageId: "ses" })),
 }))
 
 vi.mock("./smtp", () => ({
@@ -17,7 +17,7 @@ vi.mock("./smtp", () => ({
 const { emailDelivery, emailLinkOrigin, emailSettingsFromEnv, isSenderAddress, usesProductionDatabase } =
   await import("./provider")
 
-const CREDS = { SMTP_USER: "12345a001@smtp-brevo.com", SMTP_PASS: "not-a-real-key" }
+const CREDS = { SMTP_USER: "AKIAEXAMPLE", SMTP_PASS: "not-a-real-password" }
 const BETA = { VERCEL_ENV: "preview", EMAIL_LINK_ORIGIN: "https://beta.give.vn/some/path" }
 const PROD = { VERCEL_ENV: "production" }
 
@@ -68,13 +68,13 @@ describe("emailSettingsFromEnv", () => {
     expect(smtp.send.mock.calls.map(([m]) => (m as OutgoingEmail).to)).toEqual(["QA@give.vn", "lan@team.give.vn"])
   })
 
-  it("in Production sends through Brevo's SMTP relay by default", async () => {
+  it("in Production sends through SES with the default endpoint", async () => {
     smtp.configs.length = 0
     smtp.send.mockClear()
     const settings = emailSettingsFromEnv({ ...PROD, ...CREDS })
     expect(settings).toMatchObject({ ok: true, delivery: "smtp", options: { origin: "https://give.vn" } })
     expect(smtp.configs).toEqual([
-      { host: "smtp-relay.brevo.com", port: 587, user: "12345a001@smtp-brevo.com", pass: "not-a-real-key" },
+      { host: "email-smtp.ap-southeast-1.amazonaws.com", port: 587, user: "AKIAEXAMPLE", pass: "not-a-real-password" },
     ])
     if (settings.ok) await settings.transport.send(message("mai@example.com"))
     expect(smtp.send).toHaveBeenCalledTimes(1)

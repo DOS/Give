@@ -4,30 +4,24 @@ import net, { type Socket } from "node:net"
 
 import nodemailer from "nodemailer"
 
-import { ACCOUNT_HOLD_PREFIX } from "@/lib/email-outbox"
+import { THROTTLE_HOLD_PREFIX } from "@/lib/email-outbox"
 
 import type { EmailTransport, OutgoingEmail, SendResult } from "./transport"
 
 /**
- * SMTP to the provider in the env (provider.ts: host, port, login, key), by
- * default Brevo's relay (smtp-relay.brevo.com:587, STARTTLS), on the Brevo
- * account and monthly email allowance shared across DOS. Nothing here is
- * specific to a provider except which replies mean "the whole account is
- * refused" (smtpFailure, keyed by smtpProvider).
+ * SMTP to AWS SES, the provider DOS.Me already uses (apps/api EmailService,
+ * nodemailer). Host, port, login and key all come from the env (provider.ts);
+ * only the reading of a few documented replies depends on the provider
+ * (smtpProvider).
  *
  * Only a recipient the server refused outright at RCPT TO counts as
- * permanent. A documented account-wide refusal (Brevo: 450 platform not
- * activated or disabled) is held: the run stops and the row waits an hour
- * without spending an attempt. Every other failure (timeouts, other 4xx, a
- * 5xx about the sender, 535 authentication, 525 unauthorized IP) is retried
- * by the outbox and ends 'dead' after the last attempt, where an admin can
- * send it again once fixed.
- *
- * Brevo does not refuse a message when the account's credits run out: it
- * accepts it (250), so the outbox records it sent, and holds it in its own
- * queue until credits come back (help.brevo.com article 115000188150). Such
- * a delay is only visible in Brevo (Transactional > Real time > Usage and
- * plan > Email queue), and Give's maximum ages do not apply to it.
+ * permanent. SES's documented 454 "Daily message quota exceeded" is held:
+ * the run stops and the row waits an hour without spending an attempt. Its
+ * 454 "Maximum sending rate exceeded" stops the run but counts as an
+ * ordinary failure (retried after a minute). Every other
+ * failure (timeouts, other 4xx, a 5xx about the sender, 535 auth, 554
+ * unverified address or access denied) is retried by the outbox and ends
+ * 'dead' after the last attempt, where an admin can send it again once fixed.
  */
 
 export interface SmtpConfig {
@@ -37,25 +31,23 @@ export interface SmtpConfig {
   pass: string
 }
 
-/**
- * Which provider a host belongs to, for the replies only that provider
- * documents. Everything else about the transport is the same for any SMTP
- * server.
- */
-export type SmtpProvider = "brevo" | "other"
+/** Whose documented replies to recognise; everything else is the same for any SMTP server. */
+export type SmtpProvider = "ses" | "other"
 
 export function smtpProvider(host: string): SmtpProvider {
   const name = host.trim().toLowerCase().replace(/\.$/, "")
-  // sendinblue.com: Brevo's former name, whose relay host still works.
-  return /(^|\.)(brevo|sendinblue)\.com$/.test(name) ? "brevo" : "other"
+  return /^email-smtp(-fips)?\.[a-z0-9-]+\.amazonaws\.com(\.cn)?$/.test(name) ? "ses" : "other"
 }
 
 /**
- * Brevo's documented account-wide refusals (help.brevo.com article
- * 115000188150): transactional sending not yet activated, or suspended.
- * Every email fails the same way until the owner fixes the account.
+ * SES's account-wide throttles (docs.aws.amazon.com/ses/latest/dg/troubleshoot-smtp.html),
+ * both shared with DOS.Me. The 24-hour quota fails every email until it
+ * frees up, so the row is held. The per-second rate clears in seconds, so
+ * that failure counts as usual (retried after a minute) and only the run
+ * stops.
  */
-const BREVO_ACCOUNT_REFUSAL = /SMTP account is not yet activated|sending platform is currently disabled/i
+const SES_DAILY_QUOTA = /Throttling failure: Daily message quota exceeded/i
+const SES_SEND_RATE = /Throttling failure: Maximum sending rate exceeded/i
 
 /** Opening the TCP connection may take this long (nodemailer's connectionTimeout covers the rest of its setup). */
 export const CONNECT_TIMEOUT_MS = 10_000
@@ -77,8 +69,9 @@ interface SmtpError {
 /**
  * afterEnvelope: the message had reached MAIL FROM. A connection lost before
  * that (connect, greeting, STARTTLS, AUTH) cannot have delivered anything.
- * provider: whose documented account-wide refusals to recognise; such a
- * failure is held (`hold`, last_error `ACCOUNT: ...`) instead of counted.
+ * provider: whose documented account-wide throttles to recognise: SES's
+ * daily quota is held (`hold`, last_error `THROTTLE: ...`) instead of
+ * counted; its per-second rate stops the run (`stop`) and counts as usual.
  */
 export function smtpFailure(
   error: unknown,
@@ -91,8 +84,12 @@ export function smtpFailure(
   const refusedRecipient = e.code === "EENVELOPE" && e.command === "RCPT TO"
   const lost = afterEnvelope && code === null && e.command === "CONN" && LOST_CONNECTION_CODES.has(e.code ?? "")
   const text = code !== null ? `SMTP ${code}: ${detail}` : `${e.code ?? "SMTP"}: ${detail}`
-  const hold = provider === "brevo" && code === 450 && BREVO_ACCOUNT_REFUSAL.test(detail)
-  if (hold) return { ok: false, permanent: false, hold: true, error: `${ACCOUNT_HOLD_PREFIX} ${text}` }
+  if (provider === "ses" && code === 454 && SES_DAILY_QUOTA.test(detail)) {
+    return { ok: false, permanent: false, hold: true, error: `${THROTTLE_HOLD_PREFIX} ${text}` }
+  }
+  if (provider === "ses" && code === 454 && SES_SEND_RATE.test(detail)) {
+    return { ok: false, permanent: false, stop: true, error: text }
+  }
   return {
     ok: false,
     permanent: refusedRecipient && code !== null && PERMANENT_RCPT_CODES.has(code),
@@ -101,12 +98,11 @@ export function smtpFailure(
   }
 }
 
-/**
- * The id kept as provider_message_id: the Message-ID the message was sent
- * with (Brevo does not document what its 250 reply to DATA contains).
- */
-export function sentMessageId(messageId: unknown): string | null {
-  return typeof messageId === "string" && messageId !== "" ? messageId : null
+/** SES answers "250 Ok <message id>"; keep that id, else nodemailer's Message-ID. */
+export function sesMessageId(response: unknown, fallback: unknown): string | null {
+  const match = typeof response === "string" ? /^250 Ok (\S+)/.exec(response) : null
+  if (match) return match[1]
+  return typeof fallback === "string" && fallback !== "" ? fallback : null
 }
 
 type SocketCallback = (err: Error | null, socketOptions?: { connection: Socket }) => void
@@ -206,9 +202,7 @@ export function createSmtpTransport(config: SmtpConfig): EmailTransport {
   const envelope = envelopeWatch()
   const transporter = nodemailer.createTransport({
     // One connection reused for the whole run (closed by the job at its end):
-    // a new TLS + AUTH handshake per email is slow. Sends go one at a time,
-    // at most a few dozen a minute; Brevo documents no rate limit for the
-    // relay, and its HTTP API allows far more.
+    // a new TLS + AUTH handshake per email to ap-southeast-1 is slow.
     pool: true,
     maxConnections: 1,
     maxMessages: 100,
@@ -251,7 +245,7 @@ export function createSmtpTransport(config: SmtpConfig): EmailTransport {
         if (rejected.length > 0) {
           return { ok: false, permanent: true, error: "SMTP: recipient rejected" }
         }
-        return { ok: true, messageId: sentMessageId(info.messageId) }
+        return { ok: true, messageId: sesMessageId(info.response, info.messageId) }
       } catch (error) {
         return smtpFailure(error, envelope.started, provider)
       }

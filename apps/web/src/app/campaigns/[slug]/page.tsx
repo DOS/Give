@@ -107,6 +107,39 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 /** "Từ thiện" for give, "Dự án sáng tạo" for back, as discovery names them. */
 const TYPE_NAMES = { give: "Từ thiện", back: "Dự án sáng tạo" } as const
 
+interface BreadcrumbCrumb {
+  name: string
+  href?: string
+}
+
+function buildBreadcrumbJsonLd(campaign: PublicCampaign, origin: string | undefined) {
+  const toUrl = (path: string) => (origin ? new URL(path, origin).toString() : path)
+  const crumbs: BreadcrumbCrumb[] = [
+    { name: "Trang chủ", href: "/" },
+    { name: "Khám phá", href: "/campaigns" },
+    { name: TYPE_NAMES[campaign.type], href: discoveryHref({ type: campaign.type }) },
+    ...(campaign.category
+      ? [
+          {
+            name: campaign.category.name,
+            href: discoveryHref({ type: campaign.type, category: campaign.category.slug }),
+          },
+        ]
+      : []),
+    { name: campaign.title },
+  ]
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: crumbs.map((crumb, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: crumb.name,
+      ...(crumb.href ? { item: toUrl(crumb.href) } : {}),
+    })),
+  }
+}
+
 interface YoutubeMediaRow {
   id: string
   youtube_id: string | null
@@ -271,9 +304,17 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
       : null,
     options.progress_bar !== false ? { value: `${percent}%`, label: "mục tiêu" } : null,
   ].filter((stat) => stat !== null)
+  const origin = siteOrigin()
+  const breadcrumbJsonLd = !preview && !halted ? buildBreadcrumbJsonLd(campaign, origin) : null
 
   return (
     <article>
+      {breadcrumbJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd).replace(/</g, "\\u003c") }}
+        />
+      )}
       {preview && (
         <div className="bg-warning-soft py-3">
           <p className="container-page">
@@ -462,7 +503,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 )}
                 {!preview && (
                   <>
-                    <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={siteOrigin()} />
+                    <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={origin} />
                     {!ownCampaign && (
                       <ReportCampaign campaignId={campaign.id} slug={campaign.slug} signedIn={!!session} />
                     )}
@@ -590,7 +631,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
 
       {(canDonate || canPledge) && (
         <MobileActionBar>
-          <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={siteOrigin()} compact />
+          <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={origin} compact />
           <ButtonLink href={canDonate ? "#ung-ho" : pledgePath} size="lg" className="min-w-0 flex-1">
             {ctaLabel}
           </ButtonLink>

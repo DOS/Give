@@ -37,16 +37,12 @@ export const OUTBOX_SKIP_LABELS: Record<string, string> = {
 }
 
 /**
- * Prefix of last_error when the provider refused every email for now (its
- * account disabled or not yet activated; server/email/smtp.ts). Such a row
+ * Prefix of last_error when the provider throttled the whole account (SES:
+ * 24-hour quota exceeded; server/email/smtp.ts). Such a row
  * is held: pending again every hour, the attempt not counted, so it never
  * ends dead, but it is skipped once past its kind's maximum age.
  */
-export const ACCOUNT_HOLD_PREFIX = "ACCOUNT:"
-
-export function isAccountHold(error: string | null | undefined): boolean {
-  return typeof error === "string" && error.startsWith(ACCOUNT_HOLD_PREFIX)
-}
+export const THROTTLE_HOLD_PREFIX = "THROTTLE:"
 
 /** Days before an email is too late to send; mirrors give.outbox_max_age (DOS.Me). */
 export function outboxMaxAgeDays(kind: string): number {
@@ -101,7 +97,7 @@ export async function listRetryingEmails(service: Db): Promise<{ rows: OutboxRow
     .eq("status", "pending")
     .gt("attempts", 0)
     // NOT LIKE alone would drop rows with no last_error (a lease that ran out).
-    .or(`last_error.is.null,last_error.not.like.${ACCOUNT_HOLD_PREFIX}*`)
+    .or(`last_error.is.null,last_error.not.like.${THROTTLE_HOLD_PREFIX}*`)
     .order("next_attempt_at", { ascending: true })
     .limit(OUTBOX_LIST_LIMIT)
   if (error) throw error
@@ -109,16 +105,16 @@ export async function listRetryingEmails(service: Db): Promise<{ rows: OutboxRow
 }
 
 /**
- * Rows held because the provider refused every email (ACCOUNT_HOLD_PREFIX),
- * oldest first: the soonest to expire, give or take their kind. Each is
- * sent once the account works again, unless it expires first.
+ * Rows held because the provider throttled the whole account
+ * (THROTTLE_HOLD_PREFIX), oldest first: the soonest to expire, give or take
+ * their kind. Each is sent once sending frees up, unless it expires first.
  */
 export async function listHeldEmails(service: Db): Promise<{ rows: OutboxRow[]; total: number }> {
   const { data, error, count } = await service
     .from("outbox")
     .select(COLUMNS, { count: "exact" })
     .eq("status", "pending")
-    .like("last_error", `${ACCOUNT_HOLD_PREFIX}%`)
+    .like("last_error", `${THROTTLE_HOLD_PREFIX}%`)
     .order("created_at", { ascending: true })
     .limit(OUTBOX_LIST_LIMIT)
   if (error) throw error

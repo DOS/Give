@@ -16,6 +16,15 @@ import { campaignContentSchema, firstError, formFields, milestoneSchema, updateS
 const SIGNED_OUT = "Phiên đăng nhập đã hết. Hãy đăng nhập lại."
 const NOT_EDITABLE = "Chỉ sửa được chiến dịch đang là bản nháp hoặc cần chỉnh sửa."
 const NOT_FOUND = "Không tìm thấy chiến dịch của bạn."
+const INVALID_YOUTUBE =
+  "Liên kết YouTube không hợp lệ. Hãy dán liên kết của một video YouTube (không phải danh sách phát hay kênh) hoặc mã video 11 ký tự."
+const YOUTUBE_ALT_TOO_LONG = "Mô tả video tối đa 200 ký tự."
+const UNLOCK_NOTE_TOO_LONG = "Ghi chú khi đạt mốc tối đa 500 ký tự."
+
+const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/
+const YOUTUBE_HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com"])
+const YOUTUBE_NOCOOKIE_HOSTS = new Set(["youtube-nocookie.com", "www.youtube-nocookie.com"])
+const RESERVED_EMBED_IDS = new Set(["videoseries", "live_stream"])
 
 const CANCEL_MESSAGES: Record<string, string> = {
   GIVE_TRANSITION_NOT_ALLOWED:
@@ -111,14 +120,173 @@ export async function saveContent(campaignId: string, _state: ActionResult, form
   return done("Đã lưu nội dung.")
 }
 
+function isValidVideoId(id: string): boolean {
+  return YOUTUBE_ID_RE.test(id) && !RESERVED_EMBED_IDS.has(id.toLowerCase())
+}
+
+function parseYoutubeId(input: string): string | null {
+  const trimmed = input.trim()
+  if (!trimmed) return null
+  if (isValidVideoId(trimmed)) {
+    return trimmed
+  }
+
+  let url: URL
+  try {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) {
+      url = new URL(trimmed)
+      if (url.protocol !== "https:" && url.protocol !== "http:") return null
+    } else if (/^(?:(?:www|m)\.)?(?:youtu\.be|youtube\.com|youtube-nocookie\.com)\//i.test(trimmed)) {
+      url = new URL(`https://${trimmed}`)
+    } else {
+      return null
+    }
+  } catch {
+    return null
+  }
+
+  if (url.username || url.password || url.port) return null
+  if (url.searchParams.has("list") || url.searchParams.has("channel")) return null
+
+  const host = url.hostname.toLowerCase()
+  const segments = url.pathname.split("/").filter(Boolean)
+
+  if (host === "youtu.be" || host === "www.youtu.be") {
+    if (segments.length !== 1) return null
+    return isValidVideoId(segments[0]) ? segments[0] : null
+  }
+
+  if (YOUTUBE_HOSTS.has(host)) {
+    if (segments.length === 1 && segments[0] === "watch") {
+      const vParams = url.searchParams.getAll("v")
+      if (vParams.length !== 1) return null
+      return isValidVideoId(vParams[0]) ? vParams[0] : null
+    }
+    if (segments.length === 2 && (segments[0] === "shorts" || segments[0] === "embed")) {
+      return isValidVideoId(segments[1]) ? segments[1] : null
+    }
+    return null
+  }
+
+  if (YOUTUBE_NOCOOKIE_HOSTS.has(host)) {
+    if (segments.length === 2 && segments[0] === "embed") {
+      return isValidVideoId(segments[1]) ? segments[1] : null
+    }
+    return null
+  }
+
+  return null
+}
+
+function parseMilestoneForm(form: FormData):
+  | {
+      data: {
+        title: string
+        target_amount: number
+        description: string | null
+        unlock_note: string | null
+      }
+      error: null
+    }
+  | { data: null; error: string } {
+  const parsed = milestoneSchema.safeParse(formFields(form, ["title", "target_amount", "description"]))
+  if (!parsed.success) return { data: null, error: firstError(parsed.error) }
+  const rawUnlockNote = String(form.get("unlock_note") ?? "").trim()
+  if (rawUnlockNote.length > 500) return { data: null, error: UNLOCK_NOTE_TOO_LONG }
+  return {
+    data: {
+      ...parsed.data,
+      unlock_note: rawUnlockNote === "" ? null : rawUnlockNote,
+    },
+    error: null,
+  }
+}
+
+export async function saveYoutubeVideo(
+  campaignId: string,
+  _state: ActionResult,
+  form: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  if (!campaign) return fail(loadError)
+  if (!isEditableStatus(campaign.status)) return fail(NOT_EDITABLE)
+
+  const rawYoutube = String(form.get("youtube_id") ?? form.get("youtube_url") ?? "")
+  const youtubeId = parseYoutubeId(rawYoutube)
+  if (!youtubeId) return fail(INVALID_YOUTUBE)
+
+  const rawAlt = String(form.get("alt") ?? "").trim()
+  if (rawAlt.length > 200) return fail(YOUTUBE_ALT_TOO_LONG)
+  const alt = rawAlt === "" ? null : rawAlt
+
+  const service = dbService()
+  const mediaId = randomUUID()
+  const inserted = await service
+    .from("campaign_media")
+    .insert({ id: mediaId, campaign_id: campaign.id, kind: "youtube", youtube_id: youtubeId, alt, sort_order: 0 })
+    .select("created_at")
+    .maybeSingle()
+  if (inserted.error) return fail(dbErrorMessage(inserted.error))
+
+  let cleanupQuery = service
+    .from("campaign_media")
+    .delete()
+    .eq("campaign_id", campaign.id)
+    .eq("kind", "youtube")
+    .neq("id", mediaId)
+  const createdAt = (inserted.data as { created_at?: string } | null)?.created_at
+  if (createdAt) cleanupQuery = cleanupQuery.lte("created_at", createdAt)
+  const cleanup = await cleanupQuery
+  if (cleanup.error) {
+    try {
+      await service
+        .from("campaign_media")
+        .delete()
+        .eq("id", mediaId)
+        .eq("campaign_id", campaign.id)
+        .eq("kind", "youtube")
+    } catch {
+      // Best-effort rollback cleanup.
+    }
+    return fail(dbErrorMessage(cleanup.error))
+  }
+
+  refresh(campaign)
+  return done("Đã lưu video giới thiệu.")
+}
+
+export async function removeYoutubeVideo(
+  campaignId: string,
+  _state: ActionResult = null,
+  _form?: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  if (!campaign) return fail(loadError)
+  if (!isEditableStatus(campaign.status)) return fail(NOT_EDITABLE)
+
+  const { error } = await dbService()
+    .from("campaign_media")
+    .delete()
+    .eq("campaign_id", campaign.id)
+    .eq("kind", "youtube")
+  if (error) return fail(dbErrorMessage(error))
+
+  refresh(campaign)
+  return done("Đã gỡ video giới thiệu.")
+}
+
 export async function addMilestone(campaignId: string, _state: ActionResult, form: FormData): Promise<ActionResult> {
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
   const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
   if (!isEditableStatus(campaign.status)) return fail(NOT_EDITABLE)
-  const parsed = milestoneSchema.safeParse(formFields(form, ["title", "target_amount", "description"]))
-  if (!parsed.success) return fail(firstError(parsed.error))
+  const parsed = parseMilestoneForm(form)
+  if (!parsed.data) return fail(parsed.error)
 
   const { error } = await dbAs(session.accessToken)
     .from("campaign_milestones")
@@ -126,6 +294,35 @@ export async function addMilestone(campaignId: string, _state: ActionResult, for
   if (error) return fail(dbErrorMessage(error))
   refresh(campaign)
   return done("Đã thêm mốc.")
+}
+
+export async function updateMilestone(
+  campaignId: string,
+  milestoneId: string,
+  _state: ActionResult,
+  form: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  if (!isUuid(campaignId) || !isUuid(milestoneId)) return fail(NOT_FOUND)
+  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  if (!campaign) return fail(loadError)
+  if (!isEditableStatus(campaign.status)) return fail(NOT_EDITABLE)
+
+  const parsed = parseMilestoneForm(form)
+  if (!parsed.data) return fail(parsed.error)
+
+  const { data, error } = await dbAs(session.accessToken)
+    .from("campaign_milestones")
+    .update(parsed.data)
+    .eq("id", milestoneId)
+    .eq("campaign_id", campaign.id)
+    .select("id")
+  if (error) return fail(dbErrorMessage(error))
+  if (!data?.length) return fail("Không lưu được mốc này. Hãy tải lại trang.")
+
+  refresh(campaign)
+  return done("Đã lưu mốc.")
 }
 
 export async function deleteMilestone(

@@ -60,7 +60,7 @@ export interface OutboxRunResult {
   claimed: number
   sent: number
   retrying: number
-  /** Refused by the provider for every email (account disabled): back in an hour, the attempt not counted. */
+  /** Throttled by the provider for the whole account: back in an hour, the attempt not counted. */
   held: number
   dead: number
   stale: number
@@ -105,9 +105,9 @@ function senderDomain(from: string): string {
 export function outgoingEmail(row: OutboxEmail, options: OutboxRunOptions): OutgoingEmail {
   const rendered = renderEmail(row, options.origin)
   const headers: Record<string, string> = {
-    // Our Message-ID for the row. Brevo does not document whether it keeps a
-    // caller's Message-ID over SMTP (a beta check), so mail clients may not
-    // drop a resend; X-Give-Outbox-Id ties a delivered email to its row.
+    // Our Message-ID for the row. SES replaces it with its own on the way
+    // out, so it does not let mail clients drop a resend; X-Give-Outbox-Id
+    // is the header that survives and ties a delivered email to its row.
     "Message-ID": `<outbox-${row.id}@${senderDomain(options.from)}>`,
     "X-Give-Outbox-Id": row.id,
     "Auto-Submitted": "auto-generated",
@@ -143,7 +143,7 @@ function errorText(error: string, row: OutboxEmail): string {
 
 type Result =
   | { ok: true; messageId: string | null }
-  | { ok: false; permanent: boolean; error: string; outcomeUnknown?: boolean; hold?: boolean }
+  | { ok: false; permanent: boolean; error: string; outcomeUnknown?: boolean; hold?: boolean; stop?: boolean }
 
 const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -185,6 +185,8 @@ async function complete(db: Db, row: OutboxEmail, result: Result, clock: Clock):
       // after 7 leases, about 35 minutes).
       console.error("complete_outbox has no p_hold; recording an ordinary failure", row.id)
       delete args.p_hold
+      // Not held after all, so the row must not look held on /admin/emails.
+      if (typeof args.p_error === "string") args.p_error = args.p_error.replace(/^THROTTLE:\s*/, "")
       tryNo -= 1
       continue
     }
@@ -222,7 +224,7 @@ async function recorded(db: Db, row: OutboxEmail, held: boolean): Promise<string
   return settled.status === "sent" || settled.status === "pending" || settled.status === "dead" ? settled.status : null
 }
 
-/** stop: the run should send nothing more (the send timed out, or the provider refuses every email for now). */
+/** stop: the run should send nothing more (the send timed out, or the provider throttles the whole account). */
 type SendOutcome = { status: string | null; stop: boolean }
 
 async function sendOne(
@@ -271,8 +273,8 @@ async function sendOne(
     const how = result.hold ? "hold" : result.permanent ? "permanent" : "retry"
     console.warn("outbox send failed", row.id, row.kind, how)
   }
-  const hold = !result.ok && result.hold === true
-  return { status: await complete(db, row, result, clock), stop: timedOut || hold }
+  const stop = !result.ok && (result.hold === true || result.stop === true)
+  return { status: await complete(db, row, result, clock), stop: timedOut || stop }
 }
 
 /** Gives rows back while time allows; the rest wait out their lease. */
@@ -294,11 +296,12 @@ async function release(db: Db, rows: OutboxEmail[], clock: Clock): Promise<numbe
  * times out its connection is cut off (transport.abort), the attempt is
  * recorded as outcome unknown, and the run stops and gives back the rest of
  * its batch: the provider may be stuck. The run also stops when the provider
- * refuses every email for now (its account is disabled or not yet
- * activated; smtp.ts says which replies mean that), since every other row
- * would fail the same way: that row is held (complete_outbox p_hold: back in
- * an hour, the attempt not counted, so it never ends dead, though it still
- * expires at its kind's maximum age) and the rest are given back uncounted.
+ * throttles the whole account (SES: per-second rate or 24-hour quota
+ * exceeded; smtp.ts says which replies mean that), since every other row
+ * would fail the same way, and gives back the rest uncounted. A rate
+ * failure counts as usual (retried after a minute). A quota failure is held
+ * (complete_outbox p_hold: back in an hour, the attempt not counted, so it
+ * never ends dead, though it still expires at its kind's maximum age).
  */
 export async function sendDueEmails(
   db: Db,
