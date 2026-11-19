@@ -23,7 +23,7 @@ chủ` -> `Khám phá` -> `Từ thiện` / `Dự án sáng tạo` -> optional
   current-page `ListItem`), serialized with `.replace(/</g, "\\u003c")` so
   `</script>` or `<!--` in campaign text cannot break out of the script tag, and
   suppressed on `preview`, `suspended` and `cancelled` views, with Vitest
-  coverage (#283).
+  coverage (#283 / #285).
 - Organizer YouTube pitch video editor and inline milestone editing:
   `/me/campaigns/[id]` adds a `#pitch-video` (`"Video giới thiệu"`) panel
   (`saveYoutubeVideo` and `removeYoutubeVideo` validating `youtu.be`,
