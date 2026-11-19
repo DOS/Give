@@ -20,7 +20,7 @@ vi.mock("nodemailer", () => ({
   },
 }))
 
-const { createSmtpTransport, sesMessageId, smtpFailure, socketTracker } = await import("./smtp")
+const { createSmtpTransport, envelopeWatch, sesMessageId, smtpFailure, socketTracker } = await import("./smtp")
 
 const CONFIG = { host: "email-smtp.ap-southeast-1.amazonaws.com", port: 587, user: "u", pass: "p" }
 const EMAIL = {
@@ -45,6 +45,7 @@ describe("createSmtpTransport", () => {
     expect(result).toEqual({ ok: true, messageId: "0100019a-abc" })
     expect(mailer.options[0]).toMatchObject({ host: CONFIG.host, port: 587, secure: false, requireTLS: true })
     expect((mailer.options[0] as { getSocket?: unknown }).getSocket).toBeTypeOf("function")
+    expect(mailer.options[0]).toMatchObject({ transactionLog: true })
     expect(mailer.sendMail.mock.calls[0][0]).toMatchObject({
       to: "mai@example.com",
       messageId: "<outbox-1@give.vn>",
@@ -82,6 +83,24 @@ describe("smtpFailure", () => {
     [undefined, undefined, 421, false],
   ])("%s at %s with %i is permanent: %s", (code, command, responseCode, permanent) => {
     expect(smtpFailure({ code, command, responseCode, response: `${responseCode} x` }).permanent).toBe(permanent)
+  })
+
+  it("calls a connection lost before MAIL FROM a plain failure: nothing can have been delivered", () => {
+    expect(smtpFailure({ code: "ECONNECTION", command: "CONN" }, false).outcomeUnknown).toBeUndefined()
+    expect(smtpFailure({ code: "ETIMEDOUT", command: "CONN" }, false).outcomeUnknown).toBeUndefined()
+  })
+
+  it("watches for MAIL FROM in the transaction log and keeps nothing else", () => {
+    const watch = envelopeWatch()
+    watch.logger.debug({ tnx: "client" }, "EHLO host")
+    watch.logger.debug({ tnx: "client" }, "AUTH PLAIN AHVzZXIAcGFzcw==")
+    expect(watch.started).toBe(false)
+    watch.logger.debug({ tnx: "server" }, "MAIL FROM:<x@y.z>")
+    expect(watch.started).toBe(false)
+    watch.logger.debug({ tnx: "client" }, "MAIL FROM:<no-reply@give.vn>")
+    expect(watch.started).toBe(true)
+    watch.reset()
+    expect(watch.started).toBe(false)
   })
 
   it("calls a connection lost mid-conversation outcome unknown, but not a refused connect", () => {

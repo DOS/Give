@@ -14,8 +14,8 @@ import type { EmailTransport, OutgoingEmail } from "./transport"
  *
  * Delivery is at least once, not exactly once. Enqueueing is exactly once
  * (one row per event), but a row is sent again when the provider took the
- * message and its answer never reached us: a send that timed out or lost
- * its connection before the provider answered (recorded as outcome unknown
+ * message and its answer never reached us: a send that timed out, or lost
+ * its connection after MAIL FROM before the provider answered (recorded as outcome unknown
  * and retried only after an hour or more), or a result
  * that could not be recorded (complete_outbox is retried a few times, then
  * the lease runs out and the next run sends the row again). The recipient
@@ -37,6 +37,8 @@ export const COMPLETE_TRIES = 3
 const COMPLETE_RETRY_MS = [250, 1_000]
 /** Each RPC after a send (complete, release) is abandoned after this long. */
 export const RPC_TIMEOUT_MS = 5_000
+/** A claim is abandoned after this long (it may wait on locks while it settles rows). */
+export const CLAIM_TIMEOUT_MS = 10_000
 /**
  * No retry or release starts unless it can finish by this point, under the
  * 60 s function limit: a run killed mid-batch loses its results and leaves
@@ -172,7 +174,7 @@ async function complete(db: Db, row: OutboxEmail, result: Result, clock: Clock):
     if (!error) {
       // 'stale' on a later try: an earlier try may have committed and only
       // its answer was lost. The row says what that try recorded.
-      if (data === "stale" && tryNo > 1) return (await recorded(db, row)) ?? "stale"
+      if (data === "stale" && tryNo > 1) return (fits(clock) ? await recorded(db, row) : null) ?? "stale"
       return typeof data === "string" ? data : null
     }
     console.error("complete_outbox failed", row.id, tryNo, error.code, error.message)
@@ -276,7 +278,9 @@ export async function sendDueEmails(
 
   try {
     run: while (now() - started < budget) {
-      const { data, error } = await db.rpc("claim_outbox", { p_limit: CLAIM_BATCH })
+      const { data, error } = await db
+        .rpc("claim_outbox", { p_limit: CLAIM_BATCH })
+        .abortSignal(AbortSignal.timeout(CLAIM_TIMEOUT_MS))
       if (error) {
         if (result.claimed === 0) throw error
         console.error("claim_outbox failed", error.code, error.message)

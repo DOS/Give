@@ -4,6 +4,7 @@ import { isAuthorizedCron } from "@/lib/cron"
 import { dbService } from "@/lib/supabase"
 
 export const dynamic = "force-dynamic"
+export const maxDuration = 60
 
 interface PurgeCounts {
   deleted_accounts: number

@@ -39,12 +39,16 @@ interface SmtpError {
   message?: string
 }
 
-export function smtpFailure(error: unknown): Extract<SendResult, { ok: false }> {
+/**
+ * afterEnvelope: the message had reached MAIL FROM. A connection lost before
+ * that (connect, greeting, STARTTLS, AUTH) cannot have delivered anything.
+ */
+export function smtpFailure(error: unknown, afterEnvelope = true): Extract<SendResult, { ok: false }> {
   const e = (error ?? {}) as SmtpError
   const code = typeof e.responseCode === "number" ? e.responseCode : null
   const detail = (e.response ?? e.message ?? "send_failed").replace(/\s+/g, " ").slice(0, 200)
   const refusedRecipient = e.code === "EENVELOPE" && e.command === "RCPT TO"
-  const lost = code === null && e.command === "CONN" && LOST_CONNECTION_CODES.has(e.code ?? "")
+  const lost = afterEnvelope && code === null && e.command === "CONN" && LOST_CONNECTION_CODES.has(e.code ?? "")
   return {
     ok: false,
     permanent: refusedRecipient && code !== null && PERMANENT_RCPT_CODES.has(code),
@@ -121,8 +125,39 @@ export function socketTracker(
   }
 }
 
+/**
+ * A logger that keeps nothing: it only notes when a send reaches MAIL FROM
+ * (nodemailer's transactionLog passes each client command, never the body;
+ * the AUTH line is ignored like every other).
+ */
+export function envelopeWatch() {
+  let started = false
+  const ignore = () => {}
+  return {
+    reset: () => {
+      started = false
+    },
+    get started() {
+      return started
+    },
+    logger: {
+      trace: ignore,
+      info: ignore,
+      warn: ignore,
+      error: ignore,
+      fatal: ignore,
+      debug: (entry: unknown, message?: unknown) => {
+        if ((entry as { tnx?: unknown } | null)?.tnx === "client" && typeof message === "string") {
+          if (/^MAIL FROM:/i.test(message)) started = true
+        }
+      },
+    },
+  }
+}
+
 export function createSmtpTransport(config: SmtpConfig): EmailTransport {
   const sockets = socketTracker(config)
+  const envelope = envelopeWatch()
   const transporter = nodemailer.createTransport({
     // One connection reused for the whole run (closed by the job at its end):
     // a new TLS + AUTH handshake per email to ap-southeast-1 is slow.
@@ -135,6 +170,8 @@ export function createSmtpTransport(config: SmtpConfig): EmailTransport {
     requireTLS: config.port !== 465,
     auth: { user: config.user, pass: config.pass },
     getSocket: sockets.getSocket,
+    logger: envelope.logger,
+    transactionLog: true,
     connectionTimeout: CONNECT_TIMEOUT_MS,
     greetingTimeout: 10_000,
     socketTimeout: 15_000,
@@ -147,6 +184,7 @@ export function createSmtpTransport(config: SmtpConfig): EmailTransport {
     },
     async send(email: OutgoingEmail): Promise<SendResult> {
       const { "Message-ID": messageId, ...headers } = email.headers
+      envelope.reset()
       try {
         const info = await transporter.sendMail({
           from: email.from,
@@ -166,7 +204,7 @@ export function createSmtpTransport(config: SmtpConfig): EmailTransport {
         }
         return { ok: true, messageId: sesMessageId(info.response, info.messageId) }
       } catch (error) {
-        return smtpFailure(error)
+        return smtpFailure(error, envelope.started)
       }
     },
   }
