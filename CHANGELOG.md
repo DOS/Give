@@ -23,7 +23,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   blockquotes, `rel="nofollow ugc noopener noreferrer"` links, raw HTML
   `<script>` escaping, `javascript:` / `data:` URL stripping and `<img>`
   disallowance), `CopyButton` and `ProgressBar` (`0%`–`100%` clamping and ARIA
-  attributes) (#270).
+  attributes) (#270 / #271).
 - Active cover validation, Storage cleanup guards and lifecycle revalidations:
   `/media/public/...` and `/media/private/...` join `campaigns` on
   `cover_media_id` so superseded or orphaned draft cover uploads return `404`
