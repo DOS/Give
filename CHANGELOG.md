@@ -14,6 +14,36 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Campaign `BreadcrumbList` JSON-LD structured data: public non-preview,
+  non-halted `/campaigns/[slug]` views emit a `schema.org` `BreadcrumbList`
+  `<script type="application/ld+json">` matching the breadcrumb trail (`Trang
+chủ` -> `Khám phá` -> `Từ thiện` / `Dự án sáng tạo` -> optional
+  `campaign.category` -> `campaign.title`, resolving absolute `item` URLs
+  against `siteOrigin()` when configured and omitting `item` on the final
+  current-page `ListItem`), serialized with `.replace(/</g, "\\u003c")` so
+  `</script>` or `<!--` in campaign text cannot break out of the script tag, and
+  suppressed on `preview`, `suspended` and `cancelled` views, with Vitest
+  coverage (#283 / #285).
+- Organizer YouTube pitch video editor and inline milestone editing:
+  `/me/campaigns/[id]` adds a `#pitch-video` (`"Video giới thiệu"`) panel
+  (`saveYoutubeVideo` and `removeYoutubeVideo` validating `youtu.be`,
+  `youtube.com` `watch` / `shorts` / `embed`, `youtube-nocookie.com/embed` and
+  11-character IDs, inserting `kind = 'youtube'` in `give.campaign_media` and
+  deleting only older YouTube rows with rollback on cleanup failure while
+  leaving cover images untouched, plus isolated section degradation on read
+  failure) and extends milestones with optional `unlock_note` (`<= 500` chars)
+  and contextual inline `<details>` `"Sửa mốc"` editing (`updateMilestone`)
+  while editable, with Vitest suites (#269 / #274).
+- Public campaign pitch video player and milestone completion states:
+  `/campaigns/[slug]` renders `CampaignVideo` for valid 11-character
+  `kind = 'youtube'` media rows (a zero-tracker click-to-play `16:9` poster
+  card proxying `i.ytimg.com` via `next/image` with a secondary `min-h-11` play
+  button and `"Mở trên YouTube"` fallback that mounts
+  `youtube-nocookie.com/embed` only on click, degrading cleanly on media query
+  errors) and `MilestoneList` (`"Đã đạt mốc"` `brand` badge and `unlock_note`
+  disclosure once ledger-derived `raisedAmount >= target_amount`, or
+  `"Khi đạt mốc:"` preview copy without reached badges on unpublished
+  previews), with Vitest suites (#268 / #272).
 - Campaign share timer and shared component tests: `ShareButtons` tracks its
   3-second clipboard status timeout in a `useRef`, clearing any pending timer
   before scheduling a new one on rapid clicks and cleaning up on unmount.
@@ -29,12 +59,13 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   `cover_media_id` so superseded or orphaned draft cover uploads return `404`
   after launch, opening `dbService` lazily and adding `nosniff` and private
   `noindex, noimageindex` headers with 3-segment path bounds. `uploadCover`
-  re-reads the committed `cover_media_id` before best-effort stale Storage
-  deletion, `deleteDraft` guards post-commit cleanup, `cancelCampaign`
-  normalizes blank reasons and maps `CANCEL_MESSAGES`, `saveOrganizer` recovers
-  from `23505` insert races, and downstream `revalidatePath` coverage and route
-  tests harden `submitForReview`, `cancelCampaign`, `reward-actions`,
-  `fulfillment/actions` and `GET /api/cron/activate` (#258 / #267).
+  swaps `cover_media_id` via optimistic compare-and-swap (CAS) and best-effort
+  deletes only the exact replaced cover row and Storage object, `deleteDraft`
+  guards post-commit cleanup, `cancelCampaign` normalizes blank reasons and
+  maps `CANCEL_MESSAGES`, `saveOrganizer` recovers from `23505` insert races,
+  and downstream `revalidatePath` coverage and route tests harden
+  `submitForReview`, `cancelCampaign`, `reward-actions`, `fulfillment/actions`
+  and `GET /api/cron/activate` (#258 / #267).
 - Organizer campaign list, `CampaignCard`, statement preview and home ranking:
   `/me/campaigns` redirects expired or rejected JWTs (`PGRST301` / `PGRST303`)
   to `/auth/login?return_path=%2Fme%2Fcampaigns`, renders `review_note` on
