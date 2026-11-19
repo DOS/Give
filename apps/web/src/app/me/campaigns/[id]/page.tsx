@@ -5,6 +5,11 @@ import { notFound } from "next/navigation"
 import type { ReactNode } from "react"
 
 import { AccountStatusBadge, StatusBadge, TypeBadge } from "@/components/badges"
+import {
+  listStatusEventsByCampaign,
+  StatusHistory,
+  type CampaignStatusEvent,
+} from "@/components/campaign/StatusHistory"
 import { ContactEmailLink, ContactText } from "@/components/ContactText"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { Badge } from "@/components/ui/Badge"
@@ -107,20 +112,23 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   if (!campaign || campaign.organizer_id !== session.user.id) notFound()
 
   const isGive = campaign.type === "give"
-  const [categories, milestones, updates, totals, accounts, tiers, youtubeState] = await Promise.all([
-    listCategories(db),
-    listMilestones(db, campaign.id),
-    listAllUpdates(db, campaign.id),
-    isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
-    // Both types need a usable account before review (DOS/Give#85). A failed
-    // account read shows a notice in its section instead of failing the whole
-    // editor; submitForReview still checks the account on the server.
-    loadEditorAccounts(db, session.user.id, campaign.id, campaign.status, campaign.type).catch(() => null),
-    // Reward tiers of a back campaign (DOS/Give#83); a failed read degrades its section only.
-    isGive ? Promise.resolve(null) : listCampaignTiers(db, campaign.id).catch(() => null),
-    loadYoutubeVideo(db, campaign.id).catch(() => null),
-  ])
+  const [categories, milestones, updates, totals, accounts, tiers, youtubeState, statusEventsByCampaign] =
+    await Promise.all([
+      listCategories(db),
+      listMilestones(db, campaign.id),
+      listAllUpdates(db, campaign.id),
+      isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
+      // Both types need a usable account before review (DOS/Give#85). A failed
+      // account read shows a notice in its section instead of failing the whole
+      // editor; submitForReview still checks the account on the server.
+      loadEditorAccounts(db, session.user.id, campaign.id, campaign.status, campaign.type).catch(() => null),
+      // Reward tiers of a back campaign (DOS/Give#83); a failed read degrades its section only.
+      isGive ? Promise.resolve(null) : listCampaignTiers(db, campaign.id).catch(() => null),
+      loadYoutubeVideo(db, campaign.id).catch(() => null),
+      listStatusEventsByCampaign(db, [campaign.id]).catch(() => new Map<string, CampaignStatusEvent[]>()),
+    ])
   const youtubeVideo = youtubeState?.video ?? null
+  const statusEvents = statusEventsByCampaign.get(campaign.id) ?? []
   const editable = isEditableStatus(campaign.status)
   const submitBlocked = accounts?.submitBlocked ?? null
   const canUpdate = canPostUpdate(campaign.status)
@@ -835,8 +843,18 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
 
           <Panel id="status" title="Trạng thái">
             <div className="space-y-6">
+              {statusEvents.length > 0 && (
+                <div className="max-w-160">
+                  <StatusHistory events={statusEvents} campaignTitle={campaign.title} />
+                </div>
+              )}
               {editable && (
-                <ActionForm action={submitForReview.bind(null, campaign.id)} className="max-w-160 space-y-4">
+                <ActionForm
+                  action={submitForReview.bind(null, campaign.id)}
+                  className={
+                    statusEvents.length > 0 ? "max-w-160 space-y-4 border-t border-border pt-6" : "max-w-160 space-y-4"
+                  }
+                >
                   <p className="text-fg">
                     Khi gửi duyệt, bạn không sửa được nội dung cho tới khi kiểm duyệt viên trả lời. Cần có danh mục, tóm
                     tắt, câu chuyện ít nhất 100 ký tự, ngày kết thúc
@@ -884,7 +902,9 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               {organizerCanCancel(campaign.status) && (
                 <ActionForm
                   action={cancelCampaign.bind(null, campaign.id)}
-                  className={editable ? "max-w-160 border-t border-border pt-6" : "max-w-160"}
+                  className={
+                    editable || statusEvents.length > 0 ? "max-w-160 border-t border-border pt-6" : "max-w-160"
+                  }
                   confirm="Hủy chiến dịch là vĩnh viễn. Tiếp tục?"
                 >
                   <label htmlFor="cancel_reason" className="label">
@@ -909,7 +929,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
                   <SubmitButton className={buttonClass({ variant: "danger" })}>Xóa bản nháp</SubmitButton>
                 </ActionForm>
               )}
-              {!editable && !organizerCanCancel(campaign.status) && (
+              {!editable && !organizerCanCancel(campaign.status) && statusEvents.length === 0 && (
                 <p className="text-muted">Không có thao tác nào ở trạng thái này.</p>
               )}
             </div>

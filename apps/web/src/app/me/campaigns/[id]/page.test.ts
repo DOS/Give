@@ -5,7 +5,9 @@ import { createRoot } from "react-dom/client"
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { CampaignStatus, CampaignType } from "@/lib/campaigns"
+import type { CampaignStatusEvent } from "@/components/campaign/StatusHistory"
+import { STATUS_LABELS, type CampaignStatus, type CampaignType } from "@/lib/campaigns"
+import { formatDateTime } from "@/lib/format"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 const USER = "11111111-1111-4111-8111-111111111111"
@@ -106,6 +108,7 @@ function setupUnusableWithTransactions(status: CampaignStatus, type: CampaignTyp
     if (call.target === "organizers") return { data: { legal_name: "Nguyễn Thị Đào", verification_status: "verified" } }
     if (call.target === "bank_transactions") return { data: [{ id: "tx-1" }] }
     if (call.target === "account_swap_requests") return { data: [] }
+    if (call.target === "campaign_status_events") return { data: [] }
     return undefined
   }
 }
@@ -848,5 +851,187 @@ describe("EditCampaignPage draft and published campaign updates (DOS/Give#281)",
       act(() => root.unmount())
       container.remove()
     }
+  })
+})
+
+describe("EditCampaignPage campaign status and review history in #status (DOS/Give#287)", () => {
+  it("renders <StatusHistory> in #status without actor_id, replacing the empty placeholder on locked statuses and sitting cleanly above #status controls when actionable", async () => {
+    const liveEvents: CampaignStatusEvent[] = [
+      {
+        id: 42,
+        campaign_id: CAMPAIGN,
+        from_status: "in_review",
+        to_status: "live",
+        reason: null,
+        created_at: "2026-11-18T09:00:00.000Z",
+      },
+      {
+        id: 41,
+        campaign_id: CAMPAIGN,
+        from_status: "draft",
+        to_status: "in_review",
+        reason: "Đã đính kèm xác nhận của địa phương.",
+        created_at: "2026-11-17T14:30:00.000Z",
+      },
+    ]
+
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: liveEvents }
+      return undefined
+    }
+
+    const liveDoc = new Window().document
+    liveDoc.body.innerHTML = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+
+    const historyCalls = state.calls.filter((c) => c.target === "campaign_status_events")
+    expect(historyCalls).toHaveLength(1)
+    const selectCols = String(op(historyCalls[0], "select")?.[0] ?? "")
+    expect(selectCols).toBe("id, campaign_id, from_status, to_status, reason, created_at")
+    expect(selectCols).not.toContain("actor_id")
+    expect(op(historyCalls[0], "in")).toEqual(["campaign_id", [CAMPAIGN]])
+    expect(op(historyCalls[0], "order")).toEqual(["id", { ascending: false }])
+
+    const liveStatus = liveDoc.querySelector("#status")!
+    const liveDetails = liveStatus.querySelector("details")!
+    expect(liveDetails).toBeTruthy()
+    expect(liveDetails.querySelector("summary")?.textContent).toContain("Lịch sử trạng thái (2): Chiến dịch thử nghiệm")
+    expect(liveDetails.querySelector("summary .sr-only")?.textContent).toBe(": Chiến dịch thử nghiệm")
+    const liveItems = [...liveDetails.querySelectorAll("ol > li")]
+    expect(liveItems).toHaveLength(2)
+    expect(liveItems[0]?.textContent).toContain(`${STATUS_LABELS.in_review} → ${STATUS_LABELS.live}`)
+    expect(liveItems[0]?.textContent).toContain(formatDateTime("2026-11-18T09:00:00.000Z"))
+    expect(liveItems[1]?.textContent).toContain(`${STATUS_LABELS.draft} → ${STATUS_LABELS.in_review}`)
+    expect(liveItems[1]?.querySelector("p")?.textContent).toBe("Đã đính kèm xác nhận của địa phương.")
+    expect(liveStatus.textContent).not.toContain("Không có thao tác nào ở trạng thái này.")
+
+    // Editable sent-back campaign shows <StatusHistory> alongside "Gửi duyệt" and "Hủy chiến dịch" controls.
+    const reviewEvents: CampaignStatusEvent[] = [
+      {
+        id: 52,
+        campaign_id: CAMPAIGN,
+        from_status: "in_review",
+        to_status: "changes_requested",
+        reason: "Bổ sung dự toán vật tư.\nLàm rõ tiến độ bàn giao.",
+        created_at: "2026-11-18T11:15:00.000Z",
+      },
+      {
+        id: 51,
+        campaign_id: CAMPAIGN,
+        from_status: "draft",
+        to_status: "in_review",
+        reason: null,
+        created_at: "2026-11-17T08:00:00.000Z",
+      },
+    ]
+
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("changes_requested", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: reviewEvents }
+      return undefined
+    }
+
+    const sentBackDoc = new Window().document
+    sentBackDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    const sentBackStatus = sentBackDoc.querySelector("#status")!
+    const sentBackDetails = sentBackStatus.querySelector("details")!
+    expect(sentBackDetails).toBeTruthy()
+    const sentBackReason = sentBackDetails.querySelector("ol > li p")!
+    expect(sentBackReason.className).toContain("whitespace-pre-line")
+    expect(sentBackReason.className).toContain("max-w-[68ch]")
+    expect(sentBackReason.textContent).toBe("Bổ sung dự toán vật tư.\nLàm rõ tiến độ bàn giao.")
+
+    const sentBackForms = [...sentBackStatus.querySelectorAll("form")]
+    expect(sentBackForms).toHaveLength(2)
+    expect(sentBackForms[0]?.className).toContain("border-t")
+    expect(sentBackForms[1]?.className).toContain("border-t")
+    expect([...sentBackStatus.querySelectorAll('button[type="submit"]')].map((b) => b.textContent?.trim())).toEqual([
+      "Gửi duyệt",
+      "Hủy chiến dịch",
+    ])
+    expect(sentBackStatus.textContent).not.toContain("Không có thao tác nào ở trạng thái này.")
+
+    // In-review campaign with history shows <StatusHistory> above "Hủy chiến dịch" with a divider.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("in_review", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: [reviewEvents[1]!] }
+      return undefined
+    }
+
+    const inReviewDoc = new Window().document
+    inReviewDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    const inReviewStatus = inReviewDoc.querySelector("#status")!
+    expect(inReviewStatus.querySelector("details summary")?.textContent).toContain("Lịch sử trạng thái (1)")
+    const cancelForm = inReviewStatus.querySelector("form")!
+    expect(cancelForm.className).toContain("border-t")
+    expect(cancelForm.textContent).toContain("Hủy chiến dịch")
+  })
+
+  it("degrades gracefully when campaign_status_events errors without blocking the page or #status controls", async () => {
+    // Locked status falls back to the empty-actions copy when campaign_status_events fails.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_status_events") {
+        return { error: { code: "57014", message: "statement timeout" } }
+      }
+      return undefined
+    }
+
+    const degradedLiveDoc = new Window().document
+    degradedLiveDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    const degradedLiveStatus = degradedLiveDoc.querySelector("#status")!
+    expect(degradedLiveStatus.querySelector("details")).toBeNull()
+    expect(degradedLiveStatus.textContent).toContain("Không có thao tác nào ở trạng thái này.")
+
+    // Editable status keeps "Gửi duyệt" and "Hủy chiến dịch" intact without an orphan top border on the first form.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("changes_requested", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_status_events") {
+        return { error: { code: "57014", message: "statement timeout" } }
+      }
+      return undefined
+    }
+
+    const degradedEditableDoc = new Window().document
+    degradedEditableDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    const degradedEditableStatus = degradedEditableDoc.querySelector("#status")!
+    expect(degradedEditableStatus.querySelector("details")).toBeNull()
+    const forms = [...degradedEditableStatus.querySelectorAll("form")]
+    expect(forms).toHaveLength(2)
+    expect(forms[0]?.className).not.toContain("border-t")
+    expect(forms[1]?.className).toContain("border-t")
+    expect(
+      [...degradedEditableStatus.querySelectorAll('button[type="submit"]')].map((b) => b.textContent?.trim())
+    ).toEqual(["Gửi duyệt", "Hủy chiến dịch"])
   })
 })
