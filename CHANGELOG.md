@@ -14,6 +14,57 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Campaign share timer and shared component tests: `ShareButtons` tracks its
+  3-second clipboard status timeout in a `useRef`, clearing any pending timer
+  before scheduling a new one on rapid clicks and cleaning up on unmount.
+  Vitest suites cover `ShareButtons` (`navigator.share` success, `AbortError`
+  cancel, non-abort clipboard fallback, rapid-click timer reset, `compact`
+  mode and Facebook sharer URL encoding), `Markdown` (headings, lists,
+  blockquotes, `rel="nofollow ugc noopener noreferrer"` links, raw HTML
+  `<script>` escaping, `javascript:` / `data:` URL stripping and `<img>`
+  disallowance), `CopyButton` and `ProgressBar` (`0%`–`100%` clamping and ARIA
+  attributes) (#270 / #271).
+- Active cover validation, Storage cleanup guards and lifecycle revalidations:
+  `/media/public/...` and `/media/private/...` join `campaigns` on
+  `cover_media_id` so superseded or orphaned draft cover uploads return `404`
+  after launch, opening `dbService` lazily and adding `nosniff` and private
+  `noindex, noimageindex` headers with 3-segment path bounds. `uploadCover`
+  re-reads the committed `cover_media_id` before best-effort stale Storage
+  deletion, `deleteDraft` guards post-commit cleanup, `cancelCampaign`
+  normalizes blank reasons and maps `CANCEL_MESSAGES`, `saveOrganizer` recovers
+  from `23505` insert races, and downstream `revalidatePath` coverage and route
+  tests harden `submitForReview`, `cancelCampaign`, `reward-actions`,
+  `fulfillment/actions` and `GET /api/cron/activate` (#258 / #267).
+- Organizer campaign list, `CampaignCard`, statement preview and home ranking:
+  `/me/campaigns` redirects expired or rejected JWTs (`PGRST301` / `PGRST303`)
+  to `/auth/login?return_path=%2Fme%2Fcampaigns`, renders `review_note` on
+  `suspended` as well as `changes_requested` rows, promotes row titles to
+  `<h2>`, and appends `.sr-only` campaign titles to `"Xem trang"` and `"Quản
+lý"`. `CampaignCard` guards null `display_options` and applies `mt-3` only
+  when `ProgressBar` renders; `StatementPreview` and `RecentSupporters` keep
+  own-transfer, returned and explained non-donation inflows out of donation
+  green and supporter lists with `info` refund badges; `homeSections` ranks
+  `trending` by exact progress ratio with raised-amount tie-breaking, and
+  `reward-tiers` encodes `slug` in `pledgeHref` and clamps negative slots
+  (#260 / #266).
+- Moderation route revalidations and report queue hardening: `reportCampaign`,
+  `approveCampaign`, `requestChanges`, `setVerification` and
+  `moderateCampaignReports` (`suspend` and `stop_payment_requests`) revalidate
+  affected `/admin`, `/admin/reports`, `/start`, `/me/*` and public
+  `/campaigns/*` routes. `listCampaignReportQueue` drops campaigns resolved
+  concurrently across queries and clamps `page` / `totalPages` so moderators
+  never land on an empty phantom page, chunks unresolved lookups by 100
+  campaign IDs, breaks resolved-report timestamp ties by `id`, and bounds
+  `parseReportsPage` (#259 / #265).
+- Organizer verification queue and admin moderation UX: `listOrganizersToVerify`
+  loads actionable `pending` and `unverified` profiles oldest-first ahead of
+  `rejected` so rejected rows never starve the `/admin#organizers` queue, and
+  `listWaitingForAccount` chunks `managed_campaigns` lookups by 100 IDs.
+  `/admin` hides the no-op `"Từ chối"` button on already-rejected organizers,
+  confirms rejection, warns on self-verification, keeps `#organizers` buttons
+  secondary (`DESIGN.md` 6), wraps review notes in `Field`, and adds `.sr-only`
+  context and `#note-hint-*` `aria-describedby` wiring across `/admin` and
+  `/admin/reports` (#242 / #248).
 - Discovery and campaign page states and route boundaries: unfiltered
   `/campaigns` with zero live campaigns renders `"Chưa có chiến dịch nào đang
 gây quỹ"` with a `/start` CTA instead of `"Không có chiến dịch nào khớp bộ

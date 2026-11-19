@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useSyncExternalStore } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 
 import { buttonClass } from "@/components/ui/Button"
 import { ShareIcon } from "@/components/ui/icons"
@@ -26,6 +26,20 @@ export function ShareButtons({
   compact?: boolean
 }) {
   const [status, setStatus] = useState<string | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+    }
+  }, [])
+
   // The canonical origin when the server knows it (so the Facebook link works
   // before hydration), else this page's own origin (previews).
   const origin = useSyncExternalStore(
@@ -45,13 +59,25 @@ export function ShareButtons({
         if (error instanceof DOMException && error.name === "AbortError") return
       }
     }
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
     try {
       await navigator.clipboard.writeText(url)
+      if (!mountedRef.current) return
       setStatus("Đã chép đường dẫn")
     } catch {
+      if (!mountedRef.current) return
       setStatus("Không chép được, hãy chép đường dẫn trên thanh địa chỉ")
     }
-    setTimeout(() => setStatus(null), 3000)
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current)
+    }
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null
+      setStatus(null)
+    }, 3000)
   }
 
   if (compact) {
