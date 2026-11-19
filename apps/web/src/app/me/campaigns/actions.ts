@@ -208,12 +208,7 @@ export async function uploadCover(campaignId: string, _state: ActionResult, form
     return fail(dbErrorMessage(inserted.error))
   }
 
-  const updated = await dbAs(session.accessToken)
-    .from("campaigns")
-    .update({ cover_media_id: mediaId })
-    .eq("id", campaign.id)
-    .select("id")
-  if (updated.error || !updated.data?.length) {
+  const rollbackNewCover = async () => {
     try {
       await service.from("campaign_media").delete().eq("id", mediaId)
     } catch {
@@ -224,32 +219,71 @@ export async function uploadCover(campaignId: string, _state: ActionResult, form
     } catch {
       // Best-effort rollback cleanup.
     }
-    return fail(updated.error ? dbErrorMessage(updated.error) : NOT_EDITABLE)
   }
 
-  // Re-read the active cover_media_id so overlapping cover replacements drop
-  // every superseded image row without deleting whichever upload won last.
-  try {
-    const active = await service.from("campaigns").select("cover_media_id").eq("id", campaign.id).maybeSingle()
-    const activeCoverId = (active.data as { cover_media_id: string | null } | null)?.cover_media_id
-    if (!active.error && activeCoverId) {
+  // Optimistic compare-and-swap on cover_media_id so overlapping uploads swap
+  // atomically and each winner deletes only the exact cover row it replaced
+  // (never an uncommitted sibling or a newer upload, which ON DELETE SET NULL
+  // would clobber).
+  let current = campaign
+  let prevCoverId = current.cover_media_id
+  let swapped = false
+  let contended = false
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const query = dbAs(session.accessToken).from("campaigns").update({ cover_media_id: mediaId }).eq("id", current.id)
+    const updated = await (
+      prevCoverId === null ? query.is("cover_media_id", null) : query.eq("cover_media_id", prevCoverId)
+    ).select("id")
+
+    if (updated.error) {
+      await rollbackNewCover()
+      return fail(dbErrorMessage(updated.error))
+    }
+    if (updated.data?.length) {
+      swapped = true
+      break
+    }
+    if (attempt === 2) break
+
+    const reloaded = await ownedCampaign(session, current.id)
+    if (!reloaded.campaign) {
+      await rollbackNewCover()
+      return fail(reloaded.error)
+    }
+    if (!isEditableStatus(reloaded.campaign.status)) {
+      await rollbackNewCover()
+      return fail(NOT_EDITABLE)
+    }
+    if (reloaded.campaign.cover_media_id === prevCoverId) break
+    contended = true
+    current = reloaded.campaign
+    prevCoverId = current.cover_media_id
+  }
+
+  if (!swapped) {
+    await rollbackNewCover()
+    return fail(contended ? "Không cập nhật được ảnh bìa do có thay đổi đồng thời. Hãy thử lại." : NOT_EDITABLE)
+  }
+
+  if (prevCoverId !== null) {
+    try {
       const stale = await service
         .from("campaign_media")
         .delete()
-        .eq("campaign_id", campaign.id)
-        .eq("kind", "image")
-        .neq("id", activeCoverId)
+        .eq("id", prevCoverId)
+        .eq("campaign_id", current.id)
         .select("storage_path")
       const stalePaths = ((stale.data ?? []) as { storage_path: string | null }[])
         .map((row) => row.storage_path)
         .filter((p): p is string => Boolean(p))
       if (stalePaths.length > 0) await storage.remove(stalePaths)
+    } catch (error) {
+      console.error("uploadCover cleanup failed", error)
     }
-  } catch (error) {
-    console.error("uploadCover cleanup failed", error)
   }
 
-  refresh(campaign)
+  refresh(current)
   return done("Đã cập nhật ảnh bìa.")
 }
 

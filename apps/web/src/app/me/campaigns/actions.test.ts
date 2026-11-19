@@ -393,26 +393,16 @@ describe("uploadCover", () => {
     return form
   }
 
-  it("re-encodes without metadata, stores it, sets the cover, re-reads active cover_media_id and drops all stale image rows", async () => {
-    let activeCoverId: string | null = OLD_COVER
-    state.userHandler = (call) => {
-      if (op(call, "maybeSingle")) return { data: owned({ cover_media_id: OLD_COVER }) }
-      const updated = op(call, "update") as [{ cover_media_id: string }] | undefined
-      if (updated) {
-        activeCoverId = updated[0].cover_media_id
-        return { data: [{ id: CAMPAIGN }] }
-      }
-      return undefined
-    }
+  it("re-encodes without metadata, stores it, atomically swaps cover_media_id from prevCoverId, and deletes only prevCoverId", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: owned({ cover_media_id: OLD_COVER }) }
+        : op(call, "update")
+          ? { data: [{ id: CAMPAIGN }] }
+          : undefined
     state.serviceHandler = (call) => {
-      if (call.target === "campaigns" && op(call, "maybeSingle")) return { data: { cover_media_id: activeCoverId } }
       if (call.target === "campaign_media" && op(call, "delete")) {
-        return {
-          data: [
-            { storage_path: `campaigns/${CAMPAIGN}/old.webp` },
-            { storage_path: `campaigns/${CAMPAIGN}/orphan.webp` },
-          ],
-        }
+        return { data: [{ storage_path: `campaigns/${CAMPAIGN}/old.webp` }] }
       }
       return undefined
     }
@@ -428,37 +418,61 @@ describe("uploadCover", () => {
     expect(meta.format).toBe("webp")
     expect(meta.exif).toBeUndefined()
 
-    const [cover] = op(
-      state.userCalls.find((c) => op(c, "update")),
-      "update"
-    ) as [{ cover_media_id: string }]
+    const updateCall = state.userCalls.find((c) => op(c, "update"))
+    const [cover] = op(updateCall, "update") as [{ cover_media_id: string }]
     expect(path).toContain(cover.cover_media_id)
+    expect(updateCall?.ops).toContainEqual(["eq", "id", CAMPAIGN])
+    expect(updateCall?.ops).toContainEqual(["eq", "cover_media_id", OLD_COVER])
+    expect(updateCall?.ops).toContainEqual(["select", "id"])
 
-    const deleteCall = state.serviceCalls.find((c) => c.target === "campaign_media" && op(c, "delete"))
-    expect(deleteCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
-    expect(deleteCall?.ops).toContainEqual(["eq", "kind", "image"])
-    expect(deleteCall?.ops).toContainEqual(["neq", "id", cover.cover_media_id])
+    const deleteCalls = state.serviceCalls.filter((c) => c.target === "campaign_media" && op(c, "delete"))
+    expect(deleteCalls).toHaveLength(1)
+    expect(deleteCalls[0].ops).toContainEqual(["eq", "id", OLD_COVER])
+    expect(deleteCalls[0].ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+    expect(deleteCalls[0].ops.some(([name]) => name === "neq")).toBe(false)
 
     const removed = state.serviceCalls.filter((c) => op(c, "remove")).map((c) => op(c, "remove")?.[0])
-    expect(removed).toEqual([[`campaigns/${CAMPAIGN}/old.webp`, `campaigns/${CAMPAIGN}/orphan.webp`]])
+    expect(removed).toEqual([[`campaigns/${CAMPAIGN}/old.webp`]])
   })
 
-  it("cleans up superseded uploads against the winning cover_media_id when concurrent uploads overlap", async () => {
+  it("uses is(cover_media_id, null) on initial cover upload and skips post-commit media deletion", async () => {
     state.userHandler = (call) =>
       op(call, "maybeSingle")
         ? { data: owned({ cover_media_id: null }) }
         : op(call, "update")
           ? { data: [{ id: CAMPAIGN }] }
           : undefined
+
+    expect(await uploadCover(CAMPAIGN, null, coverForm(await photoWithGps()))).toEqual({
+      ok: true,
+      message: "Đã cập nhật ảnh bìa.",
+    })
+
+    const updateCall = state.userCalls.find((c) => op(c, "update"))
+    expect(updateCall?.ops).toContainEqual(["eq", "id", CAMPAIGN])
+    expect(updateCall?.ops).toContainEqual(["is", "cover_media_id", null])
+    expect(state.serviceCalls.some((c) => c.target === "campaign_media" && op(c, "delete"))).toBe(false)
+    expect(state.serviceCalls.some((c) => op(c, "remove"))).toBe(false)
+  })
+
+  it("retries optimistic CAS when cover_media_id changed concurrently during upload and deletes only the swapped-out cover", async () => {
+    let reads = 0
+    let updates = 0
+    state.userHandler = (call) => {
+      if (op(call, "maybeSingle")) {
+        reads += 1
+        // Initial read sees null; reload after CAS miss sees NEWER_COVER committed concurrently.
+        return { data: owned({ cover_media_id: reads === 1 ? null : NEWER_COVER }) }
+      }
+      if (op(call, "update")) {
+        updates += 1
+        return { data: updates === 1 ? [] : [{ id: CAMPAIGN }] }
+      }
+      return undefined
+    }
     state.serviceHandler = (call) => {
-      // Another overlapping upload committed NEWER_COVER right after ours.
-      if (call.target === "campaigns" && op(call, "maybeSingle")) return { data: { cover_media_id: NEWER_COVER } }
       if (call.target === "campaign_media" && op(call, "delete")) {
-        const [uploadedPath] = op(
-          state.serviceCalls.find((c) => op(c, "upload")),
-          "upload"
-        ) as [string]
-        return { data: [{ storage_path: uploadedPath }] }
+        return { data: [{ storage_path: `campaigns/${CAMPAIGN}/${NEWER_COVER}.webp` }] }
       }
       return undefined
     }
@@ -467,8 +481,50 @@ describe("uploadCover", () => {
       ok: true,
       message: "Đã cập nhật ảnh bìa.",
     })
-    const deleteCall = state.serviceCalls.find((c) => c.target === "campaign_media" && op(c, "delete"))
-    expect(deleteCall?.ops).toContainEqual(["neq", "id", NEWER_COVER])
+
+    const updateCalls = state.userCalls.filter((c) => op(c, "update"))
+    expect(updateCalls).toHaveLength(2)
+    expect(updateCalls[0].ops).toContainEqual(["is", "cover_media_id", null])
+    expect(updateCalls[1].ops).toContainEqual(["eq", "cover_media_id", NEWER_COVER])
+
+    const deleteCalls = state.serviceCalls.filter((c) => c.target === "campaign_media" && op(c, "delete"))
+    expect(deleteCalls).toHaveLength(1)
+    expect(deleteCalls[0].ops).toContainEqual(["eq", "id", NEWER_COVER])
+    expect(deleteCalls[0].ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+    const removed = state.serviceCalls.filter((c) => op(c, "remove")).map((c) => op(c, "remove")?.[0])
+    expect(removed).toEqual([[`campaigns/${CAMPAIGN}/${NEWER_COVER}.webp`]])
+  })
+
+  it("rolls back the newly uploaded cover without deleting existing covers if the campaign becomes non-editable during CAS retry", async () => {
+    let reads = 0
+    state.userHandler = (call) => {
+      if (op(call, "maybeSingle")) {
+        reads += 1
+        return {
+          data:
+            reads === 1
+              ? owned({ cover_media_id: OLD_COVER })
+              : owned({ status: "in_review", cover_media_id: NEWER_COVER }),
+        }
+      }
+      if (op(call, "update")) return { data: [] }
+      return undefined
+    }
+
+    expect(await uploadCover(CAMPAIGN, null, coverForm(await photoWithGps()))).toEqual({
+      ok: false,
+      message: "Chỉ sửa được chiến dịch đang là bản nháp hoặc cần chỉnh sửa.",
+    })
+
+    const [insertedRow] = op(
+      state.serviceCalls.find((c) => c.target === "campaign_media" && op(c, "insert")),
+      "insert"
+    ) as [{ id: string; storage_path: string }]
+    const deleteCalls = state.serviceCalls.filter((c) => c.target === "campaign_media" && op(c, "delete"))
+    expect(deleteCalls).toHaveLength(1)
+    expect(deleteCalls[0].ops).toEqual([["delete"], ["eq", "id", insertedRow.id]])
+    const removed = state.serviceCalls.filter((c) => op(c, "remove")).map((c) => op(c, "remove")?.[0])
+    expect(removed).toEqual([[insertedRow.storage_path]])
   })
 
   it("succeeds and revalidates even when post-commit Storage cleanup throws", async () => {
@@ -480,7 +536,6 @@ describe("uploadCover", () => {
           ? { data: [{ id: CAMPAIGN }] }
           : undefined
     state.serviceHandler = (call) => {
-      if (call.target === "campaigns" && op(call, "maybeSingle")) return { data: { cover_media_id: "active-id" } }
       if (call.target === "campaign_media" && op(call, "delete")) {
         return { data: [{ storage_path: `campaigns/${CAMPAIGN}/old.webp` }] }
       }

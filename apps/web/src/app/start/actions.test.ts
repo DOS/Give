@@ -74,8 +74,11 @@ const ORGANIZER_REVALIDATIONS = [
   ["/campaigns"],
   ["/campaigns/[slug]", "page"],
   ["/me/campaigns/[id]", "page"],
+  ["/me/accounts"],
   ["/admin"],
   ["/admin/reports"],
+  ["/admin/accounts"],
+  ["/admin/account-swaps"],
 ]
 
 function noNavigation() {

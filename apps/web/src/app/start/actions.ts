@@ -40,8 +40,11 @@ export async function saveOrganizer(_state: ActionResult, form: FormData): Promi
   revalidatePath("/campaigns")
   revalidatePath("/campaigns/[slug]", "page")
   revalidatePath("/me/campaigns/[id]", "page")
+  revalidatePath("/me/accounts")
   revalidatePath("/admin")
   revalidatePath("/admin/reports")
+  revalidatePath("/admin/accounts")
+  revalidatePath("/admin/account-swaps")
   // Mirrors give.organizers_reset_verification.
   const reset =
     (existing?.verification_status === "verified" || existing?.verification_status === "pending") &&
