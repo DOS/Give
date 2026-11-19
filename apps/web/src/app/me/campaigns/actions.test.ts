@@ -38,12 +38,15 @@ const {
   addMilestone,
   cancelCampaign,
   deleteDraft,
+  deleteDraftUpdate,
   deleteMilestone,
   postUpdate,
+  publishDraftUpdate,
   removeYoutubeVideo,
   saveContent,
   saveYoutubeVideo,
   submitForReview,
+  updateDraftUpdate,
   updateMilestone,
   uploadCover,
 } = await import("./actions")
@@ -1098,5 +1101,333 @@ describe("postUpdate", () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it.each(["draft", "changes_requested", "in_review", "approved", "live", "closed"] as const)(
+    "saves a draft update with published_at = null on %s campaigns when intent is 'draft'",
+    async (status) => {
+      state.userCalls.length = 0
+      vi.mocked(revalidatePath).mockClear()
+      state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status }) } : undefined)
+
+      const result = await postUpdate(CAMPAIGN, null, updateForm({ intent: "draft" }))
+      expect(result).toEqual({ ok: true, message: "Đã lưu bản nháp cập nhật." })
+
+      const insert = state.userCalls.find((c) => c.target === "campaign_updates")
+      expect(op(insert, "insert")).toEqual([
+        {
+          campaign_id: CAMPAIGN,
+          author_id: USER,
+          title: "Đã trao đợt 1",
+          body: "50 phần sách giáo khoa đã tới tay học sinh.",
+          visibility: "public",
+          published_at: null,
+        },
+      ])
+      expect(vi.mocked(revalidatePath).mock.calls).toEqual([
+        [`/me/campaigns/${CAMPAIGN}`],
+        ["/me/campaigns"],
+        ["/campaigns/quy-hoc-bong-abcde"],
+      ])
+    }
+  )
+
+  it.each(["draft", "changes_requested", "in_review"] as const)(
+    "refuses immediate publish on pre-approval %s campaigns while guiding to draft save",
+    async (status) => {
+      state.userCalls.length = 0
+      state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status }) } : undefined)
+
+      expect(await postUpdate(CAMPAIGN, null, updateForm())).toEqual({
+        ok: false,
+        message: "Chỉ đăng công khai được cập nhật sau khi chiến dịch đã được duyệt. Hiện bạn có thể lưu bản nháp.",
+      })
+      expect(await postUpdate(CAMPAIGN, null, updateForm({ intent: "publish" }))).toEqual({
+        ok: false,
+        message: "Chỉ đăng công khai được cập nhật sau khi chiến dịch đã được duyệt. Hiện bạn có thể lưu bản nháp.",
+      })
+      expect(state.userCalls.some((c) => c.target === "campaign_updates")).toBe(false)
+    }
+  )
+
+  it("refuses draft saves on cancelled/suspended campaigns and rejects unknown intent values", async () => {
+    for (const status of ["cancelled", "suspended"] as const) {
+      state.userCalls.length = 0
+      state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status }) } : undefined)
+      expect(await postUpdate(CAMPAIGN, null, updateForm({ intent: "draft" }))).toEqual({
+        ok: false,
+        message: "Không thể đăng cập nhật cho chiến dịch đã hủy hoặc đang tạm dừng.",
+      })
+      expect(state.userCalls.some((c) => c.target === "campaign_updates")).toBe(false)
+    }
+
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "live" }) } : undefined)
+    expect(await postUpdate(CAMPAIGN, null, updateForm({ intent: "archive" }))).toEqual({
+      ok: false,
+      message: "Dữ liệu không hợp lệ.",
+    })
+    expect(state.userCalls.some((c) => c.target === "campaign_updates")).toBe(false)
+  })
+})
+
+const DRAFT_UPDATE = "55555555-5555-4555-8555-555555555555"
+
+describe("updateDraftUpdate", () => {
+  function draftForm(overrides: Record<string, string> = {}) {
+    const form = new FormData()
+    const values: Record<string, string> = {
+      title: "  Cập nhật đợt 1 (đã sửa)  ",
+      body: "  Đã đối chiếu danh sách 50 học sinh nhận sách.  ",
+      ...overrides,
+    }
+    for (const [key, value] of Object.entries(values)) form.set(key, value)
+    return form
+  }
+
+  it("validates session, UUIDs, ownership, canPostUpdate, and updateSchema before writing", async () => {
+    vi.mocked(getSession).mockResolvedValueOnce(null)
+    expect(await updateDraftUpdate(CAMPAIGN, DRAFT_UPDATE, null, draftForm())).toEqual({
+      ok: false,
+      message: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+    })
+
+    expect(await updateDraftUpdate("not-a-uuid", DRAFT_UPDATE, null, draftForm())).toEqual({
+      ok: false,
+      message: "Không tìm thấy chiến dịch của bạn.",
+    })
+    expect(await updateDraftUpdate(CAMPAIGN, "not-a-uuid", null, draftForm())).toEqual({
+      ok: false,
+      message: "Không tìm thấy chiến dịch của bạn.",
+    })
+    expect(state.userCalls).toHaveLength(0)
+
+    state.userHandler = (call) =>
+      op(call, "maybeSingle") ? { data: owned({ organizer_id: "someone-else" }) } : undefined
+    expect(await updateDraftUpdate(CAMPAIGN, DRAFT_UPDATE, null, draftForm())).toEqual({
+      ok: false,
+      message: "Không tìm thấy chiến dịch của bạn.",
+    })
+
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "suspended" }) } : undefined)
+    expect(await updateDraftUpdate(CAMPAIGN, DRAFT_UPDATE, null, draftForm())).toEqual({
+      ok: false,
+      message: "Không thể đăng cập nhật cho chiến dịch đã hủy hoặc đang tạm dừng.",
+    })
+
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "draft" }) } : undefined)
+    expect(await updateDraftUpdate(CAMPAIGN, DRAFT_UPDATE, null, draftForm({ title: "X" }))).toEqual({
+      ok: false,
+      message: "Nhập tiêu đề",
+    })
+    expect(await updateDraftUpdate(CAMPAIGN, DRAFT_UPDATE, null, draftForm({ intent: "bogus" }))).toEqual({
+      ok: false,
+      message: "Dữ liệu không hợp lệ.",
+    })
+    expect(state.userCalls.some((c) => c.target === "campaign_updates")).toBe(false)
+  })
+
+  it("updates title and body strictly where published_at IS NULL and revalidates", async () => {
+    state.userHandler = (call) => {
+      if (op(call, "maybeSingle")) return { data: owned({ status: "in_review" }) }
+      if (call.target === "campaign_updates" && op(call, "update")) return { data: [{ id: DRAFT_UPDATE }] }
+      return undefined
+    }
+
+    expect(await updateDraftUpdate(CAMPAIGN, DRAFT_UPDATE, null, draftForm())).toEqual({
+      ok: true,
+      message: "Đã lưu bản nháp cập nhật.",
+    })
+
+    const updateCall = state.userCalls.find((c) => c.target === "campaign_updates")
+    expect(op(updateCall, "update")).toEqual([
+      {
+        title: "Cập nhật đợt 1 (đã sửa)",
+        body: "Đã đối chiếu danh sách 50 học sinh nhận sách.",
+      },
+    ])
+    expect(updateCall?.ops).toContainEqual(["eq", "id", DRAFT_UPDATE])
+    expect(updateCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+    expect(updateCall?.ops).toContainEqual(["is", "published_at", null])
+    expect(updateCall?.ops).toContainEqual(["select", "id"])
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual([
+      [`/me/campaigns/${CAMPAIGN}`],
+      ["/me/campaigns"],
+      ["/campaigns/quy-hoc-bong-abcde"],
+    ])
+  })
+
+  it("supports intent = 'publish' on approved/public campaigns and refuses it before approval", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "draft" }) } : undefined)
+    expect(await updateDraftUpdate(CAMPAIGN, DRAFT_UPDATE, null, draftForm({ intent: "publish" }))).toEqual({
+      ok: false,
+      message: "Chỉ đăng công khai được cập nhật sau khi chiến dịch đã được duyệt. Hiện bạn có thể lưu bản nháp.",
+    })
+    expect(state.userCalls.some((c) => c.target === "campaign_updates")).toBe(false)
+
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date("2026-11-19T08:00:00.000Z"))
+      state.userCalls.length = 0
+      state.userHandler = (call) => {
+        if (op(call, "maybeSingle")) return { data: owned({ status: "live" }) }
+        if (call.target === "campaign_updates" && op(call, "update")) return { data: [{ id: DRAFT_UPDATE }] }
+        return undefined
+      }
+
+      expect(await updateDraftUpdate(CAMPAIGN, DRAFT_UPDATE, null, draftForm({ intent: "publish" }))).toEqual({
+        ok: true,
+        message: "Đã đăng cập nhật.",
+      })
+      const updateCall = state.userCalls.find((c) => c.target === "campaign_updates")
+      expect(op(updateCall, "update")).toEqual([
+        {
+          title: "Cập nhật đợt 1 (đã sửa)",
+          body: "Đã đối chiếu danh sách 50 học sinh nhận sách.",
+          published_at: "2026-11-19T08:00:00.000Z",
+        },
+      ])
+      expect(updateCall?.ops).toContainEqual(["is", "published_at", null])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("returns a clear error without revalidating when 0 rows match (already published or deleted)", async () => {
+    state.userHandler = (call) => {
+      if (op(call, "maybeSingle")) return { data: owned({ status: "live" }) }
+      if (call.target === "campaign_updates" && op(call, "update")) return { data: [] }
+      return undefined
+    }
+
+    expect(await updateDraftUpdate(CAMPAIGN, DRAFT_UPDATE, null, draftForm())).toEqual({
+      ok: false,
+      message: "Không tìm thấy bản nháp cập nhật này (có thể đã được đăng hoặc đã xóa). Hãy tải lại trang.",
+    })
+    expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled()
+  })
+})
+
+describe("publishDraftUpdate & deleteDraftUpdate", () => {
+  it("validates session, UUIDs, ownership, and status gates before publishing or deleting", async () => {
+    vi.mocked(getSession).mockResolvedValueOnce(null)
+    expect(await publishDraftUpdate(CAMPAIGN, DRAFT_UPDATE)).toEqual({
+      ok: false,
+      message: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+    })
+    vi.mocked(getSession).mockResolvedValueOnce(null)
+    expect(await deleteDraftUpdate(CAMPAIGN, DRAFT_UPDATE)).toEqual({
+      ok: false,
+      message: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+    })
+
+    expect(await publishDraftUpdate(CAMPAIGN, "bad-id")).toEqual({
+      ok: false,
+      message: "Không tìm thấy chiến dịch của bạn.",
+    })
+    expect(await deleteDraftUpdate("bad-id", DRAFT_UPDATE)).toEqual({
+      ok: false,
+      message: "Không tìm thấy chiến dịch của bạn.",
+    })
+    expect(state.userCalls).toHaveLength(0)
+
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "cancelled" }) } : undefined)
+    expect(await publishDraftUpdate(CAMPAIGN, DRAFT_UPDATE)).toEqual({
+      ok: false,
+      message: "Không thể đăng cập nhật cho chiến dịch đã hủy hoặc đang tạm dừng.",
+    })
+    expect(await deleteDraftUpdate(CAMPAIGN, DRAFT_UPDATE)).toEqual({
+      ok: false,
+      message: "Không thể đăng cập nhật cho chiến dịch đã hủy hoặc đang tạm dừng.",
+    })
+
+    for (const status of ["draft", "changes_requested", "in_review"] as const) {
+      state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status }) } : undefined)
+      expect(await publishDraftUpdate(CAMPAIGN, DRAFT_UPDATE)).toEqual({
+        ok: false,
+        message: "Chỉ đăng công khai được cập nhật sau khi chiến dịch đã được duyệt. Hiện bạn có thể lưu bản nháp.",
+      })
+    }
+    expect(state.userCalls.some((c) => c.target === "campaign_updates")).toBe(false)
+  })
+
+  it("publishes a draft strictly where published_at IS NULL, handles 0 matched rows, and revalidates", async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date("2026-11-19T09:15:00.000Z"))
+      state.userHandler = (call) => {
+        if (op(call, "maybeSingle")) return { data: owned({ status: "live" }) }
+        if (call.target === "campaign_updates" && op(call, "update")) return { data: [{ id: DRAFT_UPDATE }] }
+        return undefined
+      }
+
+      expect(await publishDraftUpdate(CAMPAIGN, DRAFT_UPDATE)).toEqual({
+        ok: true,
+        message: "Đã đăng cập nhật.",
+      })
+
+      const updateCall = state.userCalls.find((c) => c.target === "campaign_updates")
+      expect(op(updateCall, "update")).toEqual([{ published_at: "2026-11-19T09:15:00.000Z" }])
+      expect(updateCall?.ops).toContainEqual(["eq", "id", DRAFT_UPDATE])
+      expect(updateCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+      expect(updateCall?.ops).toContainEqual(["is", "published_at", null])
+      expect(updateCall?.ops).toContainEqual(["select", "id"])
+      expect(vi.mocked(revalidatePath).mock.calls).toEqual([
+        [`/me/campaigns/${CAMPAIGN}`],
+        ["/me/campaigns"],
+        ["/campaigns/quy-hoc-bong-abcde"],
+      ])
+
+      // Already-published row returns 0 rows and fails cleanly without revalidating.
+      vi.mocked(revalidatePath).mockClear()
+      state.userHandler = (call) => {
+        if (op(call, "maybeSingle")) return { data: owned({ status: "live" }) }
+        if (call.target === "campaign_updates" && op(call, "update")) return { data: [] }
+        return undefined
+      }
+      expect(await publishDraftUpdate(CAMPAIGN, DRAFT_UPDATE)).toEqual({
+        ok: false,
+        message: "Không tìm thấy bản nháp cập nhật này (có thể đã được đăng hoặc đã xóa). Hãy tải lại trang.",
+      })
+      expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("deletes a draft strictly where published_at IS NULL across editable/live campaigns and handles 0 matched rows", async () => {
+    state.userHandler = (call) => {
+      if (op(call, "maybeSingle")) return { data: owned({ status: "draft" }) }
+      if (call.target === "campaign_updates" && op(call, "delete")) return { data: [{ id: DRAFT_UPDATE }] }
+      return undefined
+    }
+
+    expect(await deleteDraftUpdate(CAMPAIGN, DRAFT_UPDATE)).toEqual({
+      ok: true,
+      message: "Đã xóa bản nháp cập nhật.",
+    })
+
+    const deleteCall = state.userCalls.find((c) => c.target === "campaign_updates")
+    expect(op(deleteCall, "delete")).toEqual([])
+    expect(deleteCall?.ops).toContainEqual(["eq", "id", DRAFT_UPDATE])
+    expect(deleteCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+    expect(deleteCall?.ops).toContainEqual(["is", "published_at", null])
+    expect(deleteCall?.ops).toContainEqual(["select", "id"])
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual([
+      [`/me/campaigns/${CAMPAIGN}`],
+      ["/me/campaigns"],
+      ["/campaigns/quy-hoc-bong-abcde"],
+    ])
+
+    vi.mocked(revalidatePath).mockClear()
+    state.userHandler = (call) => {
+      if (op(call, "maybeSingle")) return { data: owned({ status: "live" }) }
+      if (call.target === "campaign_updates" && op(call, "delete")) return { data: [] }
+      return undefined
+    }
+    expect(await deleteDraftUpdate(CAMPAIGN, DRAFT_UPDATE)).toEqual({
+      ok: false,
+      message: "Không tìm thấy bản nháp cập nhật này (có thể đã được đăng hoặc đã xóa). Hãy tải lại trang.",
+    })
+    expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled()
   })
 })
