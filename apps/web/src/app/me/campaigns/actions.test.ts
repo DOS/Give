@@ -225,13 +225,19 @@ describe("submitForReview", () => {
     expect(transitioned()).toBe(false)
   })
 
-  it("submits a give campaign with a usable bound account", async () => {
+  it("submits a give campaign with a usable bound account and revalidates /admin", async () => {
     state.userHandler = reads()
     expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual({
       ok: true,
       message: "Đã gửi duyệt. Kiểm duyệt viên sẽ xem chiến dịch của bạn.",
     })
     expect(transitioned()).toBe(true)
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual([
+      [`/me/campaigns/${CAMPAIGN}`],
+      ["/me/campaigns"],
+      ["/campaigns/quy-hoc-bong-abcde"],
+      ["/admin"],
+    ])
   })
 
   it("resubmits a give campaign sent back for changes under the same check", async () => {
@@ -340,6 +346,22 @@ describe("deleteDraft", () => {
     ).toEqual([`campaigns/${CAMPAIGN}/a.webp`, `campaigns/${CAMPAIGN}/b.webp`])
   })
 
+  it("still revalidates and redirects when best-effort Storage cleanup throws after DB delete", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    state.userHandler = (call) =>
+      op(call, "maybeSingle") ? { data: owned() } : op(call, "delete") ? { data: [{ id: CAMPAIGN }] } : undefined
+    state.serviceHandler = () => {
+      throw new Error("storage unreachable")
+    }
+    try {
+      await expect(deleteDraft(CAMPAIGN, null, new FormData())).rejects.toThrow("NEXT_REDIRECT /me/campaigns")
+      expect(vi.mocked(revalidatePath)).toHaveBeenCalledExactlyOnceWith("/me/campaigns")
+      expect(spy).toHaveBeenCalled()
+    } finally {
+      spy.mockRestore()
+    }
+  })
+
   it("leaves storage alone when RLS deleted nothing", async () => {
     state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : { data: [] })
     expect((await deleteDraft(CAMPAIGN, null, new FormData()))?.ok).toBe(false)
@@ -354,6 +376,8 @@ describe("deleteDraft", () => {
 })
 
 describe("uploadCover", () => {
+  const NEWER_COVER = "77777777-7777-4777-8777-777777777777"
+
   async function photoWithGps(): Promise<File> {
     const jpeg = await sharp({ create: { width: 64, height: 32, channels: 3, background: "#e11d48" } })
       .jpeg()
@@ -369,17 +393,19 @@ describe("uploadCover", () => {
     return form
   }
 
-  it("re-encodes without metadata, stores it, sets the cover and drops the old one", async () => {
+  it("re-encodes without metadata, stores it, atomically swaps cover_media_id from prevCoverId, and deletes only prevCoverId", async () => {
     state.userHandler = (call) =>
       op(call, "maybeSingle")
         ? { data: owned({ cover_media_id: OLD_COVER }) }
         : op(call, "update")
           ? { data: [{ id: CAMPAIGN }] }
           : undefined
-    state.serviceHandler = (call) =>
-      call.target === "campaign_media" && op(call, "delete")
-        ? { data: [{ storage_path: `campaigns/${CAMPAIGN}/old.webp` }] }
-        : undefined
+    state.serviceHandler = (call) => {
+      if (call.target === "campaign_media" && op(call, "delete")) {
+        return { data: [{ storage_path: `campaigns/${CAMPAIGN}/old.webp` }] }
+      }
+      return undefined
+    }
 
     const result = await uploadCover(CAMPAIGN, null, coverForm(await photoWithGps()))
     expect(result).toEqual({ ok: true, message: "Đã cập nhật ảnh bìa." })
@@ -392,13 +418,145 @@ describe("uploadCover", () => {
     expect(meta.format).toBe("webp")
     expect(meta.exif).toBeUndefined()
 
-    const [cover] = op(
-      state.userCalls.find((c) => op(c, "update")),
-      "update"
-    ) as [{ cover_media_id: string }]
+    const updateCall = state.userCalls.find((c) => op(c, "update"))
+    const [cover] = op(updateCall, "update") as [{ cover_media_id: string }]
     expect(path).toContain(cover.cover_media_id)
+    expect(updateCall?.ops).toContainEqual(["eq", "id", CAMPAIGN])
+    expect(updateCall?.ops).toContainEqual(["eq", "cover_media_id", OLD_COVER])
+    expect(updateCall?.ops).toContainEqual(["select", "id"])
+
+    const deleteCalls = state.serviceCalls.filter((c) => c.target === "campaign_media" && op(c, "delete"))
+    expect(deleteCalls).toHaveLength(1)
+    expect(deleteCalls[0].ops).toContainEqual(["eq", "id", OLD_COVER])
+    expect(deleteCalls[0].ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+    expect(deleteCalls[0].ops.some(([name]) => name === "neq")).toBe(false)
+
     const removed = state.serviceCalls.filter((c) => op(c, "remove")).map((c) => op(c, "remove")?.[0])
     expect(removed).toEqual([[`campaigns/${CAMPAIGN}/old.webp`]])
+  })
+
+  it("uses is(cover_media_id, null) on initial cover upload and skips post-commit media deletion", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: owned({ cover_media_id: null }) }
+        : op(call, "update")
+          ? { data: [{ id: CAMPAIGN }] }
+          : undefined
+
+    expect(await uploadCover(CAMPAIGN, null, coverForm(await photoWithGps()))).toEqual({
+      ok: true,
+      message: "Đã cập nhật ảnh bìa.",
+    })
+
+    const updateCall = state.userCalls.find((c) => op(c, "update"))
+    expect(updateCall?.ops).toContainEqual(["eq", "id", CAMPAIGN])
+    expect(updateCall?.ops).toContainEqual(["is", "cover_media_id", null])
+    expect(state.serviceCalls.some((c) => c.target === "campaign_media" && op(c, "delete"))).toBe(false)
+    expect(state.serviceCalls.some((c) => op(c, "remove"))).toBe(false)
+  })
+
+  it("retries optimistic CAS when cover_media_id changed concurrently during upload and deletes only the swapped-out cover", async () => {
+    let reads = 0
+    let updates = 0
+    state.userHandler = (call) => {
+      if (op(call, "maybeSingle")) {
+        reads += 1
+        // Initial read sees null; reload after CAS miss sees NEWER_COVER committed concurrently.
+        return { data: owned({ cover_media_id: reads === 1 ? null : NEWER_COVER }) }
+      }
+      if (op(call, "update")) {
+        updates += 1
+        return { data: updates === 1 ? [] : [{ id: CAMPAIGN }] }
+      }
+      return undefined
+    }
+    state.serviceHandler = (call) => {
+      if (call.target === "campaign_media" && op(call, "delete")) {
+        return { data: [{ storage_path: `campaigns/${CAMPAIGN}/${NEWER_COVER}.webp` }] }
+      }
+      return undefined
+    }
+
+    expect(await uploadCover(CAMPAIGN, null, coverForm(await photoWithGps()))).toEqual({
+      ok: true,
+      message: "Đã cập nhật ảnh bìa.",
+    })
+
+    const updateCalls = state.userCalls.filter((c) => op(c, "update"))
+    expect(updateCalls).toHaveLength(2)
+    expect(updateCalls[0].ops).toContainEqual(["is", "cover_media_id", null])
+    expect(updateCalls[1].ops).toContainEqual(["eq", "cover_media_id", NEWER_COVER])
+
+    const deleteCalls = state.serviceCalls.filter((c) => c.target === "campaign_media" && op(c, "delete"))
+    expect(deleteCalls).toHaveLength(1)
+    expect(deleteCalls[0].ops).toContainEqual(["eq", "id", NEWER_COVER])
+    expect(deleteCalls[0].ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+    const removed = state.serviceCalls.filter((c) => op(c, "remove")).map((c) => op(c, "remove")?.[0])
+    expect(removed).toEqual([[`campaigns/${CAMPAIGN}/${NEWER_COVER}.webp`]])
+  })
+
+  it("rolls back the newly uploaded cover without deleting existing covers if the campaign becomes non-editable during CAS retry", async () => {
+    let reads = 0
+    state.userHandler = (call) => {
+      if (op(call, "maybeSingle")) {
+        reads += 1
+        return {
+          data:
+            reads === 1
+              ? owned({ cover_media_id: OLD_COVER })
+              : owned({ status: "in_review", cover_media_id: NEWER_COVER }),
+        }
+      }
+      if (op(call, "update")) return { data: [] }
+      return undefined
+    }
+
+    expect(await uploadCover(CAMPAIGN, null, coverForm(await photoWithGps()))).toEqual({
+      ok: false,
+      message: "Chỉ sửa được chiến dịch đang là bản nháp hoặc cần chỉnh sửa.",
+    })
+
+    const [insertedRow] = op(
+      state.serviceCalls.find((c) => c.target === "campaign_media" && op(c, "insert")),
+      "insert"
+    ) as [{ id: string; storage_path: string }]
+    const deleteCalls = state.serviceCalls.filter((c) => c.target === "campaign_media" && op(c, "delete"))
+    expect(deleteCalls).toHaveLength(1)
+    expect(deleteCalls[0].ops).toEqual([["delete"], ["eq", "id", insertedRow.id]])
+    const removed = state.serviceCalls.filter((c) => op(c, "remove")).map((c) => op(c, "remove")?.[0])
+    expect(removed).toEqual([[insertedRow.storage_path]])
+  })
+
+  it("succeeds and revalidates even when post-commit Storage cleanup throws", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    state.userHandler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: owned({ cover_media_id: OLD_COVER }) }
+        : op(call, "update")
+          ? { data: [{ id: CAMPAIGN }] }
+          : undefined
+    state.serviceHandler = (call) => {
+      if (call.target === "campaign_media" && op(call, "delete")) {
+        return { data: [{ storage_path: `campaigns/${CAMPAIGN}/old.webp` }] }
+      }
+      if (op(call, "remove")) throw new Error("storage timeout")
+      return undefined
+    }
+
+    try {
+      expect(await uploadCover(CAMPAIGN, null, coverForm(await photoWithGps()))).toEqual({
+        ok: true,
+        message: "Đã cập nhật ảnh bìa.",
+      })
+      expect(vi.mocked(revalidatePath).mock.calls).toEqual([
+        [`/me/campaigns/${CAMPAIGN}`],
+        ["/me/campaigns"],
+        ["/campaigns/quy-hoc-bong-abcde"],
+      ])
+      expect(spy).toHaveBeenCalled()
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it("rolls back the object and media row when RLS refuses the cover update", async () => {
@@ -534,7 +692,7 @@ describe("cancelCampaign", () => {
     return form
   }
 
-  it("trims and caps reason at 500 chars, forwards p_to_status 'cancelled', and revalidates", async () => {
+  it("trims and caps reason at 500 chars, forwards p_to_status 'cancelled', and revalidates including /admin", async () => {
     state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "in_review" }) } : undefined)
     const longReason = `   ${"L".repeat(525)}   `
     const result = await cancelCampaign(CAMPAIGN, null, cancelForm(longReason))
@@ -552,27 +710,31 @@ describe("cancelCampaign", () => {
       [`/me/campaigns/${CAMPAIGN}`],
       ["/me/campaigns"],
       ["/campaigns/quy-hoc-bong-abcde"],
+      ["/admin"],
     ])
   })
 
-  it("forwards an empty trimmed reason when omitted", async () => {
+  it.each([undefined, "", "   "])("converts blank or omitted reason (%j) to null", async (reason) => {
+    state.userCalls.length = 0
     state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : undefined)
-    expect(await cancelCampaign(CAMPAIGN, null, cancelForm())).toEqual({ ok: true, message: "Đã hủy chiến dịch." })
+    expect(await cancelCampaign(CAMPAIGN, null, cancelForm(reason))).toEqual({
+      ok: true,
+      message: "Đã hủy chiến dịch.",
+    })
     const rpc = state.userCalls.find((c) => c.target === "rpc:transition_campaign")
-    expect(op(rpc, "args")).toEqual([{ p_campaign_id: CAMPAIGN, p_to_status: "cancelled", p_reason: "" }])
+    expect(op(rpc, "args")).toEqual([{ p_campaign_id: CAMPAIGN, p_to_status: "cancelled", p_reason: null }])
   })
 
-  it("maps transition_campaign errors with SUBMIT_MESSAGES and standard GIVE_* messages without revalidating", async () => {
+  it("maps transition_campaign errors with cancellation-appropriate messages instead of SUBMIT_MESSAGES without revalidating", async () => {
     state.userHandler = (call) =>
       op(call, "maybeSingle")
         ? { data: owned({ status: "live" }) }
         : call.target === "rpc:transition_campaign"
           ? { error: { code: "23514", message: "GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT" } }
           : undefined
-    expect(await cancelCampaign(CAMPAIGN, null, cancelForm("Đổi kế hoạch"))).toEqual({
-      ok: false,
-      message: SUBMIT_MESSAGES.GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT,
-    })
+    const noAccount = await cancelCampaign(CAMPAIGN, null, cancelForm("Đổi kế hoạch"))
+    expect(noAccount?.ok).toBe(false)
+    expect(noAccount?.message).not.toContain("Chưa gửi duyệt được")
     expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled()
 
     state.userHandler = (call) =>
@@ -583,7 +745,8 @@ describe("cancelCampaign", () => {
           : undefined
     expect(await cancelCampaign(CAMPAIGN, null, cancelForm("Đổi kế hoạch"))).toEqual({
       ok: false,
-      message: "Không thể chuyển chiến dịch sang trạng thái này lúc này.",
+      message:
+        "Không hủy được chiến dịch: chiến dịch không còn ở trạng thái cho phép hủy (có thể vừa được mở công khai). Hãy tải lại trang.",
     })
     expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled()
   })

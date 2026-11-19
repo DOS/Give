@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
@@ -7,6 +8,11 @@ const OTHER = "99999999-9999-4999-8999-999999999999"
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
 const P1 = "c0000000-0000-4000-8000-000000000001"
 const P2 = "c0000000-0000-4000-8000-000000000002"
+const FULFILLMENT_REVALIDATIONS = [
+  [`/me/campaigns/${CAMPAIGN}/fulfillment`],
+  ["/me/contributions"],
+  ["/me/pledges/[code]", "page"],
+]
 
 const state = vi.hoisted(() => ({
   userHandler: (() => undefined) as Handler,
@@ -42,10 +48,11 @@ beforeEach(() => {
   state.serviceCalls.length = 0
   state.userHandler = campaign()
   state.serviceHandler = () => ({ data: 2 })
+  vi.mocked(revalidatePath).mockClear()
 })
 
 describe("setFulfillment", () => {
-  it("updates the ticked pledges with the bulk status and note", async () => {
+  it("updates the ticked pledges with the bulk status and note and revalidates backer pledge pages", async () => {
     const result = await setFulfillment(
       CAMPAIGN,
       null,
@@ -68,6 +75,7 @@ describe("setFulfillment", () => {
         p_note: "Đã gửi GHN ngày 10/03",
       },
     ])
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual(FULFILLMENT_REVALIDATIONS)
   })
 
   it("updates one pledge from its own row, ignoring the ticks and the bulk fields", async () => {
@@ -89,6 +97,7 @@ describe("setFulfillment", () => {
       p_status: "delivered",
       p_note: null,
     })
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual(FULFILLMENT_REVALIDATIONS)
   })
 
   it("refuses nothing ticked, a bad status, a long note and a forged id", async () => {
@@ -190,5 +199,6 @@ describe("setFulfillment", () => {
         )
       )?.message
     ).toContain("không còn ở trạng thái đã thanh toán")
+    expect(revalidatePath).not.toHaveBeenCalled()
   })
 })

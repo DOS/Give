@@ -46,6 +46,7 @@ const MEDIA_TYPES: Record<ImageType["ext"], ImageType["mime"]> = {
  * shape mediaPath() produces (so no traversal or other buckets' keys).
  */
 export function parseMediaPath(segments: readonly string[]): { path: string; mime: ImageType["mime"] } | null {
+  if (segments.length !== 3) return null
   const path = segments.join("/")
   const match = MEDIA_PATH.exec(path)
   return match ? { path, mime: MEDIA_TYPES[match[1] as ImageType["ext"]] } : null

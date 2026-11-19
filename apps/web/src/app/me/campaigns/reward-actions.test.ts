@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
@@ -78,16 +79,19 @@ const campaignIn = (status: string, fields: Record<string, unknown> = {}) => ({
   ...fields,
 })
 
+const TIER_REVALIDATIONS = [[`/me/campaigns/${CAMPAIGN}`], ["/campaigns/ao-abcde"], ["/campaigns/ao-abcde/pledge"]]
+
 beforeEach(() => {
   state.userCalls.length = 0
   state.serviceCalls.length = 0
   state.signedIn = true
   state.userHandler = reads()
   state.serviceHandler = () => ({ data: T1 })
+  vi.mocked(revalidatePath).mockClear()
 })
 
 describe("saveRewardTier", () => {
-  it("creates a tier on a draft, last in order, with the actor id and parsed fields", async () => {
+  it("creates a tier on a draft, last in order, with the actor id, parsed fields and pledge revalidation", async () => {
     const result = await saveRewardTier(CAMPAIGN, null, null, tierForm())
     expect(result).toEqual({ ok: true, message: "Đã thêm phần thưởng." })
     expect(state.serviceCalls.map((c) => c.target)).toEqual(["rpc:save_reward_tier"])
@@ -108,6 +112,7 @@ describe("saveRewardTier", () => {
     ])
     // Ownership was read with the user's token first.
     expect(state.userCalls.map((c) => c.target).sort()).toEqual(["reward_tiers", "rpc:managed_campaigns"])
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual(TIER_REVALIDATIONS)
   })
 
   it("updates a tier of a campaign under changes, dropping the shipping note when nothing ships", async () => {
@@ -169,9 +174,10 @@ describe("saveRewardTier", () => {
 })
 
 describe("deleteRewardTier", () => {
-  it("deletes a tier of a draft", async () => {
+  it("deletes a tier of a draft and revalidates campaign and pledge routes", async () => {
     expect((await deleteRewardTier(CAMPAIGN, T1, null, new FormData()))?.ok).toBe(true)
     expect(op(state.serviceCalls[0], "args")).toEqual([{ p_actor_id: USER, p_tier_id: T1 }])
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual(TIER_REVALIDATIONS)
   })
 
   it("refuses after submission and for a tier someone chose", async () => {
@@ -181,15 +187,17 @@ describe("deleteRewardTier", () => {
     state.userHandler = reads()
     state.serviceHandler = () => ({ error: { message: "GIVE_REWARD_TIER_IN_USE" } })
     expect((await deleteRewardTier(CAMPAIGN, T1, null, new FormData()))?.message).toContain("không xóa được")
+    expect(revalidatePath).not.toHaveBeenCalled()
   })
 })
 
 describe("moveRewardTier", () => {
-  it("sends the whole new order", async () => {
+  it("sends the whole new order and revalidates campaign and pledge routes", async () => {
     expect((await moveRewardTier(CAMPAIGN, T3, "up", null, new FormData()))?.ok).toBe(true)
     expect(op(state.serviceCalls[0], "args")).toEqual([
       { p_actor_id: USER, p_campaign_id: CAMPAIGN, p_tier_ids: [T1, T3, T2] },
     ])
+    expect(vi.mocked(revalidatePath).mock.calls).toEqual(TIER_REVALIDATIONS)
   })
 
   it("orders by sort_order even when rows come back shuffled", async () => {
@@ -209,13 +217,17 @@ describe("moveRewardTier", () => {
 })
 
 describe("retireRewardTier", () => {
-  it.each(["approved", "live", "suspended"])("retires an unclaimed tier of a %s campaign", async (status) => {
-    state.userHandler = reads({ campaign: campaignIn(status) })
-    state.serviceHandler = () => ({ data: "retired" })
-    const result = await retireRewardTier(CAMPAIGN, T1, null, new FormData())
-    expect(result?.ok).toBe(true)
-    expect(op(state.serviceCalls[0], "args")).toEqual([{ p_actor_id: USER, p_tier_id: T1 }])
-  })
+  it.each(["approved", "live", "suspended"])(
+    "retires an unclaimed tier of a %s campaign and revalidates pledge route",
+    async (status) => {
+      state.userHandler = reads({ campaign: campaignIn(status) })
+      state.serviceHandler = () => ({ data: "retired" })
+      const result = await retireRewardTier(CAMPAIGN, T1, null, new FormData())
+      expect(result?.ok).toBe(true)
+      expect(op(state.serviceCalls[0], "args")).toEqual([{ p_actor_id: USER, p_tier_id: T1 }])
+      expect(vi.mocked(revalidatePath).mock.calls).toEqual(TIER_REVALIDATIONS)
+    }
+  )
 
   it("refuses a tier a pledge holds", async () => {
     state.userHandler = reads({ campaign: campaignIn("live"), tiers: [tier(T1, { quantity_claimed: 2 })] })

@@ -68,9 +68,26 @@ function organizer(overrides: Partial<Organizer> = {}): Organizer {
   }
 }
 
+const ORGANIZER_REVALIDATIONS = [
+  ["/start"],
+  ["/"],
+  ["/campaigns"],
+  ["/campaigns/[slug]", "page"],
+  ["/me/campaigns/[id]", "page"],
+  ["/me/accounts"],
+  ["/admin"],
+  ["/admin/reports"],
+  ["/admin/accounts"],
+  ["/admin/account-swaps"],
+]
+
 function noNavigation() {
   expect(revalidatePath).not.toHaveBeenCalled()
   expect(redirect).not.toHaveBeenCalled()
+}
+
+function expectOrganizerRevalidated() {
+  expect(vi.mocked(revalidatePath).mock.calls).toEqual(ORGANIZER_REVALIDATIONS)
 }
 
 beforeEach(() => {
@@ -132,13 +149,55 @@ describe("saveOrganizer (DOS/Give#208)", () => {
         ],
       ],
     })
-    expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/start")
+    expectOrganizerRevalidated()
     expect(redirect).not.toHaveBeenCalled()
   })
 
   it("stores an optional blank phone as null", async () => {
     expect(await saveOrganizer(null, organizerForm({ phone: "  " }))).toEqual({ ok: true, message: SAVED })
     expect(op(state.calls[1], "insert")?.[0]).toMatchObject({ phone: null })
+  })
+
+  it("falls back to updating by user_id when a concurrent initial insert hits 23505", async () => {
+    state.handler = (call) => {
+      if (op(call, "maybeSingle")) return { data: null }
+      if (op(call, "insert")) return { error: { code: "23505", message: "duplicate key value" } }
+      return undefined
+    }
+    expect(await saveOrganizer(null, organizerForm())).toEqual({ ok: true, message: SAVED })
+    expect(state.calls).toHaveLength(3)
+    expect(op(state.calls[1], "insert")).toEqual([
+      {
+        user_id: USER,
+        kind: "individual",
+        legal_name: "Nguyễn Thị Lan",
+        display_name: "Quỹ học bổng",
+        phone: "0901234567",
+      },
+    ])
+    expect(state.calls[2]).toEqual({
+      target: "organizers",
+      ops: [
+        [
+          "update",
+          { kind: "individual", legal_name: "Nguyễn Thị Lan", display_name: "Quỹ học bổng", phone: "0901234567" },
+        ],
+        ["eq", "user_id", USER],
+      ],
+    })
+    expectOrganizerRevalidated()
+  })
+
+  it("surfaces the fallback update error without revalidating when 23505 recovery fails", async () => {
+    const fallbackError = { code: "42501", message: "permission denied" }
+    state.handler = (call) => {
+      if (op(call, "maybeSingle")) return { data: null }
+      if (op(call, "insert")) return { error: { code: "23505", message: "duplicate key value" } }
+      return { error: fallbackError }
+    }
+    expect(await saveOrganizer(null, organizerForm())).toEqual({ ok: false, message: dbErrorMessage(fallbackError) })
+    expect(state.calls).toHaveLength(3)
+    noNavigation()
   })
 
   it("updates only editable columns, scoped to the session user, without inserting or upserting", async () => {
@@ -156,7 +215,7 @@ describe("saveOrganizer (DOS/Give#208)", () => {
         ["eq", "user_id", USER],
       ],
     })
-    expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/start")
+    expectOrganizerRevalidated()
     expect(redirect).not.toHaveBeenCalled()
   })
 
@@ -174,14 +233,14 @@ describe("saveOrganizer (DOS/Give#208)", () => {
     it.each(identityChanges)("reports re-verification when identity changes: %j", async (change) => {
       expect(await saveOrganizer(null, organizerForm(change))).toEqual({ ok: true, message: REVERIFY })
       expect(op(state.calls[1], "update")?.[0]).toMatchObject(change)
-      expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/start")
+      expectOrganizerRevalidated()
     })
 
     it.each([{ phone: "0987654321" }, { phone: "090 123.45-67" }])(
       "keeps the normal success message for phone-only edits or an unchanged normalized profile: %j",
       async (change) => {
         expect(await saveOrganizer(null, organizerForm(change))).toEqual({ ok: true, message: SAVED })
-        expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/start")
+        expectOrganizerRevalidated()
       }
     )
   })
@@ -190,7 +249,7 @@ describe("saveOrganizer (DOS/Give#208)", () => {
     it.each(identityChanges)("keeps the normal success message after an identity change: %j", async (change) => {
       state.handler = (call) => (op(call, "maybeSingle") ? { data: organizer({ verification_status }) } : undefined)
       expect(await saveOrganizer(null, organizerForm(change))).toEqual({ ok: true, message: SAVED })
-      expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/start")
+      expectOrganizerRevalidated()
     })
   })
 
