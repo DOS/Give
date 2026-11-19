@@ -640,7 +640,8 @@ to a Tingee record from becoming a second transaction.
   - no record with that id → no match.
 - **Any other bank.** The key is account, direction and amount; booking day
   within ±1 day; and the statement description contains the Tingee
-  `content`, or both contain the same Give reference code. Pairing is
+  `content`, or both contain the same Give reference code (a `GV` donation
+  code, or an A+ `GM` plan code: design 4.3.5). Pairing is
   one-to-one and occurrence-aware, like the `group_key` rule in design 5.2.
   Exactly one unpaired candidate → link. More than one candidate, or a
   partial match (same account, direction and amount within the window but

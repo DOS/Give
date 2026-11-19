@@ -95,7 +95,7 @@ Decree 93 Art. 17.2 is a question for counsel (design P4(j)) [inference].
   a payment account to receive funds (Art. 20.3; article number not
   re-verified).
 - **Circular 18/2024 on bank cards** [read, L6], amended by Circular
-  45/2025 and consolidated as 30/VBHN-NHNN of 2025-12-19 [search, L12; the
+  45/2025 and consolidated as 30/VBHN-NHNN of 2025-12-19 [search, L12, L14; the
   consolidated text was not read]: acquirers require proof of lawful
   business (Art. 17.3(b)) and must refuse a "giao dịch thanh toán khống",
   a payment with no real sale of goods or services (Art. 3.9, 25.1(a)).
@@ -211,4 +211,5 @@ Law:
 - L10 https://luatvietnam.vn/tin-van-ban-moi/da-co-luat-thuong-mai-dien-tu-2025-so-122-2025-qh15-186-106402-article.html
 - L11 https://hethongphapluat.com/nghi-dinh-248-2026-nd-cp-huong-dan-luat-thuong-mai-dien-tu.html
 - L12 https://luatvietnam.vn/tai-chinh/van-ban-hop-nhat-30-vbhn-nhnn-2025-quy-dinh-hoat-dong-the-ngan-hang-422842-d5.html
+- L14 https://vbpl.moj.gov.vn/TW/Lists/vbpq/Attachments/186079/30.2025.VBHN.NHNN.docx (official file of 30/VBHN-NHNN)
 - L13 https://luatvietnam.vn/linh-vuc-khac/diem-moi-thong-tu-77-2025-tt-nhnn-ve-bao-mat-online-banking-883-106480-article.html

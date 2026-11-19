@@ -57,11 +57,19 @@ dịch kết thúc, và người ủng hộ hủy được bất cứ lúc nào.
 4. [Tên cổng] có nhận ngành hàng **ủng hộ, từ thiện** cho merchant con là cá
    nhân không?
 5. Khi có **hoàn tiền hay khiếu nại (chargeback)**, bên nào chịu? **Phí** mỗi
-   giao dịch là bao nhiêu, và sau bao lâu thì tiền về (T+n)?
+   giao dịch là bao nhiêu, và phí được **trừ vào tiền quyết toán** hay **tính
+   riêng** cho merchant con? Sau bao lâu thì tiền về (T+n)?
 6. Tiền về **tài khoản ngân hàng** của merchant con, hay vào **một số dư giữ
    tại [Tên cổng]** rồi mới chi ra? Nếu là số dư: ai ra lệnh chi, theo lịch
    nào (tự động mỗi ngày, theo yêu cầu…), và nền tảng có quyền gì với số dư đó
    không?
+7. Nền tảng nhận được **dữ liệu gì** cho từng lần thu (webhook hay báo cáo có
+   mã giao dịch, kết quả thành công hay lỗi) và cho từng lần quyết toán (báo
+   cáo đối soát liệt kê các lần thu trong khoản quyết toán)? Nền tảng có đặt
+   được **ngày kết thúc** cho từng lịch thu định kỳ không?
+
+Chúng tôi muốn trích dẫn câu trả lời trong tài liệu thiết kế nội bộ. Xin cho
+biết phần nào của câu trả lời là bảo mật và không được trích dẫn.
 
 Ngoài ra, nếu [Tên cổng] có mẫu hợp đồng nền tảng (platform) hoặc tài liệu kỹ
 thuật về thu định kỳ và mô hình merchant con, xin gửi kèm để chúng tôi tham
@@ -80,8 +88,12 @@ Trân trọng,
 **Cách đọc câu trả lời.** Cổng đầu tiên trả lời "có" cho câu 1, 2, 3 và 4, và ở
 câu 6 nói tiền về thẳng tài khoản ngân hàng, là ứng viên làm trước. Nếu câu 6
 là "số dư giữ tại cổng" mà nền tảng không điều khiển việc chi ra, ghi lại và
-chờ luật sư trả lời P4(j) (mục 9 của thiết kế). Lưu thư trả lời vào issue của
-bước 2 hay một tài liệu nghiên cứu, kèm ngày nhận.
+chờ luật sư trả lời P4(j) (mục 9 của thiết kế).
+
+**Lưu ở đâu.** Repo DOS/Give là repo công khai. Lưu thư trả lời ở nơi riêng tư
+của DOS (không đưa vào issue hay repo), vì biểu phí và điều khoản hợp đồng có
+thể là bảo mật. Trong repo chỉ ghi một bản tóm tắt kết luận (cổng nào, câu nào
+"có" hay "không", ngày nhận), trong phạm vi cổng cho phép trích dẫn.
 
 ## Phần B. Phép thử lệnh chuyển tiền định kỳ (phương án A+, cổng (a))
 
@@ -94,14 +106,23 @@ khớp được tiền nếu mã đó tới tài khoản nhận nguyên vẹn m�
 
 - Hai tài khoản **của chính JOY**: một tài khoản chuyển (Techcombank, và mỗi
   ngân hàng khác JOY có) và một tài khoản nhận.
-- Nên để tài khoản nhận ở **ngân hàng khác** tài khoản chuyển, vì người góp
-  thường chuyển liên ngân hàng tới tài khoản của chiến dịch. Nếu chỉ thử được
-  trong cùng ngân hàng, vẫn làm, nhưng ghi rõ là chuyển nội bộ.
+- Tài khoản nhận phải ở **ngân hàng khác** tài khoản chuyển, vì người góp
+  thường chuyển liên ngân hàng tới tài khoản của chiến dịch, và cổng (a) đòi
+  lệnh liên ngân hàng. Nếu chỉ thử được trong cùng ngân hàng, vẫn làm, nhưng
+  kết quả chỉ là "tạm qua" (xem phần kết luận).
+- Nếu được, chọn tài khoản nhận ở ngân hàng mà Give đọc được giao dịch (qua
+  Tingee, hoặc qua import sao kê), để xem nội dung đúng như kênh của Give sẽ
+  thấy. Tránh VietinBank qua Tingee, vì kênh đó làm mất nội dung chuyển khoản.
+- Lệnh liên ngân hàng có thể mất phí chuyển mỗi lần chạy; ghi lại phí nếu có.
 - Tài khoản nhận phải xem được **chi tiết giao dịch** trong app và **tải được
   sao kê** (file hoặc trang internet banking).
-- Mỗi ngân hàng chuyển dùng **một mã thử riêng**, ví dụ:
-  - Techcombank: `GMTEST1234`
-  - ngân hàng thứ hai: `GMTEST5678`
+- Mỗi ngân hàng chuyển dùng **một mã thử riêng, đúng dạng mã kế hoạch thật**:
+  9 ký tự, bắt đầu bằng `GM`, chỉ có chữ in hoa và chữ số, không có `0`, `O`,
+  `1`, `I`, `L`. Ví dụ:
+  - Techcombank: `GMTXQ7K9P`
+  - ngân hàng thứ hai: `GMRW4HZ3M`
+
+  Như vậy phép thử cũng kiểm tra độ dài và các ký tự mà mã thật dùng.
 
 **Các bước, cho mỗi ngân hàng chuyển**
 
@@ -115,11 +136,12 @@ khớp được tiền nếu mã đó tới tài khoản nhận nguyên vẹn m�
 2. **Tạo lệnh.**
    - Người nhận: tài khoản nhận của JOY.
    - Số tiền: **mức nhỏ nhất app cho phép** (ví dụ 10.000 đ).
-   - Tần suất: **hằng ngày** nếu có, để có hai lần chạy nhanh; nếu không có
-     thì hằng tuần; nếu chỉ có hằng tháng thì chọn hằng tháng và chờ hai lần.
+   - Tần suất: **hằng tháng**, vì A+ chỉ dùng lệnh hằng tháng. Nếu muốn có kết
+     quả sớm, có thể đặt thêm một lệnh hằng ngày hay hằng tuần với mã thử khác,
+     nhưng kết quả của lệnh đó chỉ là "tạm qua".
    - Ngày bắt đầu: ngày gần nhất app cho phép.
    - Số lần hoặc ngày kết thúc: **2 hoặc 3 lần**, nếu app có, để lệnh tự dừng.
-   - Nội dung: gõ đúng mã thử, ví dụ `GMTEST1234`. Nếu app tự điền sẵn nội
+   - Nội dung: gõ đúng mã thử, ví dụ `GMTXQ7K9P`. Nếu app tự điền sẵn nội
      dung (ví dụ tên người chuyển), xóa đi và gõ mã thử. Ghi lại app có cho
      sửa nội dung hay không, và giới hạn số ký tự nếu có.
 3. **Chụp màn hình khi tạo lệnh:**
@@ -131,6 +153,8 @@ khớp được tiền nếu mã đó tới tài khoản nhận nguyên vẹn m�
    - Bên nhận: thông báo biến động số dư, và chi tiết giao dịch trong app
      (thấy nội dung).
    - Bên nhận: dòng tương ứng trên **sao kê** (tải file sao kê nếu được).
+   - Nếu tài khoản nhận nối với Give (Tingee hay import sao kê): nội dung giao
+     dịch như Give ghi nhận.
 5. **Kiểm tra nội dung bên nhận** ở mỗi lần chạy và ghi vào bảng dưới:
    - mã thử còn **đầy đủ, đúng thứ tự**, không bị cắt hay đổi ký tự;
    - ngân hàng có thêm chữ nào trước hoặc sau mã không (thường có, ví dụ mã
@@ -144,20 +168,27 @@ khớp được tiền nếu mã đó tới tài khoản nhận nguyên vẹn m�
 
 **Bảng kết quả** (một dòng cho mỗi lần chạy):
 
-| Ngân hàng chuyển | Ngân hàng nhận | Liên ngân hàng? | Lần chạy | Ngày giờ | Nội dung bên nhận thấy (nguyên văn) | Mã còn nguyên? |
-| ---------------- | -------------- | --------------- | -------- | -------- | ----------------------------------- | -------------- |
-| Techcombank      | [ngân hàng]    | [có/không]      | 1        |          |                                     |                |
-| Techcombank      | [ngân hàng]    | [có/không]      | 2        |          |                                     |                |
+| Ngân hàng chuyển | Ngân hàng nhận | Liên ngân hàng? | Tần suất   | Lần chạy | Ngày giờ | Nội dung bên nhận thấy (nguyên văn) | Mã còn nguyên? |
+| ---------------- | -------------- | --------------- | ---------- | -------- | -------- | ----------------------------------- | -------------- |
+| Techcombank      | [ngân hàng]    | [có/không]      | hằng tháng | 1        |          |                                     |                |
+| Techcombank      | [ngân hàng]    | [có/không]      | hằng tháng | 2        |          |                                     |                |
 
 **Trước khi gửi ảnh**
 
-- Che số tài khoản (chỉ để lại 4 số cuối), số dư, và tên đầy đủ nếu muốn.
+- Che số tài khoản (chỉ để lại 4 số cuối), số dư, tên đầy đủ và mã giao dịch
+  của ngân hàng.
 - Không gửi mã OTP, mật khẩu hay ảnh chứa mã QR đăng nhập.
+- Gửi ảnh cho PO qua kênh riêng tư, **không** đăng lên issue hay repo (repo
+  DOS/Give là công khai). Trong repo chỉ ghi kết luận: ngân hàng nào qua, đường
+  đi trong app, giờ chót hủy.
 
 **Kết luận của phép thử**
 
-- Ngân hàng **qua** cổng (a) nếu ở cả hai lần chạy, nội dung bên nhận còn
-  nguyên mã thử. Ghi ngân hàng đó vào danh sách đã xác minh (mục 4.3.5), kèm
+- Ngân hàng **qua** cổng (a) khi một lệnh **liên ngân hàng, hằng tháng** chạy
+  hai lần và ở cả hai lần nội dung bên nhận còn nguyên mã thử.
+- Lệnh trong cùng ngân hàng, hay lệnh hằng ngày, hằng tuần, đạt điều kiện
+  trên chỉ là **tạm qua**: ghi lại, nhưng ngân hàng chỉ vào danh sách đã xác
+  minh sau khi có ít nhất một lệnh liên ngân hàng hằng tháng được kiểm tra. Ghi ngân hàng đó vào danh sách đã xác minh (mục 4.3.5), kèm
   đường đi trong app để tạo và hủy lệnh, và giờ chót hủy.
 - Ngân hàng **không qua** nếu mã bị cắt, đổi, hay chỉ còn ở lần chạy đầu.
 - Gửi bảng kết quả và ảnh cho PO. Cổng (a) cần ít nhất **một ngân hàng lớn**
