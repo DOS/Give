@@ -11,7 +11,8 @@ import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Callout, type CalloutTone } from "@/components/ui/Callout"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { EmptyState } from "@/components/ui/EmptyState"
-import { BankIcon } from "@/components/ui/icons"
+import { Field } from "@/components/ui/Field"
+import { BankIcon, ChevronDownIcon } from "@/components/ui/icons"
 import { PageHeader } from "@/components/ui/PageHeader"
 import { requireSession } from "@/lib/auth/session"
 import { bankLabel } from "@/lib/banks"
@@ -28,12 +29,14 @@ import {
   type CampaignStatus,
   type CampaignType,
   categoriesFor,
+  type Db,
   getCampaignById,
   isEditableStatus,
   isPublicStatus,
   listAllUpdates,
   listCategories,
   listMilestones,
+  type Milestone,
   organizerCanCancel,
 } from "@/lib/campaigns"
 import { VIA_CONTACT_EMAIL } from "@/lib/contact"
@@ -59,12 +62,36 @@ import {
   deleteDraft,
   deleteMilestone,
   postUpdate,
+  removeYoutubeVideo,
   saveContent,
+  saveYoutubeVideo,
   submitForReview,
+  updateMilestone,
   uploadCover,
 } from "../actions"
 
 export const metadata: Metadata = { title: "Quản lý chiến dịch", robots: { index: false } }
+
+interface YoutubeMedia {
+  id: string
+  youtube_id: string
+  alt: string | null
+}
+
+async function loadYoutubeVideo(db: Db, campaignId: string): Promise<{ video: YoutubeMedia | null }> {
+  const { data, error } = await db
+    .from("campaign_media")
+    .select("id, youtube_id, alt")
+    .eq("campaign_id", campaignId)
+    .eq("kind", "youtube")
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(1)
+  if (error) throw error
+  const row = ((data ?? []) as { id: string; youtube_id: string | null; alt: string | null }[])[0]
+  if (!row?.youtube_id || !/^[A-Za-z0-9_-]{11}$/.test(row.youtube_id)) return { video: null }
+  return { video: { id: row.id, youtube_id: row.youtube_id, alt: row.alt ?? null } }
+}
 
 export default async function EditCampaignPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -75,7 +102,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   if (!campaign || campaign.organizer_id !== session.user.id) notFound()
 
   const isGive = campaign.type === "give"
-  const [categories, milestones, updates, totals, accounts, tiers] = await Promise.all([
+  const [categories, milestones, updates, totals, accounts, tiers, youtubeState] = await Promise.all([
     listCategories(db),
     listMilestones(db, campaign.id),
     listAllUpdates(db, campaign.id),
@@ -86,7 +113,9 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
     loadEditorAccounts(db, session.user.id, campaign.id, campaign.status, campaign.type).catch(() => null),
     // Reward tiers of a back campaign (DOS/Give#83); a failed read degrades its section only.
     isGive ? Promise.resolve(null) : listCampaignTiers(db, campaign.id).catch(() => null),
+    loadYoutubeVideo(db, campaign.id).catch(() => null),
   ])
+  const youtubeVideo = youtubeState?.video ?? null
   const editable = isEditableStatus(campaign.status)
   const submitBlocked = accounts?.submitBlocked ?? null
   const showUpdates = canPostUpdate(campaign.status) && !editable && campaign.status !== "in_review"
@@ -98,6 +127,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
     showMoney && { id: "money", label: "Sao kê và giải trình chi" },
     { id: "content", label: "Nội dung" },
     { id: "cover-image", label: "Ảnh bìa" },
+    { id: "pitch-video", label: "Video giới thiệu" },
     { id: "milestones", label: "Các mốc mục tiêu" },
     !isGive && { id: "reward-tiers", label: "Phần thưởng" },
     showUpdates && { id: "updates", label: "Cập nhật" },
@@ -505,6 +535,84 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
           </Panel>
 
           <Panel
+            id="pitch-video"
+            title="Video giới thiệu"
+            description="Video YouTube hiện trên trang chiến dịch và chỉ tải từ YouTube khi người xem bấm phát."
+          >
+            {!youtubeState ? (
+              <Callout tone="danger">Không tải được video giới thiệu. Hãy tải lại trang.</Callout>
+            ) : (
+              <div className="max-w-160 space-y-6">
+                {youtubeVideo ? (
+                  <div className="space-y-1">
+                    <p className="text-fg">
+                      Video hiện tại:{" "}
+                      <a
+                        href={`https://www.youtube.com/watch?v=${youtubeVideo.youtube_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="link break-all"
+                      >
+                        https://www.youtube.com/watch?v={youtubeVideo.youtube_id}
+                      </a>
+                    </p>
+                    {youtubeVideo.alt && <p className="text-sm break-words text-muted">Mô tả: {youtubeVideo.alt}</p>}
+                  </div>
+                ) : (
+                  !editable && <p className="text-muted">Chiến dịch không có video giới thiệu.</p>
+                )}
+
+                {editable && (
+                  <ActionForm action={saveYoutubeVideo.bind(null, campaign.id)} className="space-y-6">
+                    <div
+                      key={youtubeVideo ? `${youtubeVideo.youtube_id}:${youtubeVideo.alt ?? ""}` : "empty"}
+                      className="space-y-6"
+                    >
+                      <Field
+                        htmlFor="youtube_id"
+                        label="Liên kết hoặc mã video YouTube"
+                        hintId="youtube_id_hint"
+                        hint="Dán liên kết YouTube (youtu.be, youtube.com/watch, shorts, embed) hoặc mã video 11 ký tự."
+                      >
+                        <input
+                          id="youtube_id"
+                          name="youtube_id"
+                          className="field"
+                          required
+                          aria-describedby="youtube_id_hint"
+                          placeholder="https://www.youtube.com/watch?v=..."
+                          defaultValue={
+                            youtubeVideo ? `https://www.youtube.com/watch?v=${youtubeVideo.youtube_id}` : ""
+                          }
+                        />
+                      </Field>
+                      <Field htmlFor="youtube_alt" label="Mô tả video (không bắt buộc)">
+                        <input
+                          id="youtube_alt"
+                          name="alt"
+                          className="field"
+                          maxLength={200}
+                          defaultValue={youtubeVideo?.alt ?? ""}
+                        />
+                      </Field>
+                    </div>
+                    <SubmitButton className={buttonClass({ variant: "secondary" })}>Lưu video</SubmitButton>
+                  </ActionForm>
+                )}
+
+                {editable && youtubeVideo && (
+                  <ActionForm
+                    action={removeYoutubeVideo.bind(null, campaign.id)}
+                    confirm="Gỡ video giới thiệu khỏi chiến dịch?"
+                  >
+                    <SubmitButton className={buttonClass({ variant: "danger" })}>Gỡ video</SubmitButton>
+                  </ActionForm>
+                )}
+              </div>
+            )}
+          </Panel>
+
+          <Panel
             id="milestones"
             title="Các mốc mục tiêu"
             description={milestones.length === 0 ? undefined : "Mốc giúp người ủng hộ thấy tiền sẽ làm được gì."}
@@ -512,24 +620,52 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             {milestones.length > 0 ? (
               <ol className="divide-y divide-border rounded-md border border-border">
                 {milestones.map((milestone) => (
-                  <li key={milestone.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 p-4">
-                    <div className="min-w-0 flex-1 basis-56">
-                      <p className="font-semibold break-words text-fg">{milestone.title}</p>
-                      {milestone.description && <p className="mt-1 break-words text-fg">{milestone.description}</p>}
+                  <li key={milestone.id} className="min-w-0 space-y-3 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                      <div className="min-w-0 flex-1 basis-56">
+                        <p className="font-semibold break-words text-fg">{milestone.title}</p>
+                        {milestone.description && (
+                          <p className="mt-1 max-w-[68ch] break-words whitespace-pre-line text-fg">
+                            {milestone.description}
+                          </p>
+                        )}
+                        {milestone.unlock_note && (
+                          <p className="mt-1 max-w-[68ch] text-sm break-words whitespace-pre-line text-muted">
+                            <span className="font-medium text-fg">Khi đạt mốc:</span> {milestone.unlock_note}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="figure">{formatVnd(milestone.target_amount)}</span>
+                        {editable && (
+                          <ActionForm
+                            action={deleteMilestone.bind(null, campaign.id, milestone.id)}
+                            confirm={`Xóa mốc “${milestone.title}”?`}
+                          >
+                            <SubmitButton className={buttonClass({ variant: "danger", size: "sm" })}>
+                              Xóa<span className="sr-only"> mốc {milestone.title}</span>
+                            </SubmitButton>
+                          </ActionForm>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="figure">{formatVnd(milestone.target_amount)}</span>
-                      {editable && (
+                    {editable && (
+                      <details className="group">
+                        <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 link [&::-webkit-details-marker]:hidden">
+                          Sửa mốc<span className="sr-only">: {milestone.title}</span>
+                          <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
+                        </summary>
                         <ActionForm
-                          action={deleteMilestone.bind(null, campaign.id, milestone.id)}
-                          confirm={`Xóa mốc “${milestone.title}”?`}
+                          action={updateMilestone.bind(null, campaign.id, milestone.id)}
+                          className="mt-3 max-w-160 space-y-6"
                         >
-                          <SubmitButton className={buttonClass({ variant: "danger", size: "sm" })}>
-                            Xóa<span className="sr-only"> mốc {milestone.title}</span>
+                          <MilestoneFields prefix={`milestone_${milestone.id}`} milestone={milestone} />
+                          <SubmitButton className={buttonClass({ variant: "secondary" })}>
+                            Lưu mốc<span className="sr-only">: {milestone.title}</span>
                           </SubmitButton>
                         </ActionForm>
-                      )}
-                    </div>
+                      </details>
+                    )}
                   </li>
                 ))}
               </ol>
@@ -540,36 +676,11 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               <ActionForm
                 action={addMilestone.bind(null, campaign.id)}
                 resetOnSuccess
-                className="mt-6 grid max-w-160 gap-6 border-t border-border pt-6 sm:grid-cols-2 [&>*]:min-w-0"
+                className="mt-6 max-w-160 space-y-6 border-t border-border pt-6"
               >
-                <h3 className="text-h3 sm:col-span-2">Thêm mốc</h3>
-                <div>
-                  <label htmlFor="milestone_title" className="label">
-                    Tên mốc
-                  </label>
-                  <input id="milestone_title" name="title" className="field" required minLength={2} maxLength={120} />
-                </div>
-                <div>
-                  <label htmlFor="milestone_target" className="label">
-                    Số tiền (₫)
-                  </label>
-                  <input
-                    id="milestone_target"
-                    name="target_amount"
-                    className="field tabular-nums"
-                    inputMode="numeric"
-                    required
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label htmlFor="milestone_description" className="label">
-                    Mô tả (không bắt buộc)
-                  </label>
-                  <input id="milestone_description" name="description" className="field" maxLength={2000} />
-                </div>
-                <div>
-                  <SubmitButton className={buttonClass({ variant: "secondary" })}>Thêm mốc</SubmitButton>
-                </div>
+                <h3 className="text-h3">Thêm mốc</h3>
+                <MilestoneFields prefix="milestone" milestone={null} />
+                <SubmitButton className={buttonClass({ variant: "secondary" })}>Thêm mốc</SubmitButton>
               </ActionForm>
             )}
           </Panel>
@@ -977,6 +1088,65 @@ function AccountSwapBlock({
           <SubmitButton className={buttonClass()}>Gửi yêu cầu đổi tài khoản</SubmitButton>
         </ActionForm>
       )}
+    </div>
+  )
+}
+
+function MilestoneFields({ prefix, milestone }: { prefix: string; milestone: Milestone | null }) {
+  const unlockHintId = `${prefix}_unlock_note_hint`
+  const fieldKey = milestone
+    ? `${milestone.title}:${milestone.target_amount}:${milestone.description ?? ""}:${milestone.unlock_note ?? ""}`
+    : "new"
+  return (
+    <div key={fieldKey} className="space-y-6">
+      <div className="grid gap-6 sm:grid-cols-2 [&>*]:min-w-0">
+        <Field htmlFor={`${prefix}_title`} label="Tên mốc">
+          <input
+            id={`${prefix}_title`}
+            name="title"
+            className="field"
+            required
+            minLength={2}
+            maxLength={120}
+            defaultValue={milestone?.title ?? ""}
+          />
+        </Field>
+        <Field htmlFor={`${prefix}_target`} label="Số tiền (₫)">
+          <input
+            id={`${prefix}_target`}
+            name="target_amount"
+            className="field tabular-nums"
+            inputMode="numeric"
+            required
+            defaultValue={milestone ? String(milestone.target_amount) : ""}
+          />
+        </Field>
+      </div>
+      <Field htmlFor={`${prefix}_description`} label="Mô tả (không bắt buộc)">
+        <input
+          id={`${prefix}_description`}
+          name="description"
+          className="field"
+          maxLength={2000}
+          defaultValue={milestone?.description ?? ""}
+        />
+      </Field>
+      <Field
+        htmlFor={`${prefix}_unlock_note`}
+        label="Ghi chú khi đạt mốc (không bắt buộc)"
+        hintId={unlockHintId}
+        hint="Tối đa 500 ký tự, hiện công khai trên trang chiến dịch khi đạt mốc này."
+      >
+        <textarea
+          id={`${prefix}_unlock_note`}
+          name="unlock_note"
+          className="field"
+          rows={2}
+          maxLength={500}
+          aria-describedby={unlockHintId}
+          defaultValue={milestone?.unlock_note ?? ""}
+        />
+      </Field>
     </div>
   )
 }
