@@ -3,7 +3,7 @@ import "server-only"
 /**
  * How the outbox hands an email to a provider. The send-outbox job only
  * needs `send`; the provider (DOS.Me's AWS SES, DOS/Give#254) is chosen in
- * `transportFromEnv`.
+ * `emailSettingsFromEnv` (provider.ts).
  */
 
 export interface OutgoingEmail {
@@ -25,6 +25,12 @@ export type SendResult =
 
 export interface EmailTransport {
   send(email: OutgoingEmail): Promise<SendResult>
-  /** Drops open connections at the end of a run (or after a timed-out send). */
+  /** Closes idle connections at the end of a run. */
   close?(): void
+  /**
+   * Cuts off every connection at once, including one that is mid-send: after
+   * a send times out, so the message cannot still be delivered later while
+   * the outbox has recorded a failure.
+   */
+  abort?(): void
 }

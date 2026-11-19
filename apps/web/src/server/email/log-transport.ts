@@ -63,5 +63,9 @@ export function allowlistTransport(
       real.close?.()
       fallback.close?.()
     },
+    abort: () => {
+      real.abort?.()
+      fallback.abort?.()
+    },
   }
 }

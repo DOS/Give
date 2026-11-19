@@ -14,7 +14,8 @@ vi.mock("./smtp", () => ({
   },
 }))
 
-const { emailDelivery, emailLinkOrigin, emailSettingsFromEnv, isSenderAddress } = await import("./provider")
+const { emailDelivery, emailLinkOrigin, emailSettingsFromEnv, isSenderAddress, usesProductionDatabase } =
+  await import("./provider")
 
 const CREDS = { SMTP_USER: "AKIAEXAMPLE", SMTP_PASS: "not-a-real-password" }
 const BETA = { VERCEL_ENV: "preview", EMAIL_LINK_ORIGIN: "https://beta.give.vn/some/path" }
@@ -83,6 +84,13 @@ describe("emailSettingsFromEnv", () => {
     expect(emailSettingsFromEnv(PROD)).toEqual({ ok: false, missing: ["SMTP_USER", "SMTP_PASS"] })
   })
 
+  it("in Production refuses the log transport, which would mark every real email sent", () => {
+    expect(emailSettingsFromEnv({ ...PROD, ...CREDS, EMAIL_DELIVERY: "log" })).toEqual({
+      ok: false,
+      missing: ["EMAIL_DELIVERY_LOG_IN_PRODUCTION"],
+    })
+  })
+
   it("refuses a sender with a line break, a bad port, and a missing link origin", () => {
     expect(emailSettingsFromEnv({ ...BETA, EMAIL_FROM: "Give <a@give.vn>\r\nBcc: x@y.z" })).toMatchObject({
       ok: false,
@@ -107,6 +115,19 @@ describe("emailLinkOrigin", () => {
     expect(emailLinkOrigin(PROD)).toBe("https://give.vn")
     expect(emailLinkOrigin({ VERCEL_ENV: "preview" })).toBeNull()
   })
+
+  it("in Production refuses a link origin that is not https", () => {
+    expect(emailLinkOrigin({ ...PROD, EMAIL_LINK_ORIGIN: "http://give.vn" })).toBeNull()
+    expect(emailLinkOrigin({ ...PROD, NEXT_PUBLIC_SITE_URL: "http://give.vn" })).toBeNull()
+    expect(emailLinkOrigin({ ...PROD, EMAIL_LINK_ORIGIN: "https://give.vn/x" })).toBe("https://give.vn")
+    expect(emailLinkOrigin({ VERCEL_ENV: "preview", EMAIL_LINK_ORIGIN: "http://localhost:3000" })).toBe(
+      "http://localhost:3000"
+    )
+    expect(emailSettingsFromEnv({ ...PROD, ...CREDS, NEXT_PUBLIC_SITE_URL: "http://give.vn" })).toEqual({
+      ok: false,
+      missing: ["EMAIL_LINK_ORIGIN"],
+    })
+  })
 })
 
 describe("a deployment outside Production on the Production database", () => {
@@ -122,6 +143,22 @@ describe("a deployment outside Production on the Production database", () => {
       emailSettingsFromEnv({ ...BETA, NEXT_PUBLIC_SUPABASE_URL: "https://oyajkbadsykigtfrpdpg.supabase.co" })
     ).toMatchObject({
       ok: true,
+    })
+  })
+
+  it("knows the Production database by its vanity domain too", () => {
+    for (const url of [
+      "https://dos.supabase.co",
+      "https://DOS.supabase.co/",
+      "https://gulptwduchsjcsbndmua.supabase.co",
+    ]) {
+      expect(usesProductionDatabase({ NEXT_PUBLIC_SUPABASE_URL: url }), url).toBe(true)
+    }
+    expect(usesProductionDatabase({ NEXT_PUBLIC_SUPABASE_URL: "https://oyajkbadsykigtfrpdpg.supabase.co" })).toBe(false)
+    expect(usesProductionDatabase({ NEXT_PUBLIC_SUPABASE_URL: "http://127.0.0.1:54321" })).toBe(false)
+    expect(emailSettingsFromEnv({ ...BETA, NEXT_PUBLIC_SUPABASE_URL: "https://dos.supabase.co" })).toMatchObject({
+      ok: false,
+      missing: ["NON_PRODUCTION_DEPLOYMENT_ON_PRODUCTION_DATABASE"],
     })
   })
 })

@@ -11,14 +11,29 @@ import type { EmailTransport, OutgoingEmail } from "./transport"
  * give.complete_outbox, which retries with backoff and marks a row dead
  * after its last attempt. A row is leased for 5 minutes, so a run that dies
  * mid-send leaves it to the next run, never to two runs at once.
+ *
+ * Delivery is at least once, not exactly once. Enqueueing is exactly once
+ * (one row per event), but a row is sent again when the provider took the
+ * message and its answer never reached us: a send that timed out (recorded
+ * as outcome unknown and retried only after an hour or more), or a result
+ * that could not be recorded (complete_outbox is retried a few times, then
+ * the lease runs out and the next run sends the row again). The recipient
+ * may then get the same email twice.
  */
 
 /** Rows leased per claim; small, so a slow provider leaves few rows waiting on their lease. */
 export const CLAIM_BATCH = 10
 /** Stop claiming after this long. */
 export const RUN_BUDGET_MS = 30_000
-/** One send may take this long before it counts as a failed attempt. */
+/**
+ * One send may take this long. Then its connection is cut off and the
+ * attempt is recorded as outcome unknown: the provider may have accepted the
+ * message just before.
+ */
 export const SEND_TIMEOUT_MS = 15_000
+/** Tries at recording one result before leaving the row to its lease. */
+export const COMPLETE_TRIES = 3
+const COMPLETE_RETRY_MS = [250, 1_000]
 /**
  * No send starts unless it can time out by this point, well inside the 60 s
  * function limit (route maxDuration). Rows the run cannot reach in time are
@@ -74,9 +89,11 @@ function senderDomain(from: string): string {
 export function outgoingEmail(row: OutboxEmail, options: OutboxRunOptions): OutgoingEmail {
   const rendered = renderEmail(row, options.origin)
   const headers: Record<string, string> = {
-    // One Message-ID per outbox row: a resend after a lost result is the
-    // same message to mail clients that drop duplicates.
+    // Our Message-ID for the row. SES replaces it with its own on the way
+    // out, so it does not let mail clients drop a resend; X-Give-Outbox-Id
+    // is the header that survives and ties a delivered email to its row.
     "Message-ID": `<outbox-${row.id}@${senderDomain(options.from)}>`,
+    "X-Give-Outbox-Id": row.id,
     "Auto-Submitted": "auto-generated",
   }
   if (rendered.oneClickUnsubscribeUrl) {
@@ -108,25 +125,30 @@ function errorText(error: string, row: OutboxEmail): string {
   return error.replaceAll(row.to_email, "[recipient]").slice(0, 300)
 }
 
-async function complete(
-  db: Db,
-  row: OutboxEmail,
-  result: { ok: true; messageId: string | null } | { ok: false; permanent: boolean; error: string }
-): Promise<string | null> {
-  const { data, error } = await db.rpc("complete_outbox", {
+type Result =
+  { ok: true; messageId: string | null } | { ok: false; permanent: boolean; error: string; outcomeUnknown?: boolean }
+
+const pause = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+async function complete(db: Db, row: OutboxEmail, result: Result): Promise<string | null> {
+  const args = {
     p_id: row.id,
     p_attempt: row.attempt,
     p_ok: result.ok,
     p_error: result.ok ? null : errorText(result.error, row),
     p_provider_message_id: result.ok ? result.messageId : null,
     p_permanent: result.ok ? false : result.permanent,
-  })
-  if (error) {
-    // The lease runs out and the next run takes the row again.
-    console.error("complete_outbox failed", row.id, error.code, error.message)
-    return null
+    p_outcome_unknown: result.ok ? false : result.outcomeUnknown === true,
   }
-  return typeof data === "string" ? data : null
+  for (let tryNo = 1; tryNo <= COMPLETE_TRIES; tryNo++) {
+    const { data, error } = await db.rpc("complete_outbox", args)
+    if (!error) return typeof data === "string" ? data : null
+    console.error("complete_outbox failed", row.id, tryNo, error.code, error.message)
+    if (tryNo < COMPLETE_TRIES) await pause(COMPLETE_RETRY_MS[tryNo - 1] ?? 1_000)
+  }
+  // The lease runs out and the next run takes the row again: a sent email
+  // goes out a second time.
+  return null
 }
 
 type SendOutcome = { status: string | null; timedOut: boolean }
@@ -149,13 +171,25 @@ async function sendOne(
       timedOut: false,
     }
   }
-  let result: Awaited<ReturnType<EmailTransport["send"]>>
+  let result: Result
   let timedOut = false
   try {
     result = await withTimeout(transport.send(email), SEND_TIMEOUT_MS)
   } catch (error) {
     timedOut = error instanceof Error && error.message === "send_timeout"
-    result = { ok: false, permanent: false, error: error instanceof Error ? error.message : "send_failed" }
+    if (timedOut) {
+      // Cut the connection now, before recording anything, so a message
+      // still in flight cannot land after the failure is on the row.
+      transport.abort?.()
+      result = {
+        ok: false,
+        permanent: false,
+        outcomeUnknown: true,
+        error: "send_timeout: outcome unknown, the provider may have accepted it",
+      }
+    } else {
+      result = { ok: false, permanent: false, error: error instanceof Error ? error.message : "send_failed" }
+    }
   }
   if (!result.ok) console.warn("outbox send failed", row.id, row.kind, result.permanent ? "permanent" : "retry")
   return { status: await complete(db, row, result), timedOut }
@@ -173,9 +207,9 @@ async function release(db: Db, rows: OutboxEmail[]): Promise<number> {
 
 /**
  * One send-outbox run. Throws only when the first claim fails. After a send
- * times out the run stops and gives back the rest of its batch: the
- * provider may be stuck, and the transport is closed so the timed-out
- * connection is dropped rather than left to finish later.
+ * times out its connection is cut off (transport.abort), the attempt is
+ * recorded as outcome unknown, and the run stops and gives back the rest of
+ * its batch: the provider may be stuck.
  */
 export async function sendDueEmails(
   db: Db,

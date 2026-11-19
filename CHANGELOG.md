@@ -448,7 +448,10 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   one-click `List-Unsubscribe`). No images or tracking pixels. Outside
   Production a log transport mails nobody unless `EMAIL_DELIVERY=smtp`, and
   then only `EMAIL_ALLOWLIST`; in Production sending waits for the SES
-  credentials (#254 / #257).
+  credentials, and `EMAIL_DELIVERY=log` is refused there. Delivery is at
+  least once: each event queues exactly one email, but a send whose result
+  was lost, or that timed out (its connection is cut off and it waits an
+  hour before the next attempt), can reach the recipient twice (#254 / #257).
 - Contact: Give staff are reached at `hi@give.vn` (Give's own domain; it
   replaced the first choice, DOS.Me's `help@dos.me`), kept in one constant
   (`apps/web/src/lib/contact.ts`). The site footer shows
@@ -473,9 +476,11 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 - Email outbox: `give.outbox` (unique idempotency key, lease, attempts,
   backoff, dead), `give.email_suppressions`, `give.contribution_access_tokens`;
   enqueue triggers on `contributions`, `notices` and `campaign_status_events`;
-  `give.claim_outbox`, `give.complete_outbox`, `give.retry_outbox` (admin,
-  audited), `give.unsubscribe_email`, `give.enqueue_email`. RLS on, service
-  role only (#254 / DOS/DOS.Me#1782). Migration
+  `give.claim_outbox` (records the address it sends to),
+  `give.complete_outbox` (an outcome-unknown timeout waits at least an hour),
+  `give.release_outbox`, `give.retry_outbox` (admin, audited),
+  `give.unsubscribe_email` (suppresses the address the email went to),
+  `give.enqueue_email`. RLS on, service role only (#254 / DOS/DOS.Me#1782). Migration
   `20261123090000_give_email_outbox`.
 - Finance can read why a bank transaction was refused:
   `give.bank_transaction_refusal_reasons(uuid[])`, finance and admin only,

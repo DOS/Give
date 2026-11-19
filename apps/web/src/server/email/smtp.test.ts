@@ -1,4 +1,6 @@
+import { EventEmitter } from "node:events"
 import { readdirSync, readFileSync, statSync } from "node:fs"
+import type { Socket } from "node:net"
 import { join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -18,7 +20,7 @@ vi.mock("nodemailer", () => ({
   },
 }))
 
-const { createSmtpTransport, sesMessageId, smtpFailure } = await import("./smtp")
+const { createSmtpTransport, sesMessageId, smtpFailure, socketTracker } = await import("./smtp")
 
 const CONFIG = { host: "email-smtp.ap-southeast-1.amazonaws.com", port: 587, user: "u", pass: "p" }
 const EMAIL = {
@@ -42,6 +44,7 @@ describe("createSmtpTransport", () => {
     const result = await createSmtpTransport(CONFIG).send(EMAIL)
     expect(result).toEqual({ ok: true, messageId: "0100019a-abc" })
     expect(mailer.options[0]).toMatchObject({ host: CONFIG.host, port: 587, secure: false, requireTLS: true })
+    expect((mailer.options[0] as { getSocket?: unknown }).getSocket).toBeTypeOf("function")
     expect(mailer.sendMail.mock.calls[0][0]).toMatchObject({
       to: "mai@example.com",
       messageId: "<outbox-1@give.vn>",
@@ -68,13 +71,17 @@ describe("createSmtpTransport", () => {
 
 describe("smtpFailure", () => {
   it.each([
-    [550, true],
-    [553, true],
-    [535, false],
-    [554, false],
-    [421, false],
-  ])("SMTP %i is permanent: %s", (code, permanent) => {
-    expect(smtpFailure({ responseCode: code, response: `${code} x` }).permanent).toBe(permanent)
+    ["EENVELOPE", "RCPT TO", 550, true],
+    ["EENVELOPE", "RCPT TO", 553, true],
+    ["EENVELOPE", "RCPT TO", 452, false],
+    ["EENVELOPE", "MAIL FROM", 550, false],
+    ["EENVELOPE", "DATA", 554, false],
+    ["EMESSAGE", "DATA", 554, false],
+    [undefined, undefined, 550, false],
+    ["EAUTH", "AUTH PLAIN", 535, false],
+    [undefined, undefined, 421, false],
+  ])("%s at %s with %i is permanent: %s", (code, command, responseCode, permanent) => {
+    expect(smtpFailure({ code, command, responseCode, response: `${responseCode} x` }).permanent).toBe(permanent)
   })
 
   it("names connection errors without a reply code", () => {
@@ -94,17 +101,97 @@ describe("sesMessageId", () => {
   })
 })
 
+class FakeSocket extends EventEmitter {
+  destroyed = false
+  destroy() {
+    this.destroyed = true
+    this.emit("close")
+    return this
+  }
+}
+
+describe("socketTracker", () => {
+  const tracked = () => {
+    const sockets: FakeSocket[] = []
+    const tracker = socketTracker(CONFIG, () => {
+      const socket = new FakeSocket()
+      sockets.push(socket)
+      return socket as unknown as Socket
+    })
+    return { tracker, sockets }
+  }
+
+  it("hands nodemailer the socket once connected, and abort cuts it off mid-send", () => {
+    const { tracker, sockets } = tracked()
+    const callback = vi.fn()
+    tracker.getSocket({}, callback)
+    sockets[0].emit("connect")
+    expect(callback).toHaveBeenCalledWith(null, { connection: sockets[0] })
+    expect(tracker.openCount).toBe(1)
+    tracker.abort()
+    expect(sockets[0].destroyed).toBe(true)
+    expect(tracker.openCount).toBe(0)
+  })
+
+  it("fails a connection that errors or does not open in time", () => {
+    vi.useFakeTimers()
+    try {
+      const { tracker, sockets } = tracked()
+      const failed = vi.fn()
+      tracker.getSocket({}, failed)
+      sockets[0].emit("error", new Error("ECONNREFUSED"))
+      expect(failed).toHaveBeenCalledWith(expect.objectContaining({ message: "ECONNREFUSED" }))
+      expect(sockets[0].destroyed).toBe(true)
+
+      const slow = vi.fn()
+      tracker.getSocket({}, slow)
+      vi.advanceTimersByTime(10_000)
+      expect(slow).toHaveBeenCalledWith(expect.objectContaining({ code: "ETIMEDOUT" }))
+      expect(sockets[1].destroyed).toBe(true)
+      sockets[1].emit("connect")
+      expect(slow).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
+
+/** Any static, dynamic or require import of nodemailer or a subpath of it. */
+const NODEMAILER_IMPORT = /(from\s+|import\s*\(\s*|require\s*\(\s*)["']nodemailer(\/[^"']*)?["']/
+
+/** A "use client" directive, allowing comments and blank lines before it. */
+function isClientModule(source: string): boolean {
+  const body = source.replace(/^(\s|\/\/[^\n]*\n|\/\*[\s\S]*?\*\/)*/, "")
+  return /^["']use client["']/.test(body)
+}
+
+describe("the import guard itself", () => {
+  it.each([
+    'import nodemailer from "nodemailer"',
+    "const m = await import('nodemailer')",
+    'import SMTPPool from "nodemailer/lib/smtp-pool"',
+    'const m = require ( "nodemailer" )',
+  ])("catches %s", (line) => {
+    expect(NODEMAILER_IMPORT.test(line)).toBe(true)
+  })
+
+  it("finds a use client directive after leading comments", () => {
+    expect(isClientModule('// a note\n/* block\n */\n\n"use client"\n')).toBe(true)
+    expect(isClientModule('import x from "y"\n"use client"')).toBe(false)
+  })
+})
+
 describe("nodemailer stays on the server", () => {
   const src = fileURLToPath(new URL("../..", import.meta.url))
   const files = (dir: string): string[] =>
     readdirSync(dir).flatMap((name) => {
       const path = join(dir, name)
       if (statSync(path).isDirectory()) return files(path)
-      return /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : []
+      return /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(name) && !/\.test\.[cm]?[jt]sx?$/.test(name) ? [path] : []
     })
 
   it("is imported only by server/email/smtp.ts, which is server-only", () => {
-    const importers = files(src).filter((f) => /from\s+["']nodemailer["']/.test(readFileSync(f, "utf8")))
+    const importers = files(src).filter((f) => NODEMAILER_IMPORT.test(readFileSync(f, "utf8")))
     expect(importers.map((f) => relative(src, f))).toEqual([join("server", "email", "smtp.ts")])
     expect(readFileSync(importers[0], "utf8")).toMatch(/^import "server-only"/)
   })
@@ -114,7 +201,8 @@ describe("nodemailer stays on the server", () => {
     for (const name of reach) {
       expect(readFileSync(join(src, "server", "email", name), "utf8"), name).toMatch(/^import "server-only"/)
     }
-    const clientFiles = files(src).filter((f) => /^["']use client["']/.test(readFileSync(f, "utf8")))
+    const clientFiles = files(src).filter((f) => isClientModule(readFileSync(f, "utf8")))
+    expect(clientFiles.length).toBeGreaterThan(0)
     for (const f of clientFiles) {
       expect(readFileSync(f, "utf8"), relative(src, f)).not.toMatch(/server\/email|nodemailer/)
     }

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
-import { CLAIM_BATCH, SEND_DEADLINE_MS, SEND_TIMEOUT_MS, sendDueEmails } from "./outbox"
+import { CLAIM_BATCH, COMPLETE_TRIES, SEND_DEADLINE_MS, SEND_TIMEOUT_MS, sendDueEmails } from "./outbox"
 import type { EmailTransport, OutgoingEmail, SendResult } from "./transport"
 
 const OPTIONS = { origin: "https://give.vn", from: "Give <no-reply@give.vn>", replyTo: "hi@give.vn" }
@@ -73,6 +73,7 @@ describe("sendDueEmails", () => {
       idempotencyKey: "campaign_status_event:1",
     })
     expect(sent[0].headers["Message-ID"]).toBe(`<outbox-${row(1).id}@give.vn>`)
+    expect(sent[0].headers["X-Give-Outbox-Id"]).toBe(row(1).id)
     expect(sent[0].headers["List-Unsubscribe"]).toBeUndefined()
     expect(completes()).toEqual([
       {
@@ -82,6 +83,7 @@ describe("sendDueEmails", () => {
         p_error: null,
         p_provider_message_id: "ses-1",
         p_permanent: false,
+        p_outcome_unknown: false,
       },
     ])
   })
@@ -133,19 +135,32 @@ describe("sendDueEmails", () => {
     expect(completes()[0]).toMatchObject({ p_ok: false, p_permanent: true, p_error: "render: unknown_kind:marketing" })
   })
 
-  it("counts a stale result and keeps going when recording fails", async () => {
-    claims = [[row(6), row(7)]]
-    let n = 0
-    const db = fakeDb((call) => {
-      if (call.target === "rpc:complete_outbox") {
-        n += 1
-        return n === 1 ? { error: { code: "57014", message: "timeout" } } : { data: "stale" }
-      }
-      return handler(call)
-    }, calls)
-    const outcome = await sendDueEmails(db as never, transport, OPTIONS)
-    expect(outcome).toEqual({ claimed: 2, sent: 0, retrying: 0, dead: 0, stale: 1, released: 0 })
-    expect(sent).toHaveLength(2)
+  it("tries again to record a result, then leaves the row to its lease and keeps going", async () => {
+    vi.useFakeTimers()
+    try {
+      claims = [[row(6), row(7), row(9)]]
+      const failing = new Set([row(6).id])
+      let flaky = 0
+      const db = fakeDb((call) => {
+        if (call.target === "rpc:complete_outbox") {
+          const id = (op(call, "args")?.[0] as { p_id: string }).p_id
+          if (failing.has(id)) return { error: { code: "57014", message: "timeout" } }
+          if (id === row(9).id && flaky++ === 0) return { error: { code: "08006", message: "reset" } }
+          return { data: id === row(7).id ? "stale" : "sent" }
+        }
+        return handler(call)
+      }, calls)
+      const run = sendDueEmails(db as never, transport, OPTIONS)
+      await vi.runAllTimersAsync()
+      const outcome = await run
+      expect(outcome).toEqual({ claimed: 3, sent: 1, retrying: 0, dead: 0, stale: 1, released: 0 })
+      expect(sent).toHaveLength(3)
+      const tries = (id: string) => completes().filter((a) => (a as { p_id: string }).p_id === id).length
+      expect(tries(row(6).id)).toBe(COMPLETE_TRIES)
+      expect(tries(row(9).id)).toBe(2)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("claims again while batches come back full, and stops at the time budget", async () => {
@@ -195,17 +210,35 @@ describe("sendDueEmails", () => {
     expect(transport.close).toHaveBeenCalledTimes(1)
   })
 
-  it("stops after a send times out: that attempt fails, the rest of the batch goes back", async () => {
+  it("after a send times out: cuts the connection first, records outcome unknown, gives back the rest", async () => {
     vi.useFakeTimers()
     try {
-      const stuck: EmailTransport = { send: () => new Promise(() => {}), close: vi.fn() }
+      const order: string[] = []
+      const stuck: EmailTransport = {
+        send: () => new Promise(() => {}),
+        close: vi.fn(),
+        abort: vi.fn(() => {
+          order.push("abort")
+        }),
+      }
       claims = [[row(80), row(81)]]
       completeStatus = "pending"
-      const run = sendDueEmails(fakeDb(handler, calls) as never, stuck, { ...OPTIONS, now: () => 0 })
+      const db = fakeDb((call) => {
+        if (call.target === "rpc:complete_outbox") order.push("complete")
+        return handler(call)
+      }, calls)
+      const run = sendDueEmails(db as never, stuck, { ...OPTIONS, now: () => 0 })
       await vi.advanceTimersByTimeAsync(SEND_TIMEOUT_MS)
       const outcome = await run
       expect(outcome).toMatchObject({ claimed: 2, retrying: 1, released: 1 })
-      expect(completes()[0]).toMatchObject({ p_id: row(80).id, p_ok: false, p_error: "send_timeout" })
+      expect(order).toEqual(["abort", "complete"])
+      expect(completes()[0]).toMatchObject({
+        p_id: row(80).id,
+        p_ok: false,
+        p_permanent: false,
+        p_outcome_unknown: true,
+        p_error: expect.stringMatching(/^send_timeout: outcome unknown/),
+      })
       expect(calls.filter((c) => c.target === "rpc:claim_outbox")).toHaveLength(1)
       expect(stuck.close).toHaveBeenCalled()
     } finally {

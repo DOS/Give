@@ -20,6 +20,7 @@ function email(overrides: Partial<OutboxEmail> = {}): OutboxEmail {
       campaign_type: "give",
       reference_code: "GVABCDEFG",
       received_amount: 300000,
+      asset: "VND",
       guest: true,
     },
     attempt: 1,
@@ -43,6 +44,14 @@ describe("renderEmail: donation_received", () => {
     expect(r.unsubscribeUrl).toBeNull()
     expect(r.oneClickUnsubscribeUrl).toBeNull()
     expect(r.text).not.toContain("Hủy đăng ký")
+  })
+
+  it("states the amount only for a transfer in đồng", () => {
+    for (const asset of ["USDT", undefined]) {
+      const r = renderEmail(email({ payload: { ...email().payload, asset } }), ORIGIN)
+      expect(r.text, String(asset)).not.toContain("300.000")
+      expect(r.text, String(asset)).toContain("khoản chuyển của bạn")
+    }
   })
 
   it("links a guest without a tracking token to the public statement", () => {
@@ -115,7 +124,7 @@ describe("renderEmail: organizer emails", () => {
 
   it.each([
     ["campaign_approved", "Chiến dịch “Nước sạch” đã được duyệt"],
-    ["campaign_changes_requested", "Chiến dịch “Nước sạch” cần chỉnh sửa trước khi được duyệt"],
+    ["campaign_changes_requested", "Chiến dịch của bạn cần chỉnh sửa trước khi được duyệt"],
     ["campaign_suspended", "Chiến dịch “Nước sạch” đang bị tạm dừng"],
   ])("%s links the organizer's campaign page", (kind, subject) => {
     const r = renderEmail(organizer(kind), ORIGIN)

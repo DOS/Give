@@ -15,8 +15,9 @@ export const maxDuration = 60
  * send is retried with backoff and ends 'dead' (shown in /admin/emails)
  * after its last attempt. Outside Production the log transport mails nobody
  * unless real sending is switched on (server/email/provider). In Production
- * without SES credentials the job claims nothing, so queued emails wait
- * instead of being marked sent.
+ * without SES credentials, or with EMAIL_DELIVERY=log, the job claims
+ * nothing, so queued emails wait instead of being marked sent. Delivery is
+ * at least once (see server/email/outbox).
  */
 export async function GET(request: NextRequest) {
   if (!isAuthorizedCron(request.headers.get("authorization"), process.env.CRON_SECRET)) {

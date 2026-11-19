@@ -1,15 +1,18 @@
 import "server-only"
 
+import net, { type Socket } from "node:net"
+
 import nodemailer from "nodemailer"
 
 import type { EmailTransport, OutgoingEmail, SendResult } from "./transport"
 
 /**
  * SMTP to AWS SES, the provider DOS.Me already uses (apps/api EmailService,
- * nodemailer). Only an address the server refused outright counts as
- * permanent; every other failure (timeouts, 4xx, throttling, auth or
- * account problems) is retried by the outbox and ends 'dead' after the
- * last attempt, where an admin can send it again once fixed.
+ * nodemailer). Only a recipient the server refused outright at RCPT TO
+ * counts as permanent; every other failure (timeouts, 4xx, throttling, a
+ * 5xx about the sender, auth or account problems) is retried by the outbox
+ * and ends 'dead' after the last attempt, where an admin can send it again
+ * once fixed.
  */
 
 export interface SmtpConfig {
@@ -19,12 +22,16 @@ export interface SmtpConfig {
   pass: string
 }
 
-/** 5xx replies that mean this recipient or address can never be delivered to. */
-const PERMANENT_CODES = new Set([501, 550, 551, 553])
+/** Opening the TCP connection may take this long (nodemailer's own limit does not apply to a socket we hand it). */
+export const CONNECT_TIMEOUT_MS = 10_000
+
+/** Replies to RCPT TO that mean this address can never be delivered to. */
+const PERMANENT_RCPT_CODES = new Set([501, 550, 551, 553])
 
 interface SmtpError {
   responseCode?: number
   code?: string
+  command?: string
   response?: string
   message?: string
 }
@@ -33,9 +40,10 @@ export function smtpFailure(error: unknown): Extract<SendResult, { ok: false }> 
   const e = (error ?? {}) as SmtpError
   const code = typeof e.responseCode === "number" ? e.responseCode : null
   const detail = (e.response ?? e.message ?? "send_failed").replace(/\s+/g, " ").slice(0, 200)
+  const refusedRecipient = e.code === "EENVELOPE" && e.command === "RCPT TO"
   return {
     ok: false,
-    permanent: code !== null && PERMANENT_CODES.has(code),
+    permanent: refusedRecipient && code !== null && PERMANENT_RCPT_CODES.has(code),
     error: code !== null ? `SMTP ${code}: ${detail}` : `${e.code ?? "SMTP"}: ${detail}`,
   }
 }
@@ -47,7 +55,58 @@ export function sesMessageId(response: unknown, fallback: unknown): string | nul
   return typeof fallback === "string" && fallback !== "" ? fallback : null
 }
 
+type SocketCallback = (err: Error | null, socketOptions?: { connection: Socket }) => void
+
+/**
+ * Opens the connections nodemailer uses and keeps hold of them, so a send
+ * the outbox gave up on can be cut off (`abort`) instead of finishing later:
+ * nodemailer's own close() leaves a connection that is mid-send open until
+ * that message is done.
+ */
+export function socketTracker(
+  config: Pick<SmtpConfig, "host" | "port">,
+  connect: (port: number, host: string) => Socket = (port, host) => net.connect({ port, host }),
+  timeoutMs = CONNECT_TIMEOUT_MS
+) {
+  const open = new Set<Socket>()
+  return {
+    getSocket(_options: unknown, callback: SocketCallback): void {
+      const socket = connect(config.port, config.host)
+      open.add(socket)
+      socket.once("close", () => open.delete(socket))
+      let settled = false
+      const finish = (err: Error | null) => {
+        if (settled) return
+        settled = true
+        clearTimeout(timer)
+        socket.off("error", onError)
+        if (err) {
+          socket.destroy()
+          callback(err)
+        } else {
+          callback(null, { connection: socket })
+        }
+      }
+      const onError = (err: Error) => finish(err)
+      const timer = setTimeout(
+        () => finish(Object.assign(new Error("Connection timeout"), { code: "ETIMEDOUT" })),
+        timeoutMs
+      )
+      socket.once("connect", () => finish(null))
+      socket.once("error", onError)
+    },
+    abort(): void {
+      for (const socket of open) socket.destroy()
+      open.clear()
+    },
+    get openCount(): number {
+      return open.size
+    },
+  }
+}
+
 export function createSmtpTransport(config: SmtpConfig): EmailTransport {
+  const sockets = socketTracker(config)
   const transporter = nodemailer.createTransport({
     // One connection reused for the whole run (closed by the job at its end):
     // a new TLS + AUTH handshake per email to ap-southeast-1 is slow.
@@ -59,12 +118,17 @@ export function createSmtpTransport(config: SmtpConfig): EmailTransport {
     secure: config.port === 465,
     requireTLS: config.port !== 465,
     auth: { user: config.user, pass: config.pass },
-    connectionTimeout: 10_000,
+    getSocket: sockets.getSocket,
+    connectionTimeout: CONNECT_TIMEOUT_MS,
     greetingTimeout: 10_000,
     socketTimeout: 15_000,
   })
   return {
     close: () => transporter.close(),
+    abort: () => {
+      sockets.abort()
+      transporter.close()
+    },
     async send(email: OutgoingEmail): Promise<SendResult> {
       const { "Message-ID": messageId, ...headers } = email.headers
       try {

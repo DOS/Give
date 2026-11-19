@@ -10,6 +10,10 @@ import { SLUG_PATTERN } from "@/lib/slug"
  * styles and a text part; no images, no tracking pixels, no remote content.
  * Everything that comes from a payload (organizer-written titles above all)
  * is escaped. Pledge emails reuse the in-app notice wording (lib/notices).
+ *
+ * A campaign title appears in a subject only once it passed review: an
+ * organizer can edit the title only in draft or changes_requested
+ * (give.is_editable_status), so from approval on it is the approved one.
  */
 
 export const EMAIL_KINDS = [
@@ -102,7 +106,9 @@ const DONATION_CODE = /^GV[0-9A-Z]{6,7}$/
 
 function donationReceived(email: OutboxEmail): Content {
   const p = email.payload
-  const received = amount(p, "received_amount")
+  // The amount is shown only for a transfer in đồng; any other asset (closed
+  // for now, design G2) gets the generic wording rather than a wrong unit.
+  const received = text(p, "asset") === "VND" ? amount(p, "received_amount") : null
   const code = email.reference_code ?? text(p, "reference_code")
   const guest = p?.guest === true
   const paragraphs = [
@@ -235,8 +241,10 @@ function content(email: OutboxEmail): Content {
     }
     case "campaign_changes_requested": {
       const noun = isBack(p) ? "dự án" : "chiến dịch"
+      // The title has not passed review yet (that is what this email is
+      // about), so it stays out of the subject Give signs.
       return {
-        subject: `${capitalize(quoted(p, noun))} cần chỉnh sửa trước khi được duyệt`,
+        subject: `${capitalize(noun)} của bạn cần chỉnh sửa trước khi được duyệt`,
         heading: "Cần chỉnh sửa trước khi duyệt",
         paragraphs: [
           `Người kiểm duyệt của Give đã yêu cầu chỉnh sửa ${quoted(p, noun)}. Xem ghi chú của người kiểm duyệt, sửa ${noun} rồi gửi duyệt lại.`,
