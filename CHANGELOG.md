@@ -14,6 +14,26 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Organizer campaign status and review history: `/me/campaigns/[id]` loads
+  `listStatusEventsByCampaign(db, [campaign.id])` inside `Promise.all` with
+  `.catch(() => new Map())` resilience and renders `<StatusHistory>` inside
+  `#status` (`"Trạng thái"`), replacing `"Không có thao tác nào ở trạng thái
+này."` on non-actionable statuses while sitting cleanly above `"Gửi duyệt"`
+  and `"Hủy chiến dịch"` when status actions are available, with RSC Vitest
+  coverage for rendered transitions and failed `campaign_status_events` reads
+  (#287).
+- Organizer draft campaign updates workflow: `/me/campaigns/[id]` extends
+  `postUpdate` with `intent = "draft" | "publish"` (preserving immediate
+  publish when `intent` is omitted, inserting `published_at: null` across all
+  `canPostUpdate` statuses, and gating immediate publish to approved and
+  public statuses) and adds `updateDraftUpdate`, `publishDraftUpdate` and
+  `deleteDraftUpdate` strictly scoped to `.is("published_at", null)` with
+  organizer and public route revalidations. `#updates` lets organizers prepare,
+  inline-edit (`<details>` `"Sửa bản nháp"`) and delete drafts before
+  approval, places secondary `"Lưu bản nháp"` ahead of primary `"Đăng công
+khai"` once publishable, badges unpublished rows (`Bản nháp`) separately
+  from permanent published dates (`Đã đăng`), and guards publish and delete
+  actions with `confirm` dialogs, with Vitest suites (#281 / #286).
 - Campaign `BreadcrumbList` JSON-LD structured data: public non-preview,
   non-halted `/campaigns/[slug]` views emit a `schema.org` `BreadcrumbList`
   `<script type="application/ld+json">` matching the breadcrumb trail (`Trang
@@ -24,6 +44,16 @@ chủ` -> `Khám phá` -> `Từ thiện` / `Dự án sáng tạo` -> optional
   `</script>` or `<!--` in campaign text cannot break out of the script tag, and
   suppressed on `preview`, `suspended` and `cancelled` views, with Vitest
   coverage (#283 / #285).
+- Admin campaign status and review history disclosure: `StatusHistory` and
+  `listStatusEventsByCampaign` batch-query `give.campaign_status_events` in
+  100-campaign chunks ordered newest-first without selecting `actor_id`,
+  rendering a compact `<details>` timeline (`Lịch sử trạng thái (N)` with
+  `.sr-only` campaign context, `STATUS_LABELS` transitions, Vietnam
+  timestamps and `whitespace-pre-line` review reasons). `/admin` (`#queue`
+  and `#waiting`) and `/admin/reports` (`#unresolved`, with `campaign_id`
+  fallback) load status history with `.catch(() => new Map())` resilience so
+  transient read errors never block moderation queues, with Vitest suites
+  (#282 / #284).
 - Organizer YouTube pitch video editor and inline milestone editing:
   `/me/campaigns/[id]` adds a `#pitch-video` (`"Video giới thiệu"`) panel
   (`saveYoutubeVideo` and `removeYoutubeVideo` validating `youtu.be`,
