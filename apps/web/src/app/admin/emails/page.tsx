@@ -10,13 +10,16 @@ import { isStaff } from "@/lib/campaigns"
 import {
   countEmailsByStatus,
   listDeadEmails,
+  listHeldEmails,
   listRetryingEmails,
   maskEmail,
   OUTBOX_KIND_LABELS,
   OUTBOX_STATUS_LABELS,
+  outboxExpiresAt,
+  outboxMaxAgeDays,
   type OutboxRow,
 } from "@/lib/email-outbox"
-import { formatDateTime } from "@/lib/format"
+import { daysLeft, formatDateTime } from "@/lib/format"
 import { dbAs, dbService } from "@/lib/supabase"
 
 import { AdminPage, AdminSection, DataTable, Fact, Facts, ItemActions, ItemCard, ItemList } from "../_components/ui"
@@ -31,7 +34,8 @@ export default async function AdminEmailsPage() {
   if (!(await isStaff(dbAs(session.accessToken), ["admin"]))) notFound()
 
   const service = dbService()
-  const [dead, retrying, counts] = await Promise.all([
+  const [held, dead, retrying, counts] = await Promise.all([
+    listHeldEmails(service),
     listDeadEmails(service),
     listRetryingEmails(service),
     countEmailsByStatus(service),
@@ -49,6 +53,45 @@ export default async function AdminEmailsPage() {
         </p>
       }
     >
+      {held.total > 0 && (
+        <AdminSection
+          id="held"
+          title="Đang giữ: nhà cung cấp email từ chối mọi email"
+          count={held.total > held.rows.length ? `${held.rows.length} / ${held.total}` : held.total}
+        >
+          <Callout tone="danger" title="Tài khoản gửi email đang bị tắt hoặc chưa được kích hoạt">
+            <p className="text-sm">
+              Nhà cung cấp email từ chối mọi email của Give (lỗi bắt đầu bằng <MachineId>ACCOUNT:</MachineId>), nên Give
+              giữ các email dưới đây và thử lại mỗi giờ mà không tính lượt thử. Email nào quá hạn trước khi tài khoản
+              hoạt động lại sẽ bị bỏ, không gửi nữa: biên nhận và phần lớn email sau{" "}
+              {outboxMaxAgeDays("donation_received")} ngày, nhắc thanh toán sau{" "}
+              {outboxMaxAgeDays("pledge_payment_reminder")} ngày. Chủ tài khoản cần kiểm tra tài khoản ở nhà cung cấp.
+            </p>
+          </Callout>
+          <DataTable
+            label="Email đang giữ"
+            head={["Email", "Người nhận", "Lỗi cuối", "Thử lại lúc", "Bỏ nếu chưa gửi lúc"]}
+          >
+            {held.rows.map((row) => {
+              const expires = outboxExpiresAt(row).toISOString()
+              return (
+                <tr key={row.id}>
+                  <td className="px-4 py-3">{OUTBOX_KIND_LABELS[row.kind] ?? row.kind}</td>
+                  <td className="px-4 py-3 break-all">{recipient(row)}</td>
+                  <td className="max-w-xs px-4 py-3 break-words">
+                    <MachineId className="text-muted">{row.last_error ?? "—"}</MachineId>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap text-muted">{formatDateTime(row.next_attempt_at)}</td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {formatDateTime(expires)} <span className="text-muted">(còn {daysLeft(expires)} ngày)</span>
+                  </td>
+                </tr>
+              )
+            })}
+          </DataTable>
+        </AdminSection>
+      )}
+
       <AdminSection id="summary" title="Tổng quan">
         <DataTable label="Số email theo trạng thái" head={["Trạng thái", "Số email"]}>
           {Object.entries(OUTBOX_STATUS_LABELS).map(([status, label]) => (

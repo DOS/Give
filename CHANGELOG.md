@@ -484,13 +484,24 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Platform
 
+- Email provider: Give sends through SMTP set entirely from env (host, port,
+  login, key), by default Brevo's relay (`smtp-relay.brevo.com:587`,
+  STARTTLS) on the Brevo account and 10k-emails-a-month plan DOS shares,
+  instead of AWS SES. Brevo's two documented account-wide refusals (`450`
+  platform not activated or disabled) hold the email instead of counting an
+  attempt: the run stops, the email waits an hour and never ends dead, and
+  `/admin/emails` lists held emails (`ACCOUNT:` errors) with when each will
+  be dropped at its maximum age. Every other error keeps the normal retry and
+  permanent rules. When credits run out Brevo accepts and queues email on its
+  side, so Give cannot see it; reading the remaining credits is DOS/Give#273.
+  Needs DOS/DOS.Me `give.complete_outbox(..., p_hold)` first (#254).
 - Email outbox (M4): Give sends email through `give.outbox`, filled in the
   same transaction as the event: a donation turning `received` (a receipt to
   the guest's donation email or the donor's account, with a fresh 7-day
   tracking link for guests), pledge `payment_due`, `payment_reminder` and
   `pledge_lapsed` notices, and campaign approved, changes requested,
   suspended and ended (organizer). `/api/cron/send-outbox` (every minute)
-  leases due rows, sends them through AWS SES over SMTP (DOS.Me's provider,
+  leases due rows, sends them over SMTP (first AWS SES, now Brevo, above;
   `nodemailer` 10.3.1, server-only) from `Give <no-reply@give.vn>`, retries
   after 1, 5, 15, 60, 180 and 360 minutes and marks a row dead after 7
   attempts; `/admin/emails` (admins) lists dead and retrying emails and sends
@@ -498,7 +509,7 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   notification email: it carries an unsubscribe link (`/email/unsubscribe`,
   one-click `List-Unsubscribe`). No images or tracking pixels. Outside
   Production a log transport mails nobody unless `EMAIL_DELIVERY=smtp`, and
-  then only `EMAIL_ALLOWLIST`; in Production sending waits for the SES
+  then only `EMAIL_ALLOWLIST`; in Production sending waits for the SMTP
   credentials, and `EMAIL_DELIVERY=log` is refused there. Delivery is at
   least once: each event queues exactly one email, but a send whose result
   was lost, or that timed out (its connection is cut off and it waits an

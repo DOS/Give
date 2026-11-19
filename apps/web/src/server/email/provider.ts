@@ -8,8 +8,9 @@ import { createSmtpTransport } from "./smtp"
 import type { EmailTransport } from "./transport"
 
 /**
- * Email settings from the environment (DOS/Give#254). Give reuses DOS.Me's
- * provider, AWS SES (ap-southeast-1), over SMTP, with its own sender.
+ * Email settings from the environment (DOS/Give#254). Give sends through
+ * Brevo's SMTP relay, on the Brevo account (and its monthly allowance) the
+ * rest of DOS uses, with its own sender and its own SMTP key.
  * Server-only variables:
  *
  * - EMAIL_DELIVERY: `smtp` sends real mail; `log` mails nobody (log
@@ -19,9 +20,13 @@ import type { EmailTransport } from "./transport"
  * - EMAIL_ALLOWLIST: outside Production, `smtp` reaches only these
  *   recipients (comma-separated addresses or `@domain`); everyone else gets
  *   the log transport. With no allowlist outside Production, nobody is mailed.
- * - SMTP_USER, SMTP_PASS: SES SMTP credentials (secrets; owner step).
- * - SMTP_HOST, SMTP_PORT: default email-smtp.ap-southeast-1.amazonaws.com:587.
- * - EMAIL_FROM: default `Give <no-reply@give.vn>` (give.vn verified in SES).
+ * - SMTP_USER: the Brevo account's SMTP login (Settings > SMTP & API: the
+ *   account email on older accounts, else `<id>@smtp-brevo.com`); never the
+ *   From address. SMTP_PASS: an SMTP key, not an API key (secret; owner step).
+ * - SMTP_HOST, SMTP_PORT: default smtp-relay.brevo.com:587 (STARTTLS,
+ *   required); 465 uses implicit TLS, 2525 is Brevo's fallback port.
+ * - EMAIL_FROM: default `Give <no-reply@give.vn>` (give.vn authenticated in
+ *   Brevo).
  * - EMAIL_LINK_ORIGIN: origin of the links in emails, e.g. https://beta.give.vn
  *   on beta. Defaults to NEXT_PUBLIC_SITE_URL, then https://give.vn in
  *   Production. In Production a link origin that is set must be https.
@@ -32,7 +37,7 @@ import type { EmailTransport } from "./transport"
  * Production database.
  */
 
-export const DEFAULT_SMTP_HOST = "email-smtp.ap-southeast-1.amazonaws.com"
+export const DEFAULT_SMTP_HOST = "smtp-relay.brevo.com"
 export const DEFAULT_SMTP_PORT = 587
 export const DEFAULT_EMAIL_FROM = "Give <no-reply@give.vn>"
 const PRODUCTION_ORIGIN = "https://give.vn"

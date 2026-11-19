@@ -71,7 +71,7 @@ describe("sendDueEmails", () => {
     claims = [[row(1)]]
     const outcome = await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
 
-    expect(outcome).toEqual({ claimed: 1, sent: 1, retrying: 0, dead: 0, stale: 0, released: 0 })
+    expect(outcome).toEqual({ claimed: 1, sent: 1, retrying: 0, held: 0, dead: 0, stale: 0, released: 0 })
     expect(op(calls[0], "args")).toEqual([{ p_limit: CLAIM_BATCH }])
     expect(sent[0]).toMatchObject({
       from: OPTIONS.from,
@@ -161,7 +161,7 @@ describe("sendDueEmails", () => {
       const run = sendDueEmails(db as never, transport, OPTIONS)
       await vi.runAllTimersAsync()
       const outcome = await run
-      expect(outcome).toEqual({ claimed: 3, sent: 1, retrying: 0, dead: 0, stale: 1, released: 0 })
+      expect(outcome).toEqual({ claimed: 3, sent: 1, retrying: 0, held: 0, dead: 0, stale: 1, released: 0 })
       expect(sent).toHaveLength(3)
       const tries = (id: string) => completes().filter((a) => (a as { p_id: string }).p_id === id).length
       expect(tries(row(6).id)).toBe(COMPLETE_TRIES)
@@ -330,6 +330,54 @@ describe("sendDueEmails", () => {
       })
       expect(calls.filter((c) => c.target === "rpc:claim_outbox")).toHaveLength(1)
       expect(stuck.close).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it("when the provider refuses every email: holds that row, gives back the rest, claims no more", async () => {
+    claims = [[row(60), row(61), row(62)], [row(63)]]
+    completeStatus = "held"
+    result = { ok: false, permanent: false, hold: true, error: "ACCOUNT: SMTP 450: disabled for org60@example.com" }
+    const outcome = await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
+
+    expect(outcome).toEqual({ claimed: 3, sent: 0, retrying: 0, held: 1, dead: 0, stale: 0, released: 2 })
+    expect(sent).toHaveLength(1)
+    expect(completes()).toEqual([
+      {
+        p_id: row(60).id,
+        p_attempt: 1,
+        p_ok: false,
+        p_error: "ACCOUNT: SMTP 450: disabled for [recipient]",
+        p_provider_message_id: null,
+        p_permanent: false,
+        p_outcome_unknown: false,
+        p_hold: true,
+      },
+    ])
+    expect(calls.filter((c) => c.target === "rpc:release_outbox").map((c) => op(c, "args")?.[0])).toEqual([
+      { p_id: row(61).id, p_attempt: 1 },
+      { p_id: row(62).id, p_attempt: 1 },
+    ])
+    expect(calls.filter((c) => c.target === "rpc:claim_outbox")).toHaveLength(1)
+  })
+
+  it("reads back a hold whose answer was lost: the row shows the count before the claim", async () => {
+    vi.useFakeTimers()
+    try {
+      claims = [[row(64, { attempt: 3 })]]
+      result = { ok: false, permanent: false, hold: true, error: "ACCOUNT: SMTP 450" }
+      let n = 0
+      const db = fakeDb((call) => {
+        if (call.target === "rpc:complete_outbox") {
+          n += 1
+          return n === 1 ? { error: { code: "", message: "TypeError: fetch failed" } } : { data: "stale" }
+        }
+        if (call.target === "outbox") return { data: { status: "pending", attempts: 2 } }
+        return handler(call)
+      }, calls)
+      const run = sendDueEmails(db as never, transport, OPTIONS)
+      await vi.runAllTimersAsync()
+      expect(await run).toMatchObject({ held: 1, stale: 0 })
     } finally {
       vi.useRealTimers()
     }
