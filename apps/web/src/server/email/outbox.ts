@@ -1,8 +1,9 @@
 import "server-only"
 
 import type { Db } from "@/lib/campaigns"
+import { signStopToken } from "@/server/plans/stop-link"
 
-import { EmailRenderError, isEmailKind, renderEmail, type OutboxEmail } from "./templates"
+import { carriesStopLink, EmailRenderError, isEmailKind, renderEmail, type OutboxEmail } from "./templates"
 import type { EmailTransport, OutgoingEmail } from "./transport"
 
 /**
@@ -93,6 +94,7 @@ function parseRow(value: unknown): OutboxEmail | null {
     unsubscribe_token: typeof row.unsubscribe_token === "string" ? row.unsubscribe_token : null,
     reference_code: typeof row.reference_code === "string" ? row.reference_code : null,
     tracking_token: typeof row.tracking_token === "string" ? row.tracking_token : null,
+    stop_token: typeof row.stop_token === "string" ? row.stop_token : null,
   }
 }
 
@@ -103,7 +105,10 @@ function senderDomain(from: string): string {
 }
 
 export function outgoingEmail(row: OutboxEmail, options: OutboxRunOptions): OutgoingEmail {
-  const rendered = renderEmail(row, options.origin)
+  // A plan reminder's stop link is signed here, where the secret is; without
+  // a token or a secret renderEmail refuses the row (stop_token_missing).
+  const signedStopToken = carriesStopLink(row.kind) ? signStopToken(row.stop_token) : null
+  const rendered = renderEmail(row, options.origin, { signedStopToken })
   const headers: Record<string, string> = {
     // Our Message-ID for the row. SES replaces it with its own on the way
     // out, so it does not let mail clients drop a resend; X-Give-Outbox-Id

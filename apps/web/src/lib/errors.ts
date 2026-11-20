@@ -438,3 +438,33 @@ export function fail(message: string): ActionResult {
 export function done(message: string): ActionResult {
   return { ok: true, message }
 }
+
+/**
+ * Every refusal of the monthly plan RPCs (DOS/Give#276, DOS-Me
+ * 20261125120000_give_donation_plans.sql: create_donation_plan,
+ * update_donation_plan, cancel_donation_plan), worded for a signed-in donor.
+ */
+export const PLAN_MESSAGES: Record<string, string> = {
+  GIVE_SIGN_IN_REQUIRED: "Hãy đăng nhập để đăng ký ủng hộ hằng tháng.",
+  GIVE_PLAN_CONSENT_REQUIRED: "Hãy đồng ý nhận lời nhắc hằng tháng để Give gửi mã ủng hộ mỗi tháng.",
+  GIVE_PLAN_DAY_INVALID: "Chọn một ngày từ 1 đến 28.",
+  GIVE_AMOUNT_BELOW_MINIMUM: "Số tiền mỗi tháng tối thiểu 10.000 ₫.",
+  GIVE_MONTHLY_NOT_ALLOWED: "Chiến dịch này không nhận ủng hộ hằng tháng.",
+  GIVE_CAMPAIGN_NOT_ACCEPTING: "Chiến dịch này hiện không nhận ủng hộ hằng tháng.",
+  GIVE_PLAN_EXISTS: "Bạn đã có kế hoạch ủng hộ hằng tháng cho chiến dịch này. Xem và sửa ở mục Ủng hộ của tôi.",
+  GIVE_PLAN_NOT_FOUND: "Không tìm thấy kế hoạch ủng hộ hằng tháng này.",
+  GIVE_PLAN_ENDED: "Kế hoạch này đã dừng nên không sửa được. Bạn có thể đăng ký lại ở trang chiến dịch.",
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: "Chiến dịch tạm thời không nhận ủng hộ. Hãy thử lại sau.",
+  GIVE_RATE_LIMITED: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
+}
+
+/**
+ * Refusals of give.set_campaign_monthly, worded for the organizer turning
+ * monthly giving on or off.
+ */
+export const CAMPAIGN_MONTHLY_MESSAGES: Record<string, string> = {
+  GIVE_MONTHLY_NEEDS_END_DATE: "Ủng hộ hằng tháng chỉ bật được cho chiến dịch có ngày kết thúc.",
+  GIVE_CAMPAIGN_ALREADY_ENDED: "Chiến dịch đã quá ngày kết thúc.",
+  GIVE_CAMPAIGN_NOT_ACCEPTING: "Chiến dịch đã kết thúc hoặc đã hủy nên không bật được ủng hộ hằng tháng.",
+  GIVE_CONTRIBUTION_TYPE_MISMATCH: "Chỉ chiến dịch từ thiện mới có ủng hộ hằng tháng.",
+}

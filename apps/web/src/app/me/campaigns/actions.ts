@@ -7,7 +7,7 @@ import { redirect } from "next/navigation"
 import { getSession, type Session } from "@/lib/auth/session"
 import { checkSubmitAccount } from "@/lib/campaign-account"
 import { canPostUpdate, isEditableStatus, type CampaignStatus, type CampaignType } from "@/lib/campaigns"
-import { dbErrorMessage, done, fail, SUBMIT_MESSAGES, type ActionResult } from "@/lib/errors"
+import { CAMPAIGN_MONTHLY_MESSAGES, dbErrorMessage, done, fail, SUBMIT_MESSAGES, type ActionResult } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
 import { campaignMediaPrefix, detectImageType, MAX_COVER_BYTES, mediaPath, reencodeCover } from "@/lib/media"
 import { dbAs, dbService, MEDIA_BUCKET } from "@/lib/supabase"
@@ -26,6 +26,9 @@ const CANNOT_PUBLISH_YET =
 const DRAFT_UPDATE_NOT_FOUND =
   "Không tìm thấy bản nháp cập nhật này (có thể đã được đăng hoặc đã xóa). Hãy tải lại trang."
 const INVALID_UPDATE_INTENT = "Dữ liệu không hợp lệ."
+const INVALID_MONTHLY_CHOICE = "Dữ liệu không hợp lệ."
+/** saveContent's 23514 when ends_at is cleared while monthly giving is on (DOS/Give#276). */
+const MONTHLY_NEEDS_END_DATE = "Hãy tắt ủng hộ hằng tháng trước khi bỏ ngày kết thúc."
 
 const YOUTUBE_ID_RE = /^[A-Za-z0-9_-]{11}$/
 const YOUTUBE_HOSTS = new Set(["youtube.com", "www.youtube.com", "m.youtube.com"])
@@ -119,11 +122,18 @@ export async function saveContent(campaignId: string, _state: ActionResult, form
     })
     .eq("id", campaign.id)
     .select("id")
-  if (error) return fail(dbErrorMessage(error))
+  if (error) return fail(isMonthlyNeedsEndViolation(error) ? MONTHLY_NEEDS_END_DATE : dbErrorMessage(error))
   if (!data?.length) return fail(NOT_EDITABLE)
 
   refresh(campaign)
   return done("Đã lưu nội dung.")
+}
+
+/** The CHECK that keeps ends_at set while allow_monthly is on (DOS-Me 20261125120000_give_donation_plans). */
+function isMonthlyNeedsEndViolation(error: { code?: string | null; message?: string | null; details?: string | null }) {
+  return (
+    error.code === "23514" && `${error.message ?? ""} ${error.details ?? ""}`.includes("campaigns_monthly_needs_end")
+  )
 }
 
 function isValidVideoId(id: string): boolean {
@@ -715,4 +725,41 @@ export async function deleteDraftUpdate(
 
   refresh(campaign)
   return done("Đã xóa bản nháp cập nhật.")
+}
+
+/**
+ * Turns monthly giving (plan A, DOS/Give#276) on or off for a give campaign.
+ * The client cannot write allow_monthly, so after the caller's own token
+ * proves they organize the campaign, give.set_campaign_monthly runs with the
+ * service role on their behalf; it re-checks the actor, the type, the status
+ * and the end date under its lock. Turning it off ends every active plan
+ * (this month's pending donations stay valid).
+ */
+export async function setCampaignMonthly(
+  campaignId: string,
+  _state: ActionResult,
+  form: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  const choice = String(form.get("enabled") ?? "")
+  if (choice !== "true" && choice !== "false") return fail(INVALID_MONTHLY_CHOICE)
+  const enabled = choice === "true"
+  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  if (!campaign) return fail(loadError)
+  if (campaign.type !== "give") return fail(CAMPAIGN_MONTHLY_MESSAGES.GIVE_CONTRIBUTION_TYPE_MISMATCH)
+
+  const { error } = await dbService().rpc("set_campaign_monthly", {
+    p_campaign_id: campaign.id,
+    p_enabled: enabled,
+    p_actor: session.user.id,
+  })
+  if (error) return fail(dbErrorMessage(error, CAMPAIGN_MONTHLY_MESSAGES))
+
+  refresh(campaign)
+  return done(
+    enabled
+      ? "Đã bật ủng hộ hằng tháng."
+      : "Đã tắt ủng hộ hằng tháng. Kế hoạch của người ủng hộ đã dừng; mã ủng hộ của tháng này vẫn dùng được."
+  )
 }

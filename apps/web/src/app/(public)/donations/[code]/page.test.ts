@@ -1,5 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+
+import { NEW_CODE_EVERY_MONTH } from "@/lib/plans"
 
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
@@ -143,5 +145,107 @@ describe("DonationPage (/donations/[code], DOS/Give#50)", () => {
         ? { data: guestRow({ status_token_expires_at: "2000-01-01T00:00:00.000Z" }) }
         : undefined
     await expect(DonationPage({ params: Promise.resolve({ code: "GVABCDEFG" }) })).rejects.toThrow("NEXT_NOT_FOUND")
+  })
+})
+
+describe("DonationPage for a monthly plan's donation (DOS/Give#276)", () => {
+  const PLAN = "44444444-4444-4444-8444-444444444444"
+  // 10:00 on 20/11/2026 in Vietnam.
+  const NOW = new Date("2026-11-20T03:00:00.000Z")
+
+  function ownRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: "33333333-3333-4333-8333-333333333333",
+      campaign_id: CAMPAIGN,
+      intended_amount: 200000,
+      received_amount: 0,
+      reference_code: "GVABCDEFG",
+      status: "awaiting_transfer",
+      // Days ago: a one-off donation's 24 hours would be over.
+      created_at: "2026-11-05T01:00:00.000Z",
+      plan_id: PLAN,
+      plan_period: "2026-11-01",
+      ...overrides,
+    }
+  }
+
+  function setUp(row: Record<string, unknown>, campaign: Record<string, unknown> = {}) {
+    state.session = { user: { id: USER, email: null, name: null }, accessToken: "jwt" }
+    state.userHandler = (call) => (call.target === "contributions" ? { data: row } : undefined)
+    const base = state.serviceHandler
+    state.serviceHandler = (call) =>
+      call.target === "campaigns"
+        ? { data: { ...campaignRow(), ends_at: "2027-06-30T17:00:00.000Z", ...campaign } }
+        : base(call)
+  }
+
+  async function render() {
+    return renderToStaticMarkup(await DonationPage({ params: Promise.resolve({ code: "GVABCDEFG" }) }))
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    vi.setSystemTime(NOW)
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("shows the QR for the whole month, the plan month and the new-code rule", async () => {
+    setUp(ownRow())
+    const html = await render()
+
+    expect(html).toContain("Ủng hộ hằng tháng · tháng 11/2026")
+    expect(html).toContain(NEW_CODE_EVERY_MONTH)
+    expect(html).toContain('href="/me/contributions"')
+    expect(html).toContain("0123456789")
+    expect(html).toContain("Mã hiển thị tới hết ngày 30/11/2026.")
+    const select = String(
+      op(
+        state.userCalls.find((c) => c.target === "contributions"),
+        "select"
+      )?.[0]
+    )
+    expect(select).toContain("plan_period")
+  })
+
+  it("stops the QR at the campaign's end when it comes before the month's end", async () => {
+    setUp(ownRow(), { ends_at: "2026-11-25T10:00:00.000Z" })
+    const html = await render()
+
+    expect(html).toContain("0123456789")
+    expect(html).toMatch(/Mã hiển thị tới 17:00,? 25\/11\/2026\./)
+  })
+
+  it("shows no payment details for a past month and points to the plan overview", async () => {
+    setUp(ownRow({ plan_period: "2026-10-01", created_at: "2026-10-05T01:00:00.000Z" }))
+    const html = await render()
+
+    expect(html).toContain("Ủng hộ hằng tháng · tháng 10/2026")
+    expect(html).toContain("Tháng 10/2026 đã qua nên Give không còn hiển thị mã QR của khoản này")
+    // The plan may have stopped since: the next code is promised only while it is active.
+    expect(html).toContain("Nếu kế hoạch ủng hộ hằng tháng của bạn còn hoạt động, mã của tháng mới")
+    expect(html).toContain("Xem ủng hộ hằng tháng")
+    expect(html).not.toContain("0123456789")
+    for (const word of ["quá hạn", "nợ", "còn thiếu"]) expect(html).not.toContain(word)
+  })
+
+  it("keeps the 24-hour rule for a one-off donation", async () => {
+    setUp(ownRow({ plan_id: null, plan_period: null }))
+    const html = await render()
+
+    expect(html).toContain("Ủng hộ chiến dịch")
+    expect(html).not.toContain("Ủng hộ hằng tháng")
+    expect(html).not.toContain(NEW_CODE_EVERY_MONTH)
+    expect(html).toContain("Mã QR của khoản này đã hết hạn hiển thị")
+    expect(html).not.toContain("0123456789")
+  })
+
+  it("shows the closed-campaign note instead of the QR when the campaign stopped taking donations", async () => {
+    setUp(ownRow(), { status: "suspended" })
+    const html = await render()
+
+    expect(html).toContain("Chiến dịch hiện không nhận chuyển khoản")
+    expect(html).not.toContain("0123456789")
   })
 })

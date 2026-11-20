@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { formatVnd } from "@/lib/format"
+import { NEW_CODE_EVERY_MONTH } from "@/lib/plans"
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
 import {
@@ -8,6 +9,7 @@ import {
   describeNotice,
   listNotices,
   NOTICE_PAGE_SIZE,
+  planTemplateAccount,
   stoppedNoticeCampaigns,
   unreadBadge,
   type Notice,
@@ -460,5 +462,86 @@ describe("describeNotice", () => {
 
   it("shows a generic notice for a kind this app does not know yet", () => {
     expect(describeNotice(notice({ kind: "something_new" })).title).toBe("Thông báo")
+  })
+})
+
+describe("describeNotice: monthly plans (DOS/Give#276)", () => {
+  const FORBIDDEN = /quá hạn|nợ|còn thiếu/i
+  // The in-app payload (give.plan_notice_payload) has no campaign title or slug.
+  const reminder = {
+    plan_id: "66666666-6666-4666-8666-666666666666",
+    amount: 200_000,
+    day_of_month: 5,
+    contribution_id: "77777777-7777-4777-8777-777777777777",
+    reference_code: "GVPLAN123",
+    intended_amount: 200_000,
+    plan_period: "2026-11-01",
+    first: false,
+  }
+
+  it("gives a month's code and links the QR on /me/contributions", () => {
+    const view = describeNotice(notice({ kind: "plan_reminder", payload: reminder }))
+    expect(view.title).toBe("Mã ủng hộ tháng 11/2026")
+    expect(view.body).toContain("GVPLAN123")
+    expect(view.body).toContain(formatVnd(200_000))
+    expect(view.body).toContain(NEW_CODE_EVERY_MONTH)
+    expect(view.body).toContain("Nếu bạn đã chuyển thì bỏ qua")
+    expect(view.body).not.toMatch(FORBIDDEN)
+    expect(view).toMatchObject({ href: "/me/contributions", linkLabel: "Xem mã QR tháng này" })
+  })
+
+  it("names the campaign when the payload has it, and confirms a new plan", () => {
+    const view = describeNotice(
+      notice({ kind: "plan_reminder", payload: { ...reminder, first: true, campaign_title: "Nước sạch" } })
+    )
+    expect(view.title).toBe("Đã bắt đầu ủng hộ hằng tháng")
+    expect(view.body).toContain("Bạn đã bắt đầu ủng hộ hằng tháng cho chiến dịch “Nước sạch”.")
+  })
+
+  it("reminds once more, gently", () => {
+    const view = describeNotice(notice({ kind: "plan_followup", payload: { ...reminder, first: undefined } }))
+    expect(view.title).toBe("Nhắc lại mã ủng hộ tháng 11/2026")
+    expect(view.body).toContain("Nếu bạn đã chuyển thì bỏ qua")
+    expect(view.body).not.toMatch(FORBIDDEN)
+  })
+
+  it("says why a plan ended and asks to delete a saved transfer template", () => {
+    const view = describeNotice(
+      notice({
+        kind: "plan_ended",
+        payload: {
+          plan_id: reminder.plan_id,
+          amount: 200_000,
+          ended_reason: "organizer_disabled",
+          ended_at: "2026-11-20T00:00:00Z",
+          bank_bin: "970436",
+          account_last4: "6789",
+          campaign_slug: "nuoc-sach",
+        },
+      })
+    )
+    expect(view.title).toBe("Kế hoạch ủng hộ hằng tháng đã dừng")
+    expect(view.body).toContain("Lý do: người tổ chức đã tắt ủng hộ hằng tháng.")
+    expect(view.body).toContain("Give sẽ không tạo mã ủng hộ mới")
+    expect(view.body).toContain("tài khoản Vietcombank •••• 6789")
+    expect(view.body).toContain("hãy xóa mẫu đó")
+    expect(view.body).not.toMatch(FORBIDDEN)
+    expect(view).toMatchObject({ href: "/campaigns/nuoc-sach", linkLabel: "Xem trang chiến dịch" })
+  })
+
+  it("falls back to /me/contributions and a generic account for an ended plan without a slug", () => {
+    const view = describeNotice(notice({ kind: "plan_ended", payload: { ended_reason: "campaign_cancelled" } }))
+    expect(view.body).toContain("Lý do: chiến dịch đã bị hủy.")
+    expect(view.body).toContain("tài khoản nhận của chiến dịch")
+    expect(view.href).toBe("/me/contributions")
+  })
+})
+
+describe("planTemplateAccount", () => {
+  it("masks the account and names a known bank", () => {
+    expect(planTemplateAccount({ bank_bin: "970436", account_last4: "6789" })).toBe("Vietcombank •••• 6789")
+    expect(planTemplateAccount({ bank_bin: "999999", account_last4: "6789" })).toBe("•••• 6789")
+    expect(planTemplateAccount({ bank_bin: "970436", account_last4: null })).toBeNull()
+    expect(planTemplateAccount({ account_last4: "12345" })).toBeNull()
   })
 })

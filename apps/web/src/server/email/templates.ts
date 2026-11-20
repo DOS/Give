@@ -2,7 +2,8 @@ import { donationTrackingPath } from "@/lib/contributions"
 import { GIVE_CONTACT_EMAIL } from "@/lib/contact"
 import { formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
-import { describeNotice } from "@/lib/notices"
+import { describeNotice, planCampaign, planEndedParagraphs } from "@/lib/notices"
+import { NEW_CODE_EVERY_MONTH, periodLabel, planStopOneClickPath, planStopPath } from "@/lib/plans"
 import { SLUG_PATTERN } from "@/lib/slug"
 
 /**
@@ -14,6 +15,13 @@ import { SLUG_PATTERN } from "@/lib/slug"
  * A campaign title appears in a subject only once it passed review: an
  * organizer can edit the title only in draft or changes_requested
  * (give.is_editable_status), so from approval on it is the approved one.
+ *
+ * Monthly plan emails (DOS/Give#276, design 4.3.4): a month's code
+ * (plan_reminder, plan_followup) and the end of a plan (plan_ended). Nothing
+ * is ever charged and a month without a transfer is not a debt, so no copy
+ * says "quá hạn", "nợ" or "còn thiếu". A reminder carries the plan's stop
+ * link, signed by the sender (server/plans/stop-link) and passed in already
+ * signed, so this module stays pure.
  */
 
 export const EMAIL_KINDS = [
@@ -25,6 +33,9 @@ export const EMAIL_KINDS = [
   "campaign_changes_requested",
   "campaign_suspended",
   "campaign_ended",
+  "plan_reminder",
+  "plan_followup",
+  "plan_ended",
 ] as const
 export type EmailKind = (typeof EMAIL_KINDS)[number]
 
@@ -44,6 +55,20 @@ export interface OutboxEmail {
   unsubscribe_token: string | null
   reference_code: string | null
   tracking_token: string | null
+  /** The plan's stop token (64 hex), minted by claim_outbox for plan_reminder and plan_followup only. */
+  stop_token: string | null
+}
+
+/** Kinds whose email carries the plan's stop link and must not go out without it. */
+export const STOP_LINK_KINDS: readonly EmailKind[] = ["plan_reminder", "plan_followup"]
+
+export function carriesStopLink(kind: string): boolean {
+  return (STOP_LINK_KINDS as readonly string[]).includes(kind)
+}
+
+export interface RenderOptions {
+  /** The stop token already signed (`<token>.<signature>`, server/plans/stop-link), for plan reminders. */
+  signedStopToken?: string | null
 }
 
 export interface RenderedEmail {
@@ -70,6 +95,8 @@ interface Content {
   paragraphs: string[]
   link: { href: string; label: string } | null
   note?: string
+  /** Replaces the default footer line (why the recipient gets this email). */
+  footer?: string
 }
 
 function text(payload: OutboxEmail["payload"], key: string): string | null {
@@ -219,6 +246,77 @@ function capitalize(sentence: string): string {
   return sentence.charAt(0).toUpperCase() + sentence.slice(1)
 }
 
+const PLAN_PERIOD = /^\d{4}-\d{2}-01$/
+const PLAN_FOOTER = "Bạn nhận email này vì bạn đã đăng ký ủng hộ hằng tháng trên Give."
+
+function planMonth(payload: OutboxEmail["payload"]): string | null {
+  const period = text(payload, "plan_period")
+  return period && PLAN_PERIOD.test(period) ? periodLabel(period) : null
+}
+
+/** plan_reminder (first: the donation issued at sign-up) and plan_followup. */
+function planReminder(email: OutboxEmail): Content {
+  const p = email.payload
+  const followup = email.kind === "plan_followup"
+  const first = !followup && p?.first === true
+  const month = planMonth(p)
+  const monthly = amount(p, "amount")
+  const due = amount(p, "intended_amount") ?? monthly
+  const rawCode = email.reference_code ?? text(p, "reference_code")
+  const code = rawCode && DONATION_CODE.test(rawCode) ? rawCode : null
+  const campaign = planCampaign(p)
+  const thisMonth = month ? `tháng ${month}` : "tháng này"
+
+  const intro = first
+    ? `Cảm ơn bạn đã đăng ký ủng hộ ${monthly !== null ? `${formatVnd(monthly)} ` : ""}mỗi tháng cho ${campaign}.`
+    : followup
+      ? `Give nhắc lại mã ủng hộ ${thisMonth} cho ${campaign}.`
+      : `Give đã tạo mã ủng hộ ${thisMonth} cho ${campaign}.`
+  const codeLine = code
+    ? `Mã ủng hộ ${thisMonth} của bạn là ${code}` +
+      (due !== null ? `, số tiền ${formatVnd(due)}.` : ".") +
+      ` Mã QR của ${thisMonth} có trên trang Ủng hộ của tôi.`
+    : `Mã ủng hộ và mã QR của ${thisMonth} có trên trang Ủng hộ của tôi.`
+  const subject = first
+    ? `Bạn đã bắt đầu ủng hộ hằng tháng cho ${campaign}`
+    : followup
+      ? `Nhắc lại: mã ủng hộ ${thisMonth} cho ${campaign}`
+      : `Mã ủng hộ ${thisMonth} cho ${campaign}`
+  return {
+    subject,
+    heading: first
+      ? "Kế hoạch ủng hộ hằng tháng đã bắt đầu"
+      : followup
+        ? `Nhắc lại mã ủng hộ ${thisMonth}`
+        : `Mã ủng hộ ${thisMonth}`,
+    paragraphs: [
+      intro,
+      codeLine,
+      NEW_CODE_EVERY_MONTH,
+      "Tiền đi thẳng vào tài khoản của người tổ chức; Give không giữ tiền và không tự trừ tiền của bạn. Ủng hộ tháng nào là do bạn chọn.",
+      followup
+        ? "Nếu bạn đã chuyển thì bỏ qua email này: Give có thể chưa kịp ghi nhận khoản chuyển."
+        : "Nếu bạn đã chuyển thì bỏ qua email này.",
+    ],
+    link: { href: "/me/contributions", label: "Xem mã QR tháng này" },
+    footer: PLAN_FOOTER,
+  }
+}
+
+function planEnded(email: OutboxEmail): Content {
+  const p = email.payload
+  const path = campaignPath(p)
+  return {
+    subject: `Kế hoạch ủng hộ hằng tháng cho ${planCampaign(p)} đã dừng`,
+    heading: "Kế hoạch ủng hộ hằng tháng đã dừng",
+    paragraphs: planEndedParagraphs(p),
+    link: path
+      ? { href: path, label: "Xem trang chiến dịch" }
+      : { href: "/me/contributions", label: "Xem các khoản ủng hộ của bạn" },
+    footer: PLAN_FOOTER,
+  }
+}
+
 function content(email: OutboxEmail): Content {
   const p = email.payload
   switch (email.kind) {
@@ -266,6 +364,11 @@ function content(email: OutboxEmail): Content {
     }
     case "campaign_ended":
       return campaignEnded(email)
+    case "plan_reminder":
+    case "plan_followup":
+      return planReminder(email)
+    case "plan_ended":
+      return planEnded(email)
     default:
       throw new EmailRenderError(`unknown_kind:${String(email.kind).slice(0, 40)}`)
   }
@@ -296,12 +399,25 @@ export function oneClickUnsubscribePath(token: string): string {
   return `/api/email/unsubscribe?t=${encodeURIComponent(token)}`
 }
 
+/** A signed stop token as server/plans/stop-link makes it: `<64 hex>.<22 base64url>`. */
+const SIGNED_STOP_TOKEN = /^[0-9a-f]{64}\.[A-Za-z0-9_-]{22}$/
+
 /**
  * Subject, text and HTML of one outbox row. `origin` is the site origin the
- * links point to (https://give.vn in Production).
+ * links point to (https://give.vn in Production). A plan reminder needs
+ * `options.signedStopToken`; without a well-formed one it is refused
+ * (stop_token_missing), so no reminder goes out without its stop link.
  */
-export function renderEmail(email: OutboxEmail, origin: string): RenderedEmail {
+export function renderEmail(email: OutboxEmail, origin: string, options: RenderOptions = {}): RenderedEmail {
   if (!isEmailKind(email.kind)) throw new EmailRenderError(`unknown_kind:${String(email.kind).slice(0, 40)}`)
+  let stopUrl: string | null = null
+  let stopOneClickUrl: string | null = null
+  if (carriesStopLink(email.kind)) {
+    const signed = options.signedStopToken
+    if (!signed || !SIGNED_STOP_TOKEN.test(signed)) throw new EmailRenderError("stop_token_missing")
+    stopUrl = absolute(origin, planStopPath(signed))
+    stopOneClickUrl = absolute(origin, planStopOneClickPath(signed))
+  }
   const c = content(email)
   const link = c.link ? { href: absolute(origin, c.link.href), label: c.link.label } : null
   const unsubscribeUrl =
@@ -311,9 +427,10 @@ export function renderEmail(email: OutboxEmail, origin: string): RenderedEmail {
   if (email.category === "notification" && !unsubscribeUrl) throw new EmailRenderError("unsubscribe_token_missing")
 
   const footer =
-    email.category === "notification"
+    c.footer ??
+    (email.category === "notification"
       ? "Bạn nhận email này vì bạn tổ chức một chiến dịch trên Give."
-      : "Email giao dịch gửi tự động từ Give."
+      : "Email giao dịch gửi tự động từ Give.")
   const help = `Cần hỗ trợ: ${GIVE_CONTACT_EMAIL}.`
 
   const textParts = [c.heading, "", ...c.paragraphs.flatMap((p) => [p, ""])]
@@ -321,6 +438,7 @@ export function renderEmail(email: OutboxEmail, origin: string): RenderedEmail {
   if (c.note) textParts.push(c.note, "")
   textParts.push("--", `${footer} ${help}`)
   if (unsubscribeUrl) textParts.push(`Không muốn nhận email tổng kết như thế này? Hủy đăng ký: ${unsubscribeUrl}`)
+  if (stopUrl) textParts.push(`Không muốn nhận lời nhắc nữa? Dừng ủng hộ hằng tháng: ${stopUrl}`)
 
   const p = (body: string, style = "margin:0 0 16px;font-size:16px;line-height:24px;color:#1f2937") =>
     `<p style="${style}">${body}</p>`
@@ -349,13 +467,22 @@ export function renderEmail(email: OutboxEmail, origin: string): RenderedEmail {
           "margin:8px 0 0;font-size:13px;line-height:20px;color:#57534e"
         )
       : "",
+    stopUrl
+      ? p(
+          `Không muốn nhận lời nhắc nữa? <a href="${escapeHtml(stopUrl)}" style="color:#57534e">Dừng ủng hộ hằng tháng</a>.`,
+          "margin:8px 0 0;font-size:13px;line-height:20px;color:#57534e"
+        )
+      : "",
     "</div></body></html>",
   ].join("")
 
+  // A plan reminder's one-click target stops the plan (RFC 8058, the same
+  // signed token as the link in the body).
   const oneClickUnsubscribeUrl =
-    unsubscribeUrl && email.unsubscribe_token
+    stopOneClickUrl ??
+    (unsubscribeUrl && email.unsubscribe_token
       ? absolute(origin, oneClickUnsubscribePath(email.unsubscribe_token))
-      : null
+      : null)
   return {
     subject: headerSafe(c.subject).slice(0, 200),
     text: textParts.join("\n"),

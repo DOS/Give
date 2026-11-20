@@ -103,6 +103,18 @@ only reports how many events are waiting. All cron routes need
 `Authorization: Bearer $CRON_SECRET` (at least 16 characters) and refuse
 everything when it is not set.
 
+Monthly plans (DOS/Give#276): `GET /api/cron/issue-plan-donations` runs hourly
+and `GET /api/cron/plan-notices` every 10 minutes. Each database function
+handles one plan per call; the route calls it again with the last plan id
+(`p_after`) until it answers no row or 45 seconds pass, so a run sweeps the
+plans once and a retried or overlapping run creates nothing twice. Reminder
+stop links are signed with `GIVE_RATE_LIMIT_SECRET` under a label of their
+own (required in Production, at least 32 characters, and an error is logged
+without it; previews and local runs fall back to the service-role key); the
+database keeps only the token's hash. To rotate the secret without breaking
+links already sent (60 days), set the old value as
+`GIVE_RATE_LIMIT_SECRET_PREVIOUS` until they expire.
+
 ## Routes
 
 | Route                                           | Who                  | What                                                                                                                                                                                 |
@@ -119,6 +131,9 @@ everything when it is not set.
 | `/api/cron/activate`                            | Vercel Cron          | Activates scheduled campaigns.                                                                                                                                                       |
 | `/api/cron/finalize-ended`                      | Vercel Cron          | Closes ended give campaigns.                                                                                                                                                         |
 | `/api/cron/reprocess-inbound`                   | Vercel Cron          | Retries pending inbound events.                                                                                                                                                      |
+| `/api/cron/issue-plan-donations`                | Vercel Cron          | Monthly plans: issues each plan's donation for the month (once) and ends plans past the campaign's end; expires past months' unpaid plan donations.                                  |
+| `/api/cron/plan-notices`                        | Vercel Cron          | Monthly plans: tells each donor once when a plan ends; second reminders where the account allows them.                                                                               |
+| `/plans/stop`, `/api/plans/stop`                | –                    | Stop link of monthly plan reminders: the page asks first (GET changes nothing); POST, or the one-click `List-Unsubscribe` (RFC 8058), stops the plan.                                |
 | `/media/public/...`, `/media/private/...`       | –                    | Cover images from the private `give-media` bucket, after a visibility check.                                                                                                         |
 | `/auth/login`, `/auth/callback`, `/auth/logout` | –                    | DOS.Me login flow.                                                                                                                                                                   |
 

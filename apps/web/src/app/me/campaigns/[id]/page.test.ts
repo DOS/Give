@@ -1035,3 +1035,119 @@ describe("EditCampaignPage campaign status and review history in #status (DOS/Gi
     ).toEqual(["Gửi duyệt", "Hủy chiến dịch"])
   })
 })
+
+describe("EditCampaignPage monthly giving section (DOS/Give#276)", () => {
+  function setupMonthly(
+    status: CampaignStatus,
+    type: CampaignType,
+    row: Record<string, unknown> = {},
+    organizerId: string = USER
+  ) {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") {
+        return {
+          data: {
+            ...campaignRow(status, type),
+            ends_at: "2099-12-31T00:00:00.000Z",
+            organizer_id: organizerId,
+            ...row,
+          },
+        }
+      }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "reward_tiers") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: [] }
+      return undefined
+    }
+  }
+
+  async function renderDoc() {
+    const doc = new Window().document
+    doc.body.innerHTML = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+    return doc
+  }
+
+  const supporterCalls = () => state.serviceCalls.filter((c) => c.target === "rpc:campaign_plan_supporters")
+
+  it("lists the monthly supporters from the service-role RPC, for the organizer proven by their own token", async () => {
+    setupMonthly("live", "give", { allow_monthly: true })
+    state.serviceHandler = (call) =>
+      call.target === "rpc:campaign_plan_supporters"
+        ? {
+            data: [
+              { display_name: "Chị Lan", is_anonymous: false, since: "2026-11-02T03:00:00.000Z" },
+              { display_name: null, is_anonymous: true, since: "2026-11-05T03:00:00.000Z" },
+            ],
+          }
+        : undefined
+    const doc = await renderDoc()
+
+    expect(state.calls[0].target).toBe("rpc:managed_campaigns")
+    expect(supporterCalls()).toHaveLength(1)
+    expect(op(supporterCalls()[0], "args")).toEqual([{ p_campaign_id: CAMPAIGN, p_actor: USER }])
+
+    const section = doc.querySelector("#monthly")!
+    expect(section).toBeTruthy()
+    expect(doc.querySelector('nav a[href="#monthly"]')?.textContent).toBe("Ủng hộ hằng tháng")
+    expect(section.textContent).toContain("Đang bật")
+    expect(section.textContent).toContain("Đang có 2 người ủng hộ hằng tháng.")
+    expect([...section.querySelectorAll("li")].map((li) => li.querySelector("span")?.textContent)).toEqual([
+      "Chị Lan",
+      "Ẩn danh",
+    ])
+    expect(section.querySelector('input[name="enabled"]')?.getAttribute("value")).toBe("false")
+    expect(section.querySelector('button[type="submit"]')?.textContent).toBe("Tắt ủng hộ hằng tháng")
+  })
+
+  it("offers to turn it on without reading supporters while off", async () => {
+    setupMonthly("draft", "give", { allow_monthly: false })
+    const doc = await renderDoc()
+    expect(supporterCalls()).toHaveLength(0)
+    const section = doc.querySelector("#monthly")!
+    expect(section.textContent).toContain("Đang tắt")
+    expect(section.querySelector('input[name="enabled"]')?.getAttribute("value")).toBe("true")
+    const button = section.querySelector('button[type="submit"]')!
+    expect(button.textContent).toBe("Bật ủng hộ hằng tháng")
+    expect(button.hasAttribute("disabled")).toBe(false)
+  })
+
+  it("disables turning on with the reason when the campaign has no end date", async () => {
+    setupMonthly("draft", "give", { ends_at: null })
+    const doc = await renderDoc()
+    const section = doc.querySelector("#monthly")!
+    expect(section.querySelector('button[type="submit"]')?.hasAttribute("disabled")).toBe(true)
+    expect(section.textContent).toContain("Ủng hộ hằng tháng chỉ bật được cho chiến dịch có ngày kết thúc.")
+  })
+
+  it("degrades only the section when the supporters cannot be read", async () => {
+    setupMonthly("live", "give", { allow_monthly: true })
+    state.serviceHandler = () => ({ error: { code: "57014", message: "statement timeout" } })
+    const doc = await renderDoc()
+    const section = doc.querySelector("#monthly")!
+    expect(section.textContent).toContain("Không tải được danh sách người ủng hộ hằng tháng. Hãy tải lại trang.")
+    expect(section.querySelector('button[type="submit"]')?.textContent).toBe("Tắt ủng hộ hằng tháng")
+    expect(doc.querySelector("#status")).toBeTruthy()
+  })
+
+  it.each([
+    ["closed", "give"],
+    ["cancelled", "give"],
+    ["live", "back"],
+  ] as const)("has no monthly section for a %s %s campaign", async (status, type) => {
+    setupMonthly(status, type, { allow_monthly: type === "give" })
+    const doc = await renderDoc()
+    expect(doc.querySelector("#monthly")).toBeNull()
+    expect(doc.querySelector('nav a[href="#monthly"]')).toBeNull()
+    expect(supporterCalls()).toHaveLength(0)
+  })
+
+  it("never reads supporters with the service role for someone else's campaign", async () => {
+    setupMonthly("live", "give", { allow_monthly: true }, "99999999-9999-4999-8999-999999999999")
+    await expect(EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })).rejects.toThrow("NEXT_NOT_FOUND")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+})

@@ -16,7 +16,7 @@ import { Markdown } from "@/components/Markdown"
 import { ProgressBar } from "@/components/ProgressBar"
 import { RewardTiers } from "@/components/RewardTiers"
 import { ShareButtons } from "@/components/ShareButtons"
-import { Button, ButtonLink } from "@/components/ui/Button"
+import { Button, ButtonLink, buttonClass } from "@/components/ui/Button"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { CheckIcon, ShieldIcon } from "@/components/ui/icons"
@@ -47,6 +47,7 @@ import { acceptsDonations, paymentAccount } from "@/server/contributions"
 import { listPublicTiers, organizesCampaign } from "@/server/pledges"
 
 import { DonateForm } from "./DonateForm"
+import { MonthlyForm } from "./MonthlyForm"
 import { ReportCampaign } from "./ReportCampaign"
 
 /**
@@ -102,6 +103,29 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       ...(campaign.cover?.storage_path ? { images: [publicCoverUrl(campaign.cover.storage_path)] } : {}),
     },
   }
+}
+
+interface PublicMonthly {
+  allow_monthly: boolean
+  monthly_supporters: number
+}
+
+/**
+ * Whether a public give campaign takes monthly plans and how many donors
+ * have an active one (give.public_campaign_monthly, DOS/Give#276). Pledged
+ * monthly amounts are intentions, never summed or shown.
+ */
+async function publicMonthly(db: Db, campaignId: string): Promise<PublicMonthly | null> {
+  const { data, error } = await db
+    .from("public_campaign_monthly")
+    .select("allow_monthly, monthly_supporters")
+    .eq("campaign_id", campaignId)
+    .maybeSingle()
+  if (error) throw error
+  const row = data as { allow_monthly: boolean | null; monthly_supporters: number | string | null } | null
+  return row
+    ? { allow_monthly: row.allow_monthly === true, monthly_supporters: Number(row.monthly_supporters) || 0 }
+    : null
 }
 
 /** "Từ thiện" for give, "Dự án sáng tạo" for back, as discovery names them. */
@@ -191,6 +215,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
     accountChanges,
     tiers,
     statementRows,
+    monthly,
   ] = await Promise.all([
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
@@ -239,12 +264,23 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
             console.error("campaign page: statement lookup failed", error)
             return null
           }),
+    // Monthly giving (DOS/Give#276): public give campaigns only. A failed read hides it.
+    isGive && !preview
+      ? publicMonthly(dbAs(), campaign.id).catch((error: unknown) => {
+          console.error("campaign page: monthly giving lookup failed", error)
+          return null
+        })
+      : Promise.resolve(null),
   ])
   const pitchVideo =
     youtubeMedia.find((m): m is YoutubeMediaRow & { youtube_id: string } => isValidYoutubeId(m.youtube_id)) ?? null
   const canDonate = donationsOpen && account !== null
   const ownProject = pledgesOpen && ownCampaign
   const canPledge = pledgesOpen && !ownProject
+  // create_donation_plan also needs an end date and the usable account canDonate checked.
+  const monthlyOpen = canDonate && monthly?.allow_monthly === true && campaign.ends_at !== null
+  const monthlySupporters = monthly?.monthly_supporters ?? 0
+  const loginHref = `/auth/login?return_path=${encodeURIComponent(`/campaigns/${campaign.slug}`)}`
   const closedNote =
     campaign.status === "suspended"
       ? isGive
@@ -468,6 +504,11 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                   ))}
                 </dl>
               )}
+              {options.backers_count !== false && monthlySupporters > 0 && (
+                <p className="mt-3 text-sm text-fg">
+                  <span className="font-semibold tabular-nums">{monthlySupporters}</span> người ủng hộ hằng tháng
+                </p>
+              )}
               {(campaign.ends_at || campaign.stretch_goal_amount) && (
                 <p className="mt-3 text-sm text-muted">
                   {[
@@ -481,9 +522,19 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
 
               <div className="mt-6 space-y-3">
                 {canDonate ? (
-                  <ButtonLink href="#ung-ho" size="lg" full>
-                    {ctaLabel}
-                  </ButtonLink>
+                  <>
+                    <ButtonLink href="#ung-ho" size="lg" full>
+                      {ctaLabel}
+                    </ButtonLink>
+                    {monthlyOpen && (
+                      <Link
+                        href="#hang-thang"
+                        className="flex min-h-11 items-center justify-center text-sm font-semibold text-primary hover:underline"
+                      >
+                        Hoặc ủng hộ hằng tháng
+                      </Link>
+                    )}
+                  </>
                 ) : canPledge ? (
                   <>
                     <ButtonLink href={pledgePath} size="lg" full>
@@ -583,6 +634,31 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 </p>
                 <div className="mt-6 card p-4 sm:p-6">
                   <DonateForm campaignId={campaign.id} defaultName={session?.user.name ?? ""} signedIn={!!session} />
+                </div>
+              </section>
+            )}
+
+            {monthlyOpen && (
+              <section id="hang-thang" aria-labelledby="monthly-heading" className="max-w-[640px] scroll-mt-24">
+                <h2 id="monthly-heading" className="text-h2">
+                  Ủng hộ hằng tháng
+                </h2>
+                <p className="mt-2 max-w-[68ch] text-sm text-muted">
+                  Chọn số tiền và một ngày trong tháng. Mỗi tháng vào ngày đó, Give nhắc bạn kèm mã ủng hộ và mã QR mới
+                  để bạn tự chuyển khoản. Give không tự trừ tiền: tháng nào bạn không chuyển cũng không sao, và bạn dừng
+                  được bất cứ lúc nào. Lời nhắc tự dừng khi chiến dịch kết thúc ({formatDate(campaign.ends_at)}).
+                </p>
+                <div className="mt-6 card p-4 sm:p-6">
+                  {session ? (
+                    <MonthlyForm campaignId={campaign.id} defaultName={session.user.name ?? ""} />
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-fg">Cần đăng nhập để Give gửi lời nhắc và mã ủng hộ cho bạn mỗi tháng.</p>
+                      <a href={loginHref} className={buttonClass({ variant: "secondary", size: "lg", full: true })}>
+                        Đăng nhập để ủng hộ hằng tháng
+                      </a>
+                    </div>
+                  )}
                 </div>
               </section>
             )}

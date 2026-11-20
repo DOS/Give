@@ -61,6 +61,13 @@ import { checkInputClass, checkLabelClass, fileInputClass, Panel } from "../../_
 import { bindAccount, releaseAccount } from "../../accounts/actions"
 import { cancelAccountSwap, requestAccountSwap } from "../swap-actions"
 
+import {
+  campaignAllowsMonthly,
+  loadPlanSupporters,
+  MonthlySection,
+  showMonthlySection,
+  type PlanSupporter,
+} from "./MonthlySection"
 import { FulfillmentLink, RewardTiersSection } from "./RewardTiersSection"
 
 import {
@@ -112,21 +119,38 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
   if (!campaign || campaign.organizer_id !== session.user.id) notFound()
 
   const isGive = campaign.type === "give"
-  const [categories, milestones, updates, totals, accounts, tiers, youtubeState, statusEventsByCampaign] =
-    await Promise.all([
-      listCategories(db),
-      listMilestones(db, campaign.id),
-      listAllUpdates(db, campaign.id),
-      isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
-      // Both types need a usable account before review (DOS/Give#85). A failed
-      // account read shows a notice in its section instead of failing the whole
-      // editor; submitForReview still checks the account on the server.
-      loadEditorAccounts(db, session.user.id, campaign.id, campaign.status, campaign.type).catch(() => null),
-      // Reward tiers of a back campaign (DOS/Give#83); a failed read degrades its section only.
-      isGive ? Promise.resolve(null) : listCampaignTiers(db, campaign.id).catch(() => null),
-      loadYoutubeVideo(db, campaign.id).catch(() => null),
-      listStatusEventsByCampaign(db, [campaign.id]).catch(() => new Map<string, CampaignStatusEvent[]>()),
-    ])
+  const showMonthly = showMonthlySection(campaign.type, campaign.status)
+  const allowMonthly = campaignAllowsMonthly(campaign)
+  const [
+    categories,
+    milestones,
+    updates,
+    totals,
+    accounts,
+    tiers,
+    youtubeState,
+    statusEventsByCampaign,
+    planSupporters,
+  ] = await Promise.all([
+    listCategories(db),
+    listMilestones(db, campaign.id),
+    listAllUpdates(db, campaign.id),
+    isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
+    // Both types need a usable account before review (DOS/Give#85). A failed
+    // account read shows a notice in its section instead of failing the whole
+    // editor; submitForReview still checks the account on the server.
+    loadEditorAccounts(db, session.user.id, campaign.id, campaign.status, campaign.type).catch(() => null),
+    // Reward tiers of a back campaign (DOS/Give#83); a failed read degrades its section only.
+    isGive ? Promise.resolve(null) : listCampaignTiers(db, campaign.id).catch(() => null),
+    loadYoutubeVideo(db, campaign.id).catch(() => null),
+    listStatusEventsByCampaign(db, [campaign.id]).catch(() => new Map<string, CampaignStatusEvent[]>()),
+    // Monthly supporters (DOS/Give#276): the service-role RPC runs only after the
+    // caller's own token loaded the campaign above and they organize it; a failed
+    // read degrades the monthly section only.
+    showMonthly && allowMonthly
+      ? loadPlanSupporters(campaign.id, session.user.id).catch(() => null)
+      : Promise.resolve<PlanSupporter[] | null>([]),
+  ])
   const youtubeVideo = youtubeState?.video ?? null
   const statusEvents = statusEventsByCampaign.get(campaign.id) ?? []
   const editable = isEditableStatus(campaign.status)
@@ -145,6 +169,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
     { id: "pitch-video", label: "Video giới thiệu" },
     { id: "milestones", label: "Các mốc mục tiêu" },
     !isGive && { id: "reward-tiers", label: "Phần thưởng" },
+    showMonthly && { id: "monthly", label: "Ủng hộ hằng tháng" },
     showUpdates && { id: "updates", label: "Cập nhật" },
     { id: "receiving-account", label: "Tài khoản nhận tiền" },
     { id: "status", label: "Trạng thái" },
@@ -706,6 +731,16 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               status={campaign.status}
               minContribution={campaign.min_contribution}
               tiers={tiers}
+            />
+          )}
+
+          {showMonthly && (
+            <MonthlySection
+              campaignId={campaign.id}
+              status={campaign.status}
+              endsAt={campaign.ends_at}
+              allowMonthly={allowMonthly}
+              supporters={planSupporters}
             />
           )}
 
