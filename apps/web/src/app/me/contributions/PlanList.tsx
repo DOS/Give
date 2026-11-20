@@ -43,12 +43,12 @@ export interface PlanDonation {
   plan_period: string | null
 }
 
-/** The first day of the current month in Vietnam time (UTC+7), as YYYY-MM-DD. */
 /** The month the cron issues next: next_period, or this month when next_period is in the past (YYYY-MM-DD compares as text). */
 export function effectiveNextPeriod(nextPeriod: string, month: string): string {
   return nextPeriod < month ? month : nextPeriod
 }
 
+/** The first day of the current month in Vietnam time (UTC+7), as YYYY-MM-DD. */
 export function vnMonthStart(now = new Date()): string {
   const vn = new Date(now.getTime() + 7 * 60 * 60 * 1000)
   return `${vn.getUTCFullYear()}-${String(vn.getUTCMonth() + 1).padStart(2, "0")}-01`

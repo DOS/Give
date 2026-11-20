@@ -64,6 +64,28 @@ describe("GET /api/cron/plan-notices", () => {
     expect(state.calls.filter((c) => c.target === "rpc:plan_followups")).toHaveLength(2)
   })
 
+  it("shares one deadline: past the budget the second reminders wait for the next run", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      const start = Date.now()
+      state.handler = (call) => {
+        if (call.target !== "rpc:plan_end_notices") return { data: [] }
+        // The end notices take the whole budget.
+        vi.setSystemTime(start + 46_000)
+        const after = (op(call, "args")?.[0] as { p_after: string | null }).p_after
+        return { data: after === null ? [{ plan_id: PLAN, outcome: "noticed" }] : [] }
+      }
+      expect(await (await GET(request(`Bearer ${SECRET}`))).json()).toEqual({
+        ended: { noticed: 1 },
+        followups: {},
+        done: false,
+      })
+      expect(state.calls.some((c) => c.target === "rpc:plan_followups")).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("answers 500 when a call fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     state.handler = (call) =>
