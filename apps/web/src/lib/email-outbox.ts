@@ -17,6 +17,9 @@ export const OUTBOX_KIND_LABELS: Record<string, string> = {
   campaign_changes_requested: "Yêu cầu chỉnh sửa",
   campaign_suspended: "Chiến dịch bị tạm dừng",
   campaign_ended: "Tổng kết chiến dịch",
+  plan_reminder: "Mã ủng hộ hằng tháng",
+  plan_followup: "Nhắc lại mã ủng hộ hằng tháng",
+  plan_ended: "Kế hoạch hằng tháng đã dừng",
 }
 
 export const OUTBOX_STATUS_LABELS: Record<string, string> = {
@@ -34,6 +37,8 @@ export const OUTBOX_SKIP_LABELS: Record<string, string> = {
   expired: "đã quá lâu nên không còn đúng lúc",
   not_received: "khoản ủng hộ không còn ở trạng thái đã nhận",
   not_due: "cam kết không còn đến hạn thanh toán",
+  not_payable:
+    "khoản ủng hộ hằng tháng không còn chuyển được (kế hoạch đã dừng, hết tháng hoặc chiến dịch không còn nhận)",
 }
 
 /**
@@ -46,8 +51,9 @@ export const THROTTLE_HOLD_PREFIX = "THROTTLE:"
 
 /** Days before an email is too late to send; mirrors give.outbox_max_age (DOS.Me). */
 export function outboxMaxAgeDays(kind: string): number {
-  if (kind === "pledge_payment_reminder") return 2
-  if (kind === "pledge_payment_due" || kind === "campaign_ended") return 14
+  if (kind === "pledge_payment_reminder" || kind === "plan_followup") return 2
+  if (kind === "plan_reminder") return 3
+  if (kind === "pledge_payment_due" || kind === "campaign_ended" || kind === "plan_ended") return 14
   return 7
 }
 

@@ -12,6 +12,7 @@ import {
   donationCookieToken,
   guestContribution,
   guestContributionAccess,
+  ownContribution,
   paymentAccount,
   statusTokenHash,
 } from "."
@@ -147,6 +148,8 @@ describe("guestContribution", () => {
       reference_code: "GVABCDEFG",
       status: "awaiting_transfer",
       created_at: "2026-10-31T23:00:00.000Z",
+      plan_id: null,
+      plan_period: null,
     })
     const call = calls[0]
     expect(call.target).toBe("contributions")
@@ -247,6 +250,8 @@ describe("guestContribution", () => {
         reference_code: "GVABCDEFG",
         status: "awaiting_transfer",
         created_at: "2026-10-31T23:00:00.000Z",
+        plan_id: null,
+        plan_period: null,
       },
       expiresAt: new Date("2026-11-07T23:00:00.000Z"),
     })
@@ -313,5 +318,29 @@ describe("acceptsDonations", () => {
     expect(acceptsDonations({ ...live, status: "closed" }, now)).toBe(false)
     expect(acceptsDonations({ ...live, ends_at: "2026-11-10T00:00:00Z" }, now)).toBe(false)
     expect(acceptsDonations({ ...live, starts_at: "2026-11-11T00:00:00Z" }, now)).toBe(false)
+  })
+})
+
+describe("ownContribution (monthly plans, DOS/Give#276)", () => {
+  it("reads the donor's own donation with its plan month, matching the user", async () => {
+    const calls: Call[] = []
+    const row = {
+      id: "33333333-3333-4333-8333-333333333333",
+      campaign_id: CAMPAIGN,
+      intended_amount: 200000,
+      received_amount: 0,
+      reference_code: "GVABCDEFG",
+      status: "awaiting_transfer",
+      created_at: "2026-11-05T01:00:00.000Z",
+      plan_id: "44444444-4444-4444-8444-444444444444",
+      plan_period: "2026-11-01",
+    }
+    const db = fakeDb(() => ({ data: row }), calls)
+    expect(await ownContribution(db as never, "11111111-1111-4111-8111-111111111111", "GVABCDEFG")).toEqual(row)
+    const selected = String(op(calls[0], "select")?.[0])
+    expect(selected).toContain("plan_id")
+    expect(selected).toContain("plan_period")
+    expect(selected).not.toContain("*")
+    expect(calls[0].ops).toContainEqual(["eq", "contributor_user_id", "11111111-1111-4111-8111-111111111111"])
   })
 })

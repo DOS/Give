@@ -51,6 +51,7 @@ vi.mock("@/lib/supabase", () => ({
 }))
 vi.mock("./actions", () => ({ reportCampaign: vi.fn(async () => null) }))
 vi.mock("@/app/(public)/donations/actions", () => ({ donate: vi.fn(async () => null) }))
+vi.mock("./monthly-actions", () => ({ startMonthlyPlan: vi.fn(async () => null) }))
 
 const { default: CampaignPage, generateMetadata } = await import("./page")
 
@@ -982,4 +983,106 @@ describe("CampaignPage BreadcrumbList JSON-LD (DOS/Give#283)", () => {
       }
     }
   )
+})
+
+describe("CampaignPage monthly giving (DOS/Give#276)", () => {
+  const ACCOUNT = { channel: "statement_import", bank_bin: "970436", account_number: "0123456789", account_name: "QUY" }
+
+  function withMonthly(row: { allow_monthly: boolean; monthly_supporters: number } | null, fail = false) {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "public_campaign_monthly") {
+        return fail ? { error: { code: "42P01", message: "missing" } } : { data: row }
+      }
+      return baseAnon(call)
+    }
+    state.serviceHandler = (call) => (call.target === "rpc:payment_account" ? { data: ACCOUNT } : undefined)
+  }
+
+  async function render() {
+    return parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+  }
+
+  it("shows the monthly supporters count and a sign-in link to a signed-out visitor", async () => {
+    withMonthly({ allow_monthly: true, monthly_supporters: 7 })
+    const doc = await render()
+
+    expect(doc.body.textContent).toContain("7 người ủng hộ hằng tháng")
+    const monthlyCall = state.anonCalls.find((c) => c.target === "public_campaign_monthly")
+    expect(monthlyCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+    const section = doc.querySelector("#hang-thang")!
+    expect(section).not.toBeNull()
+    expect(section.textContent).toContain("Give không tự trừ tiền")
+    expect(section.querySelector("form")).toBeNull()
+    const login = section.querySelector('a[href^="/auth/login"]')
+    expect(login?.getAttribute("href")).toBe(`/auth/login?return_path=${encodeURIComponent(`/campaigns/${SLUG}`)}`)
+    expect(login?.textContent).toBe("Đăng nhập để ủng hộ hằng tháng")
+    expect(doc.querySelector('a[href="#hang-thang"]')?.textContent).toBe("Hoặc ủng hộ hằng tháng")
+    // The one-off form stays.
+    expect(doc.querySelector("#ung-ho")).not.toBeNull()
+  })
+
+  it("renders the monthly form with day 1-28, the anonymity warning and a required consent for a signed-in donor", async () => {
+    state.session = { user: { id: VIEWER, email: "lan@dos.me", name: "Lan" }, accessToken: "viewer-token" }
+    withMonthly({ allow_monthly: true, monthly_supporters: 0 })
+    const doc = await render()
+
+    expect(doc.body.textContent).not.toContain("người ủng hộ hằng tháng")
+    const form = doc.querySelector("#hang-thang form")!
+    expect(form).not.toBeNull()
+    expect(form.querySelector('input[name="amount"]')).not.toBeNull()
+    const days = [...form.querySelectorAll('select[name="day_of_month"] option')].map((o) => o.getAttribute("value"))
+    expect(days).toEqual(Array.from({ length: 28 }, (_, i) => String(i + 1)))
+    expect(form.querySelector('input[name="public_name"]')?.getAttribute("value")).toBe("Lan")
+    expect(form.querySelector("#monthly-anonymous-hint")?.textContent).toContain("mỗi tháng một lần")
+    const consent = form.querySelector('input[name="consent"]')!
+    expect(consent.hasAttribute("required")).toBe(true)
+    expect(consent.closest("label")?.textContent).toContain(
+      "Tôi đồng ý nhận lời nhắc và mã ủng hộ mỗi tháng qua email và thông báo trên Give; tôi dừng được bất cứ lúc nào."
+    )
+    expect(form.querySelector('textarea[name="message"]')).not.toBeNull()
+    expect(form.querySelector('button[type="submit"]')?.textContent).toBe("Đăng ký ủng hộ hằng tháng")
+  })
+
+  it.each([
+    ["the campaign does not allow it", { allow_monthly: false, monthly_supporters: 3 }, false],
+    ["the lookup fails", null, true],
+  ])("hides the monthly form when %s", async (_name, row, fail) => {
+    state.session = { user: { id: VIEWER, email: null, name: null }, accessToken: "viewer-token" }
+    withMonthly(row, fail)
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+    const doc = await render()
+    log.mockRestore()
+
+    expect(doc.querySelector("#hang-thang")).toBeNull()
+    expect(doc.querySelector('a[href="#hang-thang"]')).toBeNull()
+    expect(doc.querySelector("#ung-ho")).not.toBeNull()
+    // Existing supporters still count while the campaign takes no new plans.
+    expect(doc.body.textContent?.includes("3 người ủng hộ hằng tháng")).toBe(!fail)
+  })
+
+  it("hides the monthly form when the campaign takes no donations, and the count when backer counts are hidden", async () => {
+    state.session = { user: { id: VIEWER, email: null, name: null }, accessToken: "viewer-token" }
+    withMonthly({ allow_monthly: true, monthly_supporters: 4 })
+    state.serviceHandler = () => ({ data: null })
+    let doc = await render()
+    expect(doc.querySelector("#hang-thang")).toBeNull()
+    expect(doc.body.textContent).toContain("4 người ủng hộ hằng tháng")
+
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) =>
+      call.target === "campaigns"
+        ? { data: { ...campaignFixture("live"), display_options: { backers_count: false } } }
+        : baseAnon(call)
+    doc = await render()
+    expect(doc.body.textContent).not.toContain("người ủng hộ hằng tháng")
+  })
+
+  it("does not look monthly giving up for back campaigns or previews", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) =>
+      call.target === "campaigns" ? { data: { ...campaignFixture("live"), type: "back" } } : baseAnon(call)
+    await render()
+    expect(state.anonCalls.some((c) => c.target === "public_campaign_monthly")).toBe(false)
+  })
 })

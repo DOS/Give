@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { getSession } from "@/lib/auth/session"
 import { SUBMIT_NO_ACCOUNT, submitUnusableAccount } from "@/lib/campaign-account"
-import { SUBMIT_MESSAGES } from "@/lib/errors"
+import { CAMPAIGN_MONTHLY_MESSAGES, SUBMIT_MESSAGES } from "@/lib/errors"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 const USER = "11111111-1111-4111-8111-111111111111"
@@ -45,6 +45,7 @@ const {
   removeYoutubeVideo,
   saveContent,
   saveYoutubeVideo,
+  setCampaignMonthly,
   submitForReview,
   updateDraftUpdate,
   updateMilestone,
@@ -162,6 +163,40 @@ describe("saveContent", () => {
   it("rejects a tampered campaign id before querying", async () => {
     expect((await saveContent("x),id.neq.0", null, contentForm()))?.ok).toBe(false)
     expect(state.userCalls).toHaveLength(0)
+  })
+
+  it("asks to turn monthly giving off when clearing the end date hits campaigns_monthly_needs_end (DOS/Give#276)", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: owned() }
+        : op(call, "update")
+          ? {
+              error: {
+                code: "23514",
+                message: 'new row for relation "campaigns" violates check constraint "campaigns_monthly_needs_end"',
+              },
+            }
+          : undefined
+    expect(await saveContent(CAMPAIGN, null, contentForm({ ends_at: "" }))).toEqual({
+      ok: false,
+      message: "Hãy tắt ủng hộ hằng tháng trước khi bỏ ngày kết thúc.",
+    })
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("keeps the generic message for other check violations", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: owned() }
+        : op(call, "update")
+          ? {
+              error: {
+                code: "23514",
+                message: 'new row for relation "campaigns" violates check constraint "campaigns_goal_amount_check"',
+              },
+            }
+          : undefined
+    expect(await saveContent(CAMPAIGN, null, contentForm())).toEqual({ ok: false, message: "Dữ liệu không hợp lệ." })
   })
 })
 
@@ -1429,5 +1464,120 @@ describe("publishDraftUpdate & deleteDraftUpdate", () => {
       message: "Không tìm thấy bản nháp cập nhật này (có thể đã được đăng hoặc đã xóa). Hãy tải lại trang.",
     })
     expect(vi.mocked(revalidatePath)).not.toHaveBeenCalled()
+  })
+})
+
+describe("setCampaignMonthly (DOS/Give#276)", () => {
+  function monthlyForm(enabled: string | null) {
+    const form = new FormData()
+    if (enabled !== null) form.set("enabled", enabled)
+    return form
+  }
+
+  it.each([
+    ["true", true, "Đã bật ủng hộ hằng tháng."],
+    [
+      "false",
+      false,
+      "Đã tắt ủng hộ hằng tháng. Kế hoạch của người ủng hộ đã dừng; mã ủng hộ của tháng này vẫn dùng được.",
+    ],
+  ] as const)(
+    "proves the session with the caller's token, then sets enabled=%s with the service role as the caller",
+    async (choice, enabled, message) => {
+      state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ status: "live" }) } : undefined)
+      state.serviceHandler = (call) => (call.target === "rpc:set_campaign_monthly" ? { data: enabled } : undefined)
+      expect(await setCampaignMonthly(CAMPAIGN, null, monthlyForm(choice))).toEqual({ ok: true, message })
+
+      expect(state.userCalls).toHaveLength(1)
+      expect(state.userCalls[0].target).toBe("rpc:managed_campaigns")
+      expect(op(state.userCalls[0], "args")).toEqual([{ p_campaign_id: CAMPAIGN }])
+      expect(state.serviceCalls).toHaveLength(1)
+      expect(state.serviceCalls[0].target).toBe("rpc:set_campaign_monthly")
+      expect(op(state.serviceCalls[0], "args")).toEqual([
+        { p_campaign_id: CAMPAIGN, p_enabled: enabled, p_actor: USER },
+      ])
+      expect(vi.mocked(revalidatePath).mock.calls.map(([path]) => path)).toEqual([
+        `/me/campaigns/${CAMPAIGN}`,
+        "/me/campaigns",
+        "/campaigns/quy-hoc-bong-abcde",
+      ])
+    }
+  )
+
+  it("asks a signed-out caller to sign in again without querying", async () => {
+    vi.mocked(getSession).mockResolvedValueOnce(null)
+    expect(await setCampaignMonthly(CAMPAIGN, null, monthlyForm("true"))).toEqual({
+      ok: false,
+      message: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+    })
+    expect(state.userCalls).toHaveLength(0)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it.each([[null], [""], ["on"], ["1"]])("rejects the choice %j before querying", async (choice) => {
+    expect(await setCampaignMonthly(CAMPAIGN, null, monthlyForm(choice))).toEqual({
+      ok: false,
+      message: "Dữ liệu không hợp lệ.",
+    })
+    expect(state.userCalls).toHaveLength(0)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("rejects a tampered campaign id before querying", async () => {
+    expect((await setCampaignMonthly("x),id.neq.0", null, monthlyForm("true")))?.ok).toBe(false)
+    expect(state.userCalls).toHaveLength(0)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("never calls the service-role RPC for a campaign the caller does not organize", async () => {
+    state.userHandler = (call) =>
+      op(call, "maybeSingle") ? { data: owned({ organizer_id: "someone-else" }) } : undefined
+    expect(await setCampaignMonthly(CAMPAIGN, null, monthlyForm("true"))).toEqual({
+      ok: false,
+      message: "Không tìm thấy chiến dịch của bạn.",
+    })
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("never calls the service-role RPC when the caller's token is rejected", async () => {
+    state.userHandler = () => ({ error: { code: "PGRST303", message: "JWT expired" } })
+    expect(await setCampaignMonthly(CAMPAIGN, null, monthlyForm("false"))).toEqual({
+      ok: false,
+      message: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+    })
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("refuses a back project without calling the RPC", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned({ type: "back" }) } : undefined)
+    expect(await setCampaignMonthly(CAMPAIGN, null, monthlyForm("true"))).toEqual({
+      ok: false,
+      message: CAMPAIGN_MONTHLY_MESSAGES.GIVE_CONTRIBUTION_TYPE_MISMATCH,
+    })
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it.each([
+    "GIVE_MONTHLY_NEEDS_END_DATE",
+    "GIVE_CAMPAIGN_ALREADY_ENDED",
+    "GIVE_CAMPAIGN_NOT_ACCEPTING",
+    "GIVE_CONTRIBUTION_TYPE_MISMATCH",
+  ])("words the RPC's %s for the organizer and does not revalidate", async (code) => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : undefined)
+    state.serviceHandler = () => ({ error: { code: "23514", message: code } })
+    expect(await setCampaignMonthly(CAMPAIGN, null, monthlyForm("true"))).toEqual({
+      ok: false,
+      message: CAMPAIGN_MONTHLY_MESSAGES[code],
+    })
+    expect(revalidatePath).not.toHaveBeenCalled()
+  })
+
+  it("falls back to the shared message for GIVE_CAMPAIGN_NOT_FOUND", async () => {
+    state.userHandler = (call) => (op(call, "maybeSingle") ? { data: owned() } : undefined)
+    state.serviceHandler = () => ({ error: { code: "P0002", message: "GIVE_CAMPAIGN_NOT_FOUND" } })
+    expect(await setCampaignMonthly(CAMPAIGN, null, monthlyForm("false"))).toEqual({
+      ok: false,
+      message: "Không tìm thấy chiến dịch, hoặc bạn không có quyền với chiến dịch này.",
+    })
   })
 })

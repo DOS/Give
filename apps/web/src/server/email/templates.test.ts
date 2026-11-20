@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
 
+import { NEW_CODE_EVERY_MONTH } from "@/lib/plans"
+
 import { EmailRenderError, escapeHtml, renderEmail, type OutboxEmail } from "./templates"
 
 const ORIGIN = "https://give.vn"
@@ -28,6 +30,7 @@ function email(overrides: Partial<OutboxEmail> = {}): OutboxEmail {
     unsubscribe_token: null,
     reference_code: "GVABCDEFG",
     tracking_token: TOKEN,
+    stop_token: null,
     ...overrides,
   }
 }
@@ -177,6 +180,100 @@ describe("renderEmail: organizer emails", () => {
     expect(() =>
       renderEmail(organizer("campaign_ended", { to_status: "closed" }, { category: "notification" }), ORIGIN)
     ).toThrow(EmailRenderError)
+  })
+})
+
+describe("renderEmail: monthly plans (DOS/Give#276)", () => {
+  const SIGNED = `${"cd".repeat(32)}.${"A".repeat(21)}w`
+  const plan = (kind: string, payload: Record<string, unknown> = {}) =>
+    email({
+      kind,
+      tracking_token: null,
+      reference_code: "GVPLAN123",
+      stop_token: "cd".repeat(32),
+      payload: {
+        campaign_id: CAMPAIGN,
+        campaign_slug: "nuoc-sach",
+        campaign_title: "Nước sạch cho bản",
+        campaign_type: "give",
+        plan_id: "33333333-3333-4333-8333-333333333333",
+        amount: 200000,
+        day_of_month: 5,
+        contribution_id: "44444444-4444-4444-8444-444444444444",
+        reference_code: "GVPLAN123",
+        intended_amount: 200000,
+        plan_period: "2026-11-01",
+        first: false,
+        ...payload,
+      },
+    })
+  const FORBIDDEN = /quá hạn|nợ|còn thiếu/i
+
+  it("gives a month's code, the new-code rule and a stop link, without bank details", () => {
+    const r = renderEmail(plan("plan_reminder"), ORIGIN, { signedStopToken: SIGNED })
+    expect(r.subject).toBe("Mã ủng hộ tháng 11/2026 cho chiến dịch “Nước sạch cho bản”")
+    expect(r.text).toContain("GVPLAN123")
+    expect(r.text).toContain("200.000")
+    expect(r.text).toContain(NEW_CODE_EVERY_MONTH)
+    expect(r.text).toContain("Nếu bạn đã chuyển thì bỏ qua email này")
+    expect(r.text).toContain("tài khoản của người tổ chức")
+    expect(r.text).toContain(`Xem mã QR tháng này: ${ORIGIN}/me/contributions`)
+    const stop = `${ORIGIN}/plans/stop?t=${encodeURIComponent(SIGNED)}`
+    expect(r.text).toContain(`Không muốn nhận lời nhắc nữa? Dừng ủng hộ hằng tháng: ${stop}`)
+    expect(r.html).toContain(`href="${stop}"`)
+    expect(r.oneClickUnsubscribeUrl).toBe(`${ORIGIN}/api/plans/stop?t=${encodeURIComponent(SIGNED)}`)
+    expect(r.unsubscribeUrl).toBeNull()
+    expect(r.text).not.toMatch(FORBIDDEN)
+    expect(r.text).not.toMatch(/\d{6,}/)
+  })
+
+  it("confirms the plan started on the first reminder", () => {
+    const r = renderEmail(plan("plan_reminder", { first: true }), ORIGIN, { signedStopToken: SIGNED })
+    expect(r.subject).toBe("Bạn đã bắt đầu ủng hộ hằng tháng cho chiến dịch “Nước sạch cho bản”")
+    expect(r.text).toContain("Cảm ơn bạn đã đăng ký ủng hộ 200.000")
+    expect(r.text).toContain("GVPLAN123")
+  })
+
+  it("sends a gentle second reminder with the same stop link", () => {
+    const r = renderEmail(plan("plan_followup"), ORIGIN, { signedStopToken: SIGNED })
+    expect(r.subject).toBe("Nhắc lại: mã ủng hộ tháng 11/2026 cho chiến dịch “Nước sạch cho bản”")
+    expect(r.text).toContain("Nếu bạn đã chuyển thì bỏ qua email này")
+    expect(r.text).toContain(`${ORIGIN}/plans/stop?t=`)
+    expect(r.oneClickUnsubscribeUrl).toBe(`${ORIGIN}/api/plans/stop?t=${encodeURIComponent(SIGNED)}`)
+    expect(r.text).not.toMatch(FORBIDDEN)
+  })
+
+  it.each(["plan_reminder", "plan_followup"])("refuses %s without a signed stop token", (kind) => {
+    expect(() => renderEmail(plan(kind), ORIGIN)).toThrow(new EmailRenderError("stop_token_missing"))
+    expect(() => renderEmail(plan(kind), ORIGIN, { signedStopToken: null })).toThrow(EmailRenderError)
+    expect(() => renderEmail(plan(kind), ORIGIN, { signedStopToken: "cd".repeat(32) })).toThrow(EmailRenderError)
+  })
+
+  it("tells the donor why the plan ended and to delete a saved transfer template", () => {
+    const r = renderEmail(
+      plan("plan_ended", {
+        ended_reason: "campaign_closed",
+        ended_at: "2026-12-01T00:00:00Z",
+        bank_bin: "970436",
+        account_last4: "6789",
+      }),
+      ORIGIN
+    )
+    expect(r.subject).toBe("Kế hoạch ủng hộ hằng tháng cho chiến dịch “Nước sạch cho bản” đã dừng")
+    expect(r.text).toContain("Lý do: chiến dịch đã kết thúc nhận ủng hộ.")
+    expect(r.text).toContain("Give sẽ không tạo mã ủng hộ mới và không nhắc bạn")
+    expect(r.text).toContain("mẫu chuyển tiền tới tài khoản Vietcombank •••• 6789")
+    expect(r.text).toContain("hãy xóa mẫu đó")
+    expect(r.text).toContain(`${ORIGIN}/campaigns/nuoc-sach`)
+    expect(r.text).not.toContain("/plans/stop")
+    expect(r.oneClickUnsubscribeUrl).toBeNull()
+    expect(r.text).not.toMatch(FORBIDDEN)
+  })
+
+  it("still asks to delete a template when the account is unknown", () => {
+    const r = renderEmail(plan("plan_ended", { ended_reason: "donor_cancelled" }), ORIGIN)
+    expect(r.text).toContain("Lý do: bạn đã dừng kế hoạch.")
+    expect(r.text).toContain("mẫu chuyển tiền tới tài khoản nhận của chiến dịch")
   })
 })
 

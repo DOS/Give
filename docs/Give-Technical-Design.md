@@ -872,17 +872,19 @@ Kênh crypto nằm sau M4, nhưng schema đã có sẵn chỗ (`asset`, `vnd_equ
 
 ### 5.3 Job định kỳ (Vercel Cron → route handler có secret → RPC)
 
-| Job                  | Tần suất | Việc                                                                                                                  |
-| -------------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
-| `activate-scheduled` | 5 phút   | `approved` → `live` khi tới `starts_at`                                                                               |
-| `finalize-ended`     | 5 phút   | `finalize_campaign` cho từng campaign đã quá `ends_at`; campaign lỗi được ghi `audit_log` và không chặn campaign khác |
-| `lapse-pledges`      | 1 giờ    | `lapse_overdue_pledges`                                                                                               |
-| `remind-pledges`     | 1 giờ    | `remind_pledge_payments`: nhắc thanh toán cam kết vào ngày 1, 3 và 6 của hạn thanh toán (mỗi ngày một lần)            |
-| `reprocess-inbound`  | 5 phút   | Xử lý lại `inbound_events` còn treo; đỗ sự kiện sau 10 lần thử                                                        |
-| `reconcile-accounts` | 1 ngày   | `fetchTransactions` cho các kênh có hỗ trợ; báo lệch khi số dư không khớp                                             |
-| `send-outbox`        | 1 phút   | Gửi email trong `give.outbox`, thử lại 1, 5, 15, 60, 180, 360 phút rồi `dead` (mục 2.5.1)                             |
-| `purge-outbox`       | 1 ngày   | Xóa địa chỉ và payload email cũ, token theo dõi hết hạn (mục 2.5.1)                                                   |
-| `remind-unexplained` | 1 ngày   | Nhắc người tổ chức giải trình các khoản chi                                                                           |
+| Job                    | Tần suất | Việc                                                                                                                                                                                                           |
+| ---------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `activate-scheduled`   | 5 phút   | `approved` → `live` khi tới `starts_at`                                                                                                                                                                        |
+| `finalize-ended`       | 5 phút   | `finalize_campaign` cho từng campaign đã quá `ends_at`; campaign lỗi được ghi `audit_log` và không chặn campaign khác                                                                                          |
+| `lapse-pledges`        | 1 giờ    | `lapse_overdue_pledges`                                                                                                                                                                                        |
+| `remind-pledges`       | 1 giờ    | `remind_pledge_payments`: nhắc thanh toán cam kết vào ngày 1, 3 và 6 của hạn thanh toán (mỗi ngày một lần)                                                                                                     |
+| `reprocess-inbound`    | 5 phút   | Xử lý lại `inbound_events` còn treo; đỗ sự kiện sau 10 lần thử                                                                                                                                                 |
+| `reconcile-accounts`   | 1 ngày   | `fetchTransactions` cho các kênh có hỗ trợ; báo lệch khi số dư không khớp                                                                                                                                      |
+| `send-outbox`          | 1 phút   | Gửi email trong `give.outbox`, thử lại 1, 5, 15, 60, 180, 360 phút rồi `dead` (mục 2.5.1)                                                                                                                      |
+| `purge-outbox`         | 1 ngày   | Xóa địa chỉ và payload email cũ, token theo dõi hết hạn (mục 2.5.1)                                                                                                                                            |
+| `remind-unexplained`   | 1 ngày   | Nhắc người tổ chức giải trình các khoản chi                                                                                                                                                                    |
+| `issue-plan-donations` | 1 giờ    | Kế hoạch hằng tháng (mục 4.3.4): `issue_plan_donations` tạo donation của kỳ cho kế hoạch tới ngày, mỗi kế hoạch một lần gọi, và kết thúc kế hoạch của chiến dịch đã quá `ends_at`; rồi `expire_plan_donations` |
+| `plan-notices`         | 10 phút  | `plan_end_notices` báo người góp đúng một lần khi kế hoạch kết thúc; `plan_followups` nhắc lần hai (chỉ tài khoản Tingee đủ điều kiện, chưa có tài khoản nào)                                                  |
 
 Mọi job đều idempotent. Nếu một lần chạy bị trùng hoặc bị bỏ lỡ, lần chạy sau sửa lại được.
 

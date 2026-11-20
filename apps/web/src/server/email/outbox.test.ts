@@ -11,6 +11,8 @@ import {
   SEND_TIMEOUT_MS,
   sendDueEmails,
 } from "./outbox"
+import { signStopToken } from "@/server/plans/stop-link"
+
 import type { EmailTransport, OutgoingEmail, SendResult } from "./transport"
 
 const OPTIONS = { origin: "https://give.vn", from: "Give <no-reply@give.vn>", replyTo: "hi@give.vn" }
@@ -28,6 +30,7 @@ function row(n: number, overrides: Record<string, unknown> = {}) {
     unsubscribe_token: null,
     reference_code: null,
     tracking_token: null,
+    stop_token: null,
     ...overrides,
   }
 }
@@ -110,6 +113,68 @@ describe("sendDueEmails", () => {
     await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
     expect(sent[0].headers["List-Unsubscribe"]).toBe(`<https://give.vn/api/email/unsubscribe?t=${UNSUB}>`)
     expect(sent[0].headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click")
+  })
+
+  describe("monthly plan reminders (DOS/Give#276)", () => {
+    const STOP = "cd".repeat(32)
+    const SECRET = "test-secret-at-least-16"
+    const reminder = (n: number, overrides: Record<string, unknown> = {}) =>
+      row(n, {
+        kind: "plan_reminder",
+        reference_code: "GVPLAN123",
+        stop_token: STOP,
+        payload: {
+          campaign_title: "Nước sạch",
+          campaign_slug: "nuoc-sach",
+          amount: 200000,
+          intended_amount: 200000,
+          plan_period: "2026-11-01",
+          reference_code: "GVPLAN123",
+        },
+        ...overrides,
+      })
+
+    beforeEach(() => {
+      vi.stubEnv("GIVE_RATE_LIMIT_SECRET", SECRET)
+      return () => vi.unstubAllEnvs()
+    })
+
+    it("signs the stop token and points List-Unsubscribe at the plan's stop endpoint", async () => {
+      claims = [[reminder(20)]]
+      await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
+      const signed = signStopToken(STOP, SECRET)!
+      expect(signed).toMatch(new RegExp(`^${STOP}\\.`))
+      expect(sent[0].headers["List-Unsubscribe"]).toBe(
+        `<https://give.vn/api/plans/stop?t=${encodeURIComponent(signed)}>`
+      )
+      expect(sent[0].headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click")
+      expect(sent[0].text).toContain(`https://give.vn/plans/stop?t=${encodeURIComponent(signed)}`)
+    })
+
+    it("marks a reminder without its stop token dead without sending it", async () => {
+      claims = [[reminder(21, { stop_token: null })]]
+      completeStatus = "dead"
+      await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
+      expect(sent).toHaveLength(0)
+      expect(completes()[0]).toMatchObject({ p_permanent: true, p_error: "render: stop_token_missing" })
+    })
+
+    it("does not send a reminder when no secret can sign the link", async () => {
+      vi.stubEnv("GIVE_RATE_LIMIT_SECRET", "")
+      vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "")
+      claims = [[reminder(22, { kind: "plan_followup" })]]
+      completeStatus = "dead"
+      await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
+      expect(sent).toHaveLength(0)
+      expect(completes()[0]).toMatchObject({ p_error: "render: stop_token_missing" })
+    })
+
+    it("sends plan_ended without a stop link", async () => {
+      claims = [[reminder(23, { kind: "plan_ended", stop_token: null })]]
+      await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
+      expect(sent).toHaveLength(1)
+      expect(sent[0].headers["List-Unsubscribe"]).toBeUndefined()
+    })
   })
 
   it("reports a failure without the recipient's address, as permanent only when the provider says so", async () => {

@@ -1,8 +1,10 @@
 import type { Db } from "@/lib/campaigns"
+import { bankByBin } from "@/lib/banks"
 import { VIA_CONTACT_EMAIL } from "@/lib/contact"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { paymentRequestsStopped } from "@/lib/payment-requests"
+import { NEW_CODE_EVERY_MONTH, PLAN_ENDED_REASON_LABELS, periodLabel, type PlanEndedReason } from "@/lib/plans"
 import { SLUG_PATTERN } from "@/lib/slug"
 
 /**
@@ -63,6 +65,59 @@ function pledgeLink(payload: Notice["payload"], label: string): Pick<NoticeView,
   return code && /^GV[0-9A-Z]{6,7}$/.test(code)
     ? { href: `/me/pledges/${code}`, linkLabel: label }
     : { href: null, linkLabel: null }
+}
+
+/**
+ * Monthly plans (DOS/Give#276, design 4.3.4). A month without a transfer is
+ * not a debt, so nothing here says "quá hạn", "nợ" or "còn thiếu". The
+ * in-app plan payload (give.plan_notice_payload) carries no campaign title or
+ * slug; the email's does (give.outbox_campaign_payload), so both are optional.
+ */
+
+/** "chiến dịch “…”", or a donor's neutral wording when the payload has no title. */
+export function planCampaign(payload: Notice["payload"]): string {
+  const title = text(payload, "campaign_title")
+  return title ? `chiến dịch “${title.trim()}”` : "chiến dịch bạn ủng hộ hằng tháng"
+}
+
+/** "11/2026" from plan_period, or null. */
+function planMonth(payload: Notice["payload"]): string | null {
+  const period = text(payload, "plan_period")
+  return period && /^\d{4}-\d{2}-01$/.test(period) ? periodLabel(period) : null
+}
+
+/** The campaign account the donor may have saved a transfer template for, masked: "Vietcombank •••• 1234". */
+export function planTemplateAccount(payload: Notice["payload"]): string | null {
+  const last4 = text(payload, "account_last4")
+  if (!last4 || !/^[0-9A-Za-z]{1,4}$/.test(last4)) return null
+  const bank = bankByBin(text(payload, "bank_bin"))?.shortName
+  return bank ? `${bank} •••• ${last4}` : `•••• ${last4}`
+}
+
+function isPlanEndedReason(value: string | null): value is PlanEndedReason {
+  return value !== null && Object.prototype.hasOwnProperty.call(PLAN_ENDED_REASON_LABELS, value)
+}
+
+/**
+ * Why a plan stopped, that Give will not issue codes or remind any more, and
+ * to delete a saved transfer template: the email and the in-app notice of
+ * plan_ended say the same.
+ */
+export function planEndedParagraphs(payload: Notice["payload"]): string[] {
+  const monthly = count(payload, "amount")
+  const reason = text(payload, "ended_reason")
+  let stopped = `Kế hoạch ủng hộ ${monthly ? `${formatVnd(monthly)} ` : ""}mỗi tháng cho ${planCampaign(payload)} đã dừng.`
+  if (isPlanEndedReason(reason)) {
+    const label = PLAN_ENDED_REASON_LABELS[reason]
+    stopped += ` Lý do: ${label.charAt(0).toLowerCase()}${label.slice(1)}.`
+  }
+  const account = planTemplateAccount(payload)
+  const target = account ? `tài khoản ${account}` : "tài khoản nhận của chiến dịch"
+  return [
+    stopped,
+    "Give sẽ không tạo mã ủng hộ mới và không nhắc bạn cho kế hoạch này nữa.",
+    `Nếu bạn đã lưu mẫu chuyển tiền tới ${target} trong app ngân hàng, hãy xóa mẫu đó: tiền chuyển theo mẫu, kể cả sau khi chiến dịch kết thúc, vẫn vào tài khoản của người tổ chức.`,
+  ]
 }
 
 function asksForPayment(notice: Pick<Notice, "kind" | "payload">): boolean {
@@ -280,6 +335,44 @@ export function describeNotice(notice: Notice, options?: NoticeRenderOptions): N
         title: "Cần làm rõ thông tin chiến dịch",
         body,
         ...link,
+      }
+    }
+    case "plan_reminder":
+    case "plan_followup": {
+      // A month's donation of a monthly plan (first: issued at sign-up).
+      const followup = notice.kind === "plan_followup"
+      const month = planMonth(p)
+      const thisMonth = month ? `tháng ${month}` : "tháng này"
+      const code = text(p, "reference_code")
+      const due = count(p, "intended_amount") ?? count(p, "amount")
+      let body =
+        !followup && p?.first === true
+          ? `Bạn đã bắt đầu ủng hộ hằng tháng cho ${planCampaign(p)}.`
+          : `${followup ? "Nhắc lại mã" : "Mã"} ủng hộ ${thisMonth} cho ${planCampaign(p)}.`
+      if (code && /^GV[0-9A-Z]{6,7}$/.test(code)) {
+        body += ` Mã ${thisMonth} của bạn là ${code}${due ? `, số tiền ${formatVnd(due)}` : ""}.`
+      }
+      body += ` ${NEW_CODE_EVERY_MONTH} Nếu bạn đã chuyển thì bỏ qua thông báo này.`
+      return {
+        title:
+          !followup && p?.first === true
+            ? "Đã bắt đầu ủng hộ hằng tháng"
+            : followup
+              ? `Nhắc lại mã ủng hộ ${thisMonth}`
+              : `Mã ủng hộ ${thisMonth}`,
+        body,
+        href: "/me/contributions",
+        linkLabel: "Xem mã QR tháng này",
+      }
+    }
+    case "plan_ended": {
+      const slug = text(p, "campaign_slug")
+      return {
+        title: "Kế hoạch ủng hộ hằng tháng đã dừng",
+        body: planEndedParagraphs(p).join(" "),
+        ...(slug && SLUG_PATTERN.test(slug)
+          ? { href: `/campaigns/${slug}`, linkLabel: "Xem trang chiến dịch" }
+          : { href: "/me/contributions", linkLabel: "Xem các khoản ủng hộ" }),
       }
     }
     default:

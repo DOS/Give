@@ -26,8 +26,13 @@ import { isDonationCode } from "@/server/vietqr"
  *   for a contribution the caller has already proven is theirs.
  */
 
-/** Columns of a contribution the payment page needs. */
-const PAYMENT_COLUMNS = "id, campaign_id, intended_amount, received_amount, reference_code, status, created_at"
+/**
+ * Columns of a contribution the payment page needs. plan_id and plan_period
+ * mark a monthly plan's donation (DOS/Give#276), whose QR follows its month
+ * instead of the 24 hours of a one-off donation.
+ */
+const PAYMENT_COLUMNS =
+  "id, campaign_id, intended_amount, received_amount, reference_code, status, created_at, plan_id, plan_period"
 
 export interface PaymentContribution {
   id: string
@@ -37,6 +42,10 @@ export interface PaymentContribution {
   reference_code: string
   status: string
   created_at: string
+  /** The monthly plan that issued this donation, if any. */
+  plan_id: string | null
+  /** The first day of the plan month this donation is for (YYYY-MM-DD), with plan_id. */
+  plan_period: string | null
 }
 
 /** The hex form of sha256(token bytes), as give.create_donation stores it in status_token_hash. */
@@ -270,6 +279,8 @@ export async function guestContributionAccess(
       reference_code: row.reference_code,
       status: row.status,
       created_at: row.created_at,
+      plan_id: row.plan_id ?? null,
+      plan_period: row.plan_period ?? null,
     },
     expiresAt,
   }

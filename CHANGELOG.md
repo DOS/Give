@@ -390,6 +390,20 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Money (M1)
 
+- Monthly donations, plan A (D9): a signed-in donor signs up on a give
+  campaign that allows it (amount, day 1–28, reminder consent, the
+  anonymity warning that a transparent account's statement shows the name
+  every month) and Give issues an ordinary donation with its own code and
+  VietQR each month; nothing is charged. The organizer turns it on or off in
+  the workspace (only with an end date; off ends every plan) and sees the
+  monthly supporters' display names. `/me/contributions` lists plans with
+  this month's QR, edit and stop; a plan donation's QR shows while the
+  campaign is live, before its end and inside its month. Reminder emails
+  carry a signed stop link (`/plans/stop` asks first; POST and RFC 8058
+  one-click stop the plan) and `List-Unsubscribe`; end notices name the
+  account to delete from saved templates. Crons `issue-plan-donations`
+  (hourly) and `plan-notices` (every 10 minutes) sweep one plan per call
+  (#276 / this PR, needs DOS/DOS.Me#1824).
 - First bank statement parser: Techcombank Business transaction export,
   CSV or XLSX (`tcb-business`, decision P3 of 2026-11-18). Built
   from Techcombank's public guides with synthetic fixtures; the export's
@@ -600,6 +614,17 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Database (DOS.Me)
 
+- Monthly donation plans A: `give.donation_plans`, `give.plan_stop_tokens`,
+  `campaigns.allow_monthly` (needs `ends_at`), plan donations as ordinary
+  contributions (`plan_id`, `plan_period`, one per month), RPCs
+  `set_campaign_monthly`, `create_donation_plan`, `update_donation_plan`,
+  `cancel_donation_plan`, `plan_stop_token_status`,
+  `cancel_donation_plan_by_token`, `issue_plan_donations`,
+  `expire_plan_donations`, `plan_end_notices`, `plan_followups`,
+  `campaign_plan_supporters`; plans end on close, cancel, turn-off, the end
+  date and account deletion; `plan_reminder`, `plan_followup` and
+  `plan_ended` emails through the outbox, re-checked at send time, with
+  `claim_outbox` minting the stop token (#275 / DOS/DOS.Me#1824).
 - Email outbox: `give.outbox` (unique idempotency key, lease, attempts,
   backoff, dead), `give.email_suppressions`, `give.contribution_access_tokens`;
   enqueue triggers on `contributions`, `notices` and `campaign_status_events`;
