@@ -66,10 +66,12 @@ describe("POST /api/plans/stop", () => {
     expect(op(state.calls[0], "args")).toEqual([{ p_token_hash: `\\x${HASH}` }])
   })
 
-  it("sends the page's form back to the page with the result, without the token", async () => {
+  it("sends the page's form back to the page with the result and the token, so the page can confirm it", async () => {
     const response = await POST(post("", { t: signed }))
     expect(response.status).toBe(303)
-    expect(response.headers.get("location")).toBe("https://give.vn/plans/stop?result=done")
+    expect(response.headers.get("location")).toBe(
+      `https://give.vn/plans/stop?t=${encodeURIComponent(signed)}&result=done`
+    )
   })
 
   it.each([

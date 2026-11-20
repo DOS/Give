@@ -223,6 +223,8 @@ describe("DonationPage for a monthly plan's donation (DOS/Give#276)", () => {
 
     expect(html).toContain("Ủng hộ hằng tháng · tháng 10/2026")
     expect(html).toContain("Tháng 10/2026 đã qua nên Give không còn hiển thị mã QR của khoản này")
+    // The plan may have stopped since: the next code is promised only while it is active.
+    expect(html).toContain("Nếu kế hoạch ủng hộ hằng tháng của bạn còn hoạt động, mã của tháng mới")
     expect(html).toContain("Xem ủng hộ hằng tháng")
     expect(html).not.toContain("0123456789")
     for (const word of ["quá hạn", "nợ", "còn thiếu"]) expect(html).not.toContain(word)

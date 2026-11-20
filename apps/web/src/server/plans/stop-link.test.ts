@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto"
 
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
-import { byteaHex, planStopSecret, signStopToken, verifiedStopTokenHash } from "./stop-link"
+import { byteaHex, planStopSecret, planStopSecrets, signStopToken, verifiedStopTokenHash } from "./stop-link"
 
 const SECRET = "test-secret-0123456789"
 const TOKEN = "ab".repeat(32)
@@ -34,13 +34,37 @@ describe("plan stop links", () => {
     expect(verifiedStopTokenHash(signStopToken(TOKEN, SECRET), null)).toBeNull()
   })
 
-  it("takes the rate-limit secret, else the service-role key, and refuses a short one", () => {
+  it("outside Production takes the rate-limit secret, else the service-role key", () => {
     expect(planStopSecret({ GIVE_RATE_LIMIT_SECRET: SECRET, SUPABASE_SERVICE_ROLE_KEY: "service-role-key-xyz" })).toBe(
       SECRET
     )
-    expect(planStopSecret({ SUPABASE_SERVICE_ROLE_KEY: "service-role-key-xyz" })).toBe("service-role-key-xyz")
+    expect(planStopSecret({ VERCEL_ENV: "preview", SUPABASE_SERVICE_ROLE_KEY: "service-role-key-xyz" })).toBe(
+      "service-role-key-xyz"
+    )
     expect(planStopSecret({ GIVE_RATE_LIMIT_SECRET: "short" })).toBeNull()
     expect(planStopSecret({})).toBeNull()
+  })
+
+  it("in Production requires a rate-limit secret of 32 characters, never the service-role key, and logs without one", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const long = "p".repeat(32)
+    expect(planStopSecret({ VERCEL_ENV: "production", GIVE_RATE_LIMIT_SECRET: long })).toBe(long)
+    expect(planStopSecret({ VERCEL_ENV: "production", SUPABASE_SERVICE_ROLE_KEY: "s".repeat(40) })).toBeNull()
+    expect(planStopSecret({ VERCEL_ENV: "production", GIVE_RATE_LIMIT_SECRET: SECRET })).toBeNull()
+    expect(error).toHaveBeenCalledTimes(2)
+    error.mockRestore()
+  })
+
+  it("verifies links signed with the previous secret during a rotation, and signs with the current one", () => {
+    const env = { GIVE_RATE_LIMIT_SECRET: "new-secret-0123456789", GIVE_RATE_LIMIT_SECRET_PREVIOUS: SECRET }
+    const secrets = planStopSecrets(env)
+    expect(secrets).toEqual(["new-secret-0123456789", SECRET])
+    const old = signStopToken(TOKEN, SECRET)
+    expect(verifiedStopTokenHash(old, secrets)).not.toBeNull()
+    expect(verifiedStopTokenHash(signStopToken(TOKEN, planStopSecret(env)), secrets)).not.toBeNull()
+    expect(verifiedStopTokenHash(old, planStopSecrets({ GIVE_RATE_LIMIT_SECRET: "new-secret-0123456789" }))).toBeNull()
+    // No previous secret is used without a current one.
+    expect(planStopSecrets({ GIVE_RATE_LIMIT_SECRET_PREVIOUS: SECRET })).toEqual([])
   })
 
   it("formats a hash as a bytea literal", () => {

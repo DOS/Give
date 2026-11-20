@@ -89,7 +89,7 @@ describe("GET /api/cron/plan-notices", () => {
   it("answers 500 when a call fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     state.handler = (call) =>
-      call.target === "rpc:plan_followups" ? { error: { code: "XX000", message: "boom" } } : { data: [] }
+      call.target === "rpc:plan_end_notices" ? { data: [] } : { error: { code: "XX000", message: "boom" } }
     const failed = await GET(request(`Bearer ${SECRET}`))
     expect(failed.status).toBe(500)
     expect(await failed.json()).toEqual({ error: "notices_failed" })

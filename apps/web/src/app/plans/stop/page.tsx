@@ -94,18 +94,6 @@ export default async function PlanStopPage({
   const token = typeof raw === "string" ? raw : null
   const result = typeof params.result === "string" ? params.result : null
 
-  if (result === "done") {
-    return (
-      <EmptyState
-        level={1}
-        title="Đã dừng ủng hộ hằng tháng"
-        action={<ButtonLink href="/campaigns">Khám phá chiến dịch</ButtonLink>}
-      >
-        Give sẽ không tạo mã ủng hộ mới và không nhắc bạn cho kế hoạch này nữa. Nếu bạn đã lưu mẫu chuyển tiền trong app
-        ngân hàng, hãy xóa mẫu đó.
-      </EmptyState>
-    )
-  }
   if (result === "expired") return <Expired />
   if (result === "invalid") return <Invalid />
 
@@ -121,6 +109,20 @@ export default async function PlanStopPage({
   }
 
   const status = await tokenStatus(hash)
+  // The POST's answer, confirmed against the token itself: a crafted
+  // ?result=done never claims a plan stopped.
+  if (result === "done" && status?.state === "stopped") {
+    return (
+      <EmptyState
+        level={1}
+        title="Đã dừng ủng hộ hằng tháng"
+        action={<ButtonLink href="/campaigns">Khám phá chiến dịch</ButtonLink>}
+      >
+        Give sẽ không tạo mã ủng hộ mới và không nhắc bạn cho kế hoạch này nữa. Nếu bạn đã lưu mẫu chuyển tiền trong app
+        ngân hàng, hãy xóa mẫu đó.
+      </EmptyState>
+    )
+  }
   if (status?.state === "invalid") return <Invalid />
   if (status?.state === "expired") return <Expired />
   if (status?.state === "stopped") {

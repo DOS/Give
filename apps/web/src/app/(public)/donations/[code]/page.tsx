@@ -120,7 +120,7 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
       <Callout title={`Tháng ${periodLabel(planPeriod)} đã qua nên Give không còn hiển thị mã QR của khoản này`}>
         <p>
           Nếu bạn đã chuyển khoản với nội dung <RefCode>{donation.reference_code}</RefCode>, Give vẫn ghi nhận khi tiền
-          về. Mã ủng hộ của tháng mới có trong mục Ủng hộ của tôi.
+          về. Nếu kế hoạch ủng hộ hằng tháng của bạn còn hoạt động, mã của tháng mới có trong mục Ủng hộ của tôi.
         </p>
         <p>
           <Link href="/me/contributions" className="link">

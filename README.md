@@ -108,8 +108,12 @@ and `GET /api/cron/plan-notices` every 10 minutes. Each database function
 handles one plan per call; the route calls it again with the last plan id
 (`p_after`) until it answers no row or 45 seconds pass, so a run sweeps the
 plans once and a retried or overlapping run creates nothing twice. Reminder
-stop links are signed with `GIVE_RATE_LIMIT_SECRET` (else the service-role
-key) under a label of their own; the database keeps only the token's hash.
+stop links are signed with `GIVE_RATE_LIMIT_SECRET` under a label of their
+own (required in Production, at least 32 characters, and an error is logged
+without it; previews and local runs fall back to the service-role key); the
+database keeps only the token's hash. To rotate the secret without breaking
+links already sent (60 days), set the old value as
+`GIVE_RATE_LIMIT_SECRET_PREVIOUS` until they expire.
 
 ## Routes
 

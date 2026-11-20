@@ -44,10 +44,44 @@ describe("sweepPlans", () => {
     expect(sweep.calls).toBe(2)
   })
 
-  it("throws on an RPC error or an unexpected answer", async () => {
+  it("steps past a plan whose call fails, logs it, and handles the plans after it", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    const calls: Call[] = []
+    // ids[1] always fails; the job hands out the first plan after p_after.
+    const db = fakeDb((call) => {
+      if (call.target === "donation_plans") {
+        const after = op(call, "gt")?.[1] as string | undefined
+        return {
+          data: ids
+            .filter((id) => after === undefined || id > after)
+            .slice(0, 1)
+            .map((id) => ({ id })),
+        }
+      }
+      const after = (op(call, "args")?.[0] as { p_after: string | null }).p_after
+      const next = ids.find((id) => after === null || id > after)
+      if (next === ids[1]) return { error: { code: "XX000", message: "boom" } }
+      return { data: next ? [{ plan_id: next, outcome: "issued" }] : [] }
+    }, calls) as unknown as Db
+    const sweep = await sweepPlans(db, "issue_plan_donations")
+    expect(sweep).toEqual({ outcomes: { issued: 2, failed: 1 }, calls: 4, done: true })
+    expect(error.mock.calls.some((args) => args.some((a) => String(a).includes(`skipping plan ${ids[1]}`)))).toBe(true)
+  })
+
+  it("gives up after repeated failures in a row (the database, not a plan)", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
-    const failing = fakeDb(() => ({ error: { code: "57014", message: "timeout" } })) as unknown as Db
+    const failing = fakeDb((call) =>
+      call.target === "donation_plans" ? { data: [{ id: ids[0] }] } : { error: { code: "57014", message: "timeout" } }
+    ) as unknown as Db
     await expect(sweepPlans(failing, "plan_followups")).rejects.toBeInstanceOf(PlanJobError)
+  })
+
+  it("throws on an unexpected answer, or when it cannot find the plan to skip", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    const lost = fakeDb((call) =>
+      call.target === "donation_plans" ? { error: { code: "57014", message: "timeout" } } : { error: { code: "XX000" } }
+    ) as unknown as Db
+    await expect(sweepPlans(lost, "plan_followups")).rejects.toBeInstanceOf(PlanJobError)
     for (const data of [null, [{ plan_id: "x", outcome: "issued" }], [{ plan_id: ids[0], outcome: 3 }], "1"]) {
       const odd = fakeDb(() => ({ data })) as unknown as Db
       await expect(sweepPlans(odd, "plan_followups")).rejects.toBeInstanceOf(PlanJobError)

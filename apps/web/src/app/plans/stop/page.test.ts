@@ -93,8 +93,22 @@ describe("/plans/stop", () => {
     expect(html).toContain('action="/api/plans/stop"')
   })
 
+  it("confirms a stop only for a valid token whose plan is stopped", async () => {
+    state.result = { data: [{ state: "stopped", campaign_title: "Áo ấm", campaign_slug: "ao-am", amount: 50000 }] }
+    expect(await render({ t: signed, result: "done" })).toContain("Đã dừng ủng hộ hằng tháng")
+    state.result = { data: [{ state: "active", campaign_title: "Áo ấm", campaign_slug: "ao-am", amount: 50000 }] }
+    const notStopped = await render({ t: signed, result: "done" })
+    expect(notStopped).not.toContain("Đã dừng ủng hộ hằng tháng")
+    expect(notStopped).toContain("Dừng ủng hộ hằng tháng?")
+  })
+
+  it("never claims a stop for ?result=done without a valid token", async () => {
+    expect(await render({ result: "done" })).not.toContain("Đã dừng")
+    expect(await render({ result: "done" })).toContain("Đường dẫn không hợp lệ")
+    expect(state.calls).toHaveLength(0)
+  })
+
   it.each([
-    ["done", "Đã dừng ủng hộ hằng tháng"],
     ["expired", "Đường dẫn đã hết hạn"],
     ["invalid", "Đường dẫn không hợp lệ"],
   ])("shows the result %s of the POST without reading the database", async (result, title) => {

@@ -73,5 +73,12 @@ export async function POST(request: NextRequest) {
   const outcome = (typeof row?.state === "string" && RESULTS[row.state]) || RESULTS.invalid
   return oneClick
     ? new NextResponse(outcome.result, { status: outcome.status, headers: HEADERS })
-    : NextResponse.redirect(pageUrl(request, { result: outcome.result }), { status: 303, headers: HEADERS })
+    : NextResponse.redirect(
+        // "done" keeps the token, so the page confirms the plan really stopped.
+        pageUrl(
+          request,
+          outcome.result === "done" ? { [STOP_TOKEN_PARAM]: token, result: "done" } : { result: outcome.result }
+        ),
+        { status: 303, headers: HEADERS }
+      )
 }
