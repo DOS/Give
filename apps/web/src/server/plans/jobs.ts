@@ -38,27 +38,6 @@ export interface PlanSweep {
   done: boolean
 }
 
-/** A run gives up after this many failed calls in a row: the database itself is in trouble, not one plan. */
-export const MAX_CONSECUTIVE_FAILURES = 3
-
-/**
- * The first plan after `after` in id order. When a call fails, the plan it
- * was handling is at or before this one (every plan between `after` and the
- * failing candidate is not a candidate), so stepping past it skips nothing
- * but the failing plan; the next run tries that plan again.
- */
-async function nextPlanId(db: Db, after: string | null): Promise<string | null | "error"> {
-  let query = db.from("donation_plans").select("id")
-  if (after !== null) query = query.gt("id", after)
-  const { data, error } = await query
-    .order("id", { ascending: true })
-    .limit(1)
-    .abortSignal(AbortSignal.timeout(PLAN_CALL_TIMEOUT_MS))
-  if (error) return "error"
-  const row = Array.isArray(data) ? (data[0] as { id?: unknown } | undefined) : undefined
-  return row && typeof row.id === "string" && isUuid(row.id) ? row.id : null
-}
-
 export class PlanJobError extends Error {
   constructor(
     readonly job: PlanJob,
@@ -88,31 +67,16 @@ export async function sweepPlans(
   const started = now()
   const sweep: PlanSweep = { outcomes: {}, calls: 0, done: false }
   let after: string | null = null
-  let failures = 0
   while (now() - started < budgetMs) {
     const { data, error } = await db.rpc(job, { p_after: after }).abortSignal(AbortSignal.timeout(PLAN_CALL_TIMEOUT_MS))
     sweep.calls += 1
     if (error) {
-      // One plan failing must not hold back every plan after it on every run:
-      // log it, step past it, and go on, unless the failures keep coming.
-      failures += 1
-      const skip: string | null = failures < MAX_CONSECUTIVE_FAILURES ? await nextPlanId(db, after) : "error"
-      console.error(
-        `${job} failed after plan ${after ?? "(start)"}`,
-        error.code,
-        error.message,
-        typeof skip === "string" && skip !== "error" ? `skipping plan ${skip}` : ""
-      )
-      if (skip === "error") throw new PlanJobError(job, error.code)
-      if (skip === null) {
-        sweep.done = true
-        break
-      }
-      after = skip
-      sweep.outcomes.failed = (sweep.outcomes.failed ?? 0) + 1
-      continue
+      // A plan's own failure comes back as outcome 'failed' (the database
+      // isolates each plan); an error here is the call itself (connection,
+      // timeout), so the run stops and the next one starts over.
+      console.error(`${job} failed after plan ${after ?? "(start)"}`, error.code, error.message)
+      throw new PlanJobError(job, error.code)
     }
-    failures = 0
     const row = parseRow(data)
     if (row === "bad") {
       console.error(`${job} answered unexpectedly`)
@@ -128,6 +92,7 @@ export async function sweepPlans(
       throw new PlanJobError(job, undefined)
     }
     after = row.plan_id
+    if (row.outcome === "failed") console.error(`${job}: plan ${row.plan_id} failed; the next run tries it again`)
     sweep.outcomes[row.outcome] = (sweep.outcomes[row.outcome] ?? 0) + 1
   }
   return sweep

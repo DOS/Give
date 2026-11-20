@@ -29,7 +29,7 @@ export interface MyPlan {
   next_period: string
   created_at: string
   ended_at: string | null
-  campaign: { slug: string; title: string; status: string; ends_at: string | null } | null
+  campaign: { slug: string; title: string; status: string; ends_at: string | null; usable_account?: boolean } | null
 }
 
 /** A plan donation of the donor, as the contributions list reads it. */

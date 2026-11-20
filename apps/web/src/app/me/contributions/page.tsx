@@ -15,6 +15,7 @@ import { formatDate, formatVnd } from "@/lib/format"
 import { periodLabel } from "@/lib/plans"
 import { fulfillmentLabel, offersPayment, pledgeListSummary, withoutReplacedPledges } from "@/lib/pledges"
 import { dbAs, dbService } from "@/lib/supabase"
+import { paymentAccount } from "@/server/contributions"
 import { pledgeBalances, type PledgeBalance } from "@/server/pledges"
 
 import { MePage } from "../_components/MePage"
@@ -70,6 +71,37 @@ export default async function MyContributionsPage() {
  * Monthly plans (DOS/Give#276) come first, also read under RLS; this month's
  * donation of each is among the newest contributions.
  */
+/**
+ * Marks each active plan's live campaign with whether it has a usable
+ * account (give.payment_account, as the service role, for campaigns the
+ * donor's own plans name), so "Chuyển khoản tháng này" is offered only when
+ * the payment page can show a QR, as give.plan_donation_payable decides. A
+ * failed lookup leaves it unknown; the payment page checks again.
+ */
+async function withUsableAccounts(plans: MyPlan[]): Promise<MyPlan[]> {
+  const ids = [
+    ...new Set(plans.filter((p) => p.status === "active" && p.campaign?.status === "live").map((p) => p.campaign_id)),
+  ]
+  if (ids.length === 0) return plans
+  const service = dbService()
+  const usable = new Map(
+    await Promise.all(
+      ids.map(async (id) => {
+        const account = await paymentAccount(service, id).catch((e: unknown) => {
+          console.error("contributions: payment account lookup failed", e)
+          return undefined
+        })
+        return [id, account === undefined ? undefined : account !== null] as const
+      })
+    )
+  )
+  return plans.map((p) =>
+    p.campaign && usable.get(p.campaign_id) !== undefined
+      ? { ...p, campaign: { ...p.campaign, usable_account: usable.get(p.campaign_id) } }
+      : p
+  )
+}
+
 async function ContributionList({ session }: { session: Session }) {
   const db = dbAs(session.accessToken)
   const [{ data, error }, plansRead] = await Promise.all([
@@ -94,7 +126,7 @@ async function ContributionList({ session }: { session: Session }) {
   ])
   if (error) throw error
   if (plansRead.error) throw plansRead.error
-  const plans = (plansRead.data ?? []) as unknown as MyPlan[]
+  const plans = await withUsableAccounts((plansRead.data ?? []) as unknown as MyPlan[])
   const contributions = withoutReplacedPledges((data ?? []) as unknown as MyContribution[])
   const balances: Map<string, PledgeBalance> = contributions.some((c) => c.kind === "pledge")
     ? await pledgeBalances(dbService(), session.user.id).catch((e: unknown) => {

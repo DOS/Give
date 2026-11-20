@@ -38,6 +38,13 @@ describe("plan periods", () => {
       )
     ).toBe(false)
     expect(planDonationPayable({ ...d, plan_period: null }, new Date("2026-11-20T00:00:00Z"))).toBe(false)
+    // Without an account the money can reach, no QR; unknown counts as usable here (the payment page checks).
+    expect(
+      planDonationPayable({ ...d, campaign: { ...live, usable_account: false } }, new Date("2026-11-20T00:00:00Z"))
+    ).toBe(false)
+    expect(
+      planDonationPayable({ ...d, campaign: { ...live, usable_account: true } }, new Date("2026-11-20T00:00:00Z"))
+    ).toBe(true)
   })
 
   it("ends the QR at the month's end or the campaign's end, whichever is first", () => {

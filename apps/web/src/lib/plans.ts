@@ -64,17 +64,21 @@ export function periodEnd(period: string): Date | null {
 export interface PlanPayableInput {
   status: string
   plan_period: string | null
-  campaign: { status: string; ends_at: string | null }
+  /** usable_account: false when the campaign has no account the money can reach (unknown when absent). */
+  campaign: { status: string; ends_at: string | null; usable_account?: boolean }
 }
 
 /**
  * Whether a plan donation's QR shows now (give.plan_donation_payable): still
- * awaiting transfer, the campaign live and before its end, and still inside
- * the donation's month. Computed at display time, never stored.
+ * awaiting transfer, the campaign live, before its end and with a usable
+ * account, and still inside the donation's month. Computed at display time,
+ * never stored. The account is checked only when the caller knows it
+ * (`usable_account`); the donation page shows a QR only with an account.
  */
 export function planDonationPayable(donation: PlanPayableInput, now = new Date()): boolean {
   if (donation.status !== "awaiting_transfer" || !donation.plan_period) return false
   if (donation.campaign.status !== "live" || !donation.campaign.ends_at) return false
+  if (donation.campaign.usable_account === false) return false
   if (new Date(donation.campaign.ends_at) <= now) return false
   const end = periodEnd(donation.plan_period)
   return end !== null && now < end

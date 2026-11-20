@@ -19,9 +19,13 @@ const OLD_PLAN = "66666666-6666-4666-8666-666666666666"
 // 10:00 on 20/11/2026 in Vietnam.
 const NOW = new Date("2026-11-20T03:00:00.000Z")
 
+const ACCOUNT = { channel: "statement_import", bank_bin: "970436", account_number: "0123456789", account_name: "A" }
+
 const state = vi.hoisted(() => ({
   handler: (() => undefined) as Handler,
   calls: [] as Call[],
+  // The service role's give.payment_account: the campaign's usable account.
+  service: (() => undefined) as Handler,
 }))
 
 vi.mock("@/lib/auth/session", () => ({
@@ -29,7 +33,7 @@ vi.mock("@/lib/auth/session", () => ({
 }))
 vi.mock("@/lib/supabase", () => ({
   dbAs: () => fakeDb((call) => state.handler(call), state.calls),
-  dbService: () => fakeDb(() => undefined),
+  dbService: () => fakeDb((call) => state.service(call)),
 }))
 vi.mock("../_components/MePage", () => ({
   MePage: ({ children }: { children: ReactNode }) => createElement("main", null, children),
@@ -121,6 +125,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] })
   vi.setSystemTime(NOW)
   state.calls.length = 0
+  state.service = (call) => (call.target === "rpc:payment_account" ? { data: ACCOUNT } : undefined)
 })
 afterEach(() => {
   vi.useRealTimers()
@@ -160,6 +165,15 @@ describe("MyContributionsPage monthly plans (DOS/Give#276)", () => {
     expect(plansCall.ops).toContainEqual(["eq", "contributor_user_id", USER])
     const contributionsSelect = String(state.calls.find((c) => c.target === "contributions")?.ops[0][1])
     expect(contributionsSelect).toContain("plan_period")
+  })
+
+  it("offers no transfer while the campaign has no usable account (give.plan_donation_payable)", async () => {
+    serve([plan()], [donation()])
+    state.service = () => ({ data: null })
+    const { doc } = await render()
+    expect(planSection(doc)!.querySelector('a[href="/donations/GVPLAN234"]')?.textContent).not.toBe(
+      "Chuyển khoản tháng này"
+    )
   })
 
   it("shows this month's status instead of the pay button once received, or when the campaign stopped", async () => {
