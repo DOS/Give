@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server"
 
 import { isAuthorizedCron } from "@/lib/cron"
 import { dbService } from "@/lib/supabase"
-import { sweepPlans } from "@/server/plans/jobs"
+import { remainingBudget, sweepPlans } from "@/server/plans/jobs"
 
 export const dynamic = "force-dynamic"
 export const maxDuration = 60
@@ -22,9 +22,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
   const db = dbService()
+  const started = Date.now()
   try {
+    // Both sweeps share one deadline, so the run ends inside maxDuration.
     const ended = await sweepPlans(db, "plan_end_notices")
-    const followups = await sweepPlans(db, "plan_followups")
+    const followups = await sweepPlans(db, "plan_followups", Date.now, remainingBudget(started))
     return NextResponse.json({
       ended: ended.outcomes,
       followups: followups.outcomes,

@@ -44,6 +44,11 @@ export interface PlanDonation {
 }
 
 /** The first day of the current month in Vietnam time (UTC+7), as YYYY-MM-DD. */
+/** The month the cron issues next: next_period, or this month when next_period is in the past (YYYY-MM-DD compares as text). */
+export function effectiveNextPeriod(nextPeriod: string, month: string): string {
+  return nextPeriod < month ? month : nextPeriod
+}
+
 export function vnMonthStart(now = new Date()): string {
   const vn = new Date(now.getTime() + 7 * 60 * 60 * 1000)
   return `${vn.getUTCFullYear()}-${String(vn.getUTCMonth() + 1).padStart(2, "0")}-01`
@@ -117,8 +122,10 @@ function PlanItem({
     current !== null &&
     plan.campaign !== null &&
     planDonationPayable({ ...current, campaign: plan.campaign }, now)
-  // Not issued yet this month: a change applies to this month's code too.
-  const appliesThisMonth = active && current === null && plan.next_period === month
+  // Not issued yet this month: a change applies to this month's code too. A
+  // next_period left in a past month (campaign suspended, cron down) jumps
+  // to this month when the cron issues, so it counts as this month.
+  const appliesThisMonth = active && current === null && effectiveNextPeriod(plan.next_period, month) === month
   return (
     <li className="space-y-4 p-4 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -219,10 +226,12 @@ function CurrentMonth({
   payable: boolean
 }) {
   if (!current) {
-    // Not issued yet: the plan's next donation comes on its day of next_period's month.
+    // Not issued yet: the plan's next donation comes on its day of that month
+    // (never a past month: the cron skips past months).
+    const next = effectiveNextPeriod(plan.next_period, month)
     return (
       <p className="mt-1 text-sm text-muted">
-        {`Mã ủng hộ tháng ${periodLabel(plan.next_period)} sẽ có vào ngày ${plan.day_of_month}/${periodLabel(plan.next_period)}.`}
+        {`Mã ủng hộ tháng ${periodLabel(next)} sẽ có vào ngày ${plan.day_of_month}/${periodLabel(next)}.`}
       </p>
     )
   }

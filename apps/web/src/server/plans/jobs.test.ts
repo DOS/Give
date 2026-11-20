@@ -73,3 +73,19 @@ describe("expirePlanDonations", () => {
     ).rejects.toBeInstanceOf(PlanJobError)
   })
 })
+
+describe("remainingBudget", () => {
+  it("is what is left of the run's 45 s, never negative", async () => {
+    const { remainingBudget, PLAN_JOB_BUDGET_MS } = await import("./jobs")
+    expect(remainingBudget(1_000, () => 1_000)).toBe(PLAN_JOB_BUDGET_MS)
+    expect(remainingBudget(1_000, () => 41_000)).toBe(5_000)
+    expect(remainingBudget(1_000, () => 99_000)).toBe(0)
+  })
+
+  it("gives a sweep with no budget left no call at all", async () => {
+    const calls: Call[] = []
+    const sweep = await sweepPlans(plans({}, calls), "plan_followups", Date.now, 0)
+    expect(sweep).toEqual({ outcomes: {}, calls: 0, done: false })
+    expect(calls).toHaveLength(0)
+  })
+})

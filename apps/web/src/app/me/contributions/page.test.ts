@@ -185,6 +185,15 @@ describe("MyContributionsPage monthly plans (DOS/Give#276)", () => {
     expect(doc.body.textContent).not.toContain("Tất cả lượt ủng hộ")
   })
 
+  it("never promises a past month: a next_period left behind (campaign suspended) shows this month", async () => {
+    serve([plan({ day_of_month: 25, next_period: "2026-09-01" })], [])
+    const { doc } = await render()
+    const section = planSection(doc)!
+    expect(section.textContent).toContain("Mã ủng hộ tháng 11/2026 sẽ có vào ngày 25/11/2026.")
+    expect(section.textContent).not.toContain("09/2026")
+    expect(section.textContent).toContain("Áp dụng từ mã ủng hộ tháng này.")
+  })
+
   it("finds this month's donation kept from a plan cancelled and signed up again this month", async () => {
     serve(
       [plan(), plan({ id: OLD_PLAN, status: "ended", ended_reason: "donor_cancelled", ended_at: NOW.toISOString() })],

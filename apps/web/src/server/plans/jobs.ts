@@ -14,10 +14,19 @@ import { isUuid } from "@/lib/ids"
  * second donation and writes no second reminder or end notice.
  */
 
-/** Calls stop starting after this long, well inside the routes' maxDuration (60 s). */
+/**
+ * No call starts after this long into a route's run, whichever job it is,
+ * so the last call (PLAN_CALL_TIMEOUT_MS) still ends inside the routes'
+ * maxDuration (60 s). A route with two steps shares this one deadline.
+ */
 export const PLAN_JOB_BUDGET_MS = 45_000
 /** Each call is abandoned after this long; the next run picks the plan up again. */
 export const PLAN_CALL_TIMEOUT_MS = 8_000
+
+/** What is left of a run's budget that started at `started`. */
+export function remainingBudget(started: number, now: () => number = Date.now): number {
+  return Math.max(0, PLAN_JOB_BUDGET_MS - (now() - started))
+}
 
 export type PlanJob = "issue_plan_donations" | "plan_end_notices" | "plan_followups"
 

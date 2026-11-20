@@ -70,8 +70,9 @@ function pledgeLink(payload: Notice["payload"], label: string): Pick<NoticeView,
 /**
  * Monthly plans (DOS/Give#276, design 4.3.4). A month without a transfer is
  * not a debt, so nothing here says "quá hạn", "nợ" or "còn thiếu". The
- * in-app plan payload (give.plan_notice_payload) carries no campaign title or
- * slug; the email's does (give.outbox_campaign_payload), so both are optional.
+ * payloads (give.plan_notice_payload, and give.outbox_campaign_payload for the
+ * email) carry the campaign title and slug; both are still treated as
+ * optional, for notices written before they did.
  */
 
 /** "chiến dịch “…”", or a donor's neutral wording when the payload has no title. */

@@ -68,6 +68,24 @@ describe("GET /api/cron/issue-plan-donations", () => {
     ])
   })
 
+  it("shares one deadline: past the budget the expiry waits for the next run", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] })
+    try {
+      const start = Date.now()
+      state.handler = (call) => {
+        if (call.target === "rpc:expire_plan_donations") return { data: 1 }
+        // The one due plan takes the whole budget.
+        vi.setSystemTime(start + 46_000)
+        const after = (op(call, "args")?.[0] as { p_after: string | null }).p_after
+        return { data: after === null ? [{ plan_id: PLAN, outcome: "issued" }] : [] }
+      }
+      expect(await (await GET(request(`Bearer ${SECRET}`))).json()).toEqual({ issued: 1, done: false, expired: null })
+      expect(state.calls.some((c) => c.target === "rpc:expire_plan_donations")).toBe(false)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("answers 500 when a call fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {})
     state.handler = () => ({ error: { code: "57014", message: "timeout" } })
