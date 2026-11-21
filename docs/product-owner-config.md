@@ -65,11 +65,13 @@ PO dispatches only issues of its own lines that carry its own runtime label
 or none of these labels, adds its own label on dispatch, checks the latest
 protocol comment for another session's claim before taking an issue, and runs
 the acceptance gate only on its own PRs. Neither PO merges, accepts or posts
-an acceptance on the other's PR. Production and `DOS/DOS.Me` migration steps
-remain Platform's and exclusive to `Give Product Owner` with JOY's approval,
-with one explicit exception authorized by JOY (2026-11-21): Antigravity PO is
-authorized to pick up unclaimed `DOS/DOS.Me` DB prerequisites `#261`–`#264`
-to unblock `#250`–`#253`.
+an acceptance on the other's PR. Production promotions (`DOS/Give` `main` /
+`give.vn` and `DOS/DOS.Me` `main`) and all other `DOS/DOS.Me` migration steps
+remain Platform's and strictly exclusive to `Give Product Owner` (Claude Code)
+with JOY's approval; as one explicit exception authorized by JOY (2026-11-21),
+Antigravity PO is authorized to pick up unclaimed `DOS/DOS.Me` DB
+prerequisites `#261`–`#264` for `DOS/DOS.Me` `dev` migrations/PRs only to
+unblock `#250`–`#253` (never `DOS/DOS.Me` `main` / Production promotions).
 
 | Line                                                   | Label            | Product Line option id | PO session                                                                          |
 | ------------------------------------------------------ | ---------------- | ---------------------- | ----------------------------------------------------------------------------------- |
@@ -192,8 +194,10 @@ to unblock `#250`–`#253`.
   (replacing paused Qwen Code sessions), enables `po:agy` / `po:claude`
   anti-duplication labels (`promotion_po: claude` retains exclusive Production
   `main` / `give.vn` ownership for Claude Code `Give Product Owner`), and
-  picks up unclaimed `DOS/DOS.Me` DB prerequisites `#261`–`#264` to unblock
-  `#250`–`#253`.
+  picks up unclaimed `DOS/DOS.Me` DB prerequisites `#261`–`#264` for
+  `DOS/DOS.Me` `dev` migrations/PRs only to unblock `#250`–`#253`
+  (`DOS/DOS.Me` `main` / Production promotions remain strictly exclusive to
+  `Give Product Owner` (Claude Code) with JOY's approval).
 
 Screenshot branches (`assets/pr-<n>-screenshots`): every commit on them adds
 `apps/web/vercel.json` with `{"git":{"deploymentEnabled":false}}`, so Vercel
