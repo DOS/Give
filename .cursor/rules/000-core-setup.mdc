@@ -13,8 +13,8 @@ Tôi cần AI làm tự động nhiều nhất có thể, ít phải động tay
 - **Runtime**: Node.js v22, PowerShell 7 (Windows 11) 
 - **Frontend**: Next.js, React, TypeScript
 - **Backend**: Strapi CMS v5.15+, Node.js APIs
-- **Database**: PostgreSQL v17+ chạy trong docker container tên DB
-- **DevOps**: Docker, Docker Compose
+- **Database**: shared DOS Supabase, schema `give`; DDL and pgTAP tests live in DOS/DOS.Me and run in its GitHub CI
+- **Local Docker / local Supabase**: forbidden for Give work (owner decision 2026-11-21); read `AGENTS.md`, which overrides this file
 - **Future**: Flutter (mobile development)
 
 ## 🤖 AI AUTOMATION PRINCIPLES
@@ -36,7 +36,6 @@ Tôi cần AI làm tự động nhiều nhất có thể, ít phải động tay
 ### Project Structure
 - Tạo file structure hoàn chỉnh cho new projects
 - Include package.json với correct dependencies
-- Setup Docker files khi cần
 - Tạo environment files (.env.example)
 
 ## 📁 WORKSPACE PATTERNS
