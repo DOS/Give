@@ -353,7 +353,7 @@ give.admins (user_id PK, role ('moderator','finance','admin'))       -- hoặc d
 - **Quyền ghi:**
   - Client chỉ được ghi nội dung của mình khi campaign còn `draft` hoặc `changes_requested`. Đó là các bảng `campaigns`, `campaign_media`, `campaign_updates` và `reward_tiers` (khi chưa có pledge).
   - Mọi bảng tiền và trạng thái chỉ được ghi qua hàm `SECURITY DEFINER`. Hàm cấp `EXECUTE` cho `service_role`, không cấp cho `authenticated`.
-- **Kiểm thử:** pgTAP trong `DOS.Me/supabase/tests/database/give_*.test.sql`, theo mẫu `channel_identity_*.test.sql`.
+- **Kiểm thử:** pgTAP trong `DOS.Me/supabase/tests/database/give_*.test.sql`, theo mẫu `channel_identity_*.test.sql`. Các test này chạy trong GitHub CI của PR DOS/DOS.Me, không chạy bằng Docker hay Supabase cục bộ (xem `AGENTS.md`).
 
 ## 3. Hàm Postgres cho nghiệp vụ tiền
 

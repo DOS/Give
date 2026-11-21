@@ -100,7 +100,9 @@ unblock `#250`–`#253` (never `DOS/DOS.Me` `main` / Production promotions).
 
 ## Rule documents
 
-- agent_instructions: none
+- agent_instructions: `AGENTS.md` (`QWEN.md` and `GEMINI.md` point to it). No
+  local Docker or local Supabase for Give work (JOY, 2026-11-21); pgTAP tests
+  and migration replay run in GitHub CI on the DOS/DOS.Me PR.
 - task_scope: none
 - tracking_doc: none
 - review_rules: none
