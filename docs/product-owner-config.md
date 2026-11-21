@@ -187,12 +187,13 @@ to unblock `#250`–`#253`.
 - JOY (2026-11-21), on Antigravity PO setup: "Mày làm PO của Give nhé. Dùng
   CC-PO plugin bản mới nhất để setup. Lưu ý là bên Claude cũng có PO nên hạn
   chế làm trùng task nhé".
-- JOY (2026-11-21), via PO setup choice: Antigravity (`Campaigns Product
-  Owner`, profile `acc0`) takes over `line:campaigns` (replacing paused Qwen
-  Code sessions), enables `po:agy` / `po:claude` anti-duplication labels
-  (`promotion_po: claude` retains exclusive Production `main` / `give.vn`
-  ownership for Claude Code `Give Product Owner`), and picks up unclaimed
-  `DOS/DOS.Me` DB prerequisites `#261`–`#264` to unblock `#250`–`#253`.
+- JOY (2026-11-21), via PO setup choice: Antigravity
+  (`Campaigns Product Owner`, profile `acc0`) takes over `line:campaigns`
+  (replacing paused Qwen Code sessions), enables `po:agy` / `po:claude`
+  anti-duplication labels (`promotion_po: claude` retains exclusive Production
+  `main` / `give.vn` ownership for Claude Code `Give Product Owner`), and
+  picks up unclaimed `DOS/DOS.Me` DB prerequisites `#261`–`#264` to unblock
+  `#250`–`#253`.
 
 Screenshot branches (`assets/pr-<n>-screenshots`): every commit on them adds
 `apps/web/vercel.json` with `{"git":{"deploymentEnabled":false}}`, so Vercel
