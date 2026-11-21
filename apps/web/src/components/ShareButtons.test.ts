@@ -293,4 +293,59 @@ describe("ShareButtons (DOS/Give#270)", () => {
       `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(`https://preview.give.vn${path}`)}`
     )
   })
+
+  it("sends share_click analytics beacon on Share and Facebook clicks only when campaignId is passed (DOS/Give#252)", async () => {
+    const campaignId = "22222222-2222-4222-8222-222222222222"
+    const sentBodies: string[] = []
+    const sendBeacon = vi.fn((_url: string, data?: BodyInit | null) => {
+      if (data instanceof Blob) {
+        void data.text().then((text) => sentBodies.push(text))
+      }
+      return true
+    })
+    const originalBeacon = Object.getOwnPropertyDescriptor(navigator, "sendBeacon")
+    Object.defineProperty(navigator, "sendBeacon", { value: sendBeacon, configurable: true, writable: true })
+
+    try {
+      // Without campaignId: no beacon fired.
+      renderShareButtons({
+        path: "/campaigns/xay-cau",
+        title: "Xây cầu nông thôn",
+        origin: "https://give.vn",
+      })
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>("button")!.click()
+      })
+      expect(sendBeacon).not.toHaveBeenCalled()
+
+      // With campaignId: both Share button and Facebook link fire share_click.
+      renderShareButtons({
+        path: "/campaigns/xay-cau",
+        title: "Xây cầu nông thôn",
+        origin: "https://give.vn",
+        campaignId,
+      })
+      await act(async () => {
+        container.querySelector<HTMLButtonElement>("button")!.click()
+      })
+      const fbLink = container.querySelector<HTMLAnchorElement>("a")!
+      await act(async () => {
+        fbLink.addEventListener("click", (event) => event.preventDefault(), { once: true })
+        fbLink.click()
+      })
+      await Promise.resolve()
+
+      expect(sendBeacon).toHaveBeenCalledTimes(2)
+      expect(sentBodies.map((body) => JSON.parse(body))).toEqual([
+        { campaignId, event: "share_click" },
+        { campaignId, event: "share_click" },
+      ])
+    } finally {
+      if (originalBeacon) {
+        Object.defineProperty(navigator, "sendBeacon", originalBeacon)
+      } else {
+        Reflect.deleteProperty(navigator, "sendBeacon")
+      }
+    }
+  })
 })

@@ -20,7 +20,16 @@ import { EmptyState } from "@/components/ui/EmptyState"
 import { Field } from "@/components/ui/Field"
 import { BankIcon, ChevronDownIcon } from "@/components/ui/icons"
 import { PageHeader } from "@/components/ui/PageHeader"
+import { TabNav } from "@/components/ui/Tabs"
+import {
+  analyticsTabHref,
+  getCampaignAnalytics,
+  parseAnalyticsDays,
+  parseCampaignManageTab,
+  type CampaignAnalytics,
+} from "@/lib/analytics"
 import { requireSession } from "@/lib/auth/session"
+import { dbErrorMessage, giveErrorCode, type DbErrorLike } from "@/lib/errors"
 import { bankLabel } from "@/lib/banks"
 import { canAskSwap, lastDecidedSwap, pendingSwap, SWAP_REASON_MAX, type AccountSwapRequest } from "@/lib/account-swaps"
 import {
@@ -61,6 +70,7 @@ import { checkInputClass, checkLabelClass, fileInputClass, Panel } from "../../_
 import { bindAccount, releaseAccount } from "../../accounts/actions"
 import { cancelAccountSwap, requestAccountSwap } from "../swap-actions"
 
+import { AnalyticsTab } from "./AnalyticsTab"
 import {
   campaignAllowsMonthly,
   loadPlanSupporters,
@@ -110,13 +120,78 @@ async function loadYoutubeVideo(db: Db, campaignId: string): Promise<{ video: Yo
   return { video: { id: row.id, youtube_id: row.youtube_id, alt: row.alt ?? null } }
 }
 
-export default async function EditCampaignPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EditCampaignPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
   const { id } = await params
-  const session = await requireSession(`/me/campaigns/${id}`)
+  const resolvedSearch = searchParams ? await searchParams : {}
+  const tab = parseCampaignManageTab(resolvedSearch.tab)
+  const days = parseAnalyticsDays(resolvedSearch.days)
+  const returnPath = tab === "analytics" ? analyticsTabHref(id, days) : `/me/campaigns/${id}`
+  const session = await requireSession(returnPath)
   if (!isUuid(id)) notFound()
   const db = dbAs(session.accessToken)
   const campaign = await getCampaignById(db, id)
   if (!campaign || campaign.organizer_id !== session.user.id) notFound()
+
+  const headerAndTabs = (
+    <div className="space-y-6">
+      <PageHeader
+        back={{ href: "/me/campaigns", label: "Chiến dịch của tôi" }}
+        eyebrow={
+          <>
+            <TypeBadge type={campaign.type} />
+            <StatusBadge status={campaign.status} />
+          </>
+        }
+        title={campaign.title}
+        actions={
+          <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary">
+            {isPublicStatus(campaign.status) ? "Xem trang công khai" : "Xem trước trang chiến dịch"}
+          </ButtonLink>
+        }
+      />
+      <TabNav
+        label="Mục chiến dịch"
+        items={[
+          { href: `/me/campaigns/${campaign.id}`, label: "Quản lý", current: tab === "manage" },
+          { href: analyticsTabHref(campaign.id), label: "Thống kê", current: tab === "analytics" },
+        ]}
+      />
+    </div>
+  )
+
+  if (tab === "analytics") {
+    let analytics: CampaignAnalytics | null = null
+    let analyticsError: string | null = null
+    try {
+      analytics = await getCampaignAnalytics(db, campaign.id, days)
+    } catch (error) {
+      const dbError = error as DbErrorLike | null
+      if (giveErrorCode(dbError) === "GIVE_CAMPAIGN_NOT_FOUND" || dbError?.code === "P0002") {
+        notFound()
+      }
+      analyticsError = dbErrorMessage(dbError)
+    }
+
+    return (
+      <MeDetail>
+        {headerAndTabs}
+        <AnalyticsTab
+          campaignId={campaign.id}
+          campaignType={campaign.type}
+          campaignStatus={campaign.status}
+          days={days}
+          analytics={analytics}
+          error={analyticsError}
+        />
+      </MeDetail>
+    )
+  }
 
   const isGive = campaign.type === "give"
   const showMonthly = showMonthlySection(campaign.type, campaign.status)
@@ -177,21 +252,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
 
   return (
     <MeDetail>
-      <PageHeader
-        back={{ href: "/me/campaigns", label: "Chiến dịch của tôi" }}
-        eyebrow={
-          <>
-            <TypeBadge type={campaign.type} />
-            <StatusBadge status={campaign.status} />
-          </>
-        }
-        title={campaign.title}
-        actions={
-          <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary">
-            {isPublicStatus(campaign.status) ? "Xem trang công khai" : "Xem trước trang chiến dịch"}
-          </ButtonLink>
-        }
-      />
+      {headerAndTabs}
 
       <div className="space-y-4">
         <StatusNotice

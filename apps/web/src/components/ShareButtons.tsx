@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 
 import { buttonClass } from "@/components/ui/Button"
 import { ShareIcon } from "@/components/ui/icons"
+import { trackShareClick } from "@/lib/analytics-client"
 
 const noSubscribe = () => () => {}
 
@@ -17,11 +18,14 @@ export function ShareButtons({
   path,
   title,
   origin: siteOrigin,
+  campaignId,
   compact,
 }: {
   path: string
   title: string
   origin?: string
+  /** Public campaign id for aggregate share-click analytics (DOS/Give#252). */
+  campaignId?: string
   /** One 52px icon button (the phone action bar); the copy status shows above it. */
   compact?: boolean
 }) {
@@ -50,6 +54,7 @@ export function ShareButtons({
   const url = `${origin}${path}`
 
   const share = async () => {
+    if (campaignId) trackShareClick(campaignId)
     if (navigator.share) {
       try {
         await navigator.share({ title, url })
@@ -117,6 +122,9 @@ export function ShareButtons({
           href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={() => {
+            if (campaignId) trackShareClick(campaignId)
+          }}
           className={buttonClass({ variant: "secondary", className: "flex-1" })}
         >
           Facebook

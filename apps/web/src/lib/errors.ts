@@ -178,6 +178,10 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_USER_AMBIGUOUS: "Có nhiều tài khoản dùng email này. Hãy nhập mã người dùng thay cho email.",
   GIVE_ADMIN_NOT_FOUND: "Người này không còn quyền nào để thu.",
   GIVE_LAST_ADMIN: "Không thể thu hoặc hạ quyền quản trị viên cuối cùng. Hãy cấp quyền quản trị cho người khác trước.",
+  // Organizer campaign analytics (DOS/Give#252).
+  GIVE_ANALYTICS_EVENT_INVALID: "Loại sự kiện thống kê không hợp lệ.",
+  GIVE_ANALYTICS_DAYS_INVALID: "Khoảng thời gian thống kê không hợp lệ.",
+  GIVE_SIGN_IN_REQUIRED: "Hãy đăng nhập để tiếp tục.",
 }
 
 const PG_MESSAGES: Record<string, string> = {
