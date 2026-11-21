@@ -1086,3 +1086,58 @@ describe("CampaignPage monthly giving (DOS/Give#276)", () => {
     expect(state.anonCalls.some((c) => c.target === "public_campaign_monthly")).toBe(false)
   })
 })
+
+describe("CampaignPage analytics view beacon (DOS/Give#252)", () => {
+  it("fires a view beacon on public campaigns and omits it on non-public previews", async () => {
+    const { act } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { resetViewedMemoryCache } = await import("@/lib/analytics-client")
+
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    resetViewedMemoryCache()
+    window.localStorage.clear()
+
+    const sendBeacon = vi.fn(() => true)
+    const originalBeacon = Object.getOwnPropertyDescriptor(navigator, "sendBeacon")
+    Object.defineProperty(navigator, "sendBeacon", { value: sendBeacon, configurable: true, writable: true })
+
+    const container = document.createElement("div")
+    document.body.append(container)
+    const root = createRoot(container)
+
+    try {
+      // Public live campaign fires a single view beacon.
+      const livePage = await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })
+      await act(async () => {
+        root.render(livePage)
+      })
+      expect(sendBeacon).toHaveBeenCalledTimes(1)
+      expect(sendBeacon).toHaveBeenCalledWith("/api/analytics/event", expect.any(Blob))
+
+      // Non-public preview campaign (draft viewed by organizer) does NOT fire a view beacon.
+      sendBeacon.mockClear()
+      resetViewedMemoryCache()
+      window.localStorage.clear()
+      state.session = { user: { id: VIEWER, email: null, name: null }, accessToken: "organizer-token" }
+      state.anonHandler = (call) => (call.target === "campaigns" ? { data: null } : undefined)
+      state.userHandler = (call) => {
+        if (call.target === "campaigns") return { data: campaignFixture("draft") }
+        return { data: [] }
+      }
+
+      const previewPage = await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })
+      await act(async () => {
+        root.render(previewPage)
+      })
+      expect(sendBeacon).not.toHaveBeenCalled()
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+      if (originalBeacon) {
+        Object.defineProperty(navigator, "sendBeacon", originalBeacon)
+      } else {
+        Reflect.deleteProperty(navigator, "sendBeacon")
+      }
+    }
+  })
+})

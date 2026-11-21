@@ -1151,3 +1151,113 @@ describe("EditCampaignPage monthly giving section (DOS/Give#276)", () => {
     expect(state.serviceCalls).toHaveLength(0)
   })
 })
+
+describe("EditCampaignPage Thống kê tab (DOS/Give#252)", () => {
+  const analyticsData = {
+    campaign_id: CAMPAIGN,
+    campaign_type: "give" as const,
+    days: 30,
+    start_date: "2026-10-24",
+    end_date: "2026-11-22",
+    totals: {
+      views: 310,
+      share_clicks: 24,
+      contributions_count: 12,
+      contributions_amount: 6_200_000,
+      conversion_rate: 0.03871,
+    },
+    daily: [
+      {
+        date: "2026-11-22",
+        views: 310,
+        share_clicks: 24,
+        contributions_count: 12,
+        contributions_amount: 6_200_000,
+      },
+    ],
+    referrers: [
+      { bucket: "zalo", views: 200 },
+      { bucket: "direct", views: 110 },
+    ],
+  }
+
+  it("shows Quản lý and Thống kê tabs and queries get_campaign_analytics with dbAs when tab=analytics", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "rpc:get_campaign_analytics") return { data: analyticsData }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(
+      await EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "analytics", days: "7" }),
+      })
+    )
+    const doc = new Window().document
+    doc.body.innerHTML = html
+
+    const tabLinks = [...doc.querySelectorAll('nav[aria-label="Mục chiến dịch"] a')]
+    expect(tabLinks.map((a) => a.textContent)).toEqual(["Quản lý", "Thống kê"])
+    expect(tabLinks[1].getAttribute("aria-current")).toBe("page")
+
+    const rpcCall = state.calls.find((c) => c.target === "rpc:get_campaign_analytics")
+    expect(rpcCall?.ops).toEqual([["args", { p_campaign_id: CAMPAIGN, p_days: 7 }]])
+    expect(state.serviceCalls).toHaveLength(0)
+
+    expect(doc.querySelector('[data-metric="views"]')?.textContent).toBe("310")
+    expect(doc.querySelector('[data-metric="share_clicks"]')?.textContent).toBe("24")
+    expect(html).toContain("Zalo")
+  })
+
+  it("blocks another user from reading the analytics tab and never calls get_campaign_analytics", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") {
+        return { data: { ...campaignRow("live", "give"), organizer_id: "99999999-9999-4999-8999-999999999999" } }
+      }
+      return undefined
+    }
+
+    await expect(
+      EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "analytics" }),
+      })
+    ).rejects.toThrow("NEXT_NOT_FOUND")
+
+    expect(state.calls.some((c) => c.target === "rpc:get_campaign_analytics")).toBe(false)
+  })
+
+  it("degrades with an error Callout when get_campaign_analytics fails transiently", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "rpc:get_campaign_analytics") return { error: { code: "57014", message: "timeout" } }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(
+      await EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "analytics" }),
+      })
+    )
+    expect(html).toContain("Không tải được số liệu thống kê")
+  })
+
+  it("returns notFound when get_campaign_analytics raises GIVE_CAMPAIGN_NOT_FOUND", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "rpc:get_campaign_analytics") {
+        return { error: { code: "P0002", message: "GIVE_CAMPAIGN_NOT_FOUND" } }
+      }
+      return undefined
+    }
+
+    await expect(
+      EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "analytics" }),
+      })
+    ).rejects.toThrow("NEXT_NOT_FOUND")
+  })
+})

@@ -8,6 +8,7 @@ import { cache, type ReactNode } from "react"
 import { AccountChanges } from "@/components/AccountChanges"
 import { StatusBadge, TypeBadge } from "@/components/badges"
 import { CampaignVideo, isValidYoutubeId } from "@/components/campaign/CampaignVideo"
+import { CampaignViewBeacon } from "@/components/campaign/CampaignViewBeacon"
 import { MilestoneList } from "@/components/campaign/MilestoneList"
 import { RecentSupporters } from "@/components/campaign/RecentSupporters"
 import { StatementPreview } from "@/components/campaign/StatementPreview"
@@ -345,6 +346,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
 
   return (
     <article>
+      {!preview && <CampaignViewBeacon campaignId={campaign.id} />}
       {breadcrumbJsonLd && (
         <script
           type="application/ld+json"
@@ -554,7 +556,12 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 )}
                 {!preview && (
                   <>
-                    <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={origin} />
+                    <ShareButtons
+                      path={`/campaigns/${campaign.slug}`}
+                      title={campaign.title}
+                      origin={origin}
+                      campaignId={campaign.id}
+                    />
                     {!ownCampaign && (
                       <ReportCampaign campaignId={campaign.id} slug={campaign.slug} signedIn={!!session} />
                     )}
@@ -707,7 +714,13 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
 
       {(canDonate || canPledge) && (
         <MobileActionBar>
-          <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={origin} compact />
+          <ShareButtons
+            path={`/campaigns/${campaign.slug}`}
+            title={campaign.title}
+            origin={origin}
+            campaignId={campaign.id}
+            compact
+          />
           <ButtonLink href={canDonate ? "#ung-ho" : pledgePath} size="lg" className="min-w-0 flex-1">
             {ctaLabel}
           </ButtonLink>

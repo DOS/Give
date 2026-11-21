@@ -48,7 +48,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Public covers ignore the session and are cacheable, so they must never
-  // carry rotated session cookies.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/cron|auth/|media/public/).*)"],
+  // Public covers and anonymous analytics ignore the session, so they must
+  // never trigger token refresh or carry rotated session cookies.
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/cron|api/analytics|auth/|media/public/).*)"],
 }
