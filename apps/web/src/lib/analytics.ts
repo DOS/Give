@@ -141,7 +141,7 @@ const BOT_UA_PATTERN = new RegExp(
     "mediapartners-google",
     "bingbot",
     "bingpreview",
-    "yandex",
+    "yandex(?:bot|images|video|media|blogs|favicons|webmaster|metrika|direct|news|mobilebot)",
     "baiduspider",
     "duckduckbot",
     "sogou",
@@ -161,6 +161,7 @@ const BOT_UA_PATTERN = new RegExp(
     "ccbot",
     "amazonbot",
     "meta-externalagent",
+    "meta-externalfetcher",
     // Social / chat link previewers (distinct from real Zalo / FB in-app browsers)
     "facebookexternalhit",
     "facebot",
@@ -232,7 +233,7 @@ function normalizeHost(host: string): string {
     .trim()
     .toLowerCase()
     .replace(/^\[|\]$/g, "")
-    .replace(/\.$/, "")
+    .replace(/\.+$/, "")
 }
 
 function isGiveOwnHost(hostname: string, ownHosts: ReadonlySet<string>): boolean {

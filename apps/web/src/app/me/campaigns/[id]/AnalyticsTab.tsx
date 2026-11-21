@@ -35,7 +35,15 @@ function isActiveDay(day: AnalyticsDailyPoint): boolean {
   return day.views > 0 || day.share_clicks > 0 || day.contributions_count > 0 || day.contributions_amount > 0
 }
 
-function DailyBarChart({ daily, days }: { daily: readonly AnalyticsDailyPoint[]; days: AnalyticsPeriod }) {
+function DailyBarChart({
+  daily,
+  days,
+  contributionLabel,
+}: {
+  daily: readonly AnalyticsDailyPoint[]
+  days: AnalyticsPeriod
+  contributionLabel: string
+}) {
   const maxViews = daily.reduce((max, point) => Math.max(max, point.views), 0)
   const peakDay = maxViews > 0 ? daily.find((point) => point.views === maxViews) : null
   const firstDate = daily[0]?.date
@@ -73,7 +81,7 @@ function DailyBarChart({ daily, days }: { daily: readonly AnalyticsDailyPoint[];
           >
             {daily.map((point) => {
               const heightPercent = point.views > 0 ? Math.max(4, Math.round((point.views / maxViews) * 100)) : 0
-              const tooltip = `${formatAnalyticsDate(point.date)}: ${formatCount(point.views)} lượt xem · ${formatCount(point.share_clicks)} lượt chia sẻ · ${formatCount(point.contributions_count)} lượt (${formatVnd(point.contributions_amount)})`
+              const tooltip = `${formatAnalyticsDate(point.date)}: ${formatCount(point.views)} lượt xem · ${formatCount(point.share_clicks)} lượt chia sẻ · ${formatCount(point.contributions_count)} ${contributionLabel.toLowerCase()} (${formatVnd(point.contributions_amount)})`
               return (
                 <div key={point.date} title={tooltip} className="flex h-full min-w-0 flex-1 items-end">
                   {point.views > 0 ? (
@@ -170,6 +178,8 @@ function DailyRows({ rows, contributionLabel }: { rows: readonly AnalyticsDailyP
  */
 export function AnalyticsTab({ campaignId, campaignType, campaignStatus, days, analytics, error }: AnalyticsTabProps) {
   const isGive = campaignType === "give"
+  const halted = campaignStatus === "suspended" || campaignStatus === "cancelled"
+  const preLaunch = !isPublicStatus(campaignStatus) && !halted
   const contributionLabel = isGive ? "Lượt ủng hộ" : "Lượt cam kết"
   const amountLabel = isGive ? "Tiền đã nhận" : "Tiền đã cam kết"
   const periodItems = ANALYTICS_PERIODS.map((period) => ({
@@ -189,10 +199,19 @@ export function AnalyticsTab({ campaignId, campaignType, campaignStatus, days, a
   const recentActiveDays = activeDaysDesc.slice(0, VISIBLE_DAILY_ROWS)
   const olderActiveDays = activeDaysDesc.slice(VISIBLE_DAILY_ROWS)
 
+  const emptyTitle = preLaunch ? "Chiến dịch chưa có số liệu thống kê" : `Chưa có dữ liệu trong ${days} ngày qua`
+  const emptyDescription = preLaunch
+    ? "Chiến dịch chưa hiển thị công khai. Lượt xem, nguồn truy cập và tỉ lệ chuyển đổi sẽ xuất hiện khi chiến dịch mở gây quỹ."
+    : campaignStatus === "suspended"
+      ? "Chiến dịch đang tạm dừng nên không ghi nhận lượt xem mới trong khoảng thời gian này."
+      : campaignStatus === "cancelled"
+        ? "Chiến dịch đã hủy nên không ghi nhận lượt xem mới trong khoảng thời gian này."
+        : `Chưa ghi nhận lượt xem, lượt chia sẻ hay ${contributionLabel.toLowerCase()} nào trong khoảng thời gian này.`
+
   return (
-    <section aria-labelledby="analytics-heading" className="min-w-0 space-y-8">
+    <section aria-labelledby="analytics-heading" className="min-w-0 space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 space-y-1">
+        <div className="min-w-0 space-y-2">
           <h2 id="analytics-heading" className="text-h2">
             Thống kê hiệu quả
           </h2>
@@ -213,17 +232,8 @@ export function AnalyticsTab({ campaignId, campaignType, campaignStatus, days, a
           <p>{error}</p>
         </Callout>
       ) : !analytics || !hasActivity ? (
-        <EmptyState
-          icon={<EyeIcon width={40} height={40} />}
-          title={
-            isPublicStatus(campaignStatus)
-              ? `Chưa có dữ liệu trong ${days} ngày qua`
-              : "Chiến dịch chưa có số liệu thống kê"
-          }
-        >
-          {isPublicStatus(campaignStatus)
-            ? `Chưa ghi nhận lượt xem, lượt chia sẻ hay ${contributionLabel.toLowerCase()} nào trong khoảng thời gian này.`
-            : "Chiến dịch chưa hiển thị công khai. Lượt xem, nguồn truy cập và tỉ lệ chuyển đổi sẽ xuất hiện khi chiến dịch mở gây quỹ."}
+        <EmptyState icon={<EyeIcon width={40} height={40} />} title={emptyTitle}>
+          {emptyDescription}
         </EmptyState>
       ) : (
         <>
@@ -280,7 +290,7 @@ export function AnalyticsTab({ campaignId, campaignType, campaignStatus, days, a
           {/* Detail-page 8/4 split (DESIGN.md 2.2): trend & daily breakdown on the left, referrers on the right. */}
           <div className="space-y-12 border-t border-border pt-8 lg:grid lg:grid-cols-12 lg:space-y-0 lg:gap-x-6">
             <div className="min-w-0 space-y-12 lg:col-span-8">
-              <DailyBarChart daily={analytics.daily} days={days} />
+              <DailyBarChart daily={analytics.daily} days={days} contributionLabel={contributionLabel} />
 
               <section aria-labelledby="analytics-daily-heading" className="min-w-0 space-y-4">
                 <h3 id="analytics-daily-heading" className="text-h3">
@@ -314,15 +324,16 @@ export function AnalyticsTab({ campaignId, campaignType, campaignStatus, days, a
               ) : (
                 <ol className="space-y-4">
                   {analytics.referrers.map((row) => {
-                    const sharePercent =
-                      analytics.totals.views > 0 ? Math.round((row.views / analytics.totals.views) * 100) : 0
+                    const exactPercent = analytics.totals.views > 0 ? (row.views / analytics.totals.views) * 100 : 0
+                    const sharePercent = exactPercent > 0 ? Math.max(1, Math.round(exactPercent)) : 0
+                    const shareLabel = exactPercent > 0 && exactPercent < 1 ? "< 1%" : `${Math.round(exactPercent)}%`
                     const label = referrerLabel(row.bucket)
                     return (
                       <li key={row.bucket} className="space-y-2">
                         <div className="flex items-baseline justify-between gap-3 text-sm">
                           <span className="font-medium text-fg">{label}</span>
                           <span className="shrink-0 text-muted tabular-nums">
-                            <span className="font-semibold text-fg">{formatCount(row.views)}</span> ({sharePercent}%)
+                            <span className="font-semibold text-fg">{formatCount(row.views)}</span> ({shareLabel})
                           </span>
                         </div>
                         <ProgressBar percent={sharePercent} size="sm" label={`Tỉ lệ lượt xem từ ${label}`} />

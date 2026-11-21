@@ -173,7 +173,17 @@ describe("POST /api/analytics/event", () => {
     const oversized = await POST(
       makeRequest(JSON.stringify({ campaignId: CAMPAIGN, event: "view", pad: "x".repeat(3000) }))
     )
-    expect(oversized.status).toBe(400)
+    expect(oversized.status).toBe(413)
+
+    const oversizedHeader = await POST(
+      makeRequest({ campaignId: CAMPAIGN, event: "view" }, { "content-length": "9999999" })
+    )
+    expect(oversizedHeader.status).toBe(413)
+
+    const wrongMediaPrefix = await POST(
+      makeRequest({ campaignId: CAMPAIGN, event: "view" }, { "content-type": "application/json-patch+json" })
+    )
+    expect(wrongMediaPrefix.status).toBe(415)
 
     expect(state.calls).toHaveLength(0)
   })

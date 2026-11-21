@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server"
 
 import { isBotUserAgent, sanitizeReferrer, type AnalyticsEventType } from "@/lib/analytics"
-import { appOrigin, siteOrigin } from "@/lib/auth/origin"
+import { siteOrigin } from "@/lib/auth/origin"
 import { giveErrorCode } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
 import { dbService } from "@/lib/supabase"
@@ -27,8 +27,6 @@ function allowedOrigins(request: NextRequest): Set<string> {
   }
   const configured = siteOrigin()
   if (configured) origins.add(configured)
-  const resolved = appOrigin(request.nextUrl.origin)
-  if (resolved && resolved !== "null") origins.add(resolved)
   return origins
 }
 
@@ -71,6 +69,46 @@ function ownHostnames(request: NextRequest): string[] {
   return hosts
 }
 
+async function readBoundedBody(
+  request: NextRequest
+): Promise<{ ok: true; text: string } | { ok: false; status: 400 | 413 }> {
+  const contentLengthHeader = request.headers.get("content-length")?.trim()
+  if (contentLengthHeader) {
+    const declared = Number(contentLengthHeader)
+    if (!Number.isFinite(declared) || declared < 0) return { ok: false, status: 400 }
+    if (declared > MAX_BODY_BYTES) return { ok: false, status: 413 }
+  }
+
+  if (!request.body) return { ok: false, status: 400 }
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let totalBytes = 0
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      if (!value) continue
+      totalBytes += value.byteLength
+      if (totalBytes > MAX_BODY_BYTES) {
+        await reader.cancel().catch(() => {})
+        return { ok: false, status: 413 }
+      }
+      chunks.push(value)
+    }
+  } catch {
+    return { ok: false, status: 400 }
+  }
+
+  if (totalBytes === 0) return { ok: false, status: 400 }
+  const combined = new Uint8Array(totalBytes)
+  let offset = 0
+  for (const chunk of chunks) {
+    combined.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return { ok: true, text: new TextDecoder().decode(combined) }
+}
+
 /**
  * Privacy-safe campaign analytics ingestion endpoint (DOS/Give#252).
  *
@@ -84,8 +122,8 @@ export async function POST(request: NextRequest) {
     return errorResponse("forbidden", 403)
   }
 
-  const contentType = request.headers.get("content-type")?.toLowerCase() ?? ""
-  if (!contentType.startsWith("application/json")) {
+  const mediaType = request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() ?? ""
+  if (mediaType !== "application/json") {
     return errorResponse("unsupported_media_type", 415)
   }
 
@@ -94,19 +132,14 @@ export async function POST(request: NextRequest) {
     return emptyResponse(204)
   }
 
-  let rawBody: string
-  try {
-    rawBody = await request.text()
-  } catch {
-    return errorResponse("invalid_body", 400)
-  }
-  if (!rawBody || Buffer.byteLength(rawBody, "utf8") > MAX_BODY_BYTES) {
-    return errorResponse("invalid_body", 400)
+  const bodyResult = await readBoundedBody(request)
+  if (!bodyResult.ok) {
+    return errorResponse(bodyResult.status === 413 ? "payload_too_large" : "invalid_body", bodyResult.status)
   }
 
   let parsed: unknown
   try {
-    parsed = JSON.parse(rawBody)
+    parsed = JSON.parse(bodyResult.text)
   } catch {
     return errorResponse("invalid_json", 400)
   }

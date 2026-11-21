@@ -3,6 +3,7 @@ import "server-only"
 import { createHmac, randomBytes } from "node:crypto"
 
 import type { AnalyticsEventType } from "@/lib/analytics"
+import { clientAddress } from "@/server/contributions"
 
 const WINDOW_MS = 60_000
 const MAX_BUCKETS = 10_000
@@ -36,6 +37,9 @@ function pruneExpired(now: number) {
 function consumeBucket(key: string, limit: number, now: number): { allowed: boolean; retryAfterSeconds: number } {
   const existing = buckets.get(key)
   if (!existing || existing.resetAt <= now) {
+    // Delete expired key first so re-insertion moves it to the Map tail and
+    // capacity eviction always drops genuinely oldest entries first.
+    if (existing) buckets.delete(key)
     if (buckets.size >= MAX_BUCKETS) {
       pruneExpired(now)
       // If still at capacity under a distributed flood, evict oldest entries.
@@ -64,15 +68,17 @@ function consumeBucket(key: string, limit: number, now: number): { allowed: bool
 
 /**
  * Derives a privacy-preserving, ephemeral per-client rate-limit key from
- * proxy headers. The raw IP is immediately HMAC-hashed and never stored or
- * returned.
+ * proxy headers. Validates and canonicalizes IPv4 / IPv6 `/64` / IPv4-mapped
+ * addresses via `clientAddress` (preferring `x-vercel-forwarded-for` first),
+ * then immediately HMAC-hashes the normalized address so raw IPs are never
+ * stored or returned.
  */
 export function deriveAnalyticsClientKey(headers: Pick<Headers, "get">): string {
-  const vercelForwarded = headers.get("x-vercel-forwarded-for")?.split(",")[0]?.trim()
-  const realIp = headers.get("x-real-ip")?.trim()
-  const forwarded = headers.get("x-forwarded-for")?.split(",")[0]?.trim()
-  const rawIp = vercelForwarded || realIp || forwarded || "unknown"
-  return hashKey(["client", rawIp])
+  const vercelFirst = headers.get("x-vercel-forwarded-for")?.split(",")[0] ?? null
+  const normalized =
+    (vercelFirst ? clientAddress({ get: (name) => (name === "x-real-ip" ? vercelFirst : null) }) : null) ??
+    clientAddress(headers)
+  return hashKey(["client", normalized ?? "unknown"])
 }
 
 /**

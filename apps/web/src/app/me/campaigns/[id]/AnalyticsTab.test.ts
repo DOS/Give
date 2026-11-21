@@ -160,6 +160,33 @@ describe("AnalyticsTab (DOS/Give#252)", () => {
       })
     )
     expect(liveEmptyHtml).toContain("Chưa có dữ liệu trong 7 ngày qua")
+
+    const suspendedHtml = renderToStaticMarkup(
+      createElement(AnalyticsTab, {
+        campaignId: CAMPAIGN,
+        campaignType: "give",
+        campaignStatus: "suspended",
+        days: 30,
+        analytics: zeroAnalytics,
+        error: null,
+      })
+    )
+    expect(suspendedHtml).toContain("Chưa có dữ liệu trong 30 ngày qua")
+    expect(suspendedHtml).toContain("Chiến dịch đang tạm dừng")
+    expect(suspendedHtml).not.toContain("khi chiến dịch mở gây quỹ")
+
+    const cancelledHtml = renderToStaticMarkup(
+      createElement(AnalyticsTab, {
+        campaignId: CAMPAIGN,
+        campaignType: "give",
+        campaignStatus: "cancelled",
+        days: 30,
+        analytics: zeroAnalytics,
+        error: null,
+      })
+    )
+    expect(cancelledHtml).toContain("Chiến dịch đã hủy")
+    expect(cancelledHtml).not.toContain("khi chiến dịch mở gây quỹ")
   })
 
   it("renders a danger Callout when analytics failed to load", () => {

@@ -1260,4 +1260,20 @@ describe("EditCampaignPage Thống kê tab (DOS/Give#252)", () => {
       })
     ).rejects.toThrow("NEXT_NOT_FOUND")
   })
+
+  it("redirects unauthenticated visitors before any DB query and preserves analytics returnPath", async () => {
+    const { requireSession } = await import("@/lib/auth/session")
+    const requireSessionMock = vi.mocked(requireSession)
+    requireSessionMock.mockRejectedValueOnce(new Error("NEXT_REDIRECT"))
+
+    await expect(
+      EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "analytics", days: "7" }),
+      })
+    ).rejects.toThrow("NEXT_REDIRECT")
+
+    expect(requireSessionMock).toHaveBeenCalledWith(`/me/campaigns/${CAMPAIGN}?tab=analytics&days=7`)
+    expect(state.calls).toHaveLength(0)
+  })
 })

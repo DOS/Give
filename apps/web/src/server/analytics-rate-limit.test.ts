@@ -24,6 +24,22 @@ describe("analytics rate limiting", () => {
     expect(key1.length).toBeGreaterThan(20)
   })
 
+  it("groups IPv6 addresses by /64 prefix, normalizes IPv4-mapped IPv6, and rejects malformed IPs", () => {
+    const v6a = deriveAnalyticsClientKey(new Headers({ "x-vercel-forwarded-for": "2001:db8:abcd:1234::1" }))
+    const v6b = deriveAnalyticsClientKey(new Headers({ "x-vercel-forwarded-for": "2001:db8:abcd:1234:ffff::9999" }))
+    const v6OtherPrefix = deriveAnalyticsClientKey(new Headers({ "x-vercel-forwarded-for": "2001:db8:abcd:5678::1" }))
+    expect(v6a).toBe(v6b)
+    expect(v6a).not.toBe(v6OtherPrefix)
+
+    const v4 = deriveAnalyticsClientKey(new Headers({ "x-real-ip": "203.0.113.42" }))
+    const v4Mapped = deriveAnalyticsClientKey(new Headers({ "x-real-ip": "::ffff:203.0.113.42" }))
+    expect(v4Mapped).toBe(v4)
+
+    const malformed = deriveAnalyticsClientKey(new Headers({ "x-forwarded-for": "not-an-ip-spoof" }))
+    const unknown = deriveAnalyticsClientKey(new Headers())
+    expect(malformed).toBe(unknown)
+  })
+
   it("limits repeated view events per (client, campaign) and resets after the 60s window", () => {
     const client = deriveAnalyticsClientKey(new Headers({ "x-real-ip": "203.0.113.10" }))
     const t0 = 1_700_000_000_000
