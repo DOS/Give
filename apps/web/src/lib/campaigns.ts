@@ -897,6 +897,19 @@ export function recoveryAdvice(
   const money = row.account_has_transactions
 
   if (problem === "organizer_not_verified") {
+    if (money) {
+      if (row.type === "give") {
+        return {
+          note: "Hồ sơ người tổ chức chưa được xác minh và tài khoản đang gắn đã nhận giao dịch (lịch sử tiền của chiến dịch, không nhả sớm được): hãy xác minh lại hồ sơ ở mục Xác minh người tổ chức trước. Nếu tên pháp lý đã đổi, chủ chiến dịch cần gửi yêu cầu đổi tài khoản (bộ phận tài chính duyệt) sau khi hồ sơ được xác minh.",
+          sendBackReason:
+            "Chiến dịch đang tạm dừng trước ngày bắt đầu và hồ sơ người tổ chức của bạn cần được xác minh lại trước khi dùng tài khoản nhận tiền. Tài khoản đang gắn đã nhận giao dịch nên không nhả được; nếu cần đổi tài khoản sau khi hồ sơ được xác minh, hãy gửi yêu cầu đổi tài khoản trong mục Tài khoản nhận tiền để bộ phận tài chính duyệt, rồi gửi duyệt lại.",
+        }
+      }
+      return {
+        note: "Hồ sơ người tổ chức chưa được xác minh và tài khoản đang gắn đã nhận giao dịch (lịch sử tiền của chiến dịch, không nhả sớm được; dự án có quà tặng chưa hỗ trợ đổi tài khoản): hãy xác minh lại hồ sơ với tên pháp lý hiện tại ở mục Xác minh người tổ chức để tài khoản dùng được trở lại; nếu tên pháp lý đã đổi, hãy liên hệ quản trị viên hệ thống hoặc hủy chiến dịch.",
+        sendBackReason: null,
+      }
+    }
     return {
       note: "Hồ sơ người tổ chức chưa được xác minh: hãy xác minh lại hồ sơ (với tên pháp lý hiện tại) ở mục Xác minh người tổ chức. Nếu cần người tổ chức chỉnh sửa hoặc gắn tài khoản mới, bạn vẫn có thể yêu cầu chỉnh sửa.",
       sendBackReason:
@@ -905,11 +918,28 @@ export function recoveryAdvice(
   }
 
   if (money) {
-    if (row.type === "give") {
+    if (problem === "account_not_owned") {
       return {
-        note: "Tài khoản đang gắn đã nhận giao dịch (lịch sử tiền của chiến dịch, không nhả sớm được). Sau khi yêu cầu chỉnh sửa, chủ chiến dịch có thể gửi yêu cầu đổi tài khoản (bộ phận tài chính duyệt) trong mục Tài khoản nhận tiền.",
-        sendBackReason:
-          "Chiến dịch đang tạm dừng trước ngày bắt đầu và tài khoản nhận tiền đang gắn không còn dùng được. Vì tài khoản đã nhận giao dịch nên không nhả được, hãy gửi yêu cầu đổi tài khoản trong mục Tài khoản nhận tiền của chiến dịch để bộ phận tài chính duyệt, rồi gửi duyệt lại.",
+        note: "Tài khoản đang gắn không thuộc người tổ chức và đã nhận giao dịch (lịch sử tiền của chiến dịch, chỉ nhả được 30 ngày sau khi chiến dịch bị hủy hoặc kết thúc), nên chủ chiến dịch không tự đổi tài khoản được. Hãy liên hệ quản trị viên hệ thống; nếu không thể xử lý, hãy hủy chiến dịch.",
+        sendBackReason: null,
+      }
+    }
+    if (row.type === "give") {
+      const notes = [
+        "Tài khoản đang gắn đã nhận giao dịch (lịch sử tiền của chiến dịch, không nhả sớm được). Sau khi yêu cầu chỉnh sửa, chủ chiến dịch có thể gửi yêu cầu đổi tài khoản (bộ phận tài chính duyệt) trong mục Tài khoản nhận tiền.",
+      ]
+      const parts = [
+        "Chiến dịch đang tạm dừng trước ngày bắt đầu và tài khoản nhận tiền đang gắn không còn dùng được. Vì tài khoản đã nhận giao dịch nên không nhả được, hãy gửi yêu cầu đổi tài khoản trong mục Tài khoản nhận tiền của chiến dịch để bộ phận tài chính duyệt, rồi gửi duyệt lại.",
+      ]
+      if (!verified) {
+        notes.unshift(
+          "Hồ sơ người tổ chức chưa được xác minh: hãy xác minh lại hồ sơ (với tên pháp lý hiện tại) ở mục Xác minh người tổ chức trước để chủ chiến dịch có thể gửi yêu cầu đổi tài khoản."
+        )
+        parts.push("Hồ sơ người tổ chức của bạn cần được xác minh lại trước khi gửi yêu cầu đổi tài khoản.")
+      }
+      return {
+        note: notes.join(" "),
+        sendBackReason: parts.join(" "),
       }
     }
     return {

@@ -860,5 +860,47 @@ describe("recoveryAdvice (DOS/Give#77)", () => {
     })
     expect(backTx.sendBackReason).toBeNull()
     expect(backTx.note).toContain("dự án có quà tặng chưa hỗ trợ đổi tài khoản")
+
+    // Foreign account with transactions cannot be swapped in editor or released early (give or back).
+    for (const type of ["give", "back"] as const) {
+      const foreignTx = advise("suspended_before_start", {
+        type,
+        account_problem: "account_not_owned",
+        account_has_transactions: true,
+      })
+      expect(foreignTx.sendBackReason).toBeNull()
+      expect(foreignTx.note).toContain("quản trị viên hệ thống")
+    }
+
+    // Give campaign with transactions + unverified organizer must ask to re-verify organizer first.
+    const giveTxUnverified = advise("suspended_before_start", {
+      type: "give",
+      account_problem: "account_not_verified",
+      account_has_transactions: true,
+      verified: false,
+    })
+    expect(giveTxUnverified.note).toContain("Xác minh người tổ chức")
+    expect(giveTxUnverified.sendBackReason).toContain("cần được xác minh lại trước khi gửi yêu cầu đổi tài khoản")
+
+    // organizer_not_verified with transactions never suggests direct rebinding.
+    const giveOrgResetTx = advise("suspended_before_start", {
+      type: "give",
+      account_problem: "organizer_not_verified",
+      account_has_transactions: true,
+      verified: false,
+    })
+    expect(giveOrgResetTx.note).not.toContain("gắn tài khoản mới")
+    expect(giveOrgResetTx.note).toContain("yêu cầu đổi tài khoản")
+    expect(giveOrgResetTx.sendBackReason).toContain("yêu cầu đổi tài khoản")
+
+    const backOrgResetTx = advise("suspended_before_start", {
+      type: "back",
+      account_problem: "organizer_not_verified",
+      account_has_transactions: true,
+      verified: false,
+    })
+    expect(backOrgResetTx.sendBackReason).toBeNull()
+    expect(backOrgResetTx.note).not.toContain("gắn tài khoản mới")
+    expect(backOrgResetTx.note).toContain("Xác minh người tổ chức")
   })
 })
