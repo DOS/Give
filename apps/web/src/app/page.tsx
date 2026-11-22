@@ -7,9 +7,16 @@ import { FeaturedReceipt } from "@/components/home/FeaturedReceipt"
 import { ButtonLink } from "@/components/ui/Button"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { EyeIcon, HeartIcon, LedgerIcon, ShieldIcon, SparkIcon } from "@/components/ui/icons"
-import { DEFAULT_DISCOVERY, discoveryHref, listCategories, listPublicCampaigns } from "@/lib/campaigns"
+import {
+  DEFAULT_DISCOVERY,
+  discoveryHref,
+  listCampaignStatementFreshness,
+  listCategories,
+  listPublicCampaigns,
+  type ListedCampaign,
+} from "@/lib/campaigns"
 import { homeSections } from "@/lib/home"
-import { listMoneyTotals, raisedAmount } from "@/lib/statement"
+import { listMoneyTotals, raisedAmount, type MoneyTotals } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
 export const metadata: Metadata = {
@@ -35,28 +42,36 @@ const LOGIN_ERRORS: Record<string, string> = {
 /** How many live campaigns the home page loads: one featured, three for "Đang được quan tâm", the rest spare. */
 const HOME_CAMPAIGNS = 10
 
-/** Cards in "Đang được quan tâm" (DESIGN.md 8). */
+/** Cards in "Đang được quan tâm" and each Discovery 2.0 highlight strip (DESIGN.md 8). */
 const INTERESTING = 3
 
 /**
  * Home (DESIGN.md 8): hero with the statement card, "Đang được quan tâm",
- * "Hai cách gây quỹ", the trust strip and the organizer band. Each section
- * has one heading and one action.
+ * dynamic Discovery 2.0 highlight strips ("Sắp đạt mục tiêu" and "Minh bạch
+ * sao kê gần đây", hidden when empty), "Hai cách gây quỹ", the trust strip
+ * and the organizer band. Each section has one heading and one action.
  */
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ login_error?: string }> }) {
   const { login_error: loginError } = await searchParams
   const db = dbAs()
   const categories = await listCategories(db)
-  const { campaigns } = await listPublicCampaigns(
-    db,
-    { ...DEFAULT_DISCOVERY, sort: "newest" },
-    categories,
-    HOME_CAMPAIGNS
-  )
-  const totals = await listMoneyTotals(
-    db,
-    campaigns.map((c) => c.id)
-  )
+  const [{ campaigns }, almostFundedPage, recentlyAuditedPage] = await Promise.all([
+    listPublicCampaigns(db, { ...DEFAULT_DISCOVERY, sort: "newest" }, categories, HOME_CAMPAIGNS),
+    listPublicCampaigns(db, { ...DEFAULT_DISCOVERY, sort: "almost_funded" }, categories, INTERESTING),
+    listPublicCampaigns(db, { ...DEFAULT_DISCOVERY, status: "all", sort: "recently_audited" }, categories, INTERESTING),
+  ])
+  const almostFunded = almostFundedPage.campaigns.filter((c) => c.status !== "approved").slice(0, INTERESTING)
+  const recentlyAudited = recentlyAuditedPage.campaigns.filter((c) => c.status !== "approved").slice(0, INTERESTING)
+  const publicIds = [
+    ...new Set(
+      [...campaigns, ...almostFunded, ...recentlyAudited].filter((c) => c.status !== "approved").map((c) => c.id)
+    ),
+  ]
+  const auditedIds = recentlyAudited.map((c) => c.id)
+  const [totals, statementFreshness] = await Promise.all([
+    listMoneyTotals(db, publicIds),
+    listCampaignStatementFreshness(db, auditedIds),
+  ])
   const { featured, trending, newest } = homeSections(campaigns, totals)
   // Closest to their goal first, topped up with the newest so the row is full.
   const interesting = [...trending, ...newest].slice(0, INTERESTING)
@@ -120,37 +135,35 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </section>
       ) : (
         interesting.length > 0 && (
-          <section aria-labelledby="quan-tam-heading" className="container-page pt-16 lg:pt-24">
-            {/* Phones get the 14px link from the HomeMobile mockup, so the heading keeps one line beside it
-                from 375px. Below that the link wraps under the heading instead of breaking the heading.
-                The link is one line of text with an invisible 44px hit area, so from 375px the row is as
-                tall as the heading and the cards sit 24px below it; below 375px the wrapped link sits 8px
-                under the heading and the cards 24px below the link. */}
-            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
-              <h2 id="quan-tam-heading" className="text-h2">
-                Đang được quan tâm
-              </h2>
-              <Link href="/campaigns" className="hit-area shrink-0 text-sm link whitespace-nowrap sm:text-base">
-                Xem tất cả
-              </Link>
-            </div>
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
-              {interesting.map((campaign, index) => {
-                const t = totals.get(campaign.id)
-                return (
-                  // Two columns from 640px show two cards, so no card sits alone on a row.
-                  <div key={campaign.id} className={index === 2 ? "min-w-0 sm:max-lg:hidden" : "min-w-0"}>
-                    <CampaignCard
-                      campaign={campaign}
-                      raised={raisedAmount(t, campaign.type)}
-                      people={t ? (campaign.type === "give" ? t.supporters_count : t.backers_count) : undefined}
-                    />
-                  </div>
-                )
-              })}
-            </div>
-          </section>
+          <CampaignStrip
+            id="quan-tam-heading"
+            title="Đang được quan tâm"
+            href="/campaigns"
+            campaigns={interesting}
+            totals={totals}
+          />
         )
+      )}
+
+      {almostFunded.length > 0 && (
+        <CampaignStrip
+          id="sap-dat-muc-tieu-heading"
+          title="Sắp đạt mục tiêu"
+          href={discoveryHref({ sort: "almost_funded" })}
+          campaigns={almostFunded}
+          totals={totals}
+        />
+      )}
+
+      {recentlyAudited.length > 0 && (
+        <CampaignStrip
+          id="minh-bach-sao-ke-heading"
+          title="Minh bạch sao kê gần đây"
+          href={discoveryHref({ status: "all", sort: "recently_audited" })}
+          campaigns={recentlyAudited}
+          totals={totals}
+          statementFreshness={statementFreshness}
+        />
       )}
 
       <section
@@ -219,6 +232,64 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </div>
       </section>
     </>
+  )
+}
+
+/**
+ * A 3-card home strip ("Đang được quan tâm", "Sắp đạt mục tiêu", "Minh bạch sao kê gần đây"):
+ * one heading, one "Xem tất cả" link, and up to three cards (two on 640–1023px so no card sits alone).
+ */
+function CampaignStrip({
+  id,
+  title,
+  href,
+  campaigns,
+  totals,
+  statementFreshness,
+}: {
+  id: string
+  title: string
+  href: string
+  campaigns: readonly ListedCampaign[]
+  totals: ReadonlyMap<string, MoneyTotals>
+  statementFreshness?: ReadonlyMap<string, string>
+}) {
+  return (
+    <section aria-labelledby={id} className="container-page pt-16 lg:pt-24">
+      {/* Phones get the 14px link from the HomeMobile mockup, so the heading keeps one line beside it
+          from 375px. Below that the link wraps under the heading instead of breaking the heading.
+          The link is one line of text with an invisible 44px hit area, so from 375px the row is as
+          tall as the heading and the cards sit 24px below it; below 375px the wrapped link sits 8px
+          under the heading and the cards 24px below the link. */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-2">
+        <h2 id={id} className="text-h2">
+          {title}
+        </h2>
+        <Link
+          href={href}
+          aria-label={`Xem tất cả ${title}`}
+          className="hit-area shrink-0 text-sm link whitespace-nowrap sm:text-base"
+        >
+          Xem tất cả
+        </Link>
+      </div>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3">
+        {campaigns.map((campaign, index) => {
+          const t = totals.get(campaign.id)
+          return (
+            // Two columns from 640px show two cards, so no card sits alone on a row.
+            <div key={campaign.id} className={index === 2 ? "min-w-0 sm:max-lg:hidden" : "min-w-0"}>
+              <CampaignCard
+                campaign={campaign}
+                raised={raisedAmount(t, campaign.type)}
+                people={t ? (campaign.type === "give" ? t.supporters_count : t.backers_count) : undefined}
+                lastStatementAt={statementFreshness?.get(campaign.id) ?? null}
+              />
+            </div>
+          )
+        })}
+      </div>
+    </section>
   )
 }
 

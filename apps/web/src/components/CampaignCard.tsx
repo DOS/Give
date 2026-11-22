@@ -30,6 +30,7 @@ export function CampaignCard({
   priority,
   headingLevel = 3,
   hasImpactReport = false,
+  lastStatementAt = null,
 }: {
   campaign: ListedCampaign
   raised?: number
@@ -40,6 +41,11 @@ export function CampaignCard({
   headingLevel?: 2 | 3
   /** Shows a trust badge when the campaign has a published closing impact report (DOS/Give#314). */
   hasImpactReport?: boolean
+  /**
+   * Verified bank statement import timestamp from give.public_campaign_statement_freshness
+   * (DOS/Give#318). Strictly suppressed on pre-launch (`approved`) cards.
+   */
+  lastStatementAt?: string | null
 }) {
   const percent = progressPercent(raised, campaign.goal_amount)
   const days = daysLeft(campaign.ends_at)
@@ -50,6 +56,8 @@ export function CampaignCard({
   const prelaunch = campaign.status === "approved"
   const Heading = headingLevel === 2 ? "h2" : "h3"
   const validStartsAt = campaign.starts_at && !Number.isNaN(Date.parse(campaign.starts_at)) ? campaign.starts_at : null
+  const validLastStatementAt =
+    !prelaunch && lastStatementAt && !Number.isNaN(Date.parse(lastStatementAt)) ? lastStatementAt : null
   const meta = prelaunch
     ? validStartsAt
       ? [`Mở ngày ${formatDate(validStartsAt)}`]
@@ -148,6 +156,11 @@ export function CampaignCard({
                 </span>
               </p>
               {meta.length > 0 && <p className="text-sm text-muted">{meta.join(" · ")}</p>}
+              {validLastStatementAt && (
+                <p className="mt-1 text-sm text-primary tabular-nums">
+                  Sao kê mới nhất: {formatDate(validLastStatementAt)}
+                </p>
+              )}
             </>
           )}
         </div>

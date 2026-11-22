@@ -254,17 +254,28 @@ export function categoriesFor(categories: readonly Category[], type: CampaignTyp
 export type DiscoveryStatus = "live" | "prelaunch" | "ended" | "all"
 
 /**
- * Discovery orders, as give.discover_campaigns defines them (DOS-Me
- * `20261111173000_give_discover_campaigns.sql` + `20261201120000`; ties end newest first):
+ * Discovery orders & verified highlight filters, as give.discover_campaigns
+ * defines them (DOS-Me `20261111173000_give_discover_campaigns.sql`,
+ * `20261201120000`, and `20261202120000_give_discovery_v2_filters.sql`):
  * - featured ("Nổi bật"): live first, then most supporters (backers for back
  *   campaigns), then the highest share of the goal raised;
  * - newest ("Mới nhất"): most recently approved first;
  * - ending ("Sắp kết thúc"): live by end date, soonest first, then ended
  *   ones, most recently ended first;
  * - near_goal ("Gần đạt mục tiêu"): live first, campaigns under their goal
- *   before those that reached it, then the highest share raised.
+ *   before those that reached it, then the highest share raised;
+ * - ending_soon ("Sắp hết hạn"): live campaigns closing within 7 days,
+ *   soonest first;
+ * - almost_funded ("Sắp đạt mục tiêu"): live campaigns at 60%–<100% of goal
+ *   (honest raised math, excluding other_in), highest completion ratio first;
+ * - recently_audited ("Mới cập nhật sao kê"): public-status campaigns with a
+ *   verified bank statement import timestamp, newest statement first.
  */
-export type DiscoverySort = "featured" | "newest" | "ending" | "near_goal"
+export type DiscoverySort =
+  "featured" | "newest" | "ending" | "near_goal" | "ending_soon" | "almost_funded" | "recently_audited"
+
+/** Discovery 2.0 filtering sort modes that narrow the result set. */
+export type DiscoveryHighlightSort = "ending_soon" | "almost_funded" | "recently_audited"
 
 export const DISCOVERY_STATUSES: readonly { value: DiscoveryStatus; label: string }[] = [
   { value: "live", label: "Đang gây quỹ" },
@@ -278,7 +289,21 @@ export const DISCOVERY_SORTS: readonly { value: DiscoverySort; label: string }[]
   { value: "newest", label: "Mới nhất" },
   { value: "ending", label: "Sắp kết thúc" },
   { value: "near_goal", label: "Gần đạt mục tiêu" },
+  { value: "ending_soon", label: "Sắp hết hạn" },
+  { value: "almost_funded", label: "Sắp đạt mục tiêu" },
+  { value: "recently_audited", label: "Mới cập nhật sao kê" },
 ]
+
+/** Quick-filter pills rendered under the /campaigns filter bar (DOS/Give#318). */
+export const DISCOVERY_HIGHLIGHT_PILLS: readonly { value: DiscoveryHighlightSort; label: string }[] = [
+  { value: "ending_soon", label: "Sắp hết hạn" },
+  { value: "almost_funded", label: "Sắp đạt mục tiêu" },
+  { value: "recently_audited", label: "Mới cập nhật sao kê" },
+]
+
+export function isDiscoveryHighlightSort(sort: DiscoverySort): sort is DiscoveryHighlightSort {
+  return sort === "ending_soon" || sort === "almost_funded" || sort === "recently_audited"
+}
 
 /** Cards per "Xem thêm" step. */
 export const DISCOVERY_PAGE_SIZE = 24
@@ -503,6 +528,42 @@ async function listCampaignOrganizers(db: Db, campaignIds: readonly string[]): P
     return new Map()
   }
   return organizers
+}
+
+/**
+ * Verified bank statement freshness timestamps for public-status campaigns,
+ * by campaign id, through give.public_campaign_statement_freshness (DOS-Me
+ * `20261202120000_give_discovery_v2_filters.sql`). Fail-closed: a failed
+ * lookup is logged and returns an empty map so cards still render cleanly.
+ */
+export async function listCampaignStatementFreshness(
+  db: Db,
+  campaignIds: readonly string[]
+): Promise<Map<string, string>> {
+  const freshness = new Map<string, string>()
+  const uniqueIds = [...new Set(campaignIds)]
+  if (uniqueIds.length === 0) return freshness
+  try {
+    for (const chunk of chunks(uniqueIds, IDS_PER_REQUEST)) {
+      const { data, error } = await db.rpc("public_campaign_statement_freshness", {
+        p_campaign_ids: chunk,
+      })
+      if (error) throw error
+      for (const row of (data ?? []) as { campaign_id?: unknown; last_statement_at?: unknown }[]) {
+        if (
+          typeof row.campaign_id === "string" &&
+          typeof row.last_statement_at === "string" &&
+          !Number.isNaN(Date.parse(row.last_statement_at))
+        ) {
+          freshness.set(row.campaign_id, row.last_statement_at)
+        }
+      }
+    }
+  } catch (error) {
+    console.error("public_campaign_statement_freshness failed; campaign cards omit statement date", error)
+    return new Map()
+  }
+  return freshness
 }
 
 /**

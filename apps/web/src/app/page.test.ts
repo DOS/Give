@@ -38,21 +38,25 @@ const { default: HomePage, metadata } = await import("./page")
 interface FixtureRow {
   n: number
   type?: CampaignType
+  status?: string
   goal?: number
   raised?: number
   supporters?: number
   backers?: number
+  lastStatementAt?: string
 }
 
-function campaignRow(n: number, type: CampaignType = "give", goal_amount = 100_000_000) {
+function campaignRow(n: number, type: CampaignType = "give", goal_amount = 100_000_000, status = "live") {
   return {
     id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
     slug: `chien-dich-${n}`,
     type,
     title: `Chiến dịch số ${n}`,
     goal_amount,
+    starts_at: "2026-01-01T00:00:00.000Z",
     ends_at: "2999-01-01T00:00:00.000Z",
-    status: "live",
+    status,
+    prelaunch_public: false,
     display_options: { progress_bar: true, backers_count: true, time_remaining: true },
     cover: null,
   }
@@ -84,26 +88,75 @@ function totalsRow(
   }
 }
 
-function setupHome(fixtures: FixtureRow[] = []) {
-  const rows = fixtures.map((f) => campaignRow(f.n, f.type ?? "give", f.goal ?? 100_000_000))
-  const totals = fixtures.map((f, idx) => totalsRow(rows[idx].id, f))
+function setupHome(
+  fixtures: FixtureRow[] = [],
+  { almostFunded = [], recentlyAudited = [] }: { almostFunded?: FixtureRow[]; recentlyAudited?: FixtureRow[] } = {}
+) {
+  const bySort = {
+    newest: fixtures,
+    almost_funded: almostFunded,
+    recently_audited: recentlyAudited,
+  }
+  const allFixtures = new Map<number, FixtureRow>()
+  for (const f of [...fixtures, ...almostFunded, ...recentlyAudited]) {
+    if (!allFixtures.has(f.n)) allFixtures.set(f.n, f)
+  }
+  const rowsById = new Map(
+    [...allFixtures.values()].map((f) => {
+      const row = campaignRow(f.n, f.type ?? "give", f.goal ?? 100_000_000, f.status ?? "live")
+      return [row.id, { row, fixture: f }] as const
+    })
+  )
+
   state.handler = (call) => {
     if (call.target === "categories") return { data: CATEGORIES }
     if (call.target === "rpc:discover_campaigns") {
-      return { data: rows.map((r) => ({ campaign_id: r.id, total_count: rows.length })) }
-    }
-    if (call.target === "campaigns") return { data: rows }
-    if (call.target === "rpc:public_campaign_organizers") {
+      const args = (op(call, "args")?.[0] ?? {}) as { p_sort?: keyof typeof bySort }
+      const selected = bySort[args.p_sort ?? "newest"] ?? []
       return {
-        data: rows.map((r) => ({
-          campaign_id: r.id,
+        data: selected.map((f) => ({
+          campaign_id: `00000000-0000-4000-8000-${String(f.n).padStart(12, "0")}`,
+          total_count: selected.length,
+        })),
+      }
+    }
+    if (call.target === "campaigns") {
+      const ids = (op(call, "in")?.[1] as string[]) ?? []
+      return { data: ids.map((id) => rowsById.get(id)?.row).filter(Boolean) }
+    }
+    if (call.target === "rpc:public_campaign_organizers") {
+      const ids = ((op(call, "args")?.[0] as { p_campaign_ids?: string[] })?.p_campaign_ids ?? []) as string[]
+      return {
+        data: ids.map((id) => ({
+          campaign_id: id,
           display_name: "Quỹ Mùa Xuân",
           kind: "organization",
           verification_status: "verified",
         })),
       }
     }
-    if (call.target === "public_campaigns") return { data: totals }
+    if (call.target === "rpc:public_campaign_statement_freshness") {
+      const ids = ((op(call, "args")?.[0] as { p_campaign_ids?: string[] })?.p_campaign_ids ?? []) as string[]
+      return {
+        data: ids
+          .map((id) => {
+            const ts = rowsById.get(id)?.fixture.lastStatementAt
+            return ts ? { campaign_id: id, last_statement_at: ts } : null
+          })
+          .filter(Boolean),
+      }
+    }
+    if (call.target === "public_campaigns") {
+      const ids = (op(call, "in")?.[1] as string[]) ?? []
+      return {
+        data: ids
+          .map((id) => {
+            const entry = rowsById.get(id)
+            return entry ? totalsRow(id, entry.fixture) : null
+          })
+          .filter(Boolean),
+      }
+    }
     return undefined
   }
 }
@@ -241,7 +294,113 @@ describe("HomePage (/, DOS/Give#233)", () => {
       expect(doc.querySelector('a[href="/campaigns"]')?.textContent.trim()).toBe("Khám phá chiến dịch")
       expect(doc.querySelector('a[href="/campaigns/chien-dich-1/statement"]')).toBeTruthy()
       expect(doc.querySelector("#quan-tam-heading")).toBeNull()
+      expect(doc.querySelector("#sap-dat-muc-tieu-heading")).toBeNull()
+      expect(doc.querySelector("#minh-bach-sao-ke-heading")).toBeNull()
+      expect(state.calls.some((c) => c.target === "rpc:public_campaign_statement_freshness")).toBe(false)
       expect(html).not.toContain("Chưa có chiến dịch nào đang gây quỹ")
+    })
+
+    it("renders dynamic 'Sắp đạt mục tiêu' and 'Minh bạch sao kê gần đây' highlight strips with verified dates, distinct aria-labels, deduplicated totals, and zero prelaunch leakage (DOS/Give#318)", async () => {
+      setupHome(
+        [
+          { n: 1, type: "give", goal: 100_000_000, raised: 80_000_000, supporters: 20 },
+          { n: 2, type: "give", goal: 100_000_000, raised: 25_000_000, supporters: 6 },
+        ],
+        {
+          almostFunded: [
+            // Campaign 1 overlaps with newest; campaign 99 is an approved prelaunch row that must be excluded.
+            { n: 1, type: "give", goal: 100_000_000, raised: 80_000_000, supporters: 20 },
+            { n: 11, type: "back", goal: 100_000_000, raised: 74_000_000, backers: 18 },
+            { n: 99, type: "give", status: "approved", goal: 100_000_000, raised: 0 },
+          ],
+          recentlyAudited: [
+            {
+              n: 20,
+              type: "give",
+              status: "closed",
+              goal: 50_000_000,
+              raised: 50_000_000,
+              supporters: 42,
+              lastStatementAt: "2026-11-22T09:00:00Z",
+            },
+            {
+              n: 21,
+              type: "give",
+              status: "live",
+              goal: 80_000_000,
+              raised: 40_000_000,
+              supporters: 15,
+              lastStatementAt: "2026-11-20T15:00:00Z",
+            },
+            {
+              n: 99,
+              type: "give",
+              status: "approved",
+              goal: 100_000_000,
+              raised: 0,
+              lastStatementAt: "2026-11-22T10:00:00Z",
+            },
+          ],
+        }
+      )
+
+      const { doc } = await renderHome()
+
+      // Verify the three discover_campaigns calls include almost_funded and recently_audited (status: all).
+      const discoverArgs = state.calls
+        .filter((c) => c.target === "rpc:discover_campaigns")
+        .map((c) => op(c, "args")?.[0])
+      expect(discoverArgs).toEqual([
+        { p_status: "live", p_type: null, p_category_id: null, p_search: null, p_sort: "newest", p_limit: 10 },
+        { p_status: "live", p_type: null, p_category_id: null, p_search: null, p_sort: "almost_funded", p_limit: 3 },
+        { p_status: "all", p_type: null, p_category_id: null, p_search: null, p_sort: "recently_audited", p_limit: 3 },
+      ])
+
+      // public_campaigns totals IDs are deduplicated (campaign 1 asked once) and exclude prelaunch #99.
+      const totalsCall = state.calls.find((c) => c.target === "public_campaigns")
+      const totalsIds = op(totalsCall, "in")?.[1] as string[]
+      expect(new Set(totalsIds).size).toBe(totalsIds.length)
+      expect(totalsIds).not.toContain("00000000-0000-4000-8000-000000000099")
+
+      // public_campaign_statement_freshness excludes prelaunch #99.
+      const freshnessCall = state.calls.find((c) => c.target === "rpc:public_campaign_statement_freshness")
+      expect(op(freshnessCall, "args")?.[0]).toEqual({
+        p_campaign_ids: ["00000000-0000-4000-8000-000000000020", "00000000-0000-4000-8000-000000000021"],
+      })
+
+      // "Sắp đạt mục tiêu" strip
+      const almostSection = doc.querySelector('section[aria-labelledby="sap-dat-muc-tieu-heading"]')
+      expect(almostSection).toBeTruthy()
+      expect(almostSection!.querySelector("#sap-dat-muc-tieu-heading")?.textContent.trim()).toBe("Sắp đạt mục tiêu")
+      const almostLink = Array.from(almostSection!.querySelectorAll("a")).find(
+        (a) => a.textContent.trim() === "Xem tất cả"
+      )
+      expect(almostLink?.getAttribute("href")).toBe("/campaigns?sort=almost_funded")
+      expect(almostLink?.getAttribute("aria-label")).toBe("Xem tất cả Sắp đạt mục tiêu")
+      const almostCards = Array.from(almostSection!.querySelectorAll("article"))
+      expect(almostCards).toHaveLength(2)
+      expect(almostCards.map((c) => c.querySelector("h3 a")?.getAttribute("href"))).toEqual([
+        "/campaigns/chien-dich-1",
+        "/campaigns/chien-dich-11",
+      ])
+      expect(almostSection!.textContent).not.toContain("Sao kê mới nhất:")
+
+      // "Minh bạch sao kê gần đây" strip
+      const auditedSection = doc.querySelector('section[aria-labelledby="minh-bach-sao-ke-heading"]')
+      expect(auditedSection).toBeTruthy()
+      expect(auditedSection!.querySelector("#minh-bach-sao-ke-heading")?.textContent.trim()).toBe(
+        "Minh bạch sao kê gần đây"
+      )
+      const auditedLink = Array.from(auditedSection!.querySelectorAll("a")).find(
+        (a) => a.textContent.trim() === "Xem tất cả"
+      )
+      expect(auditedLink?.getAttribute("href")).toBe("/campaigns?status=all&sort=recently_audited")
+      expect(auditedLink?.getAttribute("aria-label")).toBe("Xem tất cả Minh bạch sao kê gần đây")
+      const auditedCards = Array.from(auditedSection!.querySelectorAll("article"))
+      expect(auditedCards).toHaveLength(2)
+      expect(auditedCards[0].textContent).toContain("Sao kê mới nhất: 22/11/2026")
+      expect(auditedCards[1].textContent).toContain("Sao kê mới nhất: 20/11/2026")
+      expect(auditedSection!.textContent).not.toContain("Sắp ra mắt")
     })
   })
 
