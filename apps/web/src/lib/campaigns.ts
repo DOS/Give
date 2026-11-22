@@ -146,6 +146,8 @@ export interface Organizer {
   legal_name: string
   display_name: string
   phone: string | null
+  handle?: string | null
+  bio?: string | null
   verification_status: VerificationStatus
   verified_at: string | null
   created_at: string
@@ -155,6 +157,7 @@ export interface PublicOrganizer {
   display_name: string
   kind: OrganizerKind
   verification_status: VerificationStatus
+  handle?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -463,6 +466,7 @@ async function listCampaignOrganizers(db: Db, campaignIds: readonly string[]): P
           display_name: row.display_name,
           kind: row.kind,
           verification_status: row.verification_status,
+          handle: row.handle ?? null,
         })
       }
     }
@@ -523,15 +527,22 @@ export async function listPublishedUpdates(db: Db, campaignId: string): Promise<
   return (data ?? []) as CampaignUpdate[]
 }
 
-/** Display name, kind and verification of a published campaign's organizer. */
+/** Display name, kind, verification and optional handle of a published campaign's organizer. */
 export async function getPublicOrganizer(db: Db, campaignId: string): Promise<PublicOrganizer | null> {
   const { data, error } = await db.rpc("public_organizer", { p_campaign_id: campaignId })
   if (error) throw error
-  const rows = (data ?? []) as PublicOrganizer[]
-  return rows[0] ?? null
+  const row = ((data ?? []) as PublicOrganizer[])[0]
+  if (!row) return null
+  return {
+    display_name: row.display_name,
+    kind: row.kind,
+    verification_status: row.verification_status,
+    handle: row.handle ?? null,
+  }
 }
 
-const ORGANIZER_COLUMNS = "user_id, kind, legal_name, display_name, phone, verification_status, verified_at, created_at"
+const ORGANIZER_COLUMNS =
+  "user_id, kind, legal_name, display_name, phone, handle, bio, verification_status, verified_at, created_at"
 
 export async function getOrganizer(db: Db, userId: string): Promise<Organizer | null> {
   const { data, error } = await db.from("organizers").select(ORGANIZER_COLUMNS).eq("user_id", userId).maybeSingle()

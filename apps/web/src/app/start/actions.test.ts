@@ -70,9 +70,11 @@ function organizer(overrides: Partial<Organizer> = {}): Organizer {
 
 const ORGANIZER_REVALIDATIONS = [
   ["/start"],
+  ["/me"],
   ["/"],
   ["/campaigns"],
   ["/campaigns/[slug]", "page"],
+  ["/u/[handle]", "page"],
   ["/me/campaigns/[id]", "page"],
   ["/me/accounts"],
   ["/admin"],

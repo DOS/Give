@@ -8,6 +8,7 @@ import { CheckIcon } from "@/components/ui/icons"
 import { STATUS_LABELS, type DisplayOptions, type ListedCampaign } from "@/lib/campaigns"
 import { publicCoverUrl } from "@/lib/cover-urls"
 import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
+import { isNavigableOrganizerHandle, organizerProfileHref } from "@/lib/organizer-handle"
 
 /**
  * Campaign card for discovery and the home page (DESIGN.md 6, public
@@ -87,7 +88,16 @@ export function CampaignCard({
         </Heading>
         {organizer && (
           <p className="flex min-w-0 items-center gap-1 text-sm text-muted">
-            <span className="truncate">{organizer.display_name}</span>
+            {isNavigableOrganizerHandle(organizer.handle) ? (
+              <Link
+                href={organizerProfileHref(organizer.handle)}
+                className="relative z-10 truncate text-muted underline-offset-4 hover:text-fg hover:underline"
+              >
+                {organizer.display_name}
+              </Link>
+            ) : (
+              <span className="truncate">{organizer.display_name}</span>
+            )}
             {organizer.verification_status === "verified" && (
               <CheckIcon
                 width={16}

@@ -36,9 +36,11 @@ export async function saveOrganizer(_state: ActionResult, form: FormData): Promi
   if (error) return fail(dbErrorMessage(error))
 
   revalidatePath("/start")
+  revalidatePath("/me")
   revalidatePath("/")
   revalidatePath("/campaigns")
   revalidatePath("/campaigns/[slug]", "page")
+  revalidatePath("/u/[handle]", "page")
   revalidatePath("/me/campaigns/[id]", "page")
   revalidatePath("/me/accounts")
   revalidatePath("/admin")

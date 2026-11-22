@@ -47,6 +47,7 @@ import {
 } from "@/lib/campaigns"
 import { MODERATION_ROLES } from "@/lib/evidence-moderation"
 import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
+import { isNavigableOrganizerHandle, organizerProfileHref } from "@/lib/organizer-handle"
 import { acceptsPledges } from "@/lib/pledges"
 import { listCampaignTiers, previewTiers } from "@/lib/reward-tiers"
 import { SLUG_PATTERN } from "@/lib/slug"
@@ -507,7 +508,16 @@ export default async function CampaignPage({
                   {organizer && (
                     <>
                       <p className="flex items-center gap-1 font-semibold break-words">
-                        {organizer.display_name}
+                        {isNavigableOrganizerHandle(organizer.handle) ? (
+                          <Link
+                            href={organizerProfileHref(organizer.handle)}
+                            className="text-fg underline-offset-4 hover:text-primary hover:underline"
+                          >
+                            {organizer.display_name}
+                          </Link>
+                        ) : (
+                          organizer.display_name
+                        )}
                         {organizer.verification_status === "verified" && (
                           <CheckIcon
                             width={16}
