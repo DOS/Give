@@ -51,8 +51,9 @@ export function ActionForm({
       onSubmit={(event) => {
         event.preventDefault()
         if (pending) return
-        if (confirm && !window.confirm(confirm)) return
         const submitter = (event.nativeEvent as SubmitEvent).submitter
+        const confirmMessage = (submitter instanceof HTMLElement ? submitter.dataset.confirm : undefined) || confirm
+        if (confirmMessage && !window.confirm(confirmMessage)) return
         const formData = new FormData(event.currentTarget, submitter)
         startTransition(() => formAction(formData))
       }}
@@ -72,18 +73,28 @@ export function SubmitButton({
   className = "btn-primary",
   name,
   value,
+  confirm,
   disabled,
 }: {
   children: ReactNode
   className?: string
   name?: string
   value?: string
+  /** Per-button confirmation prompt when a form has multiple submit intents. */
+  confirm?: string
   /** Turns the button off while a precondition shown next to it is unmet. */
   disabled?: boolean
 }) {
   const pending = useContext(PendingContext)
   return (
-    <button type="submit" className={className} disabled={pending || disabled} name={name} value={value}>
+    <button
+      type="submit"
+      className={className}
+      disabled={pending || disabled}
+      name={name}
+      value={value}
+      data-confirm={confirm}
+    >
       {pending ? "Đang xử lý…" : children}
     </button>
   )

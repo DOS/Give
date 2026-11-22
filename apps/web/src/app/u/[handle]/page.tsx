@@ -19,6 +19,7 @@ import {
 } from "@/lib/organizer-profile"
 import { listMoneyTotals, raisedAmount, type MoneyTotals } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
+import { listPublishedImpactReportCampaignIds } from "@/lib/transparency"
 
 const loadOrganizerProfile = cache(async (rawHandle: string): Promise<PublicOrganizerProfile | null> => {
   // Reject URLs containing leading/trailing or internal whitespace (e.g., %20).
@@ -63,12 +64,14 @@ function CampaignGrid({
   heading,
   campaigns,
   totals,
+  impactReportIds,
   prioritizeFirstThree,
 }: {
   id: string
   heading: string
   campaigns: readonly CardCampaign[]
   totals: ReadonlyMap<string, MoneyTotals>
+  impactReportIds: ReadonlySet<string>
   prioritizeFirstThree?: boolean
 }) {
   return (
@@ -87,6 +90,7 @@ function CampaignGrid({
                 people={t ? (campaign.type === "give" ? t.supporters_count : t.backers_count) : undefined}
                 priority={prioritizeFirstThree && index < 3}
                 headingLevel={3}
+                hasImpactReport={impactReportIds.has(campaign.id)}
               />
             </div>
           )
@@ -112,13 +116,14 @@ export default async function OrganizerProfilePage({ params }: { params: Promise
 
   const db = dbAs()
   const campaigns = await listOrganizerPublicCampaigns(db, profile.handle)
-  const totals =
-    campaigns.length > 0
-      ? await listMoneyTotals(
-          db,
-          campaigns.map((c) => c.id)
-        )
-      : new Map<string, MoneyTotals>()
+  const campaignIds = campaigns.map((c) => c.id)
+  const [totals, impactReportIds] =
+    campaignIds.length > 0
+      ? await Promise.all([
+          listMoneyTotals(db, campaignIds),
+          listPublishedImpactReportCampaignIds(db, campaignIds).catch(() => new Set<string>()),
+        ])
+      : [new Map<string, MoneyTotals>(), new Set<string>()]
 
   const liveCampaigns = campaigns.filter((c) => c.status === "live")
   const pastCampaigns = campaigns.filter((c) => c.status !== "live")
@@ -132,6 +137,7 @@ export default async function OrganizerProfilePage({ params }: { params: Promise
           <div className="flex flex-wrap items-center gap-2">
             <VerificationBadge status={profile.verification_status} />
             <Badge tone="neutral">{ORGANIZER_KIND_LABELS[profile.kind]}</Badge>
+            {impactReportIds.size > 0 && <Badge tone="brand">{impactReportIds.size} báo cáo tổng kết</Badge>}
           </div>
           <h1 className="mt-2 text-h1-phone tracking-tight break-words sm:text-h1">{profile.display_name}</h1>
           <p className="mt-2 text-sm break-words text-muted">
@@ -163,6 +169,7 @@ export default async function OrganizerProfilePage({ params }: { params: Promise
               heading="Đang gây quỹ"
               campaigns={liveCampaigns}
               totals={totals}
+              impactReportIds={impactReportIds}
               prioritizeFirstThree
             />
           )}
@@ -172,6 +179,7 @@ export default async function OrganizerProfilePage({ params }: { params: Promise
               heading="Đã kết thúc"
               campaigns={pastCampaigns}
               totals={totals}
+              impactReportIds={impactReportIds}
               prioritizeFirstThree={liveCampaigns.length === 0}
             />
           )}

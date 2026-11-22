@@ -208,6 +208,8 @@ export interface StatementRow {
    * read it from one row of the pair (returnedTransferText does).
    */
   return_bank_fee: number | null
+  /** Optional same-campaign milestone linked to a non-refund disbursement (DOS/Give#314). */
+  milestone_id?: string | null
 }
 
 // counterparty_name is left out on purpose: the bank's account-holder name is
@@ -216,7 +218,7 @@ const STATEMENT_COLUMNS =
   "id, direction, asset, amount, booked_at, booked_date_only, after_close, matched, " +
   "counterparty_account_masked, explained, purpose, category, recipient, is_refund, explained_at, " +
   "donor_name, donor_anonymous, in_explanation, in_explained_at, own_transfer_id, own_transfer_at, own_transfer_label, " +
-  "return_of, returned_by, returned_at, return_bank_fee"
+  "return_of, returned_by, returned_at, return_bank_fee, milestone_id"
 
 /**
  * Kinds of incoming money that is not a donation, as finance staff explain
@@ -635,6 +637,7 @@ export interface Disbursement {
   recipient: string | null
   is_refund: boolean
   refund_contribution_id: string | null
+  milestone_id?: string | null
   explained_at: string
   evidence: Evidence[]
 }
@@ -690,7 +693,7 @@ const OUTGOING_COLUMNS =
   "id, campaign_id, amount, asset, booked_at, booked_date_only, description, counterparty_name, counterparty_account_masked"
 
 const DISBURSEMENT_COLUMNS =
-  "purpose, category, recipient, is_refund, refund_contribution_id, explained_at, " +
+  "purpose, category, recipient, is_refund, refund_contribution_id, milestone_id, explained_at, " +
   "evidence:disbursement_evidence(id, storage_path, kind, created_at)"
 
 /** At most this many evidence images per transaction, across submissions. */
@@ -996,6 +999,13 @@ export const explainSchema = z
       .trim()
       .refine((v) => v === "" || isUuid(v), "Lượt ủng hộ được hoàn không hợp lệ")
       .transform((v) => (v === "" ? null : v)),
+    milestone_id: z
+      .string()
+      .trim()
+      .optional()
+      .default("")
+      .refine((v) => v === "" || isUuid(v), "Mốc mục tiêu không hợp lệ")
+      .transform((v) => (v === "" ? null : v)),
     evidence_kind: z.string().refine(isEvidenceKind, "Chọn loại chứng từ"),
   })
   .refine((v) => v.category !== "refund" || v.refund_contribution_id !== null, {
@@ -1006,6 +1016,10 @@ export const explainSchema = z
     message: "Đã chọn lượt ủng hộ được hoàn, hãy chọn loại “Hoàn tiền cho người ủng hộ”",
     path: ["category"],
   })
+  .refine((v) => (v.category !== "refund" && v.refund_contribution_id === null) || v.milestone_id === null, {
+    message: "Khoản hoàn tiền không thể gắn vào mốc mục tiêu",
+    path: ["milestone_id"],
+  })
   .transform((v) => ({
     ...v,
     category: v.category as DisbursementCategory,
@@ -1014,3 +1028,13 @@ export const explainSchema = z
   }))
 
 export type ExplainInput = z.infer<typeof explainSchema>
+
+export const setDisbursementMilestoneSchema = z.object({
+  milestone_id: z
+    .string()
+    .trim()
+    .optional()
+    .default("")
+    .refine((v) => v === "" || isUuid(v), "Mốc mục tiêu không hợp lệ")
+    .transform((v) => (v === "" ? null : v)),
+})

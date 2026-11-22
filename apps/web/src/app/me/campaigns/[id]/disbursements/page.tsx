@@ -11,7 +11,7 @@ import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { PageHeader } from "@/components/ui/PageHeader"
 import { requireSession } from "@/lib/auth/session"
-import { getCampaignById, isPublicStatus } from "@/lib/campaigns"
+import { getCampaignById, isPublicStatus, listMilestones, type Milestone } from "@/lib/campaigns"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { OWN_CONTRIBUTION_SCOPE } from "@/lib/own-contribution"
@@ -43,7 +43,7 @@ import { listHiddenEvidence, type EvidenceState } from "@/lib/evidence-moderatio
 import { MeDetail } from "../../../_components/MePage"
 import { fileInputClass } from "../../../_components/Panel"
 
-import { addEvidence, explainDisbursement } from "./actions"
+import { addEvidence, explainDisbursement, linkDisbursementMilestone } from "./actions"
 import { RefCode } from "@/components/ui/RefCode"
 
 export const metadata: Metadata = { title: "Giải trình khoản chi", robots: { index: false } }
@@ -63,11 +63,13 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
 
   // A transfer the bank returned is not spending to explain (DOS/Give#194):
   // it is listed apart and never counts as "chưa giải trình".
-  const [{ pending, returned }, done, refundable] = await Promise.all([
+  const [{ pending, returned }, done, refundable, milestones] = await Promise.all([
     listUnexplainedOutgoing(db, campaign.id),
     listExplainedOutgoing(db, campaign.id),
     listRefundable(db, campaign.id, session.user),
+    listMilestones(db, campaign.id).catch(() => [] as Milestone[]),
   ])
+  const milestoneById = new Map(milestones.map((m) => [m.id, m]))
   const [refundCodes, hiddenEvidence] = await Promise.all([
     listReferenceCodes(
       db,
@@ -113,7 +115,7 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
                         Đã quá {EXPLAIN_WITHIN_DAYS} ngày, hãy giải trình ngay.
                       </Callout>
                     )}
-                    <ExplainForm campaignId={campaign.id} tx={tx} refundable={refundable} />
+                    <ExplainForm campaignId={campaign.id} tx={tx} refundable={refundable} milestones={milestones} />
                   </li>
                 ))}
               </ol>
@@ -170,8 +172,39 @@ export default async function DisbursementsPage({ params }: { params: Promise<{ 
                     <Explanation
                       disbursement={tx.disbursement}
                       refundCode={refundCodes.get(tx.disbursement.refund_contribution_id ?? "")}
+                      milestone={
+                        tx.disbursement.milestone_id ? milestoneById.get(tx.disbursement.milestone_id) : undefined
+                      }
                       hidden={hiddenEvidence}
                     />
+                    {!tx.disbursement.is_refund && milestones.length > 0 && (
+                      <ActionForm
+                        action={linkDisbursementMilestone.bind(null, campaign.id, tx.id)}
+                        className="mt-6 max-w-160 border-t border-border pt-6"
+                      >
+                        <label htmlFor={`milestone-${tx.id}`} className="label">
+                          Mốc mục tiêu gắn với khoản chi
+                        </label>
+                        <div className="flex flex-col gap-3 sm:flex-row">
+                          <select
+                            id={`milestone-${tx.id}`}
+                            name="milestone_id"
+                            className="field sm:flex-1"
+                            defaultValue={tx.disbursement.milestone_id ?? ""}
+                          >
+                            <option value="">Không gắn mốc</option>
+                            {milestones.map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.title} ({formatVnd(m.target_amount)})
+                              </option>
+                            ))}
+                          </select>
+                          <SubmitButton className={buttonClass({ variant: "secondary", className: "shrink-0" })}>
+                            Lưu mốc
+                          </SubmitButton>
+                        </div>
+                      </ActionForm>
+                    )}
                     {/* Hidden images do not count, so a redacted copy can always be uploaded. */}
                     {tx.disbursement.evidence.filter((e) => !hiddenEvidence.has(e.id)).length <
                       MAX_EVIDENCE_PER_TRANSACTION && (
@@ -244,10 +277,12 @@ function ExplainForm({
   campaignId,
   tx,
   refundable,
+  milestones,
 }: {
   campaignId: string
   tx: OutgoingTransaction
   refundable: RefundableContribution[]
+  milestones: readonly Milestone[]
 }) {
   const p = `tx-${tx.id}`
   return (
@@ -331,6 +366,31 @@ function ExplainForm({
           <ContactEmailLink />, họ sẽ ghi nó là hoàn tiền cho lượt của bạn.
         </p>
       </div>
+      {milestones.length > 0 && (
+        <div>
+          <label htmlFor={`${p}-milestone`} className="label">
+            Gắn vào mốc mục tiêu (không bắt buộc)
+          </label>
+          <select
+            id={`${p}-milestone`}
+            name="milestone_id"
+            className="field"
+            defaultValue=""
+            aria-describedby={`${p}-milestone-hint`}
+          >
+            <option value="">Không gắn mốc</option>
+            {milestones.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.title} ({formatVnd(m.target_amount)})
+              </option>
+            ))}
+          </select>
+          <p id={`${p}-milestone-hint`} className="hint">
+            Giúp người ủng hộ thấy ngay số tiền đã giải ngân và chứng từ cho từng mốc trên trang chiến dịch. Không áp
+            dụng cho khoản hoàn tiền.
+          </p>
+        </div>
+      )}
       <EvidenceFields idPrefix={p} label="Ảnh chứng từ (hóa đơn, biên nhận, ảnh trao tặng)" />
       <SubmitButton className={buttonClass()}>Gửi giải trình</SubmitButton>
     </ActionForm>
@@ -395,10 +455,12 @@ function EvidenceFields({ idPrefix, label, refund }: { idPrefix: string; label: 
 function Explanation({
   disbursement,
   refundCode,
+  milestone,
   hidden,
 }: {
   disbursement: Disbursement
   refundCode: string | undefined
+  milestone?: Milestone
   /** Evidence staff hid from the public statement, by evidence id. */
   hidden: Map<string, EvidenceState>
 }) {
@@ -418,6 +480,7 @@ function Explanation({
             )}
           </span>
         )}
+        {milestone && <Badge tone="brand">Mốc: {milestone.title}</Badge>}
         {category && <span>{category}</span>}
         {disbursement.recipient && <span className="break-words">Người nhận: {disbursement.recipient}</span>}
         <span>Giải trình lúc {formatDateTime(disbursement.explained_at)}</span>

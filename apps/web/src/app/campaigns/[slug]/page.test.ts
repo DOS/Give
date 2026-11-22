@@ -1561,3 +1561,161 @@ describe("CampaignPage downloadable QR poster (DOS/Give#313)", () => {
     expect(html).not.toContain("Tải poster QR")
   })
 })
+
+describe("CampaignPage trust moat: transparency summary, milestone evidence & impact report (DOS/Give#314)", () => {
+  it("renders TransparencySummaryBox, milestone rollups, and published ClosingImpactReport on public campaigns without raw HTML", async () => {
+    const MILESTONE = "44444444-4444-4444-8444-444444444444"
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_milestones") {
+        return {
+          data: [
+            {
+              id: MILESTONE,
+              campaign_id: CAMPAIGN,
+              title: "Mốc 1: Mua vật tư",
+              description: null,
+              target_amount: 20_000_000,
+              unlock_note: null,
+              sort_order: 1,
+            },
+          ],
+        }
+      }
+      if (call.target === "rpc:campaign_transparency_summary") {
+        return {
+          data: [
+            {
+              campaign_id: CAMPAIGN,
+              last_statement_at: "2026-11-20T08:00:00Z",
+              matched_incoming_total: 10_000_000,
+              disbursable_total: 10_000_000,
+              disbursed_total: 5_000_000,
+              refunded_total: 0,
+              evidence_count: 6,
+              unexplained_inbound_count: 0,
+              unexplained_out_count: 0,
+              has_impact_report: true,
+              impact_report_published_at: "2026-11-21T00:00:00Z",
+              milestone_rollups: [
+                {
+                  milestone_id: MILESTONE,
+                  title: "Mốc 1: Mua vật tư",
+                  target_amount: 20_000_000,
+                  sort_order: 1,
+                  disbursed_total: 5_000_000,
+                  disbursement_count: 2,
+                  evidence_count: 6,
+                },
+              ],
+            },
+          ],
+        }
+      }
+      if (call.target === "campaign_impact_reports") {
+        return {
+          data: {
+            campaign_id: CAMPAIGN,
+            summary: "## Tổng kết\n\nĐã bàn giao xong.\n\n<script>alert(1)</script>",
+            highlights: [{ label: "Học sinh", value: "120 em" }],
+            published_at: "2026-11-21T00:00:00Z",
+            created_at: "2026-11-20T00:00:00Z",
+            updated_at: "2026-11-21T00:00:00Z",
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(html).toContain("Tóm tắt minh bạch sao kê")
+    expect(html).toContain("50%")
+    expect(html).toContain("0 chưa giải trình")
+    expect(html).toContain("6 chứng từ công khai")
+    expect(html).toContain('id="bao-cao-tong-ket"')
+    expect(html).toContain("120 em")
+    expect(html).not.toContain("<script>alert(1)</script>")
+  })
+
+  it("hides transparency summary, milestone rollups, and impact report on non-public draft previews", async () => {
+    const MILESTONE = "44444444-4444-4444-8444-444444444444"
+    state.session = {
+      user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
+      accessToken: "org-token",
+    }
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("draft") }
+      if (call.target === "campaign_milestones") {
+        return {
+          data: [
+            {
+              id: MILESTONE,
+              campaign_id: CAMPAIGN,
+              title: "Mốc 1: Mua vật tư",
+              description: null,
+              target_amount: 20_000_000,
+              unlock_note: null,
+              sort_order: 1,
+            },
+          ],
+        }
+      }
+      if (call.target === "campaign_updates" || call.target === "campaign_media") return { data: [] }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(html).not.toContain("Tóm tắt minh bạch sao kê")
+    expect(html).not.toContain('id="bao-cao-tong-ket"')
+    expect(html).not.toContain("chứng từ công khai")
+    expect(state.anonCalls.some((c) => c.target === "rpc:campaign_transparency_summary")).toBe(false)
+    expect(state.anonCalls.some((c) => c.target === "campaign_impact_reports")).toBe(false)
+    expect(state.userCalls.some((c) => c.target === "campaign_impact_reports")).toBe(false)
+  })
+
+  it("hides unpublished draft impact reports and avoids dead #bao-cao-tong-ket anchors on public campaigns", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:campaign_transparency_summary") {
+        return {
+          data: [
+            {
+              campaign_id: CAMPAIGN,
+              last_statement_at: "2026-11-20T08:00:00Z",
+              matched_incoming_total: 10_000_000,
+              disbursable_total: 10_000_000,
+              disbursed_total: 0,
+              refunded_total: 0,
+              evidence_count: 0,
+              unexplained_inbound_count: 0,
+              unexplained_out_count: 0,
+              has_impact_report: true,
+              impact_report_published_at: null,
+              milestone_rollups: [],
+            },
+          ],
+        }
+      }
+      if (call.target === "campaign_impact_reports") {
+        return {
+          data: {
+            campaign_id: CAMPAIGN,
+            summary: "Bản nháp nội bộ chưa công bố",
+            highlights: [{ label: "Nháp", value: "99" }],
+            published_at: null,
+            created_at: "2026-11-20T00:00:00Z",
+            updated_at: "2026-11-21T00:00:00Z",
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(html).toContain("Tóm tắt minh bạch sao kê")
+    expect(html).not.toContain("Bản nháp nội bộ chưa công bố")
+    expect(html).not.toContain('id="bao-cao-tong-ket"')
+    expect(html).not.toContain('href="#bao-cao-tong-ket"')
+  })
+})

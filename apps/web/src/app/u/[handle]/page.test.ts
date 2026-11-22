@@ -279,4 +279,19 @@ describe("OrganizerProfilePage (/u/[handle], DOS/Give#251)", () => {
       robots: { index: false, follow: false },
     })
   })
+
+  it("shows impact report summary badge in profile header and on campaign cards with published reports (DOS/Give#314)", async () => {
+    state.handler = (call) => {
+      if (call.target === "campaign_impact_reports") {
+        return { data: [{ campaign_id: PAST_ID }] }
+      }
+      return defaultHandler(call)
+    }
+
+    const html = renderToStaticMarkup(
+      await OrganizerProfilePage({ params: Promise.resolve({ handle: "quy-ban-may" }) })
+    )
+    expect(html).toContain("1 báo cáo tổng kết")
+    expect(html).toContain("Có báo cáo tổng kết")
+  })
 })

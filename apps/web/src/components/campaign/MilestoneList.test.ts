@@ -120,4 +120,52 @@ describe("MilestoneList (DOS/Give#268)", () => {
     expect(html).not.toContain("Công bố biên bản nghiệm thu móng")
     expect(html).toContain("Hoàn thành nền móng bê tông.")
   })
+
+  it("renders per-milestone disbursement & evidence rollups on public pages and hides them on preview (DOS/Give#314)", () => {
+    const rollups = [
+      {
+        milestone_id: MILESTONES[0].id,
+        title: MILESTONES[0].title,
+        target_amount: MILESTONES[0].target_amount,
+        sort_order: 0,
+        disbursed_total: 12_500_000,
+        disbursement_count: 2,
+        evidence_count: 5,
+      },
+      {
+        milestone_id: MILESTONES[1].id,
+        title: MILESTONES[1].title,
+        target_amount: MILESTONES[1].target_amount,
+        sort_order: 1,
+        disbursed_total: 0,
+        disbursement_count: 0,
+        evidence_count: 0,
+      },
+    ]
+    const publicHtml = renderToStaticMarkup(
+      createElement(MilestoneList, {
+        milestones: MILESTONES,
+        raisedAmount: 25_000_000,
+        preview: false,
+        rollups,
+        statementUrl: "/campaigns/ban-may/statement?direction=out",
+      })
+    )
+    expect(publicHtml).toContain("Đã giải ngân")
+    expect(publicHtml).toContain("2 khoản chi")
+    expect(publicHtml).toContain("5 chứng từ công khai")
+    expect(publicHtml).toContain("/campaigns/ban-may/statement?direction=out")
+    expect(publicHtml).toContain("Chưa có khoản chi gắn mốc này")
+
+    const previewHtml = renderToStaticMarkup(
+      createElement(MilestoneList, {
+        milestones: MILESTONES,
+        raisedAmount: null,
+        preview: true,
+        rollups,
+      })
+    )
+    expect(previewHtml).not.toContain("Đã giải ngân")
+    expect(previewHtml).not.toContain("Chưa có khoản chi gắn mốc này")
+  })
 })

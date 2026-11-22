@@ -854,9 +854,19 @@ describe("explain form", () => {
       category: "goods",
       recipient: null,
       refund_contribution_id: null,
+      milestone_id: null,
       evidence_kind: "invoice",
       is_refund: false,
     })
+  })
+
+  it("accepts an optional milestone_id on non-refund disbursements and refuses it on refunds", () => {
+    const ms = "77777777-7777-4777-8777-777777777777"
+    expect(explainSchema.parse({ ...base, milestone_id: ms }).milestone_id).toBe(ms)
+    expect(
+      explainSchema.safeParse({ ...base, category: "refund", refund_contribution_id: CONTRIBUTION, milestone_id: ms })
+        .success
+    ).toBe(false)
   })
 
   it("makes it a refund when a contribution is picked", () => {
