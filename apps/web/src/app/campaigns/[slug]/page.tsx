@@ -7,6 +7,7 @@ import { cache, type ReactNode } from "react"
 
 import { AccountChanges } from "@/components/AccountChanges"
 import { StatusBadge, TypeBadge } from "@/components/badges"
+import { CampaignFaqAccordion } from "@/components/campaign/CampaignFaqAccordion"
 import { CampaignTeam } from "@/components/campaign/CampaignTeam"
 import { CampaignVideo, isValidYoutubeId } from "@/components/campaign/CampaignVideo"
 import { CampaignViewBeacon } from "@/components/campaign/CampaignViewBeacon"
@@ -39,6 +40,7 @@ import {
   parseShowHiddenComments,
   type CampaignCommentsPage,
 } from "@/lib/campaign-comments"
+import { listCampaignFaqs, type CampaignFaq } from "@/lib/campaign-faqs"
 import { listCampaignPublicTeam, type PublicTeamMember } from "@/lib/campaign-members"
 import {
   discoveryHref,
@@ -299,6 +301,7 @@ export default async function CampaignPage({
     impactReport,
     followerCount,
     following,
+    faqs,
   ] = await Promise.all([
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
@@ -392,6 +395,11 @@ export default async function CampaignPage({
       : sessionPromise.then((s) =>
           s ? isFollowingCampaign(dbAs(s.accessToken), s.user.id, campaign.id).catch(() => false) : false
         ),
+    // Structured FAQs (DOS/Give#316): shown on live/public, public pre-launch teaser, and preview pages.
+    listCampaignFaqs(db, campaign.id).catch((error: unknown) => {
+      console.error("campaign page: faqs lookup failed", error)
+      return [] as CampaignFaq[]
+    }),
   ])
   const showHiddenComments = isModerator && requestedShowHidden
   const pitchVideo =
@@ -436,6 +444,7 @@ export default async function CampaignPage({
     // The statement only exists for public live/ended campaigns (never pre-launch or preview).
     ...(!isPublicLiveOrEnded ? [] : [{ href: statementHref(campaign.slug, "all"), label: "Sao kê", current: false }]),
     ...(publishedImpactReport ? [{ href: "#bao-cao-tong-ket", label: "Báo cáo tổng kết", current: false }] : []),
+    ...(faqs.length > 0 ? [{ href: "#hoi-dap", label: "Hỏi đáp", current: false, count: faqs.length }] : []),
     ...(updates.length > 0 ? [{ href: "#cap-nhat", label: "Cập nhật", current: false, count: updates.length }] : []),
     ...(!isPublicLiveOrEnded
       ? []
@@ -892,6 +901,8 @@ export default async function CampaignPage({
                 />
               </section>
             )}
+
+            <CampaignFaqAccordion faqs={faqs} />
           </div>
 
           <div className="min-w-0 space-y-12 max-lg:order-6 lg:col-span-8 lg:row-start-4 lg:pt-6">

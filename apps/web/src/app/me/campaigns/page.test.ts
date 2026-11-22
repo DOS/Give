@@ -418,6 +418,53 @@ describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260, DOS/Give#253)", () => {
     expect(items[1]).toContain("Chiến dịch của tôi")
     expect(items[1]).not.toContain(">Đồng tổ chức<")
     expect(items[1]).toContain('Quản lý<span class="sr-only">: Chiến dịch của tôi</span>')
+    expect(items[1]).toContain('Tạo bản sao chiến dịch<span class="sr-only">: Chiến dịch của tôi</span>')
+    // Co-organizer editors never see the owner-only duplicate button.
+    expect(items[0]).not.toContain("Tạo bản sao chiến dịch")
     expect(state.serviceUsed).toBe(false)
+  })
+
+  it("hides 'Tạo bản sao chiến dịch' on suspended owned campaigns while showing it on active/ended owned campaigns (DOS/Give#316)", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:my_campaign_roles") {
+        return {
+          data: [
+            { campaign_id: CAMPAIGN_A, role: "owner" },
+            { campaign_id: CAMPAIGN_B, role: "owner" },
+          ],
+        }
+      }
+      if (call.target === "rpc:managed_campaigns") {
+        return {
+          data: [
+            makeCampaign({
+              id: CAMPAIGN_A,
+              slug: "suspended-camp",
+              title: "Chiến dịch tạm dừng",
+              type: "give",
+              status: "suspended",
+              created_at: "2026-11-16T00:00:00Z",
+            }),
+            makeCampaign({
+              id: CAMPAIGN_B,
+              slug: "closed-camp",
+              title: "Chiến dịch đã kết thúc",
+              type: "give",
+              status: "closed",
+              created_at: "2026-11-14T00:00:00Z",
+            }),
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const html = await renderAsync(await MyCampaignsPage())
+    const items = [...html.matchAll(/<li[\s\S]*?<\/li>/g)].map((m) => m[0])
+    expect(items).toHaveLength(2)
+    expect(items[0]).toContain("Chiến dịch tạm dừng")
+    expect(items[0]).not.toContain("Tạo bản sao chiến dịch")
+    expect(items[1]).toContain("Chiến dịch đã kết thúc")
+    expect(items[1]).toContain('Tạo bản sao chiến dịch<span class="sr-only">: Chiến dịch đã kết thúc</span>')
   })
 })

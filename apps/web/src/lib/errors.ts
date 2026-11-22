@@ -225,6 +225,17 @@ const GIVE_MESSAGES: Record<string, string> = {
   // Follows & pre-launch opt-in (DOS/Give#315).
   GIVE_CANNOT_FOLLOW_SELF: "Bạn không thể tự theo dõi trang của chính mình.",
   GIVE_PRELAUNCH_REQUIRES_FUTURE_START: "Cần đặt ngày bắt đầu trong tương lai để bật chế độ Sắp ra mắt.",
+  // Structured campaign FAQs and duplicate campaign draft (DOS/Give#316).
+  GIVE_FAQ_QUESTION_INVALID: "Câu hỏi phải từ 1 đến 300 ký tự.",
+  GIVE_FAQ_ANSWER_INVALID: "Câu trả lời phải từ 1 đến 4000 ký tự.",
+  GIVE_FAQ_POSITION_INVALID: "Thứ tự câu hỏi không hợp lệ.",
+  GIVE_FAQ_LIMIT_EXCEEDED: "Mỗi chiến dịch chỉ có tối đa 25 câu hỏi thường gặp.",
+  GIVE_FAQ_NOT_FOUND: "Không tìm thấy câu hỏi thường gặp này.",
+  GIVE_FAQ_ORDER_INVALID: "Danh sách thứ tự câu hỏi không hợp lệ. Hãy tải lại trang và thử lại.",
+  GIVE_FAQ_IMMUTABLE: "Không thể thay đổi liên kết của câu hỏi thường gặp.",
+  GIVE_ACCOUNT_NOT_ACTIVE: "Tài khoản của bạn hiện không hoạt động nên không thể thực hiện thao tác này.",
+  GIVE_ORGANIZER_NOT_ACTIVE: "Hồ sơ người tổ chức của bạn hiện không hoạt động nên không thể tạo bản sao chiến dịch.",
+  GIVE_CAMPAIGN_SUSPENDED: "Không thể tạo bản sao từ chiến dịch đang bị tạm dừng.",
 }
 
 const PG_MESSAGES: Record<string, string> = {

@@ -30,6 +30,7 @@ import {
 } from "@/lib/analytics"
 import { siteOrigin } from "@/lib/auth/origin"
 import { requireSession } from "@/lib/auth/session"
+import { listCampaignFaqs } from "@/lib/campaign-faqs"
 import {
   getMyCampaignRole,
   listCampaignMemberInvites,
@@ -82,6 +83,7 @@ import { bindAccount, releaseAccount } from "../../accounts/actions"
 import { cancelAccountSwap, requestAccountSwap } from "../swap-actions"
 
 import { AnalyticsTab } from "./AnalyticsTab"
+import { FaqSection } from "./FaqSection"
 import { saveImpactReport } from "./impact-report-actions"
 import { ImpactReportSection } from "./ImpactReportSection"
 import {
@@ -270,6 +272,7 @@ export default async function EditCampaignPage({
     planSupporters,
     impactReport,
     prelaunchFollowers,
+    faqs,
   ] = await Promise.all([
     listCategories(db),
     listMilestones(db, campaign.id),
@@ -304,6 +307,8 @@ export default async function EditCampaignPage({
     showPrelaunch && prelaunchPublic && campaign.status === "approved"
       ? getCampaignFollowerCount(db, campaign.id).catch(() => 0)
       : Promise.resolve(0),
+    // Structured FAQs (DOS/Give#316); a failed read degrades its section only.
+    listCampaignFaqs(db, campaign.id).catch(() => null),
   ])
   const youtubeVideo = youtubeState?.video ?? null
   const statusEvents = statusEventsByCampaign.get(campaign.id) ?? []
@@ -324,6 +329,7 @@ export default async function EditCampaignPage({
     { id: "pitch-video", label: "Video giới thiệu" },
     { id: "milestones", label: "Các mốc mục tiêu" },
     !isGive && { id: "reward-tiers", label: "Phần thưởng" },
+    { id: "faqs", label: "Câu hỏi thường gặp" },
     showMonthly && { id: "monthly", label: "Ủng hộ hằng tháng" },
     showPrelaunch && { id: "prelaunch", label: "Trang Sắp ra mắt" },
     showUpdates && { id: "updates", label: "Cập nhật" },
@@ -339,9 +345,10 @@ export default async function EditCampaignPage({
       <div className="space-y-4">
         {isEditor && (
           <Callout tone="info" title="Quyền đồng tổ chức (biên tập viên)">
-            Bạn có thể sửa nội dung, ảnh bìa, video giới thiệu, các mốc mục tiêu, phần thưởng, đăng cập nhật và viết báo
-            cáo tổng kết theo trạng thái chiến dịch. Tài khoản nhận tiền, sao kê, giải trình khoản chi, giao quà, gửi
-            duyệt, hủy chiến dịch và quản lý đội ngũ thuộc quyền riêng của người tổ chức chính.
+            Bạn có thể sửa nội dung, ảnh bìa, video giới thiệu, các mốc mục tiêu, phần thưởng, câu hỏi thường gặp, đăng
+            cập nhật và viết báo cáo tổng kết theo trạng thái chiến dịch. Tài khoản nhận tiền, sao kê, giải trình khoản
+            chi, giao quà, tạo bản sao, gửi duyệt, hủy chiến dịch và quản lý đội ngũ thuộc quyền riêng của người tổ chức
+            chính.
           </Callout>
         )}
         <StatusNotice
@@ -895,6 +902,8 @@ export default async function EditCampaignPage({
               followerCount={prelaunchFollowers}
             />
           )}
+
+          <FaqSection campaignId={campaign.id} status={campaign.status} faqs={faqs} />
 
           {showMonthly && (
             <MonthlySection
