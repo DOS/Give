@@ -98,7 +98,15 @@ function totalsRow(id: string, type: CampaignType = "give") {
   }
 }
 
-function setupDiscovery({ shown = 2, total = 5 }: { shown?: number; total?: number } = {}) {
+function setupDiscovery({
+  shown = 2,
+  total = 5,
+  freshness = {},
+}: {
+  shown?: number
+  total?: number
+  freshness?: Record<string, string>
+} = {}) {
   const rows = Array.from({ length: shown }, (_, i) => campaignRow(i + 1))
   state.handler = (call) => {
     if (call.target === "categories") return { data: CATEGORIES }
@@ -114,6 +122,13 @@ function setupDiscovery({ shown = 2, total = 5 }: { shown?: number; total?: numb
           kind: "organization",
           verification_status: "verified",
         })),
+      }
+    }
+    if (call.target === "rpc:public_campaign_statement_freshness") {
+      return {
+        data: rows
+          .filter((r) => Boolean(freshness[r.id]))
+          .map((r) => ({ campaign_id: r.id, last_statement_at: freshness[r.id] })),
       }
     }
     if (call.target === "public_campaigns") return { data: rows.map((r) => totalsRow(r.id, r.type)) }
@@ -233,6 +248,25 @@ describe("CampaignsPage (/campaigns, DOS/Give#209)", () => {
         { label: "Mới nhất", href: discoveryHref({ ...keep, sort: "newest" }), current: false },
         { label: "Sắp kết thúc", href: discoveryHref({ ...keep, sort: "ending" }), current: true },
         { label: "Gần đạt mục tiêu", href: discoveryHref({ ...keep, sort: "near_goal" }), current: false },
+        { label: "Sắp hết hạn", href: discoveryHref({ ...keep, sort: "ending_soon" }), current: false },
+        { label: "Sắp đạt mục tiêu", href: discoveryHref({ ...keep, sort: "almost_funded" }), current: false },
+        { label: "Mới cập nhật sao kê", href: discoveryHref({ ...keep, sort: "recently_audited" }), current: false },
+      ])
+
+      // Discovery 2.0 quick-filter pills pair live-only modes with "live" (leaving "ended")
+      // and keep "ended" for recently_audited while preserving type/category/q.
+      expect(navLinks(doc, "Bộ lọc nổi bật")).toEqual([
+        { label: "Sắp hết hạn", href: discoveryHref({ ...keep, status: "live", sort: "ending_soon" }), current: false },
+        {
+          label: "Sắp đạt mục tiêu",
+          href: discoveryHref({ ...keep, status: "live", sort: "almost_funded" }),
+          current: false,
+        },
+        {
+          label: "Mới cập nhật sao kê",
+          href: discoveryHref({ ...keep, status: "ended", sort: "recently_audited" }),
+          current: false,
+        },
       ])
     })
 
@@ -433,7 +467,15 @@ describe("CampaignsPage (/campaigns, DOS/Give#209)", () => {
     it("renders filtered EmptyState ('Không có chiến dịch nào khớp bộ lọc') and hides pagination when shown === 0 under active filters", async () => {
       setupDiscovery({ shown: 0, total: 0 })
 
-      for (const params of [{ q: "không có" }, { type: "give" }, { category: "y-te" }, { status: "ended" }]) {
+      for (const params of [
+        { q: "không có" },
+        { type: "give" },
+        { category: "y-te" },
+        { status: "ended" },
+        { sort: "ending_soon" },
+        { sort: "almost_funded" },
+        { sort: "recently_audited" },
+      ]) {
         const { html, doc } = await renderDiscovery(params)
 
         expect(doc.querySelector("h3")?.textContent.trim()).toBe("Không có chiến dịch nào khớp bộ lọc")
@@ -445,6 +487,70 @@ describe("CampaignsPage (/campaigns, DOS/Give#209)", () => {
         expect(html).not.toContain("Đang xem")
         expect(html).not.toContain("Xem thêm")
       }
+    })
+  })
+
+  describe("Discovery 2.0 quick-filter pills and statement freshness (DOS/Give#318)", () => {
+    it("marks the active pill current, toggles it back to featured on re-click, and pairs recently_audited with status=all from live/prelaunch", async () => {
+      const fromLive = await renderDiscovery({})
+      expect(navLinks(fromLive.doc, "Bộ lọc nổi bật")).toEqual([
+        { label: "Sắp hết hạn", href: "/campaigns?sort=ending_soon", current: false },
+        { label: "Sắp đạt mục tiêu", href: "/campaigns?sort=almost_funded", current: false },
+        { label: "Mới cập nhật sao kê", href: "/campaigns?status=all&sort=recently_audited", current: false },
+      ])
+      expect(state.calls.some((c) => c.target === "rpc:public_campaign_statement_freshness")).toBe(false)
+
+      const activeAlmost = await renderDiscovery({ type: "give", sort: "almost_funded" })
+      expect(navLinks(activeAlmost.doc, "Bộ lọc nổi bật")).toEqual([
+        { label: "Sắp hết hạn", href: "/campaigns?type=give&sort=ending_soon", current: false },
+        { label: "Sắp đạt mục tiêu", href: "/campaigns?type=give", current: true },
+        { label: "Mới cập nhật sao kê", href: "/campaigns?type=give&status=all&sort=recently_audited", current: false },
+      ])
+
+      const fromPrelaunch = await renderDiscovery({ status: "prelaunch" })
+      expect(navLinks(fromPrelaunch.doc, "Bộ lọc nổi bật")).toEqual([
+        { label: "Sắp hết hạn", href: "/campaigns?sort=ending_soon", current: false },
+        { label: "Sắp đạt mục tiêu", href: "/campaigns?sort=almost_funded", current: false },
+        { label: "Mới cập nhật sao kê", href: "/campaigns?status=all&sort=recently_audited", current: false },
+      ])
+
+      // Switching from status=all&sort=recently_audited to live-only pills resets status to default live.
+      const fromAuditedAll = await renderDiscovery({ status: "all", sort: "recently_audited" })
+      expect(navLinks(fromAuditedAll.doc, "Bộ lọc nổi bật")).toEqual([
+        { label: "Sắp hết hạn", href: "/campaigns?sort=ending_soon", current: false },
+        { label: "Sắp đạt mục tiêu", href: "/campaigns?sort=almost_funded", current: false },
+        { label: "Mới cập nhật sao kê", href: "/campaigns?status=all", current: true },
+      ])
+    })
+
+    it("loads verified statement freshness on recently_audited, skips prelaunch rows, and renders 'Sao kê mới nhất: DD/MM/YYYY'", async () => {
+      const id1 = "00000000-0000-4000-8000-000000000001"
+      const id2 = "00000000-0000-4000-8000-000000000002"
+      const rows = [
+        campaignRow(1),
+        { ...campaignRow(2), status: "approved", prelaunch_public: true, starts_at: "2099-12-01T00:00:00Z" },
+      ]
+      state.handler = (call) => {
+        if (call.target === "categories") return { data: CATEGORIES }
+        if (call.target === "rpc:discover_campaigns") {
+          return { data: rows.map((r) => ({ campaign_id: r.id, total_count: rows.length })) }
+        }
+        if (call.target === "campaigns") return { data: rows }
+        if (call.target === "rpc:public_campaign_organizers") return { data: [] }
+        if (call.target === "rpc:public_campaign_statement_freshness") {
+          return { data: [{ campaign_id: id1, last_statement_at: "2026-11-21T08:00:00Z" }] }
+        }
+        if (call.target === "public_campaigns") return { data: [totalsRow(id1, "give")] }
+        return undefined
+      }
+
+      const { html } = await renderDiscovery({ status: "all", sort: "recently_audited" })
+
+      const freshnessCall = state.calls.find((c) => c.target === "rpc:public_campaign_statement_freshness")
+      expect(freshnessCall).toBeTruthy()
+      expect(op(freshnessCall, "args")?.[0]).toEqual({ p_campaign_ids: [id1] })
+      expect(op(freshnessCall, "args")?.[0]).not.toEqual({ p_campaign_ids: [id1, id2] })
+      expect(html).toContain("Sao kê mới nhất: 21/11/2026")
     })
   })
 })
