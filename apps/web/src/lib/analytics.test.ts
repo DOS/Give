@@ -143,6 +143,9 @@ describe("analytics formatting and query helpers", () => {
     expect(referrerLabel("google")).toBe("Google")
     expect(referrerLabel("other")).toBe("Nguồn khác")
     expect(referrerLabel("unknown-bucket")).toBe("Nguồn khác")
+    expect(referrerLabel("toString")).toBe("Nguồn khác")
+    expect(referrerLabel("constructor")).toBe("Nguồn khác")
+    expect(referrerLabel("__proto__")).toBe("Nguồn khác")
   })
 
   it("parses and fetches campaign analytics payload via get_campaign_analytics RPC", async () => {

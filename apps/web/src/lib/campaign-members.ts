@@ -136,11 +136,12 @@ export function invitePath(token: string): string {
 
 /**
  * Neutral Vietnamese display name fallback. The database suppresses deleted or
- * inactive accounts to `'Co-organizer'` or `NULL` so zero PII leaks.
+ * inactive accounts to `'Organizer'`, `'Co-organizer'`, or `NULL` so zero PII leaks.
  */
 export function memberDisplayName(displayName: string | null | undefined, role: CampaignMemberRole = "editor"): string {
   const trimmed = displayName?.trim()
-  if (!trimmed || trimmed.toLowerCase() === "co-organizer") {
+  const lower = trimmed?.toLowerCase()
+  if (!trimmed || lower === "co-organizer" || lower === "organizer") {
     return role === "owner" ? OWNER_FALLBACK_NAME : CO_ORGANIZER_FALLBACK_NAME
   }
   return trimmed
