@@ -28,6 +28,8 @@ function makeTier(overrides: Partial<RewardTier> & { id: string; title: string; 
     shipping_note: null,
     status: "active",
     retired_at: null,
+    is_early_bird: false,
+    available_until: null,
     ...overrides,
   }
 }
@@ -189,6 +191,48 @@ describe("RewardTiersSection (DOS/Give#217)", () => {
       const linkHtml = renderToStaticMarkup(createElement(FulfillmentLink, { campaignId: CAMPAIGN }))
       expect(linkHtml).toContain(`href="/me/campaigns/${CAMPAIGN}/fulfillment"`)
       expect(linkHtml).toContain(">Cập nhật giao quà<")
+    })
+  })
+
+  describe("Early Bird reward tiers (DOS/Give#317)", () => {
+    it("renders Early Bird toggle, Vietnam-time datetime-local picker with schedule bounds, and Early Bird summary badges", () => {
+      const html = renderToStaticMarkup(
+        createElement(RewardTiersSection, {
+          campaignId: CAMPAIGN,
+          status: "draft",
+          minContribution: 50_000,
+          startsAt: "2030-05-01T02:00:00.000Z",
+          endsAt: "2030-05-20T16:59:00.000Z",
+          tiers: [
+            makeTier({
+              id: TIER_A,
+              title: "Gói Siêu Sớm",
+              sort_order: 0,
+              quantity_limit: 20,
+              quantity_claimed: 5,
+              is_early_bird: true,
+              available_until: "2030-05-05T13:00:00.000Z",
+            }),
+            makeTier({
+              id: TIER_B,
+              title: "Gói Đã Hết Hạn",
+              sort_order: 1,
+              is_early_bird: true,
+              available_until: "2020-01-01T00:00:00.000Z",
+            }),
+          ],
+        })
+      ).replace(/\u00a0/g, " ")
+
+      expect(html).toContain("Ưu đãi Early Bird")
+      expect(html).toContain("bg-warning-soft text-warning")
+      expect(html).toContain("Đã hết hạn ưu đãi")
+      expect(html).toContain('name="is_early_bird"')
+      expect(html).toContain('name="available_until"')
+      expect(html).toContain('type="datetime-local"')
+      expect(html).toContain('min="2030-05-01T09:00"')
+      expect(html).toContain('max="2030-05-20T23:59"')
+      expect(html).toContain('value="2030-05-05T20:00"')
     })
   })
 })

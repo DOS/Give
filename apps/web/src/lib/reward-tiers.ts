@@ -35,13 +35,15 @@ export interface RewardTier {
   status: RewardTierStatus
   sort_order: number
   retired_at: string | null
+  is_early_bird: boolean
+  available_until: string | null
 }
 
 /** The database caps a campaign at 50 tiers (GIVE_REWARD_TIER_LIMIT). */
 export const MAX_TIERS = 50
 
 const TIER_COLUMNS =
-  "id, campaign_id, title, description, min_amount, quantity_limit, quantity_claimed, estimated_delivery, requires_shipping, shipping_note, status, sort_order, retired_at"
+  "id, campaign_id, title, description, min_amount, quantity_limit, quantity_claimed, estimated_delivery, requires_shipping, shipping_note, status, sort_order, retired_at, is_early_bird, available_until"
 
 // ---------------------------------------------------------------------------
 // Rules (mirror give.lock_tier_campaign and give.retire_reward_tier; the

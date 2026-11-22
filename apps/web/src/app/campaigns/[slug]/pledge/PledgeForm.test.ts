@@ -33,6 +33,8 @@ function tierRow(id: string, overrides: Partial<PublicRewardTier> = {}): PublicR
     requires_shipping: false,
     shipping_note: null,
     sort_order: 0,
+    is_early_bird: false,
+    available_until: null,
     ...overrides,
   }
 }
@@ -271,6 +273,70 @@ describe("PledgeForm (DOS/Give#216)", () => {
           '[name="ship_recipient"], [name="ship_phone"], [name="ship_address"], #ship-address-hint'
         )
       ).toBeNull()
+    })
+  })
+
+  describe("Early Bird reward tiers (DOS/Give#317)", () => {
+    const EB_OPEN = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    const EB_EXPIRED = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    const NOW = "2027-01-10T10:00:00.000Z"
+
+    it("enables active Early Bird tiers with badge/deadline and disables expired Early Bird tiers", () => {
+      renderForm({
+        nowIso: NOW,
+        tiers: [
+          tierRow(EB_OPEN, {
+            title: "Early Bird Mở",
+            is_early_bird: true,
+            available_until: "2027-01-12T10:00:00.000Z",
+            quantity_remaining: 4,
+          }),
+          tierRow(EB_EXPIRED, {
+            title: "Early Bird Hết Hạn",
+            is_early_bird: true,
+            available_until: "2027-01-10T09:59:00.000Z",
+            quantity_remaining: 4,
+          }),
+        ],
+        defaults: { tier: EB_OPEN },
+      })
+
+      expect(radio(EB_OPEN).disabled).toBe(false)
+      expect(radio(EB_OPEN).closest("label")?.textContent).toContain("Ưu đãi Early Bird")
+      expect(radio(EB_OPEN).closest("label")?.textContent).toContain("Ưu đãi đến")
+      expect(radio(EB_OPEN).closest("label")?.textContent).toContain("Còn 4 suất")
+
+      expect(radio(EB_EXPIRED).disabled).toBe(true)
+      expect(radio(EB_EXPIRED).closest("label")?.textContent).toContain("Ưu đãi Early Bird")
+      expect(radio(EB_EXPIRED).closest("label")?.textContent).toContain("Đã hết hạn ưu đãi")
+    })
+
+    it("marks an existing open pledge on an expired Early Bird tier while allowing switch to another tier or NO_REWARD", () => {
+      renderForm({
+        nowIso: NOW,
+        changing: true,
+        currentTierId: EB_EXPIRED,
+        tiers: [
+          tierRow(EB_EXPIRED, {
+            title: "Early Bird Hết Hạn",
+            is_early_bird: true,
+            available_until: "2027-01-10T09:59:00.000Z",
+            quantity_remaining: 4,
+          }),
+          tierRow(LOW),
+        ],
+        defaults: { tier: "" },
+      })
+
+      expect(radio(EB_EXPIRED).disabled).toBe(true)
+      expect(radio(EB_EXPIRED).checked).toBe(false)
+      expect(radio(EB_EXPIRED).closest("label")?.textContent).toContain("Mức hiện tại của bạn")
+      expect(radio(EB_EXPIRED).closest("label")?.textContent).toContain("Đã hết hạn ưu đãi")
+
+      choose(LOW)
+      expect(radio(LOW).checked).toBe(true)
+      choose(NO_REWARD)
+      expect(radio(NO_REWARD).checked).toBe(true)
     })
   })
 })

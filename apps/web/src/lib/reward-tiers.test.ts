@@ -38,6 +38,8 @@ function tier(fields: Partial<RewardTier> = {}): RewardTier {
     status: "active",
     sort_order: 1,
     retired_at: null,
+    is_early_bird: false,
+    available_until: null,
     ...fields,
   }
 }
@@ -147,7 +149,17 @@ describe("listCampaignTiers", () => {
 describe("public tier list", () => {
   it("reads active tiers of one campaign from the public view, in order", async () => {
     const calls: Call[] = []
-    const rows = [{ id: "t1", min_amount: 200000, quantity_limit: 10, quantity_claimed: 7, quantity_remaining: 3 }]
+    const rows = [
+      {
+        id: "t1",
+        min_amount: 200000,
+        quantity_limit: 10,
+        quantity_claimed: 7,
+        quantity_remaining: 3,
+        is_early_bird: false,
+        available_until: null,
+      },
+    ]
     const db = fakeDb(() => ({ data: rows }), calls)
     expect(await listPublicTiers(db as never, CAMPAIGN)).toEqual(rows)
     expect(calls[0].target).toBe("public_reward_tiers")
@@ -195,7 +207,73 @@ describe("rewardTierSchema", () => {
       estimated_delivery: null,
       requires_shipping: false,
       shipping_note: null,
+      is_early_bird: false,
+      available_until: null,
     })
+  })
+
+  it("parses Early Bird tiers (slot-capped, time-limited, or both) and drops deadline when toggled off", () => {
+    expect(
+      rewardTierSchema.parse({
+        ...base,
+        is_early_bird: "on",
+        quantity_limit: "25",
+        available_until: "2027-01-15T18:30",
+      })
+    ).toMatchObject({
+      is_early_bird: true,
+      quantity_limit: 25,
+      available_until: "2027-01-15T11:30:00.000Z",
+    })
+
+    expect(
+      rewardTierSchema.parse({
+        ...base,
+        is_early_bird: "on",
+        quantity_limit: "",
+        available_until: "2027-01-15T18:30",
+      })
+    ).toMatchObject({
+      is_early_bird: true,
+      quantity_limit: null,
+      available_until: "2027-01-15T11:30:00.000Z",
+    })
+
+    expect(
+      rewardTierSchema.parse({
+        ...base,
+        is_early_bird: "on",
+        quantity_limit: "10",
+        available_until: "",
+      })
+    ).toMatchObject({
+      is_early_bird: true,
+      quantity_limit: 10,
+      available_until: null,
+    })
+
+    // Toggling Early Bird off clears any leftover available_until input.
+    expect(
+      rewardTierSchema.parse({
+        ...base,
+        is_early_bird: "",
+        available_until: "2027-01-15T18:30",
+      })
+    ).toMatchObject({
+      is_early_bird: false,
+      available_until: null,
+    })
+  })
+
+  it("refuses an Early Bird tier with neither slot limit nor deadline", () => {
+    const result = rewardTierSchema.safeParse({
+      ...base,
+      is_early_bird: "on",
+      quantity_limit: "",
+      available_until: "",
+    })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues[0]?.message).toContain("Ưu đãi Early Bird cần giới hạn số suất hoặc thời hạn")
   })
 
   it("keeps the month as its first day, a slot limit and shipping", () => {

@@ -7,6 +7,8 @@ import {
   deliveryMonth,
   fulfillmentLabel,
   isSoldOut,
+  isTierExpired,
+  isTierUnavailable,
   NO_REWARD,
   overpaid,
   offersPayment,
@@ -198,9 +200,28 @@ describe("pledgeErrorMessage", () => {
 
   it("words the pledge codes and leaves the rest to dbErrorMessage", () => {
     expect(pledgeErrorMessage({ message: "GIVE_REWARD_TIER_SOLD_OUT" })).toContain("hết suất")
+    expect(pledgeErrorMessage({ message: "GIVE_REWARD_EXPIRED" })).toContain("Early Bird")
     expect(pledgeErrorMessage({ message: "GIVE_OWN_CAMPAIGN" })).toBe("Bạn không thể ủng hộ dự án của chính mình.")
     expect(pledgeErrorMessage({ message: "GIVE_PLEDGE_NOT_CHANGEABLE: payment_due" })).toContain("không còn đổi được")
     expect(pledgeErrorMessage({ code: "57014", message: "timeout" })).toBeNull()
+  })
+})
+
+describe("Early Bird expiry helpers (DOS/Give#317)", () => {
+  const now = new Date("2027-01-10T10:00:00.000Z")
+
+  it("treats available_until <= now as expired (matching DB now() >= available_until)", () => {
+    expect(isTierExpired({ available_until: null }, now)).toBe(false)
+    expect(isTierExpired({ available_until: "2027-01-10T10:00:01.000Z" }, now)).toBe(false)
+    expect(isTierExpired({ available_until: "2027-01-10T10:00:00.000Z" }, now)).toBe(true)
+    expect(isTierExpired({ available_until: "2027-01-09T23:59:59.000Z" }, now)).toBe(true)
+  })
+
+  it("marks a tier unavailable when either sold out or expired", () => {
+    expect(isTierUnavailable({ quantity_remaining: 5, available_until: "2027-01-12T00:00:00.000Z" }, now)).toBe(false)
+    expect(isTierUnavailable({ quantity_remaining: 0, available_until: "2027-01-12T00:00:00.000Z" }, now)).toBe(true)
+    expect(isTierUnavailable({ quantity_remaining: 5, available_until: "2027-01-10T10:00:00.000Z" }, now)).toBe(true)
+    expect(isTierUnavailable({ quantity_remaining: null, available_until: null }, now)).toBe(false)
   })
 })
 

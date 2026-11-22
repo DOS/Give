@@ -102,6 +102,8 @@ function toTier(row: Record<string, unknown>): PublicRewardTier {
     quantity_limit: row.quantity_limit === null || row.quantity_limit === undefined ? null : num(row.quantity_limit),
     quantity_remaining:
       row.quantity_remaining === null || row.quantity_remaining === undefined ? null : num(row.quantity_remaining),
+    is_early_bird: Boolean(row.is_early_bird),
+    available_until: typeof row.available_until === "string" ? row.available_until : null,
   }
 }
 

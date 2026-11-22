@@ -98,6 +98,8 @@ function tierRow(id = TIER, overrides: Partial<PublicRewardTier> = {}): PublicRe
     requires_shipping: false,
     shipping_note: null,
     sort_order: 0,
+    is_early_bird: false,
+    available_until: null,
     ...overrides,
   }
 }
@@ -454,5 +456,36 @@ describe("PledgePage (/campaigns/[slug]/pledge, DOS/Give#216)", () => {
         expect(doc.body.textContent).not.toContain("Bạn đã có cam kết cho dự án này")
       }
     )
+
+    it("ignores ?tier for an expired Early Bird tier (DOS/Give#317)", async () => {
+      const expiredTier = tierRow(TIER, {
+        title: "Early Bird Hết Hạn",
+        is_early_bird: true,
+        available_until: "2020-01-01T00:00:00.000Z",
+        quantity_remaining: 5,
+      })
+      const activeTier = tierRow(OTHER_TIER, { title: "Mức Thường", min_amount: 300_000 })
+      setup({ tiers: [expiredTier, activeTier], pledges: [] })
+      await renderPage({ tier: TIER })
+      expect(formProps().defaults.tier).toBe("")
+    })
+
+    it("reassures a backer holding an existing open pledge on an expired Early Bird tier while allowing cancel or switch (DOS/Give#317)", async () => {
+      const expiredTier = tierRow(TIER, {
+        title: "Early Bird Hết Hạn",
+        is_early_bird: true,
+        available_until: "2020-01-01T00:00:00.000Z",
+        quantity_remaining: 5,
+      })
+      const activeTier = tierRow(OTHER_TIER, { title: "Mức Thường", min_amount: 300_000 })
+      setup({ tiers: [expiredTier, activeTier], pledges: [pledgeRow({ reward_tier_id: TIER })] })
+      const doc = await renderPage()
+      expect(doc.body.textContent).toContain("vẫn giữ nguyên hiệu lực")
+      expect(doc.querySelector('a[href="/me/pledges/GVABCDEFG"]')?.textContent).toBe("Xem cam kết")
+      expect(doc.body.textContent).toContain("Hủy cam kết")
+      expect(formProps().changing).toBe(true)
+      expect(formProps().currentTierId).toBe(TIER)
+      expect(formProps().defaults.tier).toBe("")
+    })
   })
 })

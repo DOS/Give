@@ -11,7 +11,7 @@ import { requireSession } from "@/lib/auth/session"
 import { getCampaignBySlug, isPublicStatus } from "@/lib/campaigns"
 import { formatDateTime, formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
-import { acceptsPledges, isSoldOut, NO_REWARD, readShippingAddress } from "@/lib/pledges"
+import { acceptsPledges, isTierExpired, isTierUnavailable, NO_REWARD, readShippingAddress } from "@/lib/pledges"
 import { SLUG_PATTERN } from "@/lib/slug"
 import { dbAs } from "@/lib/supabase"
 import { isSessionRejected } from "@/server/contributions"
@@ -59,16 +59,19 @@ export default async function PledgePage({
     throw error
   }
 
+  const now = new Date()
   const open = pledges.find((p) => p.status === "pledged") ?? null
   // A pledge that has moved on (payment due, paid, ...) since the campaign ended.
   const later = open ? null : (pledges.find((p) => p.status !== "cancelled" && p.status !== "pledged") ?? null)
-  const accepting = acceptsPledges(campaign)
+  const accepting = acceptsPledges(campaign, now)
 
-  const chosen = tierParam && tiers.some((t) => t.id === tierParam && !isSoldOut(t)) ? tierParam : null
-  const openTier = open ? (open.reward_tier_id ?? NO_REWARD) : null
+  const chosen = tierParam && tiers.some((t) => t.id === tierParam && !isTierUnavailable(t, now)) ? tierParam : null
+  const openTierExpired =
+    !!open?.reward_tier_id && tiers.some((t) => t.id === open.reward_tier_id && isTierExpired(t, now))
+  const openTier = open ? (openTierExpired ? null : (open.reward_tier_id ?? NO_REWARD)) : null
   const defaults: PledgeDefaults = {
     tier: chosen ?? openTier ?? (tiers.length === 0 ? NO_REWARD : ""),
-    amount: open && (!chosen || chosen === open.reward_tier_id) ? open.intended_amount : null,
+    amount: open && !openTierExpired && (!chosen || chosen === open.reward_tier_id) ? open.intended_amount : null,
     public_name: open ? (open.public_name ?? "") : (session.user.name ?? ""),
     anonymous: open?.is_anonymous ?? false,
     message: open?.message ?? "",
@@ -138,6 +141,12 @@ export default async function PledgePage({
                   ? " Bạn có thể đổi phần quà, số tiền hoặc hủy cam kết cho tới khi dự án kết thúc. Đổi cam kết sẽ tạo mã mới."
                   : ""}
               </p>
+              {openTierExpired && (
+                <p>
+                  Phần quà Early Bird bạn đã chọn đã hết hạn nhận cam kết mới, nhưng cam kết hiện tại của bạn vẫn giữ
+                  nguyên hiệu lực. Bạn có thể giữ nguyên, hủy cam kết, hoặc chuyển sang một phần quà khác bên dưới.
+                </p>
+              )}
               <div className="flex flex-wrap items-center gap-3 pt-2">
                 <ButtonLink href={`/me/pledges/${open.reference_code}`} variant="secondary">
                   Xem cam kết
@@ -170,6 +179,8 @@ export default async function PledgePage({
               tiers={tiers}
               minContribution={campaign.min_contribution}
               defaults={defaults}
+              currentTierId={open?.reward_tier_id ?? null}
+              nowIso={now.toISOString()}
             />
           ) : (
             !later && (

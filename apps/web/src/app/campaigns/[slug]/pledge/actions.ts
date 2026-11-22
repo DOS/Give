@@ -5,7 +5,7 @@ import { redirect } from "next/navigation"
 import { getSession } from "@/lib/auth/session"
 import { dbErrorMessage, fail, type ActionResult } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
-import { pledgeErrorMessage, pledgeSchema, PLEDGE_MESSAGES, shippingAddressSchema } from "@/lib/pledges"
+import { isTierExpired, pledgeErrorMessage, pledgeSchema, PLEDGE_MESSAGES, shippingAddressSchema } from "@/lib/pledges"
 import { dbAs, dbService } from "@/lib/supabase"
 import { getPublicTier, ownPledgeById } from "@/server/pledges"
 
@@ -69,6 +69,7 @@ export async function savePledge(
       return fail(dbErrorMessage(error as { code?: string; message?: string }))
     }
     if (!tier) return fail(PLEDGE_MESSAGES.GIVE_REWARD_TIER_UNAVAILABLE)
+    if (isTierExpired(tier)) return fail(PLEDGE_MESSAGES.GIVE_REWARD_EXPIRED)
     if (tier.requires_shipping) {
       const address = shippingAddressSchema.safeParse({
         recipient: String(form.get("ship_recipient") ?? ""),

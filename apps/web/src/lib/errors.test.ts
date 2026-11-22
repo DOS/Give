@@ -449,3 +449,17 @@ describe("co-organizer invite and member refusals (DOS/Give#253, #264)", () => {
     )
   })
 })
+
+describe("Early Bird reward tier error codes (DOS/Give#317)", () => {
+  const generic = dbErrorMessage(null)
+
+  it.each(["GIVE_REWARD_EXPIRED", "GIVE_REWARD_TIER_DATES_INVALID"] as const)(
+    "maps %s cleanly to Vietnamese without leaking raw Postgres errors",
+    (code) => {
+      const msg = dbErrorMessage({ code: "23514", message: `${code}: internal detail` })
+      expect(msg).not.toBe(generic)
+      expect(msg).not.toMatch(/GIVE_|internal detail/)
+      expect(msg).toContain("Early Bird")
+    }
+  )
+})

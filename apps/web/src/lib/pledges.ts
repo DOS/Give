@@ -161,14 +161,31 @@ export interface PublicRewardTier {
   requires_shipping: boolean
   shipping_note: string | null
   sort_order: number
+  is_early_bird: boolean
+  available_until: string | null
 }
 
 export const PUBLIC_TIER_COLUMNS =
   "id, campaign_id, title, description, min_amount, quantity_limit, quantity_claimed, quantity_remaining, " +
-  "estimated_delivery, requires_shipping, shipping_note, sort_order"
+  "estimated_delivery, requires_shipping, shipping_note, sort_order, is_early_bird, available_until"
 
 export function isSoldOut(tier: Pick<PublicRewardTier, "quantity_remaining">): boolean {
   return tier.quantity_remaining !== null && tier.quantity_remaining <= 0
+}
+
+/** True once a time-limited Early Bird tier reaches or passes available_until (mirrors DB: now() >= available_until). */
+export function isTierExpired(tier: Pick<PublicRewardTier, "available_until">, now = new Date()): boolean {
+  if (!tier.available_until) return false
+  const ms = new Date(tier.available_until).getTime()
+  return Number.isFinite(ms) && ms <= now.getTime()
+}
+
+/** True when a tier cannot accept new pledges (sold out or past its Early Bird deadline). */
+export function isTierUnavailable(
+  tier: Pick<PublicRewardTier, "quantity_remaining" | "available_until">,
+  now = new Date()
+): boolean {
+  return isSoldOut(tier) || isTierExpired(tier, now)
 }
 
 /** The radio value of "no reward" in the pledge form. */
@@ -249,6 +266,7 @@ export const PLEDGE_MESSAGES: Record<string, string> = {
   GIVE_AMOUNT_INVALID: "Số tiền không hợp lệ.",
   GIVE_REWARD_TIER_INVALID: "Phần quà không thuộc dự án này.",
   GIVE_REWARD_TIER_UNAVAILABLE: "Phần quà này đã ngừng nhận ủng hộ. Hãy chọn phần quà khác.",
+  GIVE_REWARD_EXPIRED: "Ưu đãi Early Bird của phần quà này đã hết hạn. Hãy chọn phần quà khác.",
   GIVE_REWARD_TIER_SOLD_OUT: "Phần quà này vừa hết suất. Hãy chọn phần quà khác.",
   GIVE_SHIPPING_ADDRESS_REQUIRED: "Phần quà này cần địa chỉ nhận quà.",
   GIVE_PLEDGE_EXISTS: "Bạn đã có một cam kết cho dự án này. Hãy tải lại trang để đổi cam kết đó.",

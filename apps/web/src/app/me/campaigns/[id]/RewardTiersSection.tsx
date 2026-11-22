@@ -1,10 +1,11 @@
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { Badge } from "@/components/ui/Badge"
 import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
 import { ChevronDownIcon } from "@/components/ui/icons"
 import type { CampaignStatus } from "@/lib/campaigns"
-import { formatVnd } from "@/lib/format"
-import { deliveryMonth } from "@/lib/pledges"
+import { formatDateTime, formatVnd, toVietnamLocalInput } from "@/lib/format"
+import { deliveryMonth, isTierExpired } from "@/lib/pledges"
 import {
   canEditTiers,
   canRetireTier,
@@ -29,11 +30,15 @@ export function RewardTiersSection({
   campaignId,
   status,
   minContribution,
+  startsAt = null,
+  endsAt = null,
   tiers,
 }: {
   campaignId: string
   status: CampaignStatus
   minContribution: number
+  startsAt?: string | null
+  endsAt?: string | null
   /** null when the tiers could not be read. */
   tiers: RewardTier[] | null
 }) {
@@ -107,7 +112,7 @@ export function RewardTiersSection({
                       action={saveRewardTier.bind(null, campaignId, tier.id)}
                       className="mt-3 max-w-160 space-y-6"
                     >
-                      <TierFields prefix={`tier_${tier.id}`} tier={tier} />
+                      <TierFields prefix={`tier_${tier.id}`} tier={tier} startsAt={startsAt} endsAt={endsAt} />
                       <SubmitButton className={buttonClass({ variant: "secondary" })}>
                         Lưu phần thưởng<span className="sr-only">: {tier.title}</span>
                       </SubmitButton>
@@ -145,7 +150,7 @@ export function RewardTiersSection({
             resetOnSuccess
             className="mt-2 mb-4 max-w-160 space-y-6"
           >
-            <TierFields prefix="new_tier" tier={null} />
+            <TierFields prefix="new_tier" tier={null} startsAt={startsAt} endsAt={endsAt} />
             <SubmitButton className={buttonClass({ variant: "secondary" })}>Thêm mức</SubmitButton>
           </ActionForm>
         </details>
@@ -156,18 +161,27 @@ export function RewardTiersSection({
 
 function TierSummary({ tier }: { tier: RewardTier }) {
   const delivery = deliveryMonth(tier.estimated_delivery)
+  const expired = isTierExpired(tier)
   return (
     <div className="space-y-1">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="min-w-0 text-h3 break-words text-fg">{tier.title}</h3>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h3 className="min-w-0 text-h3 break-words text-fg">{tier.title}</h3>
+          {tier.is_early_bird && <Badge tone="warning">Ưu đãi Early Bird</Badge>}
+          {expired && <Badge tone="danger">Đã hết hạn ưu đãi</Badge>}
+        </div>
         <span className="font-semibold text-fg tabular-nums">{minAmountLabel(tier.min_amount)}</span>
       </div>
       {tier.description && <p className="max-w-[68ch] break-words whitespace-pre-line text-fg">{tier.description}</p>}
-      <p className="text-sm text-muted">
+      <p className="text-sm text-muted tabular-nums">
         {tier.quantity_limit === null
           ? "Không giới hạn số suất"
           : `${tier.quantity_limit} suất · ${quantityLabel(tier)}`}
         {tier.quantity_claimed > 0 && ` · ${tier.quantity_claimed} người đã chọn`}
+        {tier.available_until &&
+          (expired
+            ? ` · Đã hết hạn ưu đãi lúc ${formatDateTime(tier.available_until)}`
+            : ` · Ưu đãi đến ${formatDateTime(tier.available_until)}`)}
         {delivery && ` · Dự kiến giao ${delivery.toLowerCase()}`}
         {tier.requires_shipping ? " · Cần giao hàng" : ""}
       </p>
@@ -182,7 +196,19 @@ function TierSummary({ tier }: { tier: RewardTier }) {
 }
 
 /** The fields of a tier; `prefix` keeps the ids unique when several forms are on the page. */
-function TierFields({ prefix, tier }: { prefix: string; tier: RewardTier | null }) {
+function TierFields({
+  prefix,
+  tier,
+  startsAt,
+  endsAt,
+}: {
+  prefix: string
+  tier: RewardTier | null
+  startsAt: string | null
+  endsAt: string | null
+}) {
+  const minUntil = startsAt ? toVietnamLocalInput(startsAt) : undefined
+  const maxUntil = endsAt ? toVietnamLocalInput(endsAt) : undefined
   return (
     <>
       <div className="grid gap-6 sm:grid-cols-2 [&>*]:min-w-0">
@@ -251,6 +277,34 @@ function TierFields({ prefix, tier }: { prefix: string; tier: RewardTier | null 
           maxLength={2000}
           defaultValue={tier?.description ?? ""}
         />
+      </div>
+      <label className={checkLabelClass}>
+        <input
+          type="checkbox"
+          name="is_early_bird"
+          className={checkInputClass}
+          defaultChecked={tier?.is_early_bird ?? false}
+        />
+        Ưu đãi Early Bird (giới hạn số suất hoặc thời hạn mở bán sớm)
+      </label>
+      <div>
+        <label htmlFor={`${prefix}_available_until`} className="label">
+          Thời hạn ưu đãi Early Bird (giờ Việt Nam, không bắt buộc nếu đã giới hạn số suất)
+        </label>
+        <input
+          id={`${prefix}_available_until`}
+          name="available_until"
+          type="datetime-local"
+          className="field tabular-nums"
+          min={minUntil || undefined}
+          max={maxUntil || undefined}
+          aria-describedby={`${prefix}_available_until_hint`}
+          defaultValue={toVietnamLocalInput(tier?.available_until ?? null)}
+        />
+        <p id={`${prefix}_available_until_hint`} className="hint">
+          Chỉ áp dụng khi bật ưu đãi Early Bird. Thời hạn phải ở tương lai và nằm trong lịch gây quỹ của dự án; các cam
+          kết đã tạo trước hạn vẫn giữ nguyên hiệu lực.
+        </p>
       </div>
       <label className={checkLabelClass}>
         <input
