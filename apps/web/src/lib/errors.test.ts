@@ -41,6 +41,8 @@ describe("dbErrorMessage", () => {
     )
     expect(dbErrorMessage({ message: "GIVE_ORGANIZER_CHANGED_SINCE_REVIEW" })).toContain("tải lại")
     expect(dbErrorMessage({ code: "42501", message: "GIVE_CAMPAIGN_NOT_EDITABLE: in_review" })).toContain("bản nháp")
+    expect(dbErrorMessage({ code: "23514", message: "GIVE_HANDLE_INVALID" })).toContain("3–40 ký tự")
+    expect(dbErrorMessage({ code: "23514", message: "GIVE_HANDLE_RESERVED" })).toContain("hệ thống giữ chỗ")
   })
 
   it("falls back to the Postgres or PostgREST error code", () => {

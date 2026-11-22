@@ -1,4 +1,5 @@
 import { VIA_CONTACT_EMAIL } from "./contact"
+import { ORGANIZER_HANDLE_INVALID_MESSAGE, ORGANIZER_HANDLE_RESERVED_MESSAGE } from "./organizer-handle"
 
 /**
  * Turns database errors into messages for people. The give schema raises
@@ -189,6 +190,9 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_COMMENT_BODY_TOO_LONG: "Nội dung bình luận tối đa 2000 ký tự.",
   GIVE_COMMENT_NESTING_NOT_ALLOWED: "Chỉ hỗ trợ trả lời một cấp (không thể trả lời một phản hồi khác).",
   GIVE_COMMENT_HIDDEN: "Bình luận này đã bị ẩn (hoặc có phản hồi đã bị ẩn) nên bạn không thể sửa hoặc xóa.",
+  // Organizer public profile handle (DOS/Give#251, #261).
+  GIVE_HANDLE_INVALID: ORGANIZER_HANDLE_INVALID_MESSAGE,
+  GIVE_HANDLE_RESERVED: ORGANIZER_HANDLE_RESERVED_MESSAGE,
 }
 
 const PG_MESSAGES: Record<string, string> = {

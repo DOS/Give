@@ -53,6 +53,34 @@ describe("CampaignCard", () => {
     expect(html).not.toContain("Đã xác minh")
   })
 
+  it("links the organizer name to /u/<handle> when a valid handle is present, and stays plain text otherwise", () => {
+    const linked = render({
+      display_name: "Quỹ Nhịp Tim Việt",
+      kind: "organization",
+      verification_status: "verified",
+      handle: "quy-nhip-tim",
+    })
+    expect(linked).toContain('href="/u/quy-nhip-tim"')
+    expect(linked).toContain(">Quỹ Nhịp Tim Việt</a>")
+
+    const unlinked = render({
+      display_name: "Quỹ Chưa Có Handle",
+      kind: "organization",
+      verification_status: "verified",
+      handle: null,
+    })
+    expect(unlinked).not.toContain('href="/u/')
+    expect(unlinked).toContain('<span class="truncate">Quỹ Chưa Có Handle</span>')
+
+    const reserved = render({
+      display_name: "Admin Giả",
+      kind: "individual",
+      verification_status: "unverified",
+      handle: "admin",
+    })
+    expect(reserved).not.toContain('href="/u/admin"')
+  })
+
   it("leaves the organizer line out when there is no organizer", () => {
     const html = render(null)
     expect(html).not.toContain("Đã xác minh")

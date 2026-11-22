@@ -8,6 +8,7 @@ import { CheckIcon } from "@/components/ui/icons"
 import { STATUS_LABELS, type DisplayOptions, type ListedCampaign } from "@/lib/campaigns"
 import { publicCoverUrl } from "@/lib/cover-urls"
 import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
+import { isNavigableOrganizerHandle, organizerProfileHref } from "@/lib/organizer-handle"
 
 /**
  * Campaign card for discovery and the home page (DESIGN.md 6, public
@@ -80,14 +81,24 @@ export function CampaignCard({
         <Heading className="line-clamp-2 text-h3 break-words">
           <Link
             href={`/campaigns/${campaign.slug}`}
-            className="group-hover:underline group-hover:underline-offset-4 after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-primary"
+            className="group-hover:underline group-hover:underline-offset-4 group-has-[[data-organizer-link]:hover]:no-underline after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-primary"
           >
             {campaign.title}
           </Link>
         </Heading>
         {organizer && (
-          <p className="flex min-w-0 items-center gap-1 text-sm text-muted">
-            <span className="truncate">{organizer.display_name}</span>
+          <p className="flex min-w-0 items-center gap-2 text-sm text-muted">
+            {isNavigableOrganizerHandle(organizer.handle) ? (
+              <Link
+                href={organizerProfileHref(organizer.handle)}
+                data-organizer-link
+                className="relative z-10 truncate rounded text-muted underline-offset-4 hover:text-fg hover:underline"
+              >
+                {organizer.display_name}
+              </Link>
+            ) : (
+              <span className="truncate">{organizer.display_name}</span>
+            )}
             {organizer.verification_status === "verified" && (
               <CheckIcon
                 width={16}

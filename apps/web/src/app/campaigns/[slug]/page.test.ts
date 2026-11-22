@@ -549,6 +549,49 @@ describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/
     }
   })
 
+  it("links the organizer display name to /u/<handle> when handle is present and keeps plain text otherwise", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:public_organizer") {
+        return {
+          data: [
+            {
+              display_name: "Quỹ Bản Mây",
+              kind: "organization",
+              verification_status: "verified",
+              handle: "quy-ban-may",
+            },
+          ],
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const linkedDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const profileLink = linkedDoc.querySelector('header a[href="/u/quy-ban-may"]')
+    expect(profileLink?.textContent).toBe("Quỹ Bản Mây")
+
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:public_organizer") {
+        return {
+          data: [
+            {
+              display_name: "Quỹ Bản Mây",
+              kind: "organization",
+              verification_status: "verified",
+              handle: null,
+            },
+          ],
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const plainDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(plainDoc.querySelector('header a[href^="/u/"]')).toBeNull()
+    expect(plainDoc.querySelector("header")?.textContent).toContain("Quỹ Bản Mây")
+  })
+
   it("omits the organizer block instead of crashing when getPublicOrganizer fails", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
     const baseAnon = state.anonHandler

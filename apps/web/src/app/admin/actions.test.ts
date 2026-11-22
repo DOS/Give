@@ -36,6 +36,7 @@ describe("approveCampaign", () => {
     ["/me/notices"],
     ["/campaigns/a-b"],
     ["/campaigns"],
+    ["/u/[handle]", "page"],
     ["/"],
   ]
 
@@ -278,10 +279,12 @@ describe("setVerification", () => {
       ["/admin"],
       ["/admin/reports"],
       ["/start"],
+      ["/me"],
       ["/me/campaigns/[id]", "page"],
       ["/me/accounts"],
       ["/me/notices"],
       ["/campaigns/[slug]", "page"],
+      ["/u/[handle]", "page"],
       ["/campaigns"],
       ["/"],
     ])

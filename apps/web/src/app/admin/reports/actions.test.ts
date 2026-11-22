@@ -112,6 +112,7 @@ describe("moderateCampaignReports (DOS/Give#98)", () => {
       ["/campaigns/[slug]/pledge", "page"],
       ["/campaigns/[slug]/statement", "page"],
       ["/me/pledges/[code]", "page"],
+      ["/u/[handle]", "page"],
       ["/campaigns"],
       ["/"],
     ])

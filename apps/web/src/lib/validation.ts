@@ -1,6 +1,7 @@
 import { z } from "zod"
 
 import { parseVnd, toVietnamLocalInput } from "./format"
+import { ORGANIZER_BIO_MAX, ORGANIZER_BIO_TOO_LONG_MESSAGE, validateOrganizerHandle } from "./organizer-handle"
 
 const optionalText = (max: number) =>
   z
@@ -53,6 +54,22 @@ export const organizerSchema = z.object({
     .trim()
     .transform((v) => v.replace(/[\s.-]/g, ""))
     .refine((v) => v === "" || /^\+?[0-9]{8,15}$/.test(v), "Số điện thoại không hợp lệ")
+    .transform((v) => (v === "" ? null : v)),
+})
+
+export const organizerPublicProfileSchema = z.object({
+  handle: z.string().transform((value, ctx) => {
+    const result = validateOrganizerHandle(value)
+    if (!result.ok) {
+      ctx.addIssue({ code: "custom", message: result.message })
+      return z.NEVER
+    }
+    return result.value
+  }),
+  bio: z
+    .string()
+    .transform((v) => v.replace(/\r\n?/g, "\n").trim())
+    .pipe(z.string().max(ORGANIZER_BIO_MAX, ORGANIZER_BIO_TOO_LONG_MESSAGE))
     .transform((v) => (v === "" ? null : v)),
 })
 
