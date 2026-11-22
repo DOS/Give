@@ -55,19 +55,21 @@ Lines follow risk and ownership, not campaign type: give (charity) and back
 stricter review and legal track.
 
 Two parallel POs work this repository (split 2026-11-14, updated by JOY on
-2026-11-21 and 2026-11-22). Normally, Antigravity PO (`Campaigns Product Owner`,
-profile `acc0`, replacing paused Qwen Code sessions) runs Campaigns and Claude
-Code PO (`Give Product Owner`) runs Money and Platform. Under JOY's 2026-11-22
-instruction, while Claude Code PO is quota-limited, Antigravity PO
-(`Give Product Owner (Antigravity)`, profile `acc0`) proactively covers all
-three lines (`line:campaigns`, `line:money`, `line:platform`), including taking
-over Claude PO's unfinished `line:money` and `line:platform` tasks and
-`DOS/DOS.Me` migrations. Parallel POs keep mutual exclusion active via
-`po_labels` (`claude: po:claude, antigravity: po:agy`) so both POs cooperate
-without duplicating tasks when Claude resumes: each PO dispatches only issues
-carrying its own runtime label or none of these labels (except when Antigravity
-explicitly takes over a quota-stalled issue with no live Claude session under
-JOY's 2026-11-22 takeover instruction), adds its own label on dispatch, checks
+2026-11-21 and 2026-11-22). Normally, Antigravity PO
+(`Give Product Owner (Antigravity)`, profile `acc0`; formerly
+`Campaigns Product Owner`, replacing paused Qwen Code sessions) runs Campaigns
+and Claude Code PO (`Give Product Owner`) runs Money and Platform. Under JOY's
+2026-11-22 instruction, while Claude Code PO is quota-limited, Antigravity PO
+proactively covers all three lines (`line:campaigns`, `line:money`,
+`line:platform`), including taking over Claude PO's unfinished `line:money` and
+`line:platform` tasks and `DOS/DOS.Me` migrations. Parallel POs keep mutual
+exclusion active via `po_labels` (`claude: po:claude, antigravity: po:agy`) so
+both POs cooperate without duplicating tasks when Claude resumes: each PO
+dispatches only issues carrying its own runtime label or none of these labels
+(except when Antigravity explicitly takes over a quota-stalled issue with no
+live Claude session under JOY's 2026-11-22 takeover instruction, in which case
+it replaces `po:claude` with `po:agy` and posts a take-over `release:` of any
+stalled Claude claim before re-claiming), adds its own label on dispatch, checks
 the latest protocol comment for another session's claim before taking an issue,
 and runs the acceptance gate only on its own PRs. Neither PO merges, accepts or
 posts an acceptance on the other's PR. Both Antigravity PO and Claude Code PO
@@ -192,7 +194,9 @@ open `main` promotion PRs before starting.
   project đi. Việc của ai người đó nghiệm thu."; and, on the PO's proposal
   to split by line (Qwen: Campaigns; Claude Code: Money and Platform):
   "Chia như vậy". A `PO acceptance:` comment counts only from the PO that
-  owns the PR's line. (Campaigns runtime superseded 2026-11-21, below.)
+  owns the PR's line. (Campaigns runtime superseded 2026-11-21; line-only
+  acceptance widened to the PR-owning PO via `po_labels` during the 2026-11-22
+  Claude quota takeover, below.)
 - JOY (2026-11-16), on empty-site discovery links: "Giữ nguyeyen" — with no
   live campaign, keep the header, "Hai cách" and footer "Khám phá" links to
   `/campaigns` (its empty state) as they are.
@@ -208,7 +212,8 @@ open `main` promotion PRs before starting.
   `DOS/DOS.Me` `dev` migrations/PRs only to unblock `#250`–`#253`
   (`DOS/DOS.Me` `main` / Production promotions remain strictly exclusive to
   `Give Product Owner` (Claude Code) with JOY's approval). (Production
-  exclusivity and single-line limit superseded 2026-11-22, below.)
+  exclusivity, single-line limit, and `DOS/DOS.Me` dev-only migration scope
+  superseded 2026-11-22, below.)
 - JOY (2026-11-21), on local databases (`Give#294` / `DOS/DOS.Me#1855`): no
   local Docker or local Supabase for Give work; run Give pgTAP tests and
   migration replay in GitHub CI on `DOS/DOS.Me`.
