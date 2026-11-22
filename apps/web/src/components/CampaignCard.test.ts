@@ -200,4 +200,40 @@ describe("CampaignCard", () => {
     expect(endedHiddenTime).toContain("Thành công")
     expect(endedHiddenTime).not.toContain("6 người ủng hộ")
   })
+
+  it("renders 'Sắp ra mắt' teaser badge, goal amount, and launch date without raised totals or progress bar (DOS/Give#315)", () => {
+    const html = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, {
+          status: "approved",
+          prelaunch_public: true,
+          starts_at: "2099-12-15T00:00:00Z",
+          ends_at: "2100-01-15T00:00:00Z",
+        }),
+        raised: 0,
+      })
+    )
+
+    expect(html).toContain("Sắp ra mắt")
+    expect(html).toContain("Mục tiêu")
+    expect(html).toContain("Mở ngày")
+    expect(html).not.toContain("đã nhận")
+    expect(html).not.toContain("h-1.5")
+
+    // Pre-launch card without a valid starts_at does not throw, does not repeat "Sắp ra mắt",
+    // and suppresses hasImpactReport badge (#314 + #315).
+    const withoutDate = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, {
+          status: "approved",
+          prelaunch_public: true,
+          starts_at: "not-a-date",
+        }),
+        hasImpactReport: true,
+      })
+    )
+    expect(withoutDate.match(/Sắp ra mắt/g)).toHaveLength(1)
+    expect(withoutDate).not.toContain("Mở ngày")
+    expect(withoutDate).not.toContain("Có báo cáo tổng kết")
+  })
 })

@@ -294,4 +294,57 @@ describe("OrganizerProfilePage (/u/[handle], DOS/Give#251)", () => {
     expect(html).toContain("1 báo cáo tổng kết")
     expect(html).toContain("Có báo cáo tổng kết")
   })
+
+  it("renders FollowButton with handle-based follower count, guest login return_path, pre-launch section, and zero organizer_id leak (DOS/Give#315)", async () => {
+    const PRELAUNCH_ID = "44444444-4444-4444-8444-444444444444"
+    state.handler = (call) => {
+      if (call.target === "rpc:organizer_follower_count_by_handle") return { data: 27 }
+      if (call.target === "rpc:list_organizer_public_campaigns") {
+        const base = defaultHandler(call) as { data: unknown[] }
+        return {
+          data: [
+            ...base.data,
+            {
+              id: PRELAUNCH_ID,
+              slug: "sap-ra-mat-ban-may",
+              type: "give",
+              title: "Thư viện Bản Mây (Sắp ra mắt)",
+              summary: null,
+              goal_amount: 30_000_000,
+              ends_at: "2999-12-31T00:00:00Z",
+              status: "approved",
+              display_options: { progress_bar: true, backers_count: true, time_remaining: true },
+              cover_storage_path: null,
+              cover_alt: null,
+              created_at: "2026-11-12T00:00:00Z",
+            },
+          ],
+        }
+      }
+      return defaultHandler(call)
+    }
+
+    const html = renderToStaticMarkup(
+      await OrganizerProfilePage({ params: Promise.resolve({ handle: "quy-ban-may" }) })
+    )
+    const doc = new Window().document
+    doc.body.innerHTML = html
+
+    expect(doc.querySelector('a[href="/auth/login?return_path=%2Fu%2Fquy-ban-may"]')?.textContent).toContain("Theo dõi")
+    expect(html).toContain("27 người theo dõi")
+    expect(html).toContain("Sắp ra mắt")
+    expect(html).toContain("Thư viện Bản Mây (Sắp ra mắt)")
+    // Never leaks organizer user_id into HTML or queries organizer_follows / organizer_follower_count(uuid).
+    expect(html).not.toContain("11111111-1111-4111-8111-111111111111")
+    expect(state.calls.some((c) => c.target === "organizer_follows")).toBe(false)
+    expect(state.calls.some((c) => c.target === "rpc:organizer_follower_count")).toBe(false)
+    expect(state.calls.some((c) => c.target === "rpc:organizer_follower_count_by_handle")).toBe(true)
+    // Excludes pre-launch campaign IDs from both ledger totals and impact report lookups (#314 + #315).
+    expect(
+      op(
+        state.calls.find((c) => c.target === "campaign_impact_reports"),
+        "in"
+      )
+    ).toEqual(["campaign_id", [LIVE_ID, PAST_ID]])
+  })
 })

@@ -51,9 +51,13 @@ export async function savePledge(
   // are given. getSession() does not verify the token, so read with it first:
   // PostgREST rejects a forged or expired token there.
   const db = dbAs(session.accessToken)
-  const { data: visible, error: readError } = await db.from("campaigns").select("id").eq("id", campaignId).maybeSingle()
+  const { data: visible, error: readError } = await db
+    .from("campaigns")
+    .select("id, status")
+    .eq("id", campaignId)
+    .maybeSingle()
   if (readError) return fail(dbErrorMessage(readError))
-  if (!visible) return fail(NOT_ACCEPTING)
+  if (!visible || (visible as { status?: string }).status !== "live") return fail(NOT_ACCEPTING)
 
   // The address is asked for, and kept, only for a tier that ships something.
   let shipping: Record<string, string> | null = null

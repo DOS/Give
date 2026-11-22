@@ -222,6 +222,7 @@ describe("CampaignsPage (/campaigns, DOS/Give#209)", () => {
       // Status menu preserves keep and resets page to 1 (default "live" omitted from query string).
       expect(navLinks(doc, "Trạng thái")).toEqual([
         { label: "Đang gây quỹ", href: discoveryHref({ ...keep, status: "live" }), current: false },
+        { label: "Sắp ra mắt", href: discoveryHref({ ...keep, status: "prelaunch" }), current: false },
         { label: "Đã kết thúc", href: discoveryHref({ ...keep, status: "ended" }), current: true },
         { label: "Tất cả", href: discoveryHref({ ...keep, status: "all" }), current: false },
       ])
@@ -289,6 +290,11 @@ describe("CampaignsPage (/campaigns, DOS/Give#209)", () => {
         { label: "Cộng đồng", href: "/campaigns?type=give&category=cong-dong", current: false },
       ])
       expect(navLinks(crossType.doc, "Trạng thái")[1]).toEqual({
+        label: "Sắp ra mắt",
+        href: "/campaigns?type=give&status=prelaunch",
+        current: false,
+      })
+      expect(navLinks(crossType.doc, "Trạng thái")[2]).toEqual({
         label: "Đã kết thúc",
         href: "/campaigns?type=give&status=ended",
         current: false,

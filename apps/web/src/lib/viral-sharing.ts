@@ -2,6 +2,7 @@ import { encode } from "uqr"
 
 import { bankLabel } from "./banks"
 import {
+  isPublicCampaignVisible,
   isPublicStatus,
   STATUS_LABELS,
   TYPE_LABELS,
@@ -53,6 +54,8 @@ export interface OgCampaignInput {
   title: string
   goal_amount: number
   display_options: DisplayOptions
+  prelaunch_public?: boolean
+  starts_at?: string | null
 }
 
 export interface OgCampaignCardModel {
@@ -60,6 +63,8 @@ export interface OgCampaignCardModel {
   type: CampaignType
   typeBadge: string
   statusBadge: string | null
+  isPrelaunch: boolean
+  launchDateText: string | null
   raised: number
   goal: number
   percent: number
@@ -74,9 +79,12 @@ export interface OgCampaignCardModel {
   footerText: string
 }
 
-/** Only publicly visible campaigns may render an Open Graph card; everything else is 404. */
-export function isOgEligible(campaign: Pick<OgCampaignInput, "status"> | null | undefined): boolean {
-  return campaign != null && isPublicStatus(campaign.status)
+/** Only publicly visible campaigns (including opted-in future pre-launch teasers) may render an Open Graph card; everything else is 404. */
+export function isOgEligible(
+  campaign: Pick<OgCampaignInput, "status" | "prelaunch_public" | "starts_at"> | null | undefined,
+  now: Date = new Date()
+): boolean {
+  return campaign != null && isPublicCampaignVisible(campaign, now)
 }
 
 /**
@@ -100,14 +108,42 @@ export function buildOgCampaignCardModel({
   campaign,
   totals,
   organizer,
+  now = new Date(),
 }: {
   campaign: OgCampaignInput
   totals: MoneyTotals | null
   organizer: Pick<PublicOrganizer, "display_name" | "verification_status"> | null
+  now?: Date
 }): OgCampaignCardModel | null {
-  if (!isOgEligible(campaign)) return null
+  if (!isOgEligible(campaign, now)) return null
 
   const isGive = campaign.type === "give"
+  const isPrelaunch = !isPublicStatus(campaign.status)
+  if (isPrelaunch) {
+    const validStartsAt =
+      campaign.starts_at && !Number.isNaN(Date.parse(campaign.starts_at)) ? formatDate(campaign.starts_at) : null
+    return {
+      title: truncateCodePoints(campaign.title, OG_TITLE_MAX_CHARS),
+      type: campaign.type,
+      typeBadge: TYPE_LABELS[campaign.type],
+      statusBadge: "Sắp ra mắt",
+      isPrelaunch: true,
+      launchDateText: validStartsAt ? `Dự kiến mở ngày ${validStartsAt}` : null,
+      raised: 0,
+      goal: campaign.goal_amount,
+      percent: 0,
+      raisedLabel: "Mục tiêu gây quỹ",
+      raisedText: formatVnd(campaign.goal_amount),
+      goalText: validStartsAt ? `Mở ngày ${validStartsAt}` : "Sắp ra mắt",
+      showProgressBar: false,
+      supportersText: "Đăng ký nhận thông báo khi mở",
+      organizerName: organizer ? truncateCodePoints(organizer.display_name, 56) : null,
+      organizerVerified: organizer?.verification_status === "verified",
+      verifiedStatementBadge: null,
+      footerText: "give.vn · Đăng ký nhận thông báo khi mở",
+    }
+  }
+
   const raised = raisedAmount(totals, campaign.type)
   const percent = progressPercent(raised, campaign.goal_amount)
   const people = totals ? (isGive ? totals.supporters_count : totals.backers_count) : null
@@ -121,6 +157,8 @@ export function buildOgCampaignCardModel({
     type: campaign.type,
     typeBadge: TYPE_LABELS[campaign.type],
     statusBadge: campaign.status !== "live" ? STATUS_LABELS[campaign.status] : null,
+    isPrelaunch: false,
+    launchDateText: null,
     raised,
     goal: campaign.goal_amount,
     percent,

@@ -14,6 +14,12 @@ import { siteOrigin } from "@/lib/auth/origin"
 import { requireSession, type Session } from "@/lib/auth/session"
 import { isPublicStatus, type CampaignStatus } from "@/lib/campaigns"
 import { donationStatusLabel } from "@/lib/contributions"
+import {
+  getMyDonorImpactSummary,
+  listMyFollowedOrganizers,
+  type DonorImpactSummary,
+  type FollowedOrganizer,
+} from "@/lib/follows"
 import { formatDate, formatVnd } from "@/lib/format"
 import { periodLabel, planDonationPayable, vnMonthStart } from "@/lib/plans"
 import { fulfillmentLabel, offersPayment, pledgeListSummary, withoutReplacedPledges } from "@/lib/pledges"
@@ -26,6 +32,7 @@ import { MePage } from "../_components/MePage"
 import { DONATION_TONES, toneOf } from "../_components/tones"
 import { RefCode } from "@/components/ui/RefCode"
 
+import { DonorImpactCard } from "./DonorImpactCard"
 import { currentPlanDonation, PlanList, type MyPlan } from "./PlanList"
 
 export const metadata: Metadata = { title: "Ủng hộ của tôi", robots: { index: false } }
@@ -118,7 +125,7 @@ async function withUsableAccounts(plans: MyPlan[], donations: readonly MyContrib
  */
 async function ContributionList({ session }: { session: Session }) {
   const db = dbAs(session.accessToken)
-  const [{ data, error }, plansRead] = await Promise.all([
+  const [{ data, error }, plansRead, impactSummary, followedOrganizers] = await Promise.all([
     db
       .from("contributions")
       .select(
@@ -137,6 +144,14 @@ async function ContributionList({ session }: { session: Session }) {
       .eq("contributor_user_id", session.user.id)
       .order("created_at", { ascending: false })
       .limit(50),
+    getMyDonorImpactSummary(db).catch((e: unknown) => {
+      console.error("contributions: donor impact summary lookup failed", e)
+      return null as DonorImpactSummary | null
+    }),
+    listMyFollowedOrganizers(db).catch((e: unknown) => {
+      console.error("contributions: followed organizers lookup failed", e)
+      return [] as FollowedOrganizer[]
+    }),
   ])
   if (error) throw error
   if (plansRead.error) throw plansRead.error
@@ -154,15 +169,26 @@ async function ContributionList({ session }: { session: Session }) {
       : Promise.resolve(new Map<string, PledgeBalance>()),
   ])
 
+  const showImpactCard =
+    impactSummary !== null &&
+    (contributions.length > 0 ||
+      plans.length > 0 ||
+      impactSummary.total_matched_vnd > 0 ||
+      impactSummary.followed_campaigns_count > 0 ||
+      impactSummary.followed_organizers_count > 0)
+
   if (contributions.length === 0 && plans.length === 0) {
     return (
-      <EmptyState
-        level={2}
-        title="Bạn chưa ủng hộ chiến dịch hay dự án nào."
-        action={<ButtonLink href="/campaigns">Khám phá chiến dịch</ButtonLink>}
-      >
-        Mỗi lượt ủng hộ có một mã riêng; bạn theo dõi tiền đã đến đâu ngay tại đây.
-      </EmptyState>
+      <div className="space-y-8">
+        {showImpactCard && <DonorImpactCard summary={impactSummary} followedOrganizers={followedOrganizers} />}
+        <EmptyState
+          level={2}
+          title="Bạn chưa ủng hộ chiến dịch hay dự án nào."
+          action={<ButtonLink href="/campaigns">Khám phá chiến dịch</ButtonLink>}
+        >
+          Mỗi lượt ủng hộ có một mã riêng; bạn theo dõi tiền đã đến đâu ngay tại đây.
+        </EmptyState>
+      </div>
     )
   }
 
@@ -170,6 +196,7 @@ async function ContributionList({ session }: { session: Session }) {
 
   return (
     <div className="space-y-10">
+      {showImpactCard && <DonorImpactCard summary={impactSummary} followedOrganizers={followedOrganizers} />}
       {plans.length > 0 && <PlanList plans={plans} donations={planDonations} now={now} />}
       {contributions.length > 0 &&
         (plans.length > 0 ? (

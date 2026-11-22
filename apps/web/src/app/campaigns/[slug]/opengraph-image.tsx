@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises"
 import { ImageResponse } from "next/og"
 
-import { getCampaignBySlug, getPublicOrganizer } from "@/lib/campaigns"
+import { getCampaignBySlug, getPublicOrganizer, isPublicStatus } from "@/lib/campaigns"
 import { PUBLIC_COVER_CACHE } from "@/lib/cover-route"
 import { SLUG_PATTERN } from "@/lib/slug"
 import { getMoneyTotals } from "@/lib/statement"
@@ -55,16 +55,18 @@ export default async function CampaignOpenGraphImage({ params }: { params: Promi
   if (!SLUG_PATTERN.test(slug) || slug.length > 80) return notFoundResponse()
 
   const anon = dbAs()
+  const now = new Date()
   const campaign = await getCampaignBySlug(anon, slug)
-  if (!isOgEligible(campaign) || !campaign) return notFoundResponse()
+  if (!isOgEligible(campaign, now) || !campaign) return notFoundResponse()
 
+  const prelaunch = !isPublicStatus(campaign.status)
   const [totals, organizer, fonts] = await Promise.all([
-    getMoneyTotals(anon, campaign.id).catch(() => null),
+    prelaunch ? Promise.resolve(null) : getMoneyTotals(anon, campaign.id).catch(() => null),
     getPublicOrganizer(anon, campaign.id).catch(() => null),
     loadFonts(),
   ])
 
-  const model = buildOgCampaignCardModel({ campaign, totals, organizer })
+  const model = buildOgCampaignCardModel({ campaign, totals, organizer, now })
   if (!model) return notFoundResponse()
 
   const isGive = model.type === "give"
@@ -243,11 +245,13 @@ export default async function CampaignOpenGraphImage({ params }: { params: Promi
             </div>
             <div style={{ display: "flex", alignItems: "baseline" }}>
               <span style={{ display: "flex", fontSize: "20px", color: "#5B6270" }}>{model.goalText}</span>
-              <span
-                style={{ display: "flex", fontSize: "26px", fontWeight: 700, color: "#047857", marginLeft: "14px" }}
-              >
-                {model.percent}%
-              </span>
+              {!model.isPrelaunch && (
+                <span
+                  style={{ display: "flex", fontSize: "26px", fontWeight: 700, color: "#047857", marginLeft: "14px" }}
+                >
+                  {model.percent}%
+                </span>
+              )}
             </div>
           </div>
 

@@ -8,7 +8,7 @@ import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { CheckIcon } from "@/components/ui/icons"
 import { STATUS_LABELS, type DisplayOptions, type ListedCampaign } from "@/lib/campaigns"
 import { publicCoverUrl } from "@/lib/cover-urls"
-import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
+import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
 import { isNavigableOrganizerHandle, organizerProfileHref } from "@/lib/organizer-handle"
 
 /**
@@ -47,19 +47,25 @@ export function CampaignCard({
   const showProgress = options.progress_bar !== false
   const organizer = campaign.organizer
   const isGive = campaign.type === "give"
+  const prelaunch = campaign.status === "approved"
   const Heading = headingLevel === 2 ? "h2" : "h3"
-  const meta = [
-    options.backers_count !== false && people !== undefined
-      ? `${people} ${isGive ? "người ủng hộ" : "người đồng hành"}`
-      : null,
-    campaign.status !== "live"
-      ? STATUS_LABELS[campaign.status]
-      : options.time_remaining !== false && days !== null
-        ? days > 0
-          ? `Còn ${days} ngày`
-          : "Đã hết hạn"
-        : null,
-  ].filter(Boolean)
+  const validStartsAt = campaign.starts_at && !Number.isNaN(Date.parse(campaign.starts_at)) ? campaign.starts_at : null
+  const meta = prelaunch
+    ? validStartsAt
+      ? [`Mở ngày ${formatDate(validStartsAt)}`]
+      : []
+    : [
+        options.backers_count !== false && people !== undefined
+          ? `${people} ${isGive ? "người ủng hộ" : "người đồng hành"}`
+          : null,
+        campaign.status !== "live"
+          ? STATUS_LABELS[campaign.status]
+          : options.time_remaining !== false && days !== null
+            ? days > 0
+              ? `Còn ${days} ngày`
+              : "Đã hết hạn"
+            : null,
+      ].filter(Boolean)
 
   return (
     <article
@@ -83,7 +89,11 @@ export function CampaignCard({
       <div className="flex flex-1 flex-col gap-2 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <TypeBadge type={campaign.type} />
-          {hasImpactReport && <Badge tone="brand">Có báo cáo tổng kết</Badge>}
+          {prelaunch ? (
+            <Badge tone="info">Sắp ra mắt</Badge>
+          ) : (
+            hasImpactReport && <Badge tone="brand">Có báo cáo tổng kết</Badge>
+          )}
         </div>
         <Heading className="line-clamp-2 text-h3 break-words">
           <Link
@@ -119,15 +129,27 @@ export function CampaignCard({
           </p>
         )}
         <div className="mt-auto pt-2">
-          {showProgress && <ProgressBar percent={percent} size="sm" />}
-          <p className={showProgress ? "mt-3" : undefined}>
-            <span className="figure">{formatVnd(raised)}</span>{" "}
-            <span className="text-muted">
-              {isGive ? "đã nhận" : "đã cam kết"}
-              {showProgress && ` · ${percent}%`}
-            </span>
-          </p>
-          {meta.length > 0 && <p className="text-sm text-muted">{meta.join(" · ")}</p>}
+          {prelaunch ? (
+            <>
+              <p>
+                <span className="text-muted">Mục tiêu </span>
+                <span className="figure">{formatVnd(campaign.goal_amount)}</span>
+              </p>
+              {meta.length > 0 && <p className="text-sm text-muted">{meta.join(" · ")}</p>}
+            </>
+          ) : (
+            <>
+              {showProgress && <ProgressBar percent={percent} size="sm" />}
+              <p className={showProgress ? "mt-3" : undefined}>
+                <span className="figure">{formatVnd(raised)}</span>{" "}
+                <span className="text-muted">
+                  {isGive ? "đã nhận" : "đã cam kết"}
+                  {showProgress && ` · ${percent}%`}
+                </span>
+              </p>
+              {meta.length > 0 && <p className="text-sm text-muted">{meta.join(" · ")}</p>}
+            </>
+          )}
         </div>
       </div>
     </article>

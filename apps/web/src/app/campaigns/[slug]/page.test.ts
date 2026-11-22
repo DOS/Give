@@ -1719,3 +1719,61 @@ describe("CampaignPage trust moat: transparency summary, milestone evidence & im
     expect(html).not.toContain('href="#bao-cao-tong-ket"')
   })
 })
+
+describe("CampaignPage pre-launch 'Sắp ra mắt' teaser & FollowButton (DOS/Give#315)", () => {
+  it("renders public pre-launch teaser with 'Nhận thông báo khi mở' CTA and ZERO payment/VietQR/donate/pledge/poster/statement/transparency surfaces", async () => {
+    const prelaunchRow = {
+      ...campaignFixture("approved"),
+      prelaunch_public: true,
+      starts_at: "2099-12-01T00:00:00Z",
+      ends_at: "2099-12-31T00:00:00Z",
+    }
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: prelaunchRow }
+      if (call.target === "rpc:public_organizer") {
+        return {
+          data: [
+            {
+              display_name: "Quỹ Bản Mây",
+              kind: "organization",
+              verification_status: "verified",
+              handle: "quy-ban-may",
+            },
+          ],
+        }
+      }
+      if (call.target === "rpc:campaign_follower_count") return { data: 18 }
+      if (call.target === "rpc:campaign_public_team") return { data: [] }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media"
+      ) {
+        return { data: [] }
+      }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    const doc = parseDoc(html)
+
+    expect(html).toContain("Sắp ra mắt")
+    expect(html).toContain("Nhận thông báo khi mở")
+    expect(html).toContain("18 người đang chờ")
+    expect(doc.querySelector(`a[href="/auth/login?return_path=%2Fcampaigns%2F${SLUG}"]`)).not.toBeNull()
+
+    // ZERO money/QR/donation/pledge/poster/statement/transparency/impact leakage on pre-launch!
+    expect(state.serviceCalls.some((c) => c.target === "rpc:payment_account")).toBe(false)
+    expect(state.anonCalls.some((c) => c.target === "rpc:campaign_transparency_summary")).toBe(false)
+    expect(state.anonCalls.some((c) => c.target === "campaign_impact_reports")).toBe(false)
+    expect(html).not.toContain("Tóm tắt minh bạch sao kê")
+    expect(html).not.toContain('id="bao-cao-tong-ket"')
+    expect(html).not.toContain("Tải poster QR")
+    expect(html).not.toContain("VietQR")
+    expect(doc.querySelector("section#ung-ho")).toBeNull()
+    expect(doc.querySelector("section#hang-thang")).toBeNull()
+    expect(doc.querySelector(`a[href="/campaigns/${SLUG}/pledge"]`)).toBeNull()
+    expect(doc.querySelector(`a[href="/campaigns/${SLUG}/statement"]`)).toBeNull()
+    expect(html).not.toContain("Bản xem trước")
+  })
+})

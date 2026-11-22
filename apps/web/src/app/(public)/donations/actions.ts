@@ -59,11 +59,11 @@ export async function donate(campaignId: string, _state: ActionResult, form: For
   const requestHeaders = await headers()
   const { data: visible, error: readError } = await dbAs(session?.accessToken)
     .from("campaigns")
-    .select("id")
+    .select("id, status")
     .eq("id", campaignId)
     .maybeSingle()
   if (readError) return fail(dbErrorMessage(readError))
-  if (!visible) return fail(NOT_ACCEPTING)
+  if (!visible || (visible as { status?: string }).status !== "live") return fail(NOT_ACCEPTING)
   // Signed-in donors are counted by account, so only guests get address keys.
   const { clientKey, networkKey } = session ? { clientKey: null, networkKey: null } : requestClientKeys(requestHeaders)
 

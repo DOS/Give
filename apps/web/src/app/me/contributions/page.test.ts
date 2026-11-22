@@ -404,4 +404,54 @@ describe("MyContributionsPage 'Tôi đã chung tay' thank-you card (DOS/Give#313
     // Received donation on suspended campaign (staff/organizer RLS visibility) -> no thank-you card button
     expect(items[4].textContent).not.toContain("Thẻ “Tôi đã chung tay”")
   })
+
+  it("renders 'Dấu ấn đóng góp của tôi' summary card and followed organizers at top of /me/contributions (DOS/Give#315)", async () => {
+    state.handler = (call) => {
+      if (call.target === "donation_plans") return { data: [] }
+      if (call.target === "contributions") return { data: [] }
+      if (call.target === "rpc:my_donor_impact_summary") {
+        return {
+          data: [
+            {
+              total_matched_vnd: 900000,
+              campaigns_supported_count: 2,
+              active_monthly_plans_count: 1,
+              followed_campaigns_count: 3,
+              followed_organizers_count: 1,
+              category_breakdown: [
+                {
+                  category_id: "cat-1",
+                  category_slug: "healthcare",
+                  category_name: "Y tế",
+                  total_vnd: 900000,
+                  campaigns_count: 2,
+                },
+              ],
+            },
+          ],
+        }
+      }
+      if (call.target === "rpc:list_my_followed_organizers") {
+        return {
+          data: [
+            {
+              handle: "quy-ban-may",
+              display_name: "Quỹ Bản Mây",
+              avatar_url: null,
+              kind: "organization",
+              verification_status: "verified",
+              followed_at: "2026-11-20T00:00:00Z",
+            },
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const { doc } = await render()
+    expect(doc.body.textContent).toContain("Dấu ấn đóng góp của tôi")
+    expect(doc.body.textContent).toContain(formatVnd(900000))
+    expect(doc.body.textContent).toContain("3 chiến dịch · 1 người tổ chức")
+    expect(doc.querySelector('a[href="/u/quy-ban-may"]')?.textContent).toContain("Quỹ Bản Mây")
+  })
 })

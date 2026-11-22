@@ -14,7 +14,7 @@ import { PageHeader } from "@/components/ui/PageHeader"
 import { SkeletonList } from "@/components/ui/Skeleton"
 import { requireSession, type Session } from "@/lib/auth/session"
 import { listMyWorkspaceCampaigns } from "@/lib/campaign-members"
-import { isPublicStatus } from "@/lib/campaigns"
+import { isPublicCampaignVisible } from "@/lib/campaigns"
 import { privateCoverUrl } from "@/lib/cover-urls"
 import { formatDate, formatVnd } from "@/lib/format"
 import { dbAs } from "@/lib/supabase"
@@ -105,7 +105,7 @@ async function CampaignList({ session }: { session: Session }) {
               </div>
             </div>
             <div className="flex flex-wrap gap-3 sm:shrink-0">
-              {isPublicStatus(campaign.status) && (
+              {isPublicCampaignVisible(campaign) && (
                 <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary">
                   Xem trang<span className="sr-only">{`: ${campaign.title}`}</span>
                 </ButtonLink>

@@ -100,6 +100,41 @@ describe("OG card eligibility and formatting (DOS/Give#313)", () => {
     expect(model.verifiedStatementBadge).toBe("Sao kê đối chiếu ngân hàng")
   })
 
+  it("formats opted-in future pre-launch campaigns as teaser OG cards without raised/statement figures (DOS/Give#315)", () => {
+    const now = new Date("2026-11-22T00:00:00Z")
+    expect(isOgEligible({ status: "approved", prelaunch_public: true, starts_at: "2026-12-01T00:00:00Z" }, now)).toBe(
+      true
+    )
+    expect(isOgEligible({ status: "approved", prelaunch_public: true, starts_at: "2026-11-20T00:00:00Z" }, now)).toBe(
+      false
+    )
+
+    const model = buildOgCampaignCardModel({
+      campaign: {
+        slug: "sap-ra-mat",
+        type: "give",
+        status: "approved",
+        prelaunch_public: true,
+        starts_at: "2026-12-01T00:00:00Z",
+        title: "Thư viện vùng cao",
+        goal_amount: 80_000_000,
+        display_options: { progress_bar: true, backers_count: true, time_remaining: true },
+      },
+      totals: null,
+      organizer: { display_name: "Quỹ Bản Mây", verification_status: "verified" },
+      now,
+    })!
+
+    expect(model).not.toBeNull()
+    expect(model.isPrelaunch).toBe(true)
+    expect(model.statusBadge).toBe("Sắp ra mắt")
+    expect(model.verifiedStatementBadge).toBeNull()
+    expect(model.showProgressBar).toBe(false)
+    expect(model.raisedLabel).toBe("Mục tiêu gây quỹ")
+    expect(model.raisedText).toBe(formatVnd(80_000_000))
+    expect(model.footerText).toContain("Đăng ký nhận thông báo khi mở")
+  })
+
   it("formats back campaigns with pledged amounts and hides verified statement badge when unexplained outflows exist", () => {
     const model = buildOgCampaignCardModel({
       campaign: {
@@ -253,6 +288,16 @@ describe("Poster #93 payment-stopped gating and account masking (DOS/Give#313)",
     expect(
       shouldIncludePosterVietQr({
         campaign: { ...liveGive, ends_at: "2026-11-21T00:00:00.000Z" },
+        totals: { payments_stopped_at: null },
+        hasUsableAccount: true,
+        now: NOW,
+      })
+    ).toBe(false)
+
+    // Pre-launch approved campaign with future starts_at MUST suppress VietQR (DOS/Give#315).
+    expect(
+      shouldIncludePosterVietQr({
+        campaign: { ...liveGive, status: "approved", starts_at: "2026-12-01T00:00:00.000Z" },
         totals: { payments_stopped_at: null },
         hasUsableAccount: true,
         now: NOW,

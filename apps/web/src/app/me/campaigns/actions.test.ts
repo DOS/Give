@@ -46,6 +46,7 @@ const {
   saveContent,
   saveYoutubeVideo,
   setCampaignMonthly,
+  setCampaignPrelaunchPublic,
   submitForReview,
   updateDraftUpdate,
   updateMilestone,
@@ -1666,5 +1667,65 @@ describe("co-organizer editor vs owner-only server action guards (DOS/Give#253)"
       message: "Không tìm thấy chiến dịch của bạn.",
     })
     expect(state.userCalls.some((c) => c.target === "campaigns")).toBe(false)
+  })
+})
+
+describe("setCampaignPrelaunchPublic (DOS/Give#315)", () => {
+  function prelaunchForm(enabled: string) {
+    const form = new FormData()
+    form.set("enabled", enabled)
+    return form
+  }
+
+  it("refuses signed-out users, invalid campaign IDs, and invalid enabled choices", async () => {
+    vi.mocked(getSession).mockResolvedValueOnce(null)
+    expect(await setCampaignPrelaunchPublic(CAMPAIGN, null, prelaunchForm("true"))).toEqual({
+      ok: false,
+      message: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+    })
+
+    expect(await setCampaignPrelaunchPublic("bad-id", null, prelaunchForm("true"))).toEqual({
+      ok: false,
+      message: "Không tìm thấy chiến dịch của bạn.",
+    })
+    expect(await setCampaignPrelaunchPublic(CAMPAIGN, null, prelaunchForm("maybe"))).toEqual({
+      ok: false,
+      message: "Dữ liệu không hợp lệ.",
+    })
+  })
+
+  it("calls set_campaign_prelaunch_public under user JWT and maps GIVE_PRELAUNCH_REQUIRES_FUTURE_START", async () => {
+    state.userHandler = (call) => {
+      if (call.target === "rpc:set_campaign_prelaunch_public") return { data: true }
+      if (call.target === "rpc:managed_campaigns") return { data: { id: CAMPAIGN, slug: "sap-ra-mat" } }
+      return undefined
+    }
+    const okRes = await setCampaignPrelaunchPublic(CAMPAIGN, null, prelaunchForm("true"))
+    expect(okRes?.ok).toBe(true)
+    expect(state.serviceCalls).toHaveLength(0)
+    expect(state.userCalls.some((c) => c.target === "rpc:set_campaign_prelaunch_public")).toBe(true)
+    expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith("/campaigns")
+    expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith("/u/[handle]", "page")
+    expect(vi.mocked(revalidatePath)).toHaveBeenCalledWith("/campaigns/sap-ra-mat")
+
+    vi.mocked(revalidatePath).mockClear()
+    state.userHandler = (call) => {
+      if (call.target === "rpc:set_campaign_prelaunch_public") return { data: true }
+      if (call.target === "rpc:managed_campaigns") return { data: null }
+      return undefined
+    }
+    expect((await setCampaignPrelaunchPublic(CAMPAIGN, null, prelaunchForm("false")))?.ok).toBe(true)
+    expect(vi.mocked(revalidatePath)).not.toHaveBeenCalledWith("/campaigns/")
+
+    state.userHandler = (call) => {
+      if (call.target === "rpc:set_campaign_prelaunch_public") {
+        return { data: null, error: { code: "23514", message: "GIVE_PRELAUNCH_REQUIRES_FUTURE_START" } }
+      }
+      return undefined
+    }
+    expect(await setCampaignPrelaunchPublic(CAMPAIGN, null, prelaunchForm("true"))).toEqual({
+      ok: false,
+      message: "Cần đặt ngày bắt đầu trong tương lai để bật chế độ Sắp ra mắt.",
+    })
   })
 })
