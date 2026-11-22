@@ -108,6 +108,7 @@ export default async function AdminCommentReportsPage({
         items={[
           { href: "/admin/reports", label: "Báo cáo chiến dịch", current: false },
           { href: "/admin/reports/comments", label: "Báo cáo bình luận", current: true },
+          { href: "/admin/reports/wishes", label: "Báo cáo lời chúc", current: false },
         ]}
       />
 

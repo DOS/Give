@@ -58,6 +58,11 @@ vi.mock("./comment-actions", () => ({
   reportComment: vi.fn(async () => null),
   moderateCommentFromCampaign: vi.fn(async () => null),
 }))
+vi.mock("./wish-actions", () => ({
+  toggleWishHeart: vi.fn(async () => ({ hearted: true, heartCount: 1 })),
+  reportWish: vi.fn(async () => null),
+  moderateWishFromCampaign: vi.fn(async () => null),
+}))
 vi.mock("@/app/(public)/donations/actions", () => ({ donate: vi.fn(async () => null) }))
 vi.mock("./monthly-actions", () => ({ startMonthlyPlan: vi.fn(async () => null) }))
 
@@ -2046,5 +2051,125 @@ describe("CampaignPage ambassador referral links & opt-in leaderboard (DOS/Give#
     expect(draftDoc.querySelector("section#nguoi-dong-hanh-lan-toa")).toBeNull()
     expect(state.anonCalls.some((c) => c.target === "rpc:campaign_ambassador_leaderboard")).toBe(false)
     expect(state.userCalls.some((c) => c.target === "rpc:get_my_campaign_ambassador")).toBe(false)
+  })
+})
+
+describe("DonorWishesWall on /campaigns/[slug] (DOS/Give#320)", () => {
+  it("renders Tường lời chúc on live public campaign, passes caller JWT when signed in, and enables hidden wishes drawer for accepted editor", async () => {
+    const baseAnon = state.anonHandler
+    state.session = { user: { id: VIEWER, email: "editor@dos.me", name: "Đồng tổ chức" }, accessToken: "editor-jwt" }
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("live") }
+      return baseAnon(call)
+    }
+    state.userHandler = (call) => {
+      if (call.target === "rpc:my_campaign_roles") {
+        return { data: [{ campaign_id: CAMPAIGN, role: "editor" }] }
+      }
+      if (call.target === "rpc:list_campaign_wishes") {
+        return {
+          data: [
+            {
+              contribution_id: "3200d000-0000-4000-8000-000000000001",
+              display_name: "Nguyễn An",
+              is_anonymous: false,
+              amount: 500_000,
+              message: "Chúc chiến dịch sớm đạt mục tiêu!",
+              created_at: "2026-11-22T09:00:00.000Z",
+              heart_count: 3,
+              viewer_hearted: true,
+              total_count: 1,
+            },
+          ],
+        }
+      }
+      if (call.target === "rpc:list_hidden_campaign_wishes") {
+        return {
+          data: [
+            {
+              contribution_id: "3200d000-0000-4000-8000-000000000002",
+              display_name: null,
+              is_anonymous: true,
+              amount: 100_000,
+              message: "Lời chúc đã ẩn bởi biên tập viên",
+              created_at: "2026-11-22T08:00:00.000Z",
+              message_hidden_at: "2026-11-22T08:30:00.000Z",
+              message_hidden_role: "editor",
+              message_hide_reason: "Quảng cáo",
+              can_restore: true,
+            },
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const doc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ show_hidden_wishes: "1" }),
+        })
+      )
+    )
+    const section = doc.querySelector("section#tuong-loi-chuc")
+    expect(section).not.toBeNull()
+    expect(section?.textContent).toContain("Tường lời chúc")
+    expect(section?.textContent).toContain("Chúc chiến dịch sớm đạt mục tiêu!")
+    expect(section?.textContent).toContain("Lời chúc đã ẩn bởi biên tập viên")
+    expect(section?.textContent).toContain("Khôi phục lời chúc")
+    expect(state.userCalls.some((c) => c.target === "rpc:list_campaign_wishes")).toBe(true)
+    expect(state.userCalls.some((c) => c.target === "rpc:list_hidden_campaign_wishes")).toBe(true)
+    expect(state.serviceCalls.some((c) => c.target === "rpc:list_campaign_wishes")).toBe(false)
+  })
+
+  it("NEVER queries or renders Tường lời chúc on public pre-launch or draft preview", async () => {
+    const baseAnon = state.anonHandler
+    // 1. Public pre-launch
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("approved"),
+            prelaunch_public: true,
+            starts_at: "2099-06-01T00:00:00.000Z",
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+    const preDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(preDoc.querySelector("section#tuong-loi-chuc")).toBeNull()
+    expect(state.anonCalls.some((c) => c.target === "rpc:list_campaign_wishes")).toBe(false)
+
+    // 2. Draft preview as signed-in owner
+    state.anonCalls.length = 0
+    state.userCalls.length = 0
+    state.session = { user: { id: VIEWER, email: "owner@dos.me", name: "Owner" }, accessToken: "owner-jwt" }
+    state.anonHandler = (call) => (call.target === "campaigns" ? { data: null } : baseAnon(call))
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("draft") }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media" ||
+        call.target === "campaign_faqs"
+      ) {
+        return { data: [] }
+      }
+      return undefined
+    }
+    const draftDoc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ show_hidden_wishes: "1" }),
+        })
+      )
+    )
+    expect(draftDoc.querySelector("section#tuong-loi-chuc")).toBeNull()
+    expect(state.anonCalls.some((c) => c.target === "rpc:list_campaign_wishes")).toBe(false)
+    expect(state.userCalls.some((c) => c.target === "rpc:list_campaign_wishes")).toBe(false)
+    expect(state.userCalls.some((c) => c.target === "rpc:list_hidden_campaign_wishes")).toBe(false)
   })
 })
