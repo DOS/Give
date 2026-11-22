@@ -193,6 +193,23 @@ const GIVE_MESSAGES: Record<string, string> = {
   // Organizer public profile handle (DOS/Give#251, #261).
   GIVE_HANDLE_INVALID: ORGANIZER_HANDLE_INVALID_MESSAGE,
   GIVE_HANDLE_RESERVED: ORGANIZER_HANDLE_RESERVED_MESSAGE,
+  // Co-organizers / campaign editors (DOS/Give#253, #264).
+  GIVE_AUTH_REQUIRED: "Hãy đăng nhập để tiếp tục.",
+  GIVE_CAMPAIGN_OWNER_ONLY: "Chỉ người tổ chức chính của chiến dịch mới thực hiện được thao tác này.",
+  GIVE_CAMPAIGN_NOT_INVITABLE: "Không thể mời đồng tổ chức khi chiến dịch đã hủy hoặc đang tạm dừng.",
+  GIVE_INVITE_EXPIRY_INVALID: "Thời hạn lời mời phải từ 1 đến 720 giờ (tối đa 30 ngày).",
+  GIVE_INVITE_NOTE_TOO_LONG: "Ghi chú lời mời tối đa 120 ký tự.",
+  GIVE_CAMPAIGN_MEMBER_LIMIT: "Chiến dịch đã đạt giới hạn tối đa 20 đồng tổ chức.",
+  GIVE_CAMPAIGN_INVITE_LIMIT: "Chiến dịch đã đạt giới hạn tối đa 20 lời mời đang chờ.",
+  GIVE_INVITE_INVALID: "Liên kết lời mời không hợp lệ hoặc không tồn tại.",
+  GIVE_INVITE_REVOKED: "Lời mời này đã bị người tổ chức thu hồi.",
+  GIVE_INVITE_ALREADY_USED: "Liên kết lời mời này đã được sử dụng (mỗi liên kết chỉ dùng một lần).",
+  GIVE_INVITE_ALREADY_ACCEPTED:
+    "Lời mời này đã được chấp nhận nên không thể thu hồi. Hãy gỡ thành viên trong danh sách đội ngũ.",
+  GIVE_INVITE_EXPIRED: "Lời mời này đã hết hạn. Hãy nhờ người tổ chức tạo liên kết mời mới.",
+  GIVE_ALREADY_CAMPAIGN_OWNER: "Bạn đã là người tổ chức chính của chiến dịch này.",
+  GIVE_ALREADY_CAMPAIGN_MEMBER: "Bạn đã là đồng tổ chức của chiến dịch này rồi.",
+  GIVE_CAMPAIGN_MEMBER_NOT_FOUND: "Không tìm thấy đồng tổ chức này trong chiến dịch.",
 }
 
 const PG_MESSAGES: Record<string, string> = {
@@ -581,4 +598,38 @@ export const COMMENT_REPORT_RESOLVE_MESSAGES: Record<string, string> = {
   ...COMMENT_MODERATION_MESSAGES,
   GIVE_COMMENT_NOT_FOUND:
     "Không tìm thấy bình luận (tác giả có thể đã xóa bình luận này). Bạn chỉ có thể bác bỏ báo cáo.",
+}
+
+/**
+ * Refusals of co-organizer invite and member RPCs (DOS/Give#253, #264).
+ */
+export const CAMPAIGN_MEMBER_MESSAGES: Record<string, string> = {
+  GIVE_AUTH_REQUIRED: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+  GIVE_CAMPAIGN_OWNER_ONLY: "Chỉ người tổ chức chính của chiến dịch mới thực hiện được thao tác này.",
+  GIVE_CAMPAIGN_NOT_INVITABLE: "Không thể mời đồng tổ chức khi chiến dịch đã hủy hoặc đang tạm dừng.",
+  GIVE_INVITE_EXPIRY_INVALID: "Thời hạn lời mời phải từ 1 đến 720 giờ (tối đa 30 ngày).",
+  GIVE_INVITE_NOTE_TOO_LONG: "Ghi chú lời mời tối đa 120 ký tự.",
+  GIVE_CAMPAIGN_MEMBER_LIMIT: "Chiến dịch đã đạt giới hạn tối đa 20 đồng tổ chức.",
+  GIVE_CAMPAIGN_INVITE_LIMIT: "Chiến dịch đã đạt giới hạn tối đa 20 lời mời đang chờ.",
+  GIVE_RATE_LIMITED: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
+  GIVE_INVITE_INVALID: "Liên kết lời mời không hợp lệ hoặc không tồn tại.",
+  GIVE_INVITE_REVOKED: "Lời mời này đã bị người tổ chức thu hồi.",
+  GIVE_INVITE_ALREADY_USED: "Liên kết lời mời này đã được sử dụng (mỗi liên kết chỉ dùng một lần).",
+  GIVE_INVITE_ALREADY_ACCEPTED:
+    "Lời mời này đã được chấp nhận nên không thể thu hồi. Hãy gỡ thành viên trong danh sách đội ngũ.",
+  GIVE_INVITE_EXPIRED: "Lời mời này đã hết hạn. Hãy nhờ người tổ chức tạo liên kết mời mới.",
+  GIVE_ALREADY_CAMPAIGN_OWNER: "Bạn đã là người tổ chức chính của chiến dịch này.",
+  GIVE_ALREADY_CAMPAIGN_MEMBER: "Bạn đã là đồng tổ chức của chiến dịch này rồi.",
+  GIVE_CAMPAIGN_MEMBER_NOT_FOUND: "Không tìm thấy đồng tổ chức này trong chiến dịch.",
+}
+
+/**
+ * Maps database errors from co-organizer RPCs, preserving retry-after guidance
+ * from `GIVE_RATE_LIMITED: <seconds>` when present.
+ */
+export function campaignMemberDbErrorMessage(
+  error: DbErrorLike | null | undefined,
+  overrides: Record<string, string> = {}
+): string {
+  return commentDbErrorMessage(error, { ...CAMPAIGN_MEMBER_MESSAGES, ...overrides })
 }

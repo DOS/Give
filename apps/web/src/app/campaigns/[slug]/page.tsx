@@ -7,6 +7,7 @@ import { cache, type ReactNode } from "react"
 
 import { AccountChanges } from "@/components/AccountChanges"
 import { StatusBadge, TypeBadge } from "@/components/badges"
+import { CampaignTeam } from "@/components/campaign/CampaignTeam"
 import { CampaignVideo, isValidYoutubeId } from "@/components/campaign/CampaignVideo"
 import { CampaignViewBeacon } from "@/components/campaign/CampaignViewBeacon"
 import { MilestoneList } from "@/components/campaign/MilestoneList"
@@ -33,6 +34,7 @@ import {
   parseShowHiddenComments,
   type CampaignCommentsPage,
 } from "@/lib/campaign-comments"
+import { listCampaignPublicTeam, type PublicTeamMember } from "@/lib/campaign-members"
 import {
   discoveryHref,
   getCampaignBySlug,
@@ -275,6 +277,7 @@ export default async function CampaignPage({
     statementRows,
     monthly,
     comments,
+    publicTeam,
   ] = await Promise.all([
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
@@ -340,6 +343,13 @@ export default async function CampaignPage({
             console.error("campaign page: comments lookup failed", error)
             return null
           }),
+    // Public team block (DOS/Give#253): public campaigns only. A failed read degrades cleanly.
+    preview
+      ? Promise.resolve([] as PublicTeamMember[])
+      : listCampaignPublicTeam(dbAs(), campaign.id).catch((error: unknown) => {
+          console.error("campaign page: public team lookup failed", error)
+          return [] as PublicTeamMember[]
+        }),
   ])
   const showHiddenComments = isModerator && requestedShowHidden
   const pitchVideo =
@@ -775,6 +785,7 @@ export default async function CampaignPage({
           <div className="min-w-0 space-y-12 max-lg:order-6 lg:col-span-8 lg:row-start-4 lg:pt-6">
             {totals && <StatementPreview slug={campaign.slug} totals={totals} rows={statementRows} />}
             <AccountChanges changes={accountChanges} />
+            {!preview && <CampaignTeam members={publicTeam} />}
 
             <section id="cap-nhat" aria-labelledby="updates-heading" className="scroll-mt-24">
               <h2 id="updates-heading" className="text-h2">

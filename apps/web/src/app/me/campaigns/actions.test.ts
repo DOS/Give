@@ -1581,3 +1581,80 @@ describe("setCampaignMonthly (DOS/Give#276)", () => {
     })
   })
 })
+
+describe("co-organizer editor vs owner-only server action guards (DOS/Give#253)", () => {
+  const OTHER_OWNER = "99999999-9999-4999-8999-999999999999"
+
+  function editorHandler(status: "draft" | "live" = "draft") {
+    return (call: Call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: owned({ organizer_id: OTHER_OWNER, status }) }
+      if (call.target === "rpc:my_campaign_roles") return { data: [{ campaign_id: CAMPAIGN, role: "editor" }] }
+      if (call.target === "campaigns") return { data: [{ id: CAMPAIGN }] }
+      if (call.target === "campaign_milestones") return { data: [{ id: "m-1" }] }
+      if (call.target === "campaign_updates") return { data: [{ id: "u-1" }] }
+      return undefined
+    }
+  }
+
+  it("allows an accepted editor to save content, manage milestones, post updates, and manage YouTube pitch video", async () => {
+    state.userHandler = editorHandler("draft")
+    const contentForm = new FormData()
+    contentForm.set("title", "Bếp ấm vùng cao")
+    contentForm.set("summary", "Tóm tắt mới")
+    contentForm.set("story", "Câu chuyện đầy đủ của chiến dịch từ thiện này.")
+    contentForm.set("goal_amount", "10000000")
+    contentForm.set("min_contribution", "20000")
+    contentForm.set("payment_window_days", "7")
+    expect(await saveContent(CAMPAIGN, null, contentForm)).toEqual({ ok: true, message: "Đã lưu nội dung." })
+
+    const milestoneForm = new FormData()
+    milestoneForm.set("title", "Mốc 1")
+    milestoneForm.set("target_amount", "5000000")
+    expect(await addMilestone(CAMPAIGN, null, milestoneForm)).toEqual({ ok: true, message: "Đã thêm mốc." })
+
+    const videoForm = new FormData()
+    videoForm.set("youtube_id", "dQw4w9WgXcQ")
+    state.serviceHandler = () => ({ data: { created_at: "2026-11-22T00:00:00Z" } })
+    expect(await saveYoutubeVideo(CAMPAIGN, null, videoForm)).toEqual({
+      ok: true,
+      message: "Đã lưu video giới thiệu.",
+    })
+    expect(await removeYoutubeVideo(CAMPAIGN)).toEqual({ ok: true, message: "Đã gỡ video giới thiệu." })
+
+    state.userHandler = editorHandler("live")
+    const updateForm = new FormData()
+    updateForm.set("title", "Cập nhật từ đồng tổ chức")
+    updateForm.set("body", "Đã trao 20 phần quà đầu tiên.")
+    expect(await postUpdate(CAMPAIGN, null, updateForm)).toEqual({ ok: true, message: "Đã đăng cập nhật." })
+  })
+
+  it("refuses an accepted editor on strictly owner-only actions (submitForReview, cancelCampaign, deleteDraft, setCampaignMonthly)", async () => {
+    state.userHandler = editorHandler("draft")
+    const notFound = { ok: false, message: "Không tìm thấy chiến dịch của bạn." }
+
+    expect(await submitForReview(CAMPAIGN, null, new FormData())).toEqual(notFound)
+    expect(await cancelCampaign(CAMPAIGN, null, new FormData())).toEqual(notFound)
+    expect(await deleteDraft(CAMPAIGN, null, new FormData())).toEqual(notFound)
+
+    const monthly = new FormData()
+    monthly.set("enabled", "true")
+    expect(await setCampaignMonthly(CAMPAIGN, null, monthly)).toEqual(notFound)
+
+    expect(state.userCalls.some((c) => c.target === "rpc:transition_campaign")).toBe(false)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("refuses a staff user who is neither owner nor editor on saveContent", async () => {
+    state.userHandler = (call) => {
+      if (call.target === "rpc:managed_campaigns")
+        return { data: owned({ organizer_id: OTHER_OWNER, status: "draft" }) }
+      if (call.target === "rpc:my_campaign_roles") return { data: [] }
+      return undefined
+    }
+    expect(await saveContent(CAMPAIGN, null, new FormData())).toEqual({
+      ok: false,
+      message: "Không tìm thấy chiến dịch của bạn.",
+    })
+    expect(state.userCalls.some((c) => c.target === "campaigns")).toBe(false)
+  })
+})

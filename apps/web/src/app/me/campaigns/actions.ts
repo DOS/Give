@@ -6,8 +6,17 @@ import { redirect } from "next/navigation"
 
 import { getSession, type Session } from "@/lib/auth/session"
 import { checkSubmitAccount } from "@/lib/campaign-account"
+import { getMyCampaignRole } from "@/lib/campaign-members"
 import { canPostUpdate, isEditableStatus, type CampaignStatus, type CampaignType } from "@/lib/campaigns"
-import { CAMPAIGN_MONTHLY_MESSAGES, dbErrorMessage, done, fail, SUBMIT_MESSAGES, type ActionResult } from "@/lib/errors"
+import {
+  CAMPAIGN_MONTHLY_MESSAGES,
+  dbErrorMessage,
+  done,
+  fail,
+  SUBMIT_MESSAGES,
+  type ActionResult,
+  type DbErrorLike,
+} from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
 import { campaignMediaPrefix, detectImageType, MAX_COVER_BYTES, mediaPath, reencodeCover } from "@/lib/media"
 import { dbAs, dbService, MEDIA_BUCKET } from "@/lib/supabase"
@@ -71,6 +80,35 @@ async function ownedCampaign(
   return { campaign, error: null }
 }
 
+/**
+ * Loads a campaign where the signed-in caller is either the owner or an
+ * accepted co-organizer (`editor`, DOS/Give#253). Staff who are neither owner
+ * nor editor are still refused; owner-only lifecycle and money actions keep
+ * using `ownedCampaign`.
+ */
+async function editableCampaign(
+  session: Session,
+  campaignId: string
+): Promise<{ campaign: OwnedCampaign; error: null } | { campaign: null; error: string }> {
+  if (!isUuid(campaignId)) return { campaign: null, error: NOT_FOUND }
+  const db = dbAs(session.accessToken)
+  const { data, error } = await db
+    .rpc("managed_campaigns", { p_campaign_id: campaignId })
+    .select("id, slug, type, status, organizer_id, cover_media_id")
+    .maybeSingle()
+  if (error) return { campaign: null, error: dbErrorMessage(error) }
+  const campaign = data as OwnedCampaign | null
+  if (!campaign) return { campaign: null, error: NOT_FOUND }
+  if (campaign.organizer_id === session.user.id) return { campaign, error: null }
+  try {
+    const role = await getMyCampaignRole(db, campaign.id)
+    if (role === "editor") return { campaign, error: null }
+  } catch (roleError) {
+    return { campaign: null, error: dbErrorMessage(roleError as DbErrorLike) }
+  }
+  return { campaign: null, error: NOT_FOUND }
+}
+
 function refresh(campaign: Pick<OwnedCampaign, "id" | "slug">) {
   revalidatePath(`/me/campaigns/${campaign.id}`)
   revalidatePath("/me/campaigns")
@@ -80,7 +118,7 @@ function refresh(campaign: Pick<OwnedCampaign, "id" | "slug">) {
 export async function saveContent(campaignId: string, _state: ActionResult, form: FormData): Promise<ActionResult> {
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
-  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  const { campaign, error: loadError } = await editableCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
   if (!isEditableStatus(campaign.status)) return fail(NOT_EDITABLE)
 
@@ -225,7 +263,7 @@ export async function saveYoutubeVideo(
 ): Promise<ActionResult> {
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
-  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  const { campaign, error: loadError } = await editableCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
   if (!isEditableStatus(campaign.status)) return fail(NOT_EDITABLE)
 
@@ -280,7 +318,7 @@ export async function removeYoutubeVideo(
 ): Promise<ActionResult> {
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
-  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  const { campaign, error: loadError } = await editableCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
   if (!isEditableStatus(campaign.status)) return fail(NOT_EDITABLE)
 
@@ -298,7 +336,7 @@ export async function removeYoutubeVideo(
 export async function addMilestone(campaignId: string, _state: ActionResult, form: FormData): Promise<ActionResult> {
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
-  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  const { campaign, error: loadError } = await editableCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
   if (!isEditableStatus(campaign.status)) return fail(NOT_EDITABLE)
   const parsed = parseMilestoneForm(form)
@@ -321,7 +359,7 @@ export async function updateMilestone(
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
   if (!isUuid(campaignId) || !isUuid(milestoneId)) return fail(NOT_FOUND)
-  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  const { campaign, error: loadError } = await editableCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
   if (!isEditableStatus(campaign.status)) return fail(NOT_EDITABLE)
 
@@ -350,7 +388,7 @@ export async function deleteMilestone(
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
   if (!isUuid(milestoneId)) return fail(NOT_FOUND)
-  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  const { campaign, error: loadError } = await editableCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
   if (!isEditableStatus(campaign.status)) return fail(NOT_EDITABLE)
 
@@ -376,7 +414,7 @@ export async function deleteMilestone(
 export async function uploadCover(campaignId: string, _state: ActionResult, form: FormData): Promise<ActionResult> {
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
-  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  const { campaign, error: loadError } = await editableCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
   if (!isEditableStatus(campaign.status)) return fail(NOT_EDITABLE)
 
@@ -459,7 +497,7 @@ export async function uploadCover(campaignId: string, _state: ActionResult, form
     }
     if (attempt === 2) break
 
-    const reloaded = await ownedCampaign(session, current.id)
+    const reloaded = await editableCampaign(session, current.id)
     if (!reloaded.campaign) {
       await rollbackNewCover()
       return fail(reloaded.error)
@@ -604,7 +642,7 @@ function canPublishUpdate(status: CampaignStatus): boolean {
 export async function postUpdate(campaignId: string, _state: ActionResult, form: FormData): Promise<ActionResult> {
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
-  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  const { campaign, error: loadError } = await editableCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
   if (!canPostUpdate(campaign.status)) return fail(CANNOT_POST_UPDATE)
 
@@ -641,7 +679,7 @@ export async function updateDraftUpdate(
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
   if (!isUuid(campaignId) || !isUuid(updateId)) return fail(NOT_FOUND)
-  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  const { campaign, error: loadError } = await editableCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
   if (!canPostUpdate(campaign.status)) return fail(CANNOT_POST_UPDATE)
 
@@ -681,7 +719,7 @@ export async function publishDraftUpdate(
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
   if (!isUuid(campaignId) || !isUuid(updateId)) return fail(NOT_FOUND)
-  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  const { campaign, error: loadError } = await editableCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
   if (!canPostUpdate(campaign.status)) return fail(CANNOT_POST_UPDATE)
   if (!canPublishUpdate(campaign.status)) return fail(CANNOT_PUBLISH_YET)
@@ -709,7 +747,7 @@ export async function deleteDraftUpdate(
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
   if (!isUuid(campaignId) || !isUuid(updateId)) return fail(NOT_FOUND)
-  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  const { campaign, error: loadError } = await editableCampaign(session, campaignId)
   if (!campaign) return fail(loadError)
   if (!canPostUpdate(campaign.status)) return fail(CANNOT_POST_UPDATE)
 

@@ -2,7 +2,7 @@ import type { CampaignType, Db } from "./campaigns"
 
 export type AnalyticsEventType = "view" | "share_click"
 export type ReferrerBucket = "direct" | "facebook.com" | "zalo" | "google" | "other"
-export type CampaignManageTab = "manage" | "analytics"
+export type CampaignManageTab = "manage" | "analytics" | "team"
 
 export const ANALYTICS_PERIODS = [7, 30, 90] as const
 export type AnalyticsPeriod = (typeof ANALYTICS_PERIODS)[number]
@@ -63,7 +63,10 @@ function firstParam(value: string | string[] | undefined): string | undefined {
 }
 
 export function parseCampaignManageTab(raw: string | string[] | undefined): CampaignManageTab {
-  return firstParam(raw) === "analytics" ? "analytics" : "manage"
+  const value = firstParam(raw)
+  if (value === "analytics") return "analytics"
+  if (value === "team") return "team"
+  return "manage"
 }
 
 export function parseAnalyticsDays(raw: string | string[] | undefined): AnalyticsPeriod {

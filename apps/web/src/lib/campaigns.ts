@@ -559,6 +559,26 @@ export async function listMyCampaigns(db: Db, userId: string): Promise<CampaignW
   return (data ?? []) as CampaignWithRefs[]
 }
 
+/**
+ * Loads specific campaigns through `give.managed_campaigns()` by id in bounded
+ * chunks, ordered newest first. Used with `give.my_campaign_roles()` so `/me/campaigns`
+ * lists the caller's owned and co-organized campaigns without pulling unrelated
+ * staff-visible campaigns.
+ */
+export async function listManagedCampaignsByIds(db: Db, ids: readonly string[]): Promise<CampaignWithRefs[]> {
+  const unique = [...new Set(ids)]
+  if (unique.length === 0) return []
+  const reads = await Promise.all(
+    chunks(unique, IDS_PER_REQUEST).map((chunk) => managedCampaigns(db).select(CAMPAIGN_WITH_REFS).in("id", chunk))
+  )
+  const rows: CampaignWithRefs[] = []
+  for (const read of reads) {
+    if (read.error) throw read.error
+    for (const row of (read.data ?? []) as CampaignWithRefs[]) rows.push(row)
+  }
+  return rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+}
+
 /** Every update of a campaign the caller organizes, drafts included. */
 export async function listAllUpdates(db: Db, campaignId: string): Promise<CampaignUpdate[]> {
   const { data, error } = await db

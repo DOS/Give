@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { CampaignStatus, CampaignType, CampaignWithRefs } from "@/lib/campaigns"
 import { privateCoverUrl } from "@/lib/cover-urls"
-import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
+import { fakeDb, type Call, type Handler } from "@/test/fake-db"
 
 const USER = "11111111-1111-4111-8111-111111111111"
 const CAMPAIGN_A = "22222222-2222-4222-8222-222222222222"
@@ -124,9 +124,10 @@ beforeEach(() => {
   state.serviceUsed = false
 })
 
-describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260)", () => {
-  it("requires /me/campaigns session, queries managed_campaigns via dbAs(accessToken), and renders level-2 EmptyState with PageHeader as sole CTA", async () => {
+describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260, DOS/Give#253)", () => {
+  it("requires /me/campaigns session, queries my_campaign_roles via dbAs(accessToken), and renders level-2 EmptyState with PageHeader as sole CTA", async () => {
     state.handler = (call) => {
+      if (call.target === "rpc:my_campaign_roles") return { data: [] }
       if (call.target === "rpc:managed_campaigns") return { data: [] }
       return undefined
     }
@@ -138,9 +139,8 @@ describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260)", () => {
     expect(state.tokens).toEqual(["organizer-jwt"])
     expect(state.serviceUsed).toBe(false)
 
-    const call = state.calls.find((c) => c.target === "rpc:managed_campaigns")
-    expect(call).toBeDefined()
-    expect(op(call, "eq")).toEqual(["organizer_id", USER])
+    const rolesCall = state.calls.find((c) => c.target === "rpc:my_campaign_roles")
+    expect(rolesCall).toBeDefined()
 
     expect(html).toContain('data-section="campaigns"')
     expect(html).toMatch(/<h1[^>]*>Chiến dịch của tôi<\/h1>/)
@@ -151,10 +151,10 @@ describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260)", () => {
   })
 
   it.each(["PGRST301", "PGRST303"])(
-    "redirects to /auth/login?return_path=%2Fme%2Fcampaigns when listMyCampaigns rejects an expired JWT (%s)",
+    "redirects to /auth/login?return_path=%2Fme%2Fcampaigns when listMyWorkspaceCampaigns rejects an expired JWT (%s)",
     async (code) => {
       state.handler = (call) => {
-        if (call.target === "rpc:managed_campaigns") {
+        if (call.target === "rpc:my_campaign_roles") {
           return { error: { code, message: "JWT expired" } }
         }
         return undefined
@@ -169,7 +169,7 @@ describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260)", () => {
   it("rethrows non-JWT database errors instead of redirecting to login", async () => {
     const dbError = { code: "XX000", message: "database unavailable" }
     state.handler = (call) => {
-      if (call.target === "rpc:managed_campaigns") return { error: dbError }
+      if (call.target === "rpc:my_campaign_roles") return { error: dbError }
       return undefined
     }
 
@@ -180,6 +180,16 @@ describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260)", () => {
   it("renders h2 titles, sr-only row link disambiguators, private cover vs placeholder, and changes_requested & suspended review notes", async () => {
     const coverPath = "campaigns/22222222-2222-4222-8222-222222222222/cover.webp"
     state.handler = (call) => {
+      if (call.target === "rpc:my_campaign_roles") {
+        return {
+          data: [
+            { campaign_id: CAMPAIGN_A, role: "owner" },
+            { campaign_id: CAMPAIGN_B, role: "owner" },
+            { campaign_id: CAMPAIGN_C, role: "owner" },
+            { campaign_id: CAMPAIGN_D, role: "owner" },
+          ],
+        }
+      }
       if (call.target === "rpc:managed_campaigns") {
         return {
           data: [
@@ -190,6 +200,7 @@ describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260)", () => {
               type: "give",
               status: "live",
               goal_amount: 25_000_000,
+              created_at: "2026-11-14T03:00:00Z",
               review_note: "Ghi chú cũ không hiện khi đang gây quỹ",
               cover: { storage_path: coverPath, alt: "Ảnh bìa" },
             }),
@@ -199,6 +210,7 @@ describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260)", () => {
               title: "Sách ảnh thiếu nhi",
               type: "back",
               status: "changes_requested",
+              created_at: "2026-11-13T03:00:00Z",
               review_note: "Bổ sung dự toán in ấn,\ncần hỏi viết cho hi@give.vn",
               cover: null,
             }),
@@ -208,6 +220,7 @@ describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260)", () => {
               title: "Album nhạc indie",
               type: "back",
               status: "changes_requested",
+              created_at: "2026-11-12T03:00:00Z",
               review_note: "   ",
               cover: { storage_path: null, alt: null },
             }),
@@ -217,6 +230,7 @@ describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260)", () => {
               title: "Lớp học vùng biên",
               type: "give",
               status: "suspended",
+              created_at: "2026-11-11T03:00:00Z",
               review_note: "Đang xác minh chứng từ chi đợt 1.\nLiên hệ hi@give.vn để bổ sung.",
               cover: null,
             }),
@@ -302,6 +316,14 @@ describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260)", () => {
       "cancelled",
     ]
     state.handler = (call) => {
+      if (call.target === "rpc:my_campaign_roles") {
+        return {
+          data: statuses.map((_, i) => ({
+            campaign_id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+            role: "owner",
+          })),
+        }
+      }
       if (call.target === "rpc:managed_campaigns") {
         return {
           data: statuses.map((status, i) =>
@@ -310,6 +332,7 @@ describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260)", () => {
               slug: `camp-${status}`,
               type: "back",
               status,
+              created_at: `2026-11-${String(20 - i).padStart(2, "0")}T00:00:00Z`,
             })
           ),
         }
@@ -332,5 +355,69 @@ describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260)", () => {
         expect(items[index]).not.toContain(">Xem trang")
       }
     })
+  })
+
+  it("shows accepted co-organizer campaigns badged as 'Đồng tổ chức' with 'Chỉnh sửa' CTA and excludes staff-only rows", async () => {
+    const OTHER_OWNER = "99999999-9999-4999-8999-999999999999"
+    state.handler = (call) => {
+      if (call.target === "rpc:my_campaign_roles") {
+        return {
+          data: [
+            { campaign_id: CAMPAIGN_A, role: "owner" },
+            { campaign_id: CAMPAIGN_B, role: "editor" },
+          ],
+        }
+      }
+      if (call.target === "rpc:managed_campaigns") {
+        return {
+          data: [
+            makeCampaign({
+              id: CAMPAIGN_A,
+              slug: "owner-camp",
+              title: "Chiến dịch của tôi",
+              type: "give",
+              status: "draft",
+              organizer_id: USER,
+              created_at: "2026-11-12T00:00:00Z",
+            }),
+            makeCampaign({
+              id: CAMPAIGN_B,
+              slug: "editor-camp",
+              title: "Chiến dịch đồng tổ chức",
+              type: "give",
+              status: "live",
+              organizer_id: OTHER_OWNER,
+              created_at: "2026-11-15T00:00:00Z",
+            }),
+            makeCampaign({
+              id: CAMPAIGN_C,
+              slug: "staff-only-camp",
+              title: "Chiến dịch của người khác",
+              type: "give",
+              status: "live",
+              organizer_id: OTHER_OWNER,
+              created_at: "2026-11-18T00:00:00Z",
+            }),
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const html = await renderAsync(await MyCampaignsPage())
+    const items = [...html.matchAll(/<li[\s\S]*?<\/li>/g)].map((m) => m[0])
+    expect(items).toHaveLength(2)
+    expect(html).not.toContain("Chiến dịch của người khác")
+
+    // First row (newest): co-organizer campaign.
+    expect(items[0]).toContain("Chiến dịch đồng tổ chức")
+    expect(items[0]).toContain(">Đồng tổ chức<")
+    expect(items[0]).toContain('Chỉnh sửa<span class="sr-only">: Chiến dịch đồng tổ chức</span>')
+
+    // Second row: owned campaign.
+    expect(items[1]).toContain("Chiến dịch của tôi")
+    expect(items[1]).not.toContain(">Đồng tổ chức<")
+    expect(items[1]).toContain('Quản lý<span class="sr-only">: Chiến dịch của tôi</span>')
+    expect(state.serviceUsed).toBe(false)
   })
 })

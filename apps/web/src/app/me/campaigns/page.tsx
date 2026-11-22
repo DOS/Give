@@ -6,13 +6,15 @@ import { Suspense } from "react"
 
 import { StatusBadge, TypeBadge } from "@/components/badges"
 import { ContactText } from "@/components/ContactText"
+import { Badge } from "@/components/ui/Badge"
 import { ButtonLink } from "@/components/ui/Button"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { PageHeader } from "@/components/ui/PageHeader"
 import { SkeletonList } from "@/components/ui/Skeleton"
 import { requireSession, type Session } from "@/lib/auth/session"
-import { isPublicStatus, listMyCampaigns } from "@/lib/campaigns"
+import { listMyWorkspaceCampaigns } from "@/lib/campaign-members"
+import { isPublicStatus } from "@/lib/campaigns"
 import { privateCoverUrl } from "@/lib/cover-urls"
 import { formatDate, formatVnd } from "@/lib/format"
 import { dbAs } from "@/lib/supabase"
@@ -28,7 +30,7 @@ export default async function MyCampaignsPage() {
   return (
     <MePage section="campaigns">
       <PageHeader title="Chiến dịch của tôi" actions={<ButtonLink href="/start">Tạo chiến dịch</ButtonLink>}>
-        Sửa nội dung, gắn tài khoản nhận tiền, giải trình khoản chi và giao quà cho từng chiến dịch.
+        Sửa nội dung, gắn tài khoản nhận tiền, giải trình khoản chi, mời đồng tổ chức và giao quà cho từng chiến dịch.
       </PageHeader>
       <Suspense fallback={<SkeletonList label="Đang tải chiến dịch…" />}>
         <CampaignList session={session} />
@@ -40,7 +42,7 @@ export default async function MyCampaignsPage() {
 async function CampaignList({ session }: { session: Session }) {
   let campaigns
   try {
-    campaigns = await listMyCampaigns(dbAs(session.accessToken), session.user.id)
+    campaigns = await listMyWorkspaceCampaigns(dbAs(session.accessToken), session.user.id)
   } catch (error) {
     if (isSessionRejected(error)) redirect(`/auth/login?return_path=${encodeURIComponent("/me/campaigns")}`)
     throw error
@@ -79,6 +81,7 @@ async function CampaignList({ session }: { session: Session }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <TypeBadge type={campaign.type} />
                   <StatusBadge status={campaign.status} />
+                  {campaign.role === "editor" && <Badge tone="info">Đồng tổ chức</Badge>}
                 </div>
                 <h2 className="mt-2 text-h3 break-words">
                   <Link href={`/me/campaigns/${campaign.id}`} className="text-fg hover:text-primary hover:underline">
@@ -108,7 +111,8 @@ async function CampaignList({ session }: { session: Session }) {
                 </ButtonLink>
               )}
               <ButtonLink href={`/me/campaigns/${campaign.id}`} variant="secondary">
-                Quản lý<span className="sr-only">{`: ${campaign.title}`}</span>
+                {campaign.role === "editor" ? "Chỉnh sửa" : "Quản lý"}
+                <span className="sr-only">{`: ${campaign.title}`}</span>
               </ButtonLink>
             </div>
           </li>
