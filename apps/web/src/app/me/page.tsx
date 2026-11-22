@@ -3,9 +3,12 @@ import Link from "next/link"
 import { redirect } from "next/navigation"
 
 import { VerificationBadge } from "@/components/badges"
+import { MyAmbassadorLinksSection } from "@/components/me/MyAmbassadorLinksSection"
 import { ButtonLink } from "@/components/ui/Button"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { PageHeader } from "@/components/ui/PageHeader"
+import { listMyAmbassadorLinks, type MyAmbassadorLink } from "@/lib/ambassadors"
+import { siteOrigin } from "@/lib/auth/origin"
 import { requireSession } from "@/lib/auth/session"
 import { getOrganizer, VERIFICATION_LABELS } from "@/lib/campaigns"
 import { isNavigableOrganizerHandle, organizerProfileHref } from "@/lib/organizer-handle"
@@ -21,14 +24,25 @@ export const metadata: Metadata = { title: "Hồ sơ người tổ chức", robo
 
 export default async function MyProfilePage() {
   const session = await requireSession("/me")
+  const db = dbAs(session.accessToken)
 
   let organizer
+  let ambassadorLinks: MyAmbassadorLink[] = []
   try {
-    organizer = await getOrganizer(dbAs(session.accessToken), session.user.id)
+    ;[organizer, ambassadorLinks] = await Promise.all([
+      getOrganizer(db, session.user.id),
+      listMyAmbassadorLinks(db).catch((error: unknown) => {
+        if (isSessionRejected(error)) throw error
+        console.error("me: ambassador links lookup failed", error)
+        return [] as MyAmbassadorLink[]
+      }),
+    ])
   } catch (error) {
     if (isSessionRejected(error)) redirect(`/auth/login?return_path=${encodeURIComponent("/me")}`)
     throw error
   }
+
+  const origin = siteOrigin()
 
   if (!organizer) {
     return (
@@ -43,6 +57,7 @@ export default async function MyProfilePage() {
         >
           Tạo hồ sơ người tổ chức trước khi bắt đầu gây quỹ và mở trang hồ sơ công khai trên Give.
         </EmptyState>
+        <MyAmbassadorLinksSection links={ambassadorLinks} origin={origin} />
       </MePage>
     )
   }
@@ -104,6 +119,8 @@ export default async function MyProfilePage() {
           .
         </p>
       </section>
+
+      <MyAmbassadorLinksSection links={ambassadorLinks} origin={origin} />
     </MePage>
   )
 }

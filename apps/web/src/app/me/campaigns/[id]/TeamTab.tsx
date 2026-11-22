@@ -72,9 +72,10 @@ export function TeamTab({
       <div className="min-w-0 space-y-12 lg:col-span-8">
         <Callout tone="info" title="Tiền và quyền quyết định luôn thuộc về bạn">
           <p>
-            Đồng tổ chức (biên tập viên) chỉ được sửa nội dung, ảnh bìa, video giới thiệu, các mốc mục tiêu, phần thưởng
-            và đăng cập nhật theo trạng thái chiến dịch. Tài khoản nhận tiền, sao kê, giải trình khoản chi, hoàn tiền,
-            giao quà, gửi duyệt, hủy chiến dịch và quản lý đội ngũ luôn chỉ thuộc về người tổ chức chính.
+            Đồng tổ chức (biên tập viên) chỉ được sửa nội dung, ảnh bìa, video giới thiệu, các mốc mục tiêu, phần
+            thưởng, đăng cập nhật và viết báo cáo tổng kết theo trạng thái chiến dịch. Tài khoản nhận tiền, sao kê, giải
+            trình khoản chi, hoàn tiền, giao quà, gửi duyệt, hủy chiến dịch và quản lý đội ngũ luôn chỉ thuộc về người
+            tổ chức chính.
           </p>
         </Callout>
 

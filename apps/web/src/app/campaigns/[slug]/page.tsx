@@ -7,17 +7,25 @@ import { cache, type ReactNode } from "react"
 
 import { AccountChanges } from "@/components/AccountChanges"
 import { StatusBadge, TypeBadge } from "@/components/badges"
+import { AmbassadorLeaderboard } from "@/components/campaign/AmbassadorLeaderboard"
+import { AmbassadorLinkModal } from "@/components/campaign/AmbassadorLinkModal"
+import { CampaignFaqAccordion } from "@/components/campaign/CampaignFaqAccordion"
 import { CampaignTeam } from "@/components/campaign/CampaignTeam"
 import { CampaignVideo, isValidYoutubeId } from "@/components/campaign/CampaignVideo"
 import { CampaignViewBeacon } from "@/components/campaign/CampaignViewBeacon"
+import { ClosingImpactReport } from "@/components/campaign/ClosingImpactReport"
 import { MilestoneList } from "@/components/campaign/MilestoneList"
 import { RecentSupporters } from "@/components/campaign/RecentSupporters"
 import { StatementPreview } from "@/components/campaign/StatementPreview"
 import { StickyAside } from "@/components/campaign/StickyAside"
+import { TransparencySummaryBox } from "@/components/campaign/TransparencySummaryBox"
+import { FollowButton } from "@/components/FollowButton"
 import { Markdown } from "@/components/Markdown"
 import { ProgressBar } from "@/components/ProgressBar"
+import { QrPosterButton } from "@/components/QrPosterButton"
 import { RewardTiers } from "@/components/RewardTiers"
 import { ShareButtons } from "@/components/ShareButtons"
+import { Badge } from "@/components/ui/Badge"
 import { Button, ButtonLink, buttonClass } from "@/components/ui/Button"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { EmptyState } from "@/components/ui/EmptyState"
@@ -25,6 +33,19 @@ import { CheckIcon, ShieldIcon } from "@/components/ui/icons"
 import { Money } from "@/components/ui/Money"
 import { TabNav, type TabItem } from "@/components/ui/Tabs"
 import { listPublicAccountChanges } from "@/lib/account-swaps"
+import {
+  AMBASSADOR_LEADERBOARD_DEFAULT_LIMIT,
+  ambassadorLinkPath,
+  campaignPledgeHref,
+  canCreateAmbassadorLink,
+  getMyCampaignAmbassador,
+  getPublicAmbassadorRef,
+  listCampaignAmbassadorLeaderboard,
+  sanitizeAmbassadorRef,
+  type AmbassadorLeaderboardRow,
+  type MyCampaignAmbassador,
+  type PublicAmbassadorRef,
+} from "@/lib/ambassadors"
 import { siteOrigin } from "@/lib/auth/origin"
 import { getSession } from "@/lib/auth/session"
 import {
@@ -34,11 +55,22 @@ import {
   parseShowHiddenComments,
   type CampaignCommentsPage,
 } from "@/lib/campaign-comments"
-import { listCampaignPublicTeam, type PublicTeamMember } from "@/lib/campaign-members"
+import { listCampaignFaqs, type CampaignFaq } from "@/lib/campaign-faqs"
+import { getMyCampaignRole, listCampaignPublicTeam, type PublicTeamMember } from "@/lib/campaign-members"
+import {
+  listCampaignWishes,
+  listHiddenCampaignWishes,
+  parseShowHiddenWishes,
+  parseWishesPage,
+  WISHES_PAGE_SIZE,
+  type CampaignWishesPage,
+  type HiddenCampaignWishRow,
+} from "@/lib/donor-wishes"
 import {
   discoveryHref,
   getCampaignBySlug,
   getPublicOrganizer,
+  isPublicCampaignVisible,
   isPublicStatus,
   isStaff,
   listMilestones,
@@ -48,6 +80,7 @@ import {
   type Db,
 } from "@/lib/campaigns"
 import { MODERATION_ROLES } from "@/lib/evidence-moderation"
+import { getCampaignFollowerCount, isFollowingCampaign } from "@/lib/follows"
 import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
 import { isNavigableOrganizerHandle, organizerProfileHref } from "@/lib/organizer-handle"
 import { acceptsPledges } from "@/lib/pledges"
@@ -56,31 +89,42 @@ import { SLUG_PATTERN } from "@/lib/slug"
 import { privateCoverUrl, publicCoverUrl } from "@/lib/cover-urls"
 import { getMoneyTotals, listStatement, raisedAmount, statementHref } from "@/lib/statement"
 import { dbAs, dbService } from "@/lib/supabase"
+import {
+  getCampaignImpactReport,
+  getCampaignTransparencySummary,
+  type CampaignImpactReport,
+  type CampaignTransparencySummary,
+} from "@/lib/transparency"
 import { acceptsDonations, paymentAccount } from "@/server/contributions"
 import { listPublicTiers, organizesCampaign } from "@/server/pledges"
+import { buildServerPosterData } from "@/server/viral-sharing"
 
+import { saveMyCampaignAmbassador } from "./ambassador-actions"
 import { CampaignComments } from "./CampaignComments"
 import { DonateForm } from "./DonateForm"
+import { DonorWishesWall } from "./DonorWishesWall"
+import { toggleCampaignFollow } from "./follow-actions"
 import { MonthlyForm } from "./MonthlyForm"
 import { ReportCampaign } from "./ReportCampaign"
 
 /**
- * Public campaigns load as an anonymous visitor. If that finds nothing and
- * someone is signed in, retry as them: the organizer and staff may preview a
- * campaign that is not public yet (RLS decides).
+ * Public campaigns (including opted-in future pre-launch teasers) load as an
+ * anonymous visitor. If that finds nothing and someone is signed in, retry as
+ * them: the organizer and staff may preview a campaign that is not public yet
+ * (RLS decides).
  */
 const loadCampaign = cache(
   async (slug: string): Promise<{ campaign: PublicCampaign; db: Db; preview: boolean } | null> => {
     if (!SLUG_PATTERN.test(slug) || slug.length > 80) return null
     const anon = dbAs()
     const published = await getCampaignBySlug(anon, slug)
-    if (published && isPublicStatus(published.status)) return { campaign: published, db: anon, preview: false }
+    if (published && isPublicCampaignVisible(published)) return { campaign: published, db: anon, preview: false }
 
     const session = await getSession()
     if (!session) return null
     const db = dbAs(session.accessToken)
     const own = await getCampaignBySlug(db, slug).catch(() => null)
-    return own ? { campaign: own, db, preview: !isPublicStatus(own.status) } : null
+    return own ? { campaign: own, db, preview: !isPublicCampaignVisible(own) } : null
   }
 )
 
@@ -114,7 +158,6 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       title: campaign.title,
       ...(description ? { description } : {}),
       url: canonicalPath,
-      ...(campaign.cover?.storage_path ? { images: [publicCoverUrl(campaign.cover.storage_path)] } : {}),
     },
   }
 }
@@ -231,6 +274,35 @@ async function loadPublicComments(
   })
 }
 
+async function loadPublicWishes(
+  campaignId: string,
+  token: string | undefined,
+  page: number
+): Promise<CampaignWishesPage> {
+  const offset = (page - 1) * WISHES_PAGE_SIZE
+  if (token) {
+    try {
+      return await listCampaignWishes(dbAs(token), campaignId, {
+        limit: WISHES_PAGE_SIZE,
+        offset,
+      })
+    } catch (error: unknown) {
+      const code = (error as { code?: string } | null)?.code
+      if (typeof code === "string" && code.startsWith("PGRST30")) {
+        return listCampaignWishes(dbAs(), campaignId, {
+          limit: WISHES_PAGE_SIZE,
+          offset,
+        })
+      }
+      throw error
+    }
+  }
+  return listCampaignWishes(dbAs(), campaignId, {
+    limit: WISHES_PAGE_SIZE,
+    offset,
+  })
+}
+
 /**
  * The campaign page (DESIGN.md 8): breadcrumb, H1 and the organizer line,
  * then an 8/4 grid from 1024px: cover, tabs, story, statement and updates in
@@ -252,16 +324,30 @@ export default async function CampaignPage({
   const queryParams = searchParams ? await searchParams : {}
   const commentsPage = parseCommentsPage(queryParams)
   const requestedShowHidden = parseShowHiddenComments(queryParams)
+  const wishesPage = parseWishesPage(queryParams)
+  const requestedShowHiddenWishes = parseShowHiddenWishes(queryParams)
 
   const isGive = campaign.type === "give"
   const halted = campaign.status === "suspended" || campaign.status === "cancelled"
-  const preLaunch = preview && !halted
-  const donationsOpen = !preview && acceptsDonations(campaign)
-  const pledgesOpen = !preview && acceptsPledges(campaign)
+  const isPublicLiveOrEnded = !preview && isPublicStatus(campaign.status)
+  const publicPrelaunch = !preview && !isPublicLiveOrEnded
+  const preLaunch = (preview && !halted) || publicPrelaunch
+  const donationsOpen = isPublicLiveOrEnded && acceptsDonations(campaign)
+  const pledgesOpen = isPublicLiveOrEnded && acceptsPledges(campaign)
+  const rawAmbassadorRef = sanitizeAmbassadorRef(queryParams.ref)
+  const ambassadorLinkEligible = canCreateAmbassadorLink(campaign, preview)
   const sessionPromise = getSession()
-  const isModeratorPromise = preview
+  const isModeratorPromise = !isPublicLiveOrEnded
     ? Promise.resolve(false)
     : sessionPromise.then((s) => (s ? isStaff(dbAs(s.accessToken), MODERATION_ROLES).catch(() => false) : false))
+  const ownCampaignPromise = !isPublicLiveOrEnded
+    ? Promise.resolve(false)
+    : sessionPromise.then((s) =>
+        s ? organizesCampaign(dbAs(s.accessToken), campaign.id, s.user.id).catch(() => false) : false
+      )
+  const campaignRolePromise = !isPublicLiveOrEnded
+    ? Promise.resolve(null)
+    : sessionPromise.then((s) => (s ? getMyCampaignRole(dbAs(s.accessToken), campaign.id).catch(() => null) : null))
   const [
     milestones,
     updates,
@@ -271,13 +357,24 @@ export default async function CampaignPage({
     session,
     ownCampaign,
     isModerator,
+    campaignRole,
     totals,
     accountChanges,
     tiers,
     statementRows,
     monthly,
     comments,
+    wishes,
+    hiddenWishes,
     publicTeam,
+    transparencySummary,
+    impactReport,
+    followerCount,
+    following,
+    faqs,
+    activeAmbassadorRef,
+    ambassadorLeaderboard,
+    myAmbassador,
   ] = await Promise.all([
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
@@ -297,19 +394,16 @@ export default async function CampaignPage({
       : Promise.resolve(null),
     sessionPromise,
     // The organizer cannot back or report their own campaign (the database refuses both).
-    preview
-      ? Promise.resolve(false)
-      : sessionPromise.then((s) =>
-          s ? organizesCampaign(dbAs(s.accessToken), campaign.id, s.user.id).catch(() => false) : false
-        ),
+    ownCampaignPromise,
     isModeratorPromise,
-    // Public views only: a preview has no public totals yet.
-    preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
+    campaignRolePromise,
+    // Public views only: a preview or pre-launch teaser has no public money totals yet.
+    !isPublicLiveOrEnded ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
     // A failed read hides the notice rather than the page; the statement shows it too.
-    preview ? Promise.resolve([]) : listPublicAccountChanges(dbAs(), campaign.id).catch(() => []),
-    // Reward tiers (DOS/Give#83): the public view, or the organizer's own active tiers in a preview.
-    // A failed read hides the tiers rather than the page.
-    isGive
+    !isPublicLiveOrEnded ? Promise.resolve([]) : listPublicAccountChanges(dbAs(), campaign.id).catch(() => []),
+    // Reward tiers (DOS/Give#83): the public view (live/ended), or the organizer's own active tiers in a preview.
+    // Pre-launch teasers show no pledge/tier CTAs.
+    isGive || publicPrelaunch
       ? Promise.resolve([])
       : (preview ? listCampaignTiers(db, campaign.id).then(previewTiers) : listPublicTiers(dbAs(), campaign.id)).catch(
           (error: unknown) => {
@@ -319,7 +413,7 @@ export default async function CampaignPage({
         ),
     // The newest rows of the public statement, for its preview and the recent supporters.
     // A failed read leaves them out; the statement page has them all.
-    preview
+    !isPublicLiveOrEnded
       ? Promise.resolve(null)
       : listStatement(dbAs(), campaign.id, "all", 1)
           .then(({ rows }) => rows)
@@ -327,15 +421,15 @@ export default async function CampaignPage({
             console.error("campaign page: statement lookup failed", error)
             return null
           }),
-    // Monthly giving (DOS/Give#276): public give campaigns only. A failed read hides it.
-    isGive && !preview
+    // Monthly giving (DOS/Give#276): public live/ended give campaigns only. A failed read hides it.
+    isGive && isPublicLiveOrEnded
       ? publicMonthly(dbAs(), campaign.id).catch((error: unknown) => {
           console.error("campaign page: monthly giving lookup failed", error)
           return null
         })
       : Promise.resolve(null),
-    // Public comments (DOS/Give#250): public campaigns only. A failed read degrades cleanly.
-    preview
+    // Public comments (DOS/Give#250): public live/ended campaigns only. A failed read degrades cleanly.
+    !isPublicLiveOrEnded
       ? Promise.resolve(null)
       : Promise.all([sessionPromise, requestedShowHidden ? isModeratorPromise : Promise.resolve(false)])
           .then(([s, includeHidden]) => loadPublicComments(campaign.id, s?.accessToken, commentsPage, includeHidden))
@@ -343,15 +437,88 @@ export default async function CampaignPage({
             console.error("campaign page: comments lookup failed", error)
             return null
           }),
-    // Public team block (DOS/Give#253): public campaigns only. A failed read degrades cleanly.
+    // Public Donor Wishes Wall (DOS/Give#320): strictly isPublicLiveOrEnded (never pre-launch or preview).
+    !isPublicLiveOrEnded
+      ? Promise.resolve<CampaignWishesPage | null>(null)
+      : sessionPromise
+          .then((s) => loadPublicWishes(campaign.id, s?.accessToken, wishesPage))
+          .catch((error: unknown) => {
+            console.error("campaign page: donor wishes lookup failed", error)
+            return null
+          }),
+    // Hidden donor wishes drawer (DOS/Give#320): authorized owner/editor/staff only when toggled on live/ended campaign.
+    !isPublicLiveOrEnded || !requestedShowHiddenWishes
+      ? Promise.resolve<HiddenCampaignWishRow[]>([])
+      : Promise.all([sessionPromise, ownCampaignPromise, campaignRolePromise, isModeratorPromise]).then(
+          ([s, isOwner, role, mod]) => {
+            if (!s || !(isOwner || role === "owner" || role === "editor" || mod)) {
+              return [] as HiddenCampaignWishRow[]
+            }
+            return listHiddenCampaignWishes(dbAs(s.accessToken), campaign.id).catch((error: unknown) => {
+              console.error("campaign page: hidden wishes lookup failed", error)
+              return [] as HiddenCampaignWishRow[]
+            })
+          }
+        ),
+    // Public team block (DOS/Give#253, #315): public campaigns and opted-in pre-launch teasers.
     preview
       ? Promise.resolve([] as PublicTeamMember[])
       : listCampaignPublicTeam(dbAs(), campaign.id).catch((error: unknown) => {
           console.error("campaign page: public team lookup failed", error)
           return [] as PublicTeamMember[]
         }),
+    // 3-second transparency summary & milestone rollups (DOS/Give#314): public live/ended campaigns only (never pre-launch or preview).
+    !isPublicLiveOrEnded
+      ? Promise.resolve<CampaignTransparencySummary | null>(null)
+      : getCampaignTransparencySummary(dbAs(), campaign.id).catch((error: unknown) => {
+          console.error("campaign page: transparency summary lookup failed", error)
+          return null
+        }),
+    // Published closing impact report (DOS/Give#314): public live/ended campaigns only via anon RLS (never pre-launch or preview).
+    !isPublicLiveOrEnded
+      ? Promise.resolve<CampaignImpactReport | null>(null)
+      : getCampaignImpactReport(dbAs(), campaign.id).catch((error: unknown) => {
+          console.error("campaign page: impact report lookup failed", error)
+          return null
+        }),
+    // Campaign follower count & viewer follow state (DOS/Give#315).
+    preview ? Promise.resolve(0) : getCampaignFollowerCount(dbAs(), campaign.id).catch(() => 0),
+    preview
+      ? Promise.resolve(false)
+      : sessionPromise.then((s) =>
+          s ? isFollowingCampaign(dbAs(s.accessToken), s.user.id, campaign.id).catch(() => false) : false
+        ),
+    // Structured FAQs (DOS/Give#316): shown on live/public, public pre-launch teaser, and preview pages.
+    listCampaignFaqs(db, campaign.id).catch((error: unknown) => {
+      console.error("campaign page: faqs lookup failed", error)
+      return [] as CampaignFaq[]
+    }),
+    // Fail-open ?ref= ambassador display lookup (DOS/Give#319): public campaigns & pre-launch only.
+    !preview && rawAmbassadorRef
+      ? getPublicAmbassadorRef(dbAs(), campaign.id, rawAmbassadorRef).catch(() => null)
+      : Promise.resolve<PublicAmbassadorRef | null>(null),
+    // Opt-in public ambassador leaderboard (DOS/Give#319): strictly isPublicLiveOrEnded (never pre-launch or preview).
+    !isPublicLiveOrEnded
+      ? Promise.resolve<AmbassadorLeaderboardRow[]>([])
+      : listCampaignAmbassadorLeaderboard(dbAs(), campaign.id, AMBASSADOR_LEADERBOARD_DEFAULT_LIMIT).catch(
+          (error: unknown) => {
+            console.error("campaign page: ambassador leaderboard lookup failed", error)
+            return [] as AmbassadorLeaderboardRow[]
+          }
+        ),
+    // Signed-in user's own ambassador record & stats (DOS/Give#319): live & public pre-launch only, under user JWT.
+    !ambassadorLinkEligible
+      ? Promise.resolve<MyCampaignAmbassador | null>(null)
+      : sessionPromise.then((s) =>
+          s ? getMyCampaignAmbassador(dbAs(s.accessToken), campaign.id).catch(() => null) : null
+        ),
   ])
   const showHiddenComments = isModerator && requestedShowHidden
+  const isCampaignOwnerOrEditor = ownCampaign || campaignRole === "owner" || campaignRole === "editor"
+  const canViewHiddenWishes = Boolean(session) && (isCampaignOwnerOrEditor || isModerator)
+  // Staff cannot moderate their own/editor campaign (GIVE_SELF_REVIEW); owners/editors who are not staff can hide.
+  const canHideWishes = Boolean(session) && (isModerator ? !isCampaignOwnerOrEditor : isCampaignOwnerOrEditor)
+  const showHiddenWishes = canViewHiddenWishes && requestedShowHiddenWishes
   const pitchVideo =
     youtubeMedia.find((m): m is YoutubeMediaRow & { youtube_id: string } => isValidYoutubeId(m.youtube_id)) ?? null
   const canDonate = donationsOpen && account !== null
@@ -360,7 +527,11 @@ export default async function CampaignPage({
   // create_donation_plan also needs an end date and the usable account canDonate checked.
   const monthlyOpen = canDonate && monthly?.allow_monthly === true && campaign.ends_at !== null
   const monthlySupporters = monthly?.monthly_supporters ?? 0
-  const loginHref = `/auth/login?return_path=${encodeURIComponent(`/campaigns/${campaign.slug}`)}`
+  const validAmbassadorRef = activeAmbassadorRef?.ref_code ?? null
+  const returnPath = validAmbassadorRef
+    ? ambassadorLinkPath(campaign.slug, validAmbassadorRef)
+    : `/campaigns/${campaign.slug}`
+  const loginHref = `/auth/login?return_path=${encodeURIComponent(returnPath)}`
   const closedNote =
     campaign.status === "suspended"
       ? isGive
@@ -385,17 +556,30 @@ export default async function CampaignPage({
   const days = daysLeft(campaign.ends_at)
   const options = campaign.display_options
   const people = totals ? (isGive ? totals.supporters_count : totals.backers_count) : null
-  const pledgePath = `/campaigns/${campaign.slug}/pledge`
+  const pledgePath = campaignPledgeHref(campaign.slug, { refCode: validAmbassadorRef })
   const ctaLabel = isGive ? "Ủng hộ" : "Ủng hộ dự án"
 
+  const publishedImpactReport = isPublicLiveOrEnded && impactReport?.published_at ? impactReport : null
   const tabs: TabItem[] = [
     { href: `/campaigns/${campaign.slug}`, label: "Câu chuyện", current: true },
-    // The statement only exists for public campaigns.
-    ...(preview ? [] : [{ href: statementHref(campaign.slug, "all"), label: "Sao kê", current: false }]),
+    // The statement only exists for public live/ended campaigns (never pre-launch or preview).
+    ...(!isPublicLiveOrEnded ? [] : [{ href: statementHref(campaign.slug, "all"), label: "Sao kê", current: false }]),
+    ...(publishedImpactReport ? [{ href: "#bao-cao-tong-ket", label: "Báo cáo tổng kết", current: false }] : []),
+    ...(faqs.length > 0 ? [{ href: "#hoi-dap", label: "Hỏi đáp", current: false, count: faqs.length }] : []),
     ...(updates.length > 0 ? [{ href: "#cap-nhat", label: "Cập nhật", current: false, count: updates.length }] : []),
-    ...(preview
+    ...(!isPublicLiveOrEnded
       ? []
       : [
+          ...(wishes
+            ? [
+                {
+                  href: "#tuong-loi-chuc",
+                  label: "Lời chúc",
+                  current: false,
+                  count: wishes.totalCount > 0 ? wishes.totalCount : undefined,
+                },
+              ]
+            : []),
           ...(comments
             ? [
                 {
@@ -432,10 +616,13 @@ export default async function CampaignPage({
   ].filter((stat) => stat !== null)
   const origin = siteOrigin()
   const breadcrumbJsonLd = !preview && !halted ? buildBreadcrumbJsonLd(campaign, origin) : null
+  const posterData = isPublicLiveOrEnded
+    ? buildServerPosterData({ campaign, totals, organizer, account, origin })
+    : null
 
   return (
     <article>
-      {!preview && <CampaignViewBeacon campaignId={campaign.id} />}
+      {isPublicLiveOrEnded && <CampaignViewBeacon campaignId={campaign.id} />}
       {breadcrumbJsonLd && (
         <script
           type="application/ld+json"
@@ -501,7 +688,11 @@ export default async function CampaignPage({
                   {campaign.category.name}
                 </Link>
               )}
-              {!preview && campaign.status !== "live" && <StatusBadge status={campaign.status} />}
+              {publicPrelaunch ? (
+                <Badge tone="info">Sắp ra mắt</Badge>
+              ) : (
+                !preview && campaign.status !== "live" && <StatusBadge status={campaign.status} />
+              )}
             </div>
             <h1 className="mt-3 text-h1-phone tracking-tight break-words sm:text-h1">{campaign.title}</h1>
             {(organizer || (isGive && campaign.beneficiary_name)) && (
@@ -574,98 +765,185 @@ export default async function CampaignPage({
 
           <StickyAside className="max-lg:contents lg:sticky lg:top-24 lg:col-span-4 lg:col-start-9 lg:row-span-4 lg:row-start-1 lg:space-y-6 lg:self-start">
             <section
-              aria-label={isGive ? "Ủng hộ chiến dịch" : "Ủng hộ dự án"}
+              aria-label={publicPrelaunch ? "Sắp ra mắt" : isGive ? "Ủng hộ chiến dịch" : "Ủng hộ dự án"}
               className="min-w-0 card p-4 max-lg:order-3 sm:p-6 lg:shadow-float"
             >
-              <p>
-                <Money amount={raised} size="xl" />
-              </p>
-              <p className="mt-1 text-sm text-muted">
-                {isGive ? "Đã nhận" : "Đã cam kết"} trên mục tiêu{" "}
-                <span className="font-semibold text-fg tabular-nums">{formatVnd(campaign.goal_amount)}</span>
-              </p>
-              {options.progress_bar !== false && <ProgressBar percent={percent} className="mt-4" />}
-              {stats.length > 0 && (
-                <dl
-                  className={clsx(
-                    "mt-4 grid gap-4",
-                    stats.length === 1
-                      ? "grid-cols-[auto]"
-                      : stats.length === 2
-                        ? "grid-cols-[auto_auto] justify-between"
-                        : "grid-cols-[auto_auto_auto] justify-between"
-                  )}
-                >
-                  {stats.map((stat) => (
-                    <div key={stat.label} className="flex min-w-0 flex-col-reverse justify-end">
-                      <dt className="text-sm text-muted">{stat.label}</dt>
-                      <dd className="text-lg font-bold tabular-nums">{stat.value}</dd>
-                    </div>
-                  ))}
-                </dl>
-              )}
-              {options.backers_count !== false && monthlySupporters > 0 && (
-                <p className="mt-3 text-sm text-fg">
-                  <span className="font-semibold tabular-nums">{monthlySupporters}</span> người ủng hộ hằng tháng
-                </p>
-              )}
-              {(campaign.ends_at || campaign.stretch_goal_amount) && (
-                <p className="mt-3 text-sm text-muted">
-                  {[
-                    campaign.ends_at && `Kết thúc ${formatDate(campaign.ends_at)}`,
-                    campaign.stretch_goal_amount && `Mục tiêu mở rộng ${formatVnd(campaign.stretch_goal_amount)}`,
-                  ]
-                    .filter(Boolean)
-                    .join(" · ")}
-                </p>
-              )}
-
-              <div className="mt-6 space-y-3">
-                {canDonate ? (
-                  <>
-                    <ButtonLink href="#ung-ho" size="lg" full>
-                      {ctaLabel}
-                    </ButtonLink>
-                    {monthlyOpen && (
-                      <Link
-                        href="#hang-thang"
-                        className="flex min-h-11 items-center justify-center text-sm font-semibold text-primary hover:underline"
-                      >
-                        Hoặc ủng hộ hằng tháng
-                      </Link>
-                    )}
-                  </>
-                ) : canPledge ? (
-                  <>
-                    <ButtonLink href={pledgePath} size="lg" full>
-                      {ctaLabel}
-                    </ButtonLink>
-                    {!session && <p className="text-center text-sm text-muted">Cần đăng nhập để cam kết ủng hộ.</p>}
-                  </>
-                ) : (
-                  <>
-                    <Button disabled size="lg" full>
-                      {ctaLabel}
-                    </Button>
-                    <p className="text-center text-sm text-muted">
-                      {ownProject ? "Đây là dự án của bạn nên bạn không cam kết ủng hộ được." : closedNote}
+              {publicPrelaunch ? (
+                <>
+                  <Badge tone="info">Sắp ra mắt</Badge>
+                  {activeAmbassadorRef && (
+                    <p className="mt-3 rounded-md bg-primary-soft px-3 py-2 text-sm text-fg">
+                      Bạn đang xem chiến dịch qua lời kêu gọi của{" "}
+                      <span className="font-semibold">{activeAmbassadorRef.display_name}</span>.
                     </p>
-                  </>
-                )}
-                {!preview && (
-                  <>
-                    <ShareButtons
-                      path={`/campaigns/${campaign.slug}`}
-                      title={campaign.title}
-                      origin={origin}
-                      campaignId={campaign.id}
+                  )}
+                  <p className="mt-3 text-sm text-muted">Mục tiêu gây quỹ</p>
+                  <p className="mt-1">
+                    <Money amount={campaign.goal_amount} size="xl" />
+                  </p>
+                  <p className="mt-3 text-sm text-muted">
+                    {[
+                      campaign.starts_at && `Dự kiến mở ngày ${formatDate(campaign.starts_at)}`,
+                      campaign.ends_at && `Kết thúc ${formatDate(campaign.ends_at)}`,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                  <p className="mt-3 text-sm text-muted">
+                    {isGive
+                      ? "Chiến dịch đã được duyệt và sắp mở nhận ủng hộ. Đăng ký để nhận thông báo ngay khi mở."
+                      : "Dự án đã được duyệt và sắp mở nhận cam kết. Đăng ký để nhận thông báo ngay khi mở."}
+                  </p>
+                  <div className="mt-6 space-y-3">
+                    <FollowButton
+                      following={following}
+                      count={followerCount}
+                      signedIn={!!session}
+                      loginHref={loginHref}
+                      action={toggleCampaignFollow.bind(null, campaign.id, campaign.slug)}
+                      followLabel="Nhận thông báo khi mở"
+                      followingLabel="Đã đăng ký nhận thông báo"
+                      countNoun="người đang chờ"
+                      primary
+                      full
+                      size="lg"
                     />
-                    {!ownCampaign && (
-                      <ReportCampaign campaignId={campaign.id} slug={campaign.slug} signedIn={!!session} />
+                    <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={origin} />
+                    {ambassadorLinkEligible && (
+                      <AmbassadorLinkModal
+                        slug={campaign.slug}
+                        origin={origin}
+                        signedIn={!!session}
+                        loginHref={loginHref}
+                        defaultName={session?.user.name ?? ""}
+                        initialAmbassador={myAmbassador}
+                        action={saveMyCampaignAmbassador.bind(null, campaign.id, campaign.slug)}
+                      />
                     )}
-                  </>
-                )}
-              </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {!preview && activeAmbassadorRef && (
+                    <p className="mb-4 rounded-md bg-primary-soft px-3 py-2 text-sm text-fg">
+                      {canDonate || canPledge
+                        ? "Bạn đang ủng hộ qua lời kêu gọi của "
+                        : "Bạn đang xem chiến dịch qua lời kêu gọi của "}
+                      <span className="font-semibold">{activeAmbassadorRef.display_name}</span>.
+                    </p>
+                  )}
+                  <p>
+                    <Money amount={raised} size="xl" />
+                  </p>
+                  <p className="mt-1 text-sm text-muted">
+                    {isGive ? "Đã nhận" : "Đã cam kết"} trên mục tiêu{" "}
+                    <span className="font-semibold text-fg tabular-nums">{formatVnd(campaign.goal_amount)}</span>
+                  </p>
+                  {options.progress_bar !== false && <ProgressBar percent={percent} className="mt-4" />}
+                  {stats.length > 0 && (
+                    <dl
+                      className={clsx(
+                        "mt-4 grid gap-4",
+                        stats.length === 1
+                          ? "grid-cols-[auto]"
+                          : stats.length === 2
+                            ? "grid-cols-[auto_auto] justify-between"
+                            : "grid-cols-[auto_auto_auto] justify-between"
+                      )}
+                    >
+                      {stats.map((stat) => (
+                        <div key={stat.label} className="flex min-w-0 flex-col-reverse justify-end">
+                          <dt className="text-sm text-muted">{stat.label}</dt>
+                          <dd className="text-lg font-bold tabular-nums">{stat.value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  )}
+                  {options.backers_count !== false && monthlySupporters > 0 && (
+                    <p className="mt-3 text-sm text-fg">
+                      <span className="font-semibold tabular-nums">{monthlySupporters}</span> người ủng hộ hằng tháng
+                    </p>
+                  )}
+                  {(campaign.ends_at || campaign.stretch_goal_amount) && (
+                    <p className="mt-3 text-sm text-muted">
+                      {[
+                        campaign.ends_at && `Kết thúc ${formatDate(campaign.ends_at)}`,
+                        campaign.stretch_goal_amount && `Mục tiêu mở rộng ${formatVnd(campaign.stretch_goal_amount)}`,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
+
+                  <div className="mt-6 space-y-3">
+                    {canDonate ? (
+                      <>
+                        <ButtonLink href="#ung-ho" size="lg" full>
+                          {ctaLabel}
+                        </ButtonLink>
+                        {monthlyOpen && (
+                          <Link
+                            href="#hang-thang"
+                            className="flex min-h-11 items-center justify-center text-sm font-semibold text-primary hover:underline"
+                          >
+                            Hoặc ủng hộ hằng tháng
+                          </Link>
+                        )}
+                      </>
+                    ) : canPledge ? (
+                      <>
+                        <ButtonLink href={pledgePath} size="lg" full>
+                          {ctaLabel}
+                        </ButtonLink>
+                        {!session && <p className="text-center text-sm text-muted">Cần đăng nhập để cam kết ủng hộ.</p>}
+                      </>
+                    ) : (
+                      <>
+                        <Button disabled size="lg" full>
+                          {ctaLabel}
+                        </Button>
+                        <p className="text-center text-sm text-muted">
+                          {ownProject ? "Đây là dự án của bạn nên bạn không cam kết ủng hộ được." : closedNote}
+                        </p>
+                      </>
+                    )}
+                    {isPublicLiveOrEnded && (
+                      <>
+                        <FollowButton
+                          following={following}
+                          count={followerCount}
+                          signedIn={!!session}
+                          loginHref={loginHref}
+                          action={toggleCampaignFollow.bind(null, campaign.id, campaign.slug)}
+                          full
+                        />
+                        <ShareButtons
+                          path={`/campaigns/${campaign.slug}`}
+                          title={campaign.title}
+                          origin={origin}
+                          campaignId={campaign.id}
+                        />
+                        {ambassadorLinkEligible && (
+                          <AmbassadorLinkModal
+                            campaignId={campaign.id}
+                            slug={campaign.slug}
+                            origin={origin}
+                            signedIn={!!session}
+                            loginHref={loginHref}
+                            defaultName={session?.user.name ?? ""}
+                            initialAmbassador={myAmbassador}
+                            action={saveMyCampaignAmbassador.bind(null, campaign.id, campaign.slug)}
+                          />
+                        )}
+                        {posterData && <QrPosterButton data={posterData} />}
+                        {!ownCampaign && (
+                          <ReportCampaign campaignId={campaign.id} slug={campaign.slug} signedIn={!!session} />
+                        )}
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
 
               <div className="mt-4 flex gap-3 border-t border-border pt-4 text-sm">
                 <ShieldIcon className="mt-0.5 shrink-0 text-primary" />
@@ -683,29 +961,39 @@ export default async function CampaignPage({
               </div>
             </section>
 
-            <div className={`min-w-0 max-lg:order-5 ${isGive ? "max-lg:hidden" : ""}`}>
-              {isGive ? (
-                statementRows && (
-                  <RecentSupporters slug={campaign.slug} rows={statementRows} count={totals?.supporters_count ?? 0} />
-                )
-              ) : (
-                <RewardTiers
-                  tiers={tiers}
-                  slug={campaign.slug}
-                  open={canPledge}
-                  closedNote={
-                    ownProject
-                      ? "Đây là dự án của bạn nên bạn không chọn mức được."
-                      : preLaunch
-                        ? "Bản xem trước: người ủng hộ chọn được mức khi dự án mở gây quỹ."
-                        : closedNote
-                  }
-                />
-              )}
-            </div>
+            {!publicPrelaunch && (
+              <div className={`min-w-0 max-lg:order-5 ${isGive ? "max-lg:hidden" : ""}`}>
+                {isGive ? (
+                  statementRows && (
+                    <RecentSupporters slug={campaign.slug} rows={statementRows} count={totals?.supporters_count ?? 0} />
+                  )
+                ) : (
+                  <RewardTiers
+                    tiers={tiers}
+                    slug={campaign.slug}
+                    open={canPledge}
+                    ambassadorRef={validAmbassadorRef}
+                    closedNote={
+                      ownProject
+                        ? "Đây là dự án của bạn nên bạn không chọn mức được."
+                        : preLaunch
+                          ? "Bản xem trước: người ủng hộ chọn được mức khi dự án mở gây quỹ."
+                          : closedNote
+                    }
+                  />
+                )}
+              </div>
+            )}
           </StickyAside>
 
           <div className="min-w-0 space-y-8 max-lg:order-4 lg:col-span-8 lg:row-start-3 lg:pt-2">
+            {isPublicLiveOrEnded && transparencySummary && (
+              <TransparencySummaryBox
+                slug={campaign.slug}
+                summary={transparencySummary}
+                showImpactReportLink={Boolean(publishedImpactReport)}
+              />
+            )}
             <TabNav label="Nội dung chiến dịch" items={tabs} />
 
             <section aria-labelledby="story-heading">
@@ -738,7 +1026,13 @@ export default async function CampaignPage({
                   Góp từ {formatVnd(campaign.min_contribution)}. Tiền chuyển thẳng vào tài khoản nhận của chiến dịch.
                 </p>
                 <div className="mt-6 card p-4 sm:p-6">
-                  <DonateForm campaignId={campaign.id} defaultName={session?.user.name ?? ""} signedIn={!!session} />
+                  <DonateForm
+                    campaignId={campaign.id}
+                    defaultName={session?.user.name ?? ""}
+                    signedIn={!!session}
+                    ambassadorRef={validAmbassadorRef}
+                    ambassadorDisplayName={activeAmbassadorRef?.display_name ?? null}
+                  />
                 </div>
               </section>
             )}
@@ -775,16 +1069,22 @@ export default async function CampaignPage({
                 </h2>
                 <MilestoneList
                   milestones={milestones}
-                  raisedAmount={preview || !totals ? null : raised}
-                  preview={preview}
+                  raisedAmount={!isPublicLiveOrEnded || !totals ? null : raised}
+                  preview={!isPublicLiveOrEnded}
+                  rollups={isPublicLiveOrEnded ? transparencySummary?.milestone_rollups : undefined}
+                  statementUrl={isPublicLiveOrEnded ? statementHref(campaign.slug, "out") : undefined}
                 />
               </section>
             )}
+
+            <CampaignFaqAccordion faqs={faqs} />
           </div>
 
           <div className="min-w-0 space-y-12 max-lg:order-6 lg:col-span-8 lg:row-start-4 lg:pt-6">
+            {publishedImpactReport && <ClosingImpactReport report={publishedImpactReport} />}
             {totals && <StatementPreview slug={campaign.slug} totals={totals} rows={statementRows} />}
             <AccountChanges changes={accountChanges} />
+            {isPublicLiveOrEnded && <AmbassadorLeaderboard rows={ambassadorLeaderboard} />}
             {!preview && <CampaignTeam members={publicTeam} />}
 
             <section id="cap-nhat" aria-labelledby="updates-heading" className="scroll-mt-24">
@@ -807,6 +1107,21 @@ export default async function CampaignPage({
                 <p className="mt-6 text-muted">Chưa có cập nhật nào.</p>
               )}
             </section>
+
+            {isPublicLiveOrEnded && wishes && (
+              <DonorWishesWall
+                slug={campaign.slug}
+                wishes={wishes.wishes}
+                totalCount={wishes.totalCount}
+                page={wishesPage}
+                signedIn={!!session}
+                loginHref={loginHref}
+                canHideWishes={canHideWishes}
+                canViewHiddenWishes={canViewHiddenWishes}
+                showHidden={showHiddenWishes}
+                hiddenWishes={hiddenWishes}
+              />
+            )}
 
             {!preview && comments && (
               <CampaignComments

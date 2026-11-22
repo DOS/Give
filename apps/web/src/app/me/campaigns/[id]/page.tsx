@@ -30,6 +30,7 @@ import {
 } from "@/lib/analytics"
 import { siteOrigin } from "@/lib/auth/origin"
 import { requireSession } from "@/lib/auth/session"
+import { listCampaignFaqs } from "@/lib/campaign-faqs"
 import {
   getMyCampaignRole,
   listCampaignMemberInvites,
@@ -57,6 +58,7 @@ import {
   type Db,
   getCampaignById,
   isEditableStatus,
+  isPublicCampaignVisible,
   isPublicStatus,
   listAllUpdates,
   listCategories,
@@ -73,6 +75,7 @@ import { canAskRelease, isBindableStatus, type ReceivingAccount } from "@/lib/re
 import { listCampaignTiers } from "@/lib/reward-tiers"
 import { getMoneyTotals } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
+import { canEditImpactReport, getCampaignImpactReport, type CampaignImpactReport } from "@/lib/transparency"
 
 import { MeDetail } from "../../_components/MePage"
 import { checkInputClass, checkLabelClass, fileInputClass, Panel } from "../../_components/Panel"
@@ -80,6 +83,9 @@ import { bindAccount, releaseAccount } from "../../accounts/actions"
 import { cancelAccountSwap, requestAccountSwap } from "../swap-actions"
 
 import { AnalyticsTab } from "./AnalyticsTab"
+import { FaqSection } from "./FaqSection"
+import { saveImpactReport } from "./impact-report-actions"
+import { ImpactReportSection } from "./ImpactReportSection"
 import {
   campaignAllowsMonthly,
   loadPlanSupporters,
@@ -87,6 +93,8 @@ import {
   showMonthlySection,
   type PlanSupporter,
 } from "./MonthlySection"
+import { campaignPrelaunchPublic, PrelaunchSection, showPrelaunchSection } from "./PrelaunchSection"
+import { getCampaignFollowerCount } from "@/lib/follows"
 import { FulfillmentLink, RewardTiersSection } from "./RewardTiersSection"
 import { TeamTab } from "./TeamTab"
 
@@ -169,7 +177,7 @@ export default async function EditCampaignPage({
         title={campaign.title}
         actions={
           <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary">
-            {isPublicStatus(campaign.status) ? "Xem trang công khai" : "Xem trước trang chiến dịch"}
+            {isPublicCampaignVisible(campaign) ? "Xem trang công khai" : "Xem trước trang chiến dịch"}
           </ButtonLink>
         }
       />
@@ -250,6 +258,8 @@ export default async function EditCampaignPage({
   const isGive = campaign.type === "give"
   const showMonthly = isOwner && showMonthlySection(campaign.type, campaign.status)
   const allowMonthly = campaignAllowsMonthly(campaign)
+  const showPrelaunch = showPrelaunchSection(campaign.status)
+  const prelaunchPublic = campaignPrelaunchPublic(campaign)
   const [
     categories,
     milestones,
@@ -260,6 +270,9 @@ export default async function EditCampaignPage({
     youtubeState,
     statusEventsByCampaign,
     planSupporters,
+    impactReport,
+    prelaunchFollowers,
+    faqs,
   ] = await Promise.all([
     listCategories(db),
     listMilestones(db, campaign.id),
@@ -284,6 +297,18 @@ export default async function EditCampaignPage({
     isOwner && showMonthly && allowMonthly
       ? loadPlanSupporters(campaign.id, session.user.id).catch(() => null)
       : Promise.resolve<PlanSupporter[] | null>([]),
+    // Closing impact report (DOS/Give#314): narrative scope allows owner + accepted editor.
+    canEditImpactReport(campaign.status) ||
+    campaign.status === "failed" ||
+    campaign.status === "suspended" ||
+    campaign.status === "cancelled"
+      ? getCampaignImpactReport(db, campaign.id).catch(() => null)
+      : Promise.resolve<CampaignImpactReport | null>(null),
+    showPrelaunch && prelaunchPublic && campaign.status === "approved"
+      ? getCampaignFollowerCount(db, campaign.id).catch(() => 0)
+      : Promise.resolve(0),
+    // Structured FAQs (DOS/Give#316); a failed read degrades its section only.
+    listCampaignFaqs(db, campaign.id).catch(() => null),
   ])
   const youtubeVideo = youtubeState?.video ?? null
   const statusEvents = statusEventsByCampaign.get(campaign.id) ?? []
@@ -295,6 +320,7 @@ export default async function EditCampaignPage({
 
   const showMoney = isOwner && (Boolean(totals) || !editable)
   const showFulfillment = isOwner && !isGive && canUpdateFulfillment(campaign)
+  const showImpactReport = canEditImpactReport(campaign.status) || impactReport !== null
   const toc = [
     showFulfillment && { id: "fulfillment", label: "Giao quà" },
     showMoney && { id: "money", label: "Sao kê và giải trình chi" },
@@ -303,8 +329,11 @@ export default async function EditCampaignPage({
     { id: "pitch-video", label: "Video giới thiệu" },
     { id: "milestones", label: "Các mốc mục tiêu" },
     !isGive && { id: "reward-tiers", label: "Phần thưởng" },
+    { id: "faqs", label: "Câu hỏi thường gặp" },
     showMonthly && { id: "monthly", label: "Ủng hộ hằng tháng" },
+    showPrelaunch && { id: "prelaunch", label: "Trang Sắp ra mắt" },
     showUpdates && { id: "updates", label: "Cập nhật" },
+    showImpactReport && { id: "impact-report", label: "Báo cáo tổng kết" },
     isOwner && { id: "receiving-account", label: "Tài khoản nhận tiền" },
     { id: "status", label: "Trạng thái" },
   ].filter((item): item is { id: string; label: string } => Boolean(item))
@@ -316,9 +345,10 @@ export default async function EditCampaignPage({
       <div className="space-y-4">
         {isEditor && (
           <Callout tone="info" title="Quyền đồng tổ chức (biên tập viên)">
-            Bạn có thể sửa nội dung, ảnh bìa, video giới thiệu, các mốc mục tiêu, phần thưởng và đăng cập nhật theo
-            trạng thái chiến dịch. Tài khoản nhận tiền, sao kê, giải trình khoản chi, giao quà, gửi duyệt, hủy chiến
-            dịch và quản lý đội ngũ thuộc quyền riêng của người tổ chức chính.
+            Bạn có thể sửa nội dung, ảnh bìa, video giới thiệu, các mốc mục tiêu, phần thưởng, câu hỏi thường gặp, đăng
+            cập nhật và viết báo cáo tổng kết theo trạng thái chiến dịch. Tài khoản nhận tiền, sao kê, giải trình khoản
+            chi, giao quà, tạo bản sao, gửi duyệt, hủy chiến dịch và quản lý đội ngũ thuộc quyền riêng của người tổ chức
+            chính.
           </Callout>
         )}
         <StatusNotice
@@ -858,9 +888,24 @@ export default async function EditCampaignPage({
               campaignId={campaign.id}
               status={campaign.status}
               minContribution={campaign.min_contribution}
+              startsAt={campaign.starts_at}
+              endsAt={campaign.ends_at}
               tiers={tiers}
             />
           )}
+
+          {showPrelaunch && (
+            <PrelaunchSection
+              campaignId={campaign.id}
+              slug={campaign.slug}
+              status={campaign.status}
+              startsAt={campaign.starts_at}
+              prelaunchPublic={prelaunchPublic}
+              followerCount={prelaunchFollowers}
+            />
+          )}
+
+          <FaqSection campaignId={campaign.id} status={campaign.status} faqs={faqs} />
 
           {showMonthly && (
             <MonthlySection
@@ -980,6 +1025,20 @@ export default async function EditCampaignPage({
                   </ol>
                 </div>
               )}
+            </Panel>
+          )}
+
+          {showImpactReport && (
+            <Panel
+              id="impact-report"
+              title="Báo cáo tổng kết tác động"
+              description="Tổng kết kết quả thực hiện sau khi chiến dịch kết thúc để hiển thị công khai trên trang chiến dịch và hồ sơ người tổ chức."
+            >
+              <ImpactReportSection
+                campaignStatus={campaign.status}
+                report={impactReport}
+                action={saveImpactReport.bind(null, campaign.id)}
+              />
             </Panel>
           )}
 

@@ -8,16 +8,19 @@ import { Dropdown } from "@/components/ui/Dropdown"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { CheckIcon, ChevronDownIcon, CloseIcon, SearchIcon } from "@/components/ui/icons"
 import { ScrollRow } from "@/components/ui/ScrollRow"
-import { SegmentedNav } from "@/components/ui/Tabs"
+import { FilterNav, SegmentedNav } from "@/components/ui/Tabs"
 import { TagLink } from "@/components/ui/Tag"
 import {
   categoriesFor,
   DEFAULT_DISCOVERY,
+  DISCOVERY_HIGHLIGHT_PILLS,
   DISCOVERY_MAX_PAGE,
   DISCOVERY_PAGE_SIZE,
   DISCOVERY_SORTS,
   DISCOVERY_STATUSES,
   discoveryHref,
+  isDiscoveryHighlightSort,
+  listCampaignStatementFreshness,
   listCategories,
   listPublicCampaigns,
   parseDiscoveryFilters,
@@ -95,9 +98,10 @@ const NAME_FROM = {
 } as const
 
 /**
- * A menu button's text: "Name: value". Below `nameFrom` (1024px, or 1280px
- * for the category) only the value shows (the name is still read out), so
- * the row fits; with no value, just the name.
+ * A menu button's text: "Name: value". Below `nameFrom` (1024px for status, or
+ * 1280px for category and sort so the longest Discovery 2.0 sort label fits at
+ * 1024px) only the value shows (the name is still read out), so the row fits;
+ * with no value, just the name.
  * From 768px the row does not scroll, so the category button may shrink and
  * cut its text with an ellipsis when the longest values meet (SHRINK; the
  * category also shows in "Đang lọc"); status and sort always show in full.
@@ -149,14 +153,23 @@ export default async function CampaignsPage({
   const category = rawFilters.category ? (visibleCategories.find((c) => c.slug === rawFilters.category) ?? null) : null
   const filters = { ...rawFilters, category: category?.slug ?? null }
   const { campaigns, total } = await listPublicCampaigns(db, filters, categories, filters.page * DISCOVERY_PAGE_SIZE)
-  const totals = await listMoneyTotals(
-    db,
-    campaigns.map((c) => c.id)
-  )
+  const nonPrelaunchIds = campaigns.filter((c) => c.status !== "approved").map((c) => c.id)
+  const [totals, statementFreshness] = await Promise.all([
+    listMoneyTotals(db, nonPrelaunchIds),
+    filters.sort === "recently_audited"
+      ? listCampaignStatementFreshness(db, nonPrelaunchIds)
+      : Promise.resolve(new Map<string, string>()),
+  ])
   const status = DISCOVERY_STATUSES.find((s) => s.value === filters.status) ?? DISCOVERY_STATUSES[0]
   const sort = DISCOVERY_SORTS.find((s) => s.value === filters.sort) ?? DISCOVERY_SORTS[0]
   const filtered = Boolean(category || filters.q)
-  const hasFilter = Boolean(filters.type || category || filters.q || filters.status !== DEFAULT_DISCOVERY.status)
+  const hasFilter = Boolean(
+    filters.type ||
+    category ||
+    filters.q ||
+    filters.status !== DEFAULT_DISCOVERY.status ||
+    isDiscoveryHighlightSort(filters.sort)
+  )
   // What every link keeps; a change of filter or order starts again at page 1.
   const keep = {
     type: filters.type,
@@ -247,7 +260,7 @@ export default async function CampaignsPage({
             <Dropdown
               title="Sắp xếp"
               panelClassName="md:right-0 md:left-auto"
-              summary={<MenuSummary name="Sắp xếp" value={sort.label} />}
+              summary={<MenuSummary name="Sắp xếp" value={sort.label} nameFrom="xl" />}
             >
               <MenuLinks
                 label="Sắp xếp"
@@ -260,7 +273,23 @@ export default async function CampaignsPage({
             </Dropdown>
           </div>
         </ScrollRow>
-        <p className="mt-3 text-sm text-muted lg:hidden">{countText}</p>
+        <FilterNav
+          label="Bộ lọc nổi bật"
+          className="mt-2"
+          items={DISCOVERY_HIGHLIGHT_PILLS.map((pill) => {
+            const active = filters.sort === pill.value
+            const targetStatus =
+              pill.value === "recently_audited" ? (filters.status === "ended" ? "ended" : "all") : "live"
+            return {
+              href: active
+                ? discoveryHref({ ...keep, sort: DEFAULT_DISCOVERY.sort })
+                : discoveryHref({ ...keep, status: targetStatus, sort: pill.value }),
+              label: pill.label,
+              current: active,
+            }
+          })}
+        />
+        <p className="mt-2 text-sm text-muted lg:hidden">{countText}</p>
       </div>
 
       {filtered && (
@@ -302,6 +331,7 @@ export default async function CampaignsPage({
                     raised={raisedAmount(t, campaign.type)}
                     people={t ? (campaign.type === "give" ? t.supporters_count : t.backers_count) : undefined}
                     priority={index < 3}
+                    lastStatementAt={statementFreshness.get(campaign.id) ?? null}
                   />
                 </div>
               )

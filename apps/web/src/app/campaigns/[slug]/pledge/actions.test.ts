@@ -54,9 +54,14 @@ function tierRow(requiresShipping: boolean) {
 }
 
 /** The user's reads: the campaign check, the tier and their pledge. */
-function userReads({ campaign = true, tier = tierRow(false) as unknown, pledge = null as unknown } = {}): Handler {
+function userReads({
+  campaign = true,
+  campaignStatus = "live",
+  tier = tierRow(false) as unknown,
+  pledge = null as unknown,
+} = {}): Handler {
   return (call) => {
-    if (call.target === "campaigns") return { data: campaign ? { id: CAMPAIGN } : null }
+    if (call.target === "campaigns") return { data: campaign ? { id: CAMPAIGN, status: campaignStatus } : null }
     if (call.target === "public_reward_tiers") return { data: tier }
     if (call.target === "contributions") return { data: pledge }
     return undefined
@@ -170,6 +175,7 @@ describe("savePledge", () => {
 
   it.each([
     ["GIVE_REWARD_TIER_SOLD_OUT", "Phần quà này vừa hết suất. Hãy chọn phần quà khác."],
+    ["GIVE_REWARD_EXPIRED", "Ưu đãi Early Bird của phần quà này đã hết hạn. Hãy chọn phần quà khác."],
     ["GIVE_OWN_CAMPAIGN", "Bạn không thể ủng hộ dự án của chính mình."],
     ["GIVE_CAMPAIGN_NOT_ACCEPTING", "Dự án hiện không nhận cam kết (chưa mở hoặc đã kết thúc)."],
     ["GIVE_AMOUNT_BELOW_MINIMUM: 400000", `Số tiền tối thiểu cho lựa chọn này là ${formatVnd(400_000)}.`],
@@ -177,6 +183,21 @@ describe("savePledge", () => {
   ])("words %s for the backer", async (message, expected) => {
     state.serviceHandler = () => ({ error: { code: "23514", message } })
     expect(await savePledge(CAMPAIGN, null, null, form())).toEqual({ ok: false, message: expected })
+  })
+
+  it("refuses an expired Early Bird tier before calling create_pledge (DOS/Give#317)", async () => {
+    state.userHandler = userReads({
+      tier: {
+        ...tierRow(false),
+        is_early_bird: true,
+        available_until: "2020-01-01T00:00:00.000Z",
+      },
+    })
+    expect(await savePledge(CAMPAIGN, null, null, form())).toEqual({
+      ok: false,
+      message: "Ưu đãi Early Bird của phần quà này đã hết hạn. Hãy chọn phần quà khác.",
+    })
+    expect(state.serviceCalls).toHaveLength(0)
   })
 
   it("keeps internals out of an unexpected error", async () => {
@@ -214,5 +235,38 @@ describe("cancelPledge", () => {
       ok: false,
       message: expect.stringContaining("kết thúc"),
     })
+  })
+
+  it("refuses savePledge on a public pre-launch (approved) campaign before calling create_pledge (DOS/Give#315)", async () => {
+    state.userHandler = userReads({ campaignStatus: "approved" })
+    expect(await savePledge(CAMPAIGN, null, null, form())).toEqual({
+      ok: false,
+      message: "Dự án hiện không nhận cam kết (chưa mở hoặc đã kết thúc).",
+    })
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("passes sanitized p_ambassador_ref to create_pledge and fails open on malformed refs (DOS/Give#319)", async () => {
+    await expect(savePledge(CAMPAIGN, null, null, form({ ambassador_ref: "  AB23CD45EF " }))).rejects.toThrow(
+      "NEXT_REDIRECT /me/pledges/GVABCDEFG"
+    )
+    expect(op(state.serviceCalls[0], "args")?.[0]).toMatchObject({
+      p_campaign_id: CAMPAIGN,
+      p_ambassador_ref: "ab23cd45ef",
+    })
+
+    state.serviceCalls.length = 0
+    await expect(savePledge(CAMPAIGN, null, null, form({ ambassador_ref: "not-valid!!" }))).rejects.toThrow(
+      "NEXT_REDIRECT /me/pledges/GVABCDEFG"
+    )
+    expect(op(state.serviceCalls[0], "args")?.[0]).not.toHaveProperty("p_ambassador_ref")
+
+    // change_pledge preserves original attribution in DB and does not pass p_ambassador_ref.
+    state.serviceCalls.length = 0
+    await expect(savePledge(CAMPAIGN, PLEDGE, null, form({ ambassador_ref: "ab23cd45ef" }))).rejects.toThrow(
+      "NEXT_REDIRECT /me/pledges/GVABCDEFG"
+    )
+    expect(state.serviceCalls[0].target).toBe("rpc:change_pledge")
+    expect(op(state.serviceCalls[0], "args")?.[0]).not.toHaveProperty("p_ambassador_ref")
   })
 })

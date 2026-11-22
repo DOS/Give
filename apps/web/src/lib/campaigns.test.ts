@@ -7,11 +7,14 @@ import {
   canPostUpdate,
   categoriesFor,
   DEFAULT_DISCOVERY,
+  DISCOVERY_HIGHLIGHT_PILLS,
   DISCOVERY_MAX_PAGE,
   discoveryHref,
   fundingModelFor,
+  isDiscoveryHighlightSort,
   isEditableStatus,
   isPublicStatus,
+  listCampaignStatementFreshness,
   listCampaignsNeedingRecovery,
   listOrganizersToVerify,
   listPublicCampaigns,
@@ -122,11 +125,27 @@ describe("parseDiscoveryFilters", () => {
     ).toEqual({ type: "back", category: "film-video", q: "phim", status: "ended", sort: "near_goal", page: 3 })
   })
 
-  it("reads every status and sort", () => {
-    for (const status of ["live", "ended", "all"] as const)
+  it("reads every status and sort (including Discovery 2.0 modes)", () => {
+    for (const status of ["live", "prelaunch", "ended", "all"] as const)
       expect(parseDiscoveryFilters({ status }).status).toBe(status)
-    for (const sort of ["featured", "newest", "ending", "near_goal"] as const)
+    for (const sort of [
+      "featured",
+      "newest",
+      "ending",
+      "near_goal",
+      "ending_soon",
+      "almost_funded",
+      "recently_audited",
+    ] as const)
       expect(parseDiscoveryFilters({ sort }).sort).toBe(sort)
+    expect(DISCOVERY_HIGHLIGHT_PILLS.map((p) => p.value)).toEqual(["ending_soon", "almost_funded", "recently_audited"])
+    expect(isDiscoveryHighlightSort("ending_soon")).toBe(true)
+    expect(isDiscoveryHighlightSort("almost_funded")).toBe(true)
+    expect(isDiscoveryHighlightSort("recently_audited")).toBe(true)
+    expect(isDiscoveryHighlightSort("featured")).toBe(false)
+    expect(isDiscoveryHighlightSort("newest")).toBe(false)
+    expect(isDiscoveryHighlightSort("ending")).toBe(false)
+    expect(isDiscoveryHighlightSort("near_goal")).toBe(false)
   })
 
   it("drops invalid values to their defaults", () => {
@@ -395,6 +414,67 @@ describe("listPublicCampaigns", () => {
     await expect(listPublicCampaigns(rowsRefused as any, DEFAULT_DISCOVERY, [])).rejects.toMatchObject({
       code: "42501",
     })
+  })
+})
+
+describe("listCampaignStatementFreshness", () => {
+  it("skips the RPC when campaignIds is empty", async () => {
+    const log: Call[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await listCampaignStatementFreshness(fakeDb(() => ({ data: [] }), log) as any, [])
+    expect(result.size).toBe(0)
+    expect(log).toHaveLength(0)
+  })
+
+  it("deduplicates IDs, chunks by 100, and keeps only valid timestamp rows", async () => {
+    const ids = Array.from({ length: 101 }, (_, i) => `3180d000-0000-4000-8000-${String(i).padStart(12, "0")}`)
+    const log: Call[] = []
+    const db = fakeDb((call) => {
+      const asked = (op(call, "args")?.[0] as { p_campaign_ids: string[] }).p_campaign_ids
+      return {
+        data: [
+          { campaign_id: asked[0], last_statement_at: "2026-11-20T10:30:00Z" },
+          { campaign_id: asked[1], last_statement_at: "not-a-date" },
+          { campaign_id: null, last_statement_at: "2026-11-20T10:30:00Z" },
+        ],
+      }
+    }, log)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await listCampaignStatementFreshness(db as any, [ids[0], ...ids])
+    expect(log.map((c) => c.target)).toEqual([
+      "rpc:public_campaign_statement_freshness",
+      "rpc:public_campaign_statement_freshness",
+    ])
+    expect(log.map((c) => (op(c, "args")?.[0] as { p_campaign_ids: string[] }).p_campaign_ids)).toEqual([
+      ids.slice(0, 100),
+      ids.slice(100),
+    ])
+    expect(result.get(ids[0])).toBe("2026-11-20T10:30:00Z")
+    expect(result.get(ids[100])).toBe("2026-11-20T10:30:00Z")
+    expect(result.has(ids[1])).toBe(false)
+    expect(result.size).toBe(2)
+  })
+
+  it("fails closed with an empty map and logs when any chunk fails (including chunk 2 after chunk 1 succeeds)", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      const ids = Array.from({ length: 101 }, (_, i) => `3180e000-0000-4000-8000-${String(i).padStart(12, "0")}`)
+      let callCount = 0
+      const db = fakeDb((call) => {
+        callCount += 1
+        if (callCount === 1) {
+          const asked = (op(call, "args")?.[0] as { p_campaign_ids: string[] }).p_campaign_ids
+          return { data: [{ campaign_id: asked[0], last_statement_at: "2026-11-20T10:30:00Z" }] }
+        }
+        return { error: new Error("chunk 2 unavailable") }
+      })
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await listCampaignStatementFreshness(db as any, ids)
+      expect(result.size).toBe(0)
+      expect(errorSpy).toHaveBeenCalledTimes(1)
+    } finally {
+      errorSpy.mockRestore()
+    }
   })
 })
 

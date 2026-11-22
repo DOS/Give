@@ -625,3 +625,95 @@ describe("payment_account_changed notice (DOS/Give#92)", () => {
     expect(crypto.body).toContain("Ví nhận mới trên mạng polygon: •••• a9F2.")
   })
 })
+
+describe("describeNotice — follower & pre-launch notices (DOS/Give#315)", () => {
+  it("renders campaign_launched for give and back campaigns with safe slug links", () => {
+    const giveView = describeNotice(
+      notice({
+        kind: "campaign_launched",
+        payload: { campaign_slug: "xay-truong", campaign_title: "Xây trường vùng cao", campaign_type: "give" },
+      })
+    )
+    expect(giveView).toEqual({
+      title: "Chiến dịch bạn theo dõi đã mở",
+      body: "Chiến dịch “Xây trường vùng cao” vừa chính thức mở nhận ủng hộ.",
+      href: "/campaigns/xay-truong",
+      linkLabel: "Xem chiến dịch",
+    })
+
+    const backView = describeNotice(
+      notice({
+        kind: "campaign_launched",
+        payload: { campaign_slug: "ban-phim-go", campaign_title: "Bàn phím gỗ", campaign_type: "back" },
+      })
+    )
+    expect(backView).toEqual({
+      title: "Dự án bạn theo dõi đã mở",
+      body: "Dự án “Bàn phím gỗ” vừa chính thức mở nhận cam kết.",
+      href: "/campaigns/ban-phim-go",
+      linkLabel: "Xem dự án",
+    })
+
+    const badSlug = describeNotice(
+      notice({ kind: "campaign_launched", payload: { campaign_slug: "../evil", campaign_title: "Test" } })
+    )
+    expect(badSlug.href).toBeNull()
+  })
+
+  it("renders campaign_update_posted with update title and #cap-nhat link", () => {
+    const view = describeNotice(
+      notice({
+        kind: "campaign_update_posted",
+        payload: {
+          campaign_slug: "xay-truong",
+          campaign_title: "Xây trường vùng cao",
+          update_title: "Đã hoàn thành móng",
+        },
+      })
+    )
+    expect(view).toEqual({
+      title: "Cập nhật mới từ chiến dịch",
+      body: "Chiến dịch “Xây trường vùng cao” vừa đăng cập nhật mới: “Đã hoàn thành móng”.",
+      href: "/campaigns/xay-truong#cap-nhat",
+      linkLabel: "Đọc cập nhật",
+    })
+  })
+
+  it("renders organizer_campaign_launched with campaign link or safe organizer profile fallback", () => {
+    const withSlug = describeNotice(
+      notice({
+        kind: "organizer_campaign_launched",
+        payload: {
+          campaign_slug: "ao-am-2026",
+          campaign_title: "Áo ấm 2026",
+          campaign_type: "give",
+          organizer_display_name: "Quỹ Ánh Sáng",
+          organizer_handle: "quy-anh-sang",
+        },
+      })
+    )
+    expect(withSlug).toEqual({
+      title: "Người tổ chức bạn theo dõi vừa mở chiến dịch mới",
+      body: "Quỹ Ánh Sáng vừa chính thức mở chiến dịch mới “Áo ấm 2026”.",
+      href: "/campaigns/ao-am-2026",
+      linkLabel: "Xem chiến dịch",
+    })
+
+    const fallbackHandle = describeNotice(
+      notice({
+        kind: "organizer_campaign_launched",
+        payload: {
+          campaign_slug: "bad slug!",
+          campaign_type: "back",
+          organizer_display_name: "Quỹ Ánh Sáng",
+          organizer_handle: "quy-anh-sang",
+        },
+      })
+    )
+    expect(fallbackHandle).toMatchObject({
+      title: "Người tổ chức bạn theo dõi vừa mở dự án mới",
+      href: "/u/quy-anh-sang",
+      linkLabel: "Xem hồ sơ",
+    })
+  })
+})

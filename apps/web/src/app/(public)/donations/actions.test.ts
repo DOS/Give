@@ -72,8 +72,8 @@ beforeEach(() => {
   vi.stubEnv("VERCEL_ENV", "preview")
   state.session = null
   state.requestHeaders = { "x-real-ip": "203.0.113.7", "x-forwarded-for": "198.51.100.1, 10.0.0.1" }
-  state.anonHandler = (call) => (call.target === "campaigns" ? { data: { id: CAMPAIGN } } : undefined)
-  state.userHandler = (call) => (call.target === "campaigns" ? { data: { id: CAMPAIGN } } : undefined)
+  state.anonHandler = (call) => (call.target === "campaigns" ? { data: { id: CAMPAIGN, status: "live" } } : undefined)
+  state.userHandler = (call) => (call.target === "campaigns" ? { data: { id: CAMPAIGN, status: "live" } } : undefined)
   state.serviceHandler = (call) => (call.target === "rpc:create_donation" ? created() : undefined)
   state.anonCalls.length = 0
   state.userCalls.length = 0
@@ -293,5 +293,31 @@ describe("donate", () => {
     state.serviceHandler = () => ({ error: { code: "23514", message: code } })
     expect(await donate(CAMPAIGN, null, form())).toEqual({ ok: false, message })
     expect(state.cookies).toHaveLength(0)
+  })
+
+  it("refuses a public pre-launch (approved) campaign before calling create_donation (DOS/Give#315)", async () => {
+    state.anonHandler = (call) =>
+      call.target === "campaigns" ? { data: { id: CAMPAIGN, status: "approved" } } : undefined
+    expect(await donate(CAMPAIGN, null, form())).toEqual({
+      ok: false,
+      message: "Chiến dịch này hiện không nhận ủng hộ.",
+    })
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("passes sanitized p_ambassador_ref when valid and fails open on malformed refs (DOS/Give#319)", async () => {
+    await expect(donate(CAMPAIGN, null, form({ ambassador_ref: "  AB23CD45EF  " }))).rejects.toThrow(
+      "NEXT_REDIRECT /donations/GVABCDEFG"
+    )
+    expect(op(state.serviceCalls[0], "args")?.[0]).toMatchObject({
+      p_campaign_id: CAMPAIGN,
+      p_ambassador_ref: "ab23cd45ef",
+    })
+
+    state.serviceCalls.length = 0
+    await expect(donate(CAMPAIGN, null, form({ ambassador_ref: "<script>bad</script>" }))).rejects.toThrow(
+      "NEXT_REDIRECT /donations/GVABCDEFG"
+    )
+    expect(op(state.serviceCalls[0], "args")?.[0]).not.toHaveProperty("p_ambassador_ref")
   })
 })

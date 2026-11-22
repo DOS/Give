@@ -8,13 +8,23 @@ export function DonateForm({
   campaignId,
   defaultName,
   signedIn,
+  ambassadorRef,
+  ambassadorDisplayName,
 }: {
   campaignId: string
   defaultName: string
   signedIn: boolean
+  ambassadorRef?: string | null
+  ambassadorDisplayName?: string | null
 }) {
   return (
     <ActionForm action={donate.bind(null, campaignId)} className="space-y-6">
+      {ambassadorRef && <input type="hidden" name="ambassador_ref" value={ambassadorRef} />}
+      {ambassadorDisplayName && (
+        <p className="rounded-md bg-primary-soft px-3 py-2 text-sm text-fg">
+          Bạn đang ủng hộ qua lời kêu gọi của <span className="font-semibold">{ambassadorDisplayName}</span>.
+        </p>
+      )}
       <Field htmlFor="donate-amount" label="Số tiền ủng hộ (đồng)">
         <input
           id="donate-amount"
@@ -51,8 +61,21 @@ export function DonateForm({
           của ngân hàng vẫn có thể hiện tên người chuyển.
         </p>
       </div>
-      <Field htmlFor="donate-message" label="Lời nhắn (không bắt buộc)">
-        <textarea id="donate-message" name="message" rows={3} maxLength={500} className="field" />
+      <Field
+        htmlFor="donate-message"
+        hintId="donate-message-hint"
+        label="Lời chúc gửi chiến dịch (không bắt buộc)"
+        hint="Hiển thị công khai trên Tường lời chúc sau khi giao dịch được khớp sao kê (tối đa 500 ký tự)."
+      >
+        <textarea
+          id="donate-message"
+          aria-describedby="donate-message-hint"
+          name="message"
+          rows={3}
+          maxLength={500}
+          placeholder="Ví dụ: Chúc chiến dịch sớm đạt mục tiêu và mang lại nhiều điều tốt đẹp!"
+          className="field"
+        />
       </Field>
       <SubmitButton className={buttonClass({ size: "lg", full: true })}>Ủng hộ</SubmitButton>
       <p className="text-center text-sm text-muted">

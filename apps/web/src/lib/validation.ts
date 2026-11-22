@@ -159,19 +159,39 @@ const optionalMonth = z.string().transform((value, ctx) => {
   return `${text}-01`
 })
 
-export const rewardTierSchema = z.object({
-  title: z.string().trim().min(2, "Tên phần thưởng cần ít nhất 2 ký tự").max(120, "Tên phần thưởng tối đa 120 ký tự"),
-  min_amount: money,
-  description: optionalText(2000),
-  quantity_limit: optionalQuantity,
-  estimated_delivery: optionalMonth,
-  requires_shipping: z.string().transform((v) => v === "on"),
-  shipping_note: optionalText(500),
-})
+export const rewardTierSchema = z
+  .object({
+    title: z.string().trim().min(2, "Tên phần thưởng cần ít nhất 2 ký tự").max(120, "Tên phần thưởng tối đa 120 ký tự"),
+    min_amount: money,
+    description: optionalText(2000),
+    quantity_limit: optionalQuantity,
+    estimated_delivery: optionalMonth,
+    requires_shipping: z.string().transform((v) => v === "on"),
+    shipping_note: optionalText(500),
+    is_early_bird: z
+      .string()
+      .default("")
+      .transform((v) => v === "on"),
+    available_until: z.string().default("").pipe(optionalLocalDate),
+  })
+  .transform((v) => ({
+    ...v,
+    // Deadline only belongs to an Early Bird tier (mirrors shipping_note / requires_shipping).
+    available_until: v.is_early_bird ? v.available_until : null,
+  }))
+  .refine((v) => !v.is_early_bird || v.quantity_limit !== null || v.available_until !== null, {
+    message: "Ưu đãi Early Bird cần giới hạn số suất hoặc thời hạn kết thúc (hoặc cả hai).",
+    path: ["available_until"],
+  })
 
 export const updateSchema = z.object({
   title: z.string().trim().min(2, "Nhập tiêu đề").max(200),
   body: z.string().trim().min(1, "Nhập nội dung").max(50000),
+})
+
+export const campaignFaqSchema = z.object({
+  question: z.string().trim().min(1, "Hãy nhập câu hỏi.").max(300, "Câu hỏi tối đa 300 ký tự."),
+  answer: z.string().trim().min(1, "Hãy nhập câu trả lời.").max(4000, "Câu trả lời tối đa 4000 ký tự."),
 })
 
 /** Pulls a form's string fields into a plain object for zod. */

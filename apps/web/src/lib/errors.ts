@@ -155,9 +155,12 @@ const GIVE_MESSAGES: Record<string, string> = {
     "Chỉ đánh dấu “không phải giao dịch thật” được cho dòng thuộc lần tải sao kê đã bị đội tài chính bỏ qua.",
   GIVE_ROW_HAS_ACTIVE_DUPLICATE:
     "Một lần tải sao kê khác có dòng đã được bỏ qua vì trùng với dòng này, nên không thể đánh dấu dòng này là không phải giao dịch thật. Hãy kiểm tra lại với sao kê ngân hàng: nếu đây là giao dịch thật, hãy nhập hoặc đánh dấu là giao dịch đã ghi.",
-  // Reward tiers and fulfillment of back campaigns (DOS/Give#30, #83).
+  // Reward tiers and fulfillment of back campaigns (DOS/Give#30, #83, #317).
   GIVE_REWARD_TIERS_BACK_ONLY: "Chỉ dự án có quà tặng mới có các mức phần thưởng.",
   GIVE_REWARD_TIER_INVALID: "Thông tin phần thưởng không hợp lệ.",
+  GIVE_REWARD_TIER_DATES_INVALID:
+    "Thời hạn ưu đãi Early Bird của một mức phần thưởng nằm ngoài lịch gây quỹ hoặc đã qua. Hãy cập nhật lại phần thưởng trước khi gửi duyệt.",
+  GIVE_REWARD_EXPIRED: "Ưu đãi Early Bird của phần quà này đã hết hạn. Hãy chọn phần quà khác.",
   GIVE_REWARD_TIER_LIMIT: "Mỗi dự án có tối đa 50 mức phần thưởng.",
   GIVE_REWARD_TIER_NOT_FOUND: "Không tìm thấy mức phần thưởng này. Hãy tải lại trang.",
   GIVE_REWARD_TIER_IN_USE: "Mức phần thưởng này đã có người chọn nên không xóa được.",
@@ -211,6 +214,38 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ALREADY_CAMPAIGN_OWNER: "Bạn đã là người tổ chức chính của chiến dịch này.",
   GIVE_ALREADY_CAMPAIGN_MEMBER: "Bạn đã là đồng tổ chức của chiến dịch này rồi.",
   GIVE_CAMPAIGN_MEMBER_NOT_FOUND: "Không tìm thấy đồng tổ chức này trong chiến dịch.",
+  // Trust moat: milestone-linked disbursements & closing impact reports (DOS/Give#314).
+  GIVE_DISBURSEMENT_MILESTONE_MISMATCH: "Mốc mục tiêu đã chọn không thuộc chiến dịch này.",
+  GIVE_DISBURSEMENT_MILESTONE_NOT_ALLOWED: "Khoản hoàn tiền không thể gắn vào mốc mục tiêu.",
+  GIVE_MILESTONE_CAMPAIGN_IMMUTABLE: "Không thể chuyển mốc mục tiêu sang chiến dịch khác.",
+  GIVE_IMPACT_REPORT_STATUS_NOT_ALLOWED:
+    "Chỉ viết hoặc công bố báo cáo tổng kết khi chiến dịch đã kết thúc, đạt mục tiêu hoặc đang đối soát.",
+  GIVE_IMPACT_REPORT_SUMMARY_INVALID: "Nội dung báo cáo tổng kết không được để trống và tối đa 20.000 ký tự.",
+  GIVE_IMPACT_REPORT_HIGHLIGHTS_INVALID:
+    "Các chỉ số nổi bật tối đa 10 mục, mỗi mục cần có đủ tiêu đề và giá trị (tối đa 120 ký tự).",
+  GIVE_IMPACT_REPORT_ALREADY_PUBLISHED:
+    "Báo cáo tổng kết đã công khai nên không thể chuyển về bản nháp. Bạn vẫn có thể cập nhật nội dung công khai.",
+  // Follows & pre-launch opt-in (DOS/Give#315).
+  GIVE_CANNOT_FOLLOW_SELF: "Bạn không thể tự theo dõi trang của chính mình.",
+  GIVE_PRELAUNCH_REQUIRES_FUTURE_START: "Cần đặt ngày bắt đầu trong tương lai để bật chế độ Sắp ra mắt.",
+  // Structured campaign FAQs and duplicate campaign draft (DOS/Give#316).
+  GIVE_FAQ_QUESTION_INVALID: "Câu hỏi phải từ 1 đến 300 ký tự.",
+  GIVE_FAQ_ANSWER_INVALID: "Câu trả lời phải từ 1 đến 4000 ký tự.",
+  GIVE_FAQ_POSITION_INVALID: "Thứ tự câu hỏi không hợp lệ.",
+  GIVE_FAQ_LIMIT_EXCEEDED: "Mỗi chiến dịch chỉ có tối đa 25 câu hỏi thường gặp.",
+  GIVE_FAQ_NOT_FOUND: "Không tìm thấy câu hỏi thường gặp này.",
+  GIVE_FAQ_ORDER_INVALID: "Danh sách thứ tự câu hỏi không hợp lệ. Hãy tải lại trang và thử lại.",
+  GIVE_FAQ_IMMUTABLE: "Không thể thay đổi liên kết của câu hỏi thường gặp.",
+  GIVE_ACCOUNT_NOT_ACTIVE: "Tài khoản của bạn hiện không hoạt động nên không thể thực hiện thao tác này.",
+  GIVE_ORGANIZER_NOT_ACTIVE: "Hồ sơ người tổ chức của bạn hiện không hoạt động nên không thể tạo bản sao chiến dịch.",
+  GIVE_CAMPAIGN_SUSPENDED: "Không thể tạo bản sao từ chiến dịch đang bị tạm dừng.",
+  // Peer-to-peer campaign ambassadors (DOS/Give#319).
+  GIVE_AMBASSADOR_NAME_INVALID: "Tên hiển thị phải từ 1 đến 80 ký tự và không chứa ký tự điều khiển.",
+  GIVE_AMBASSADOR_IMMUTABLE: "Không thể thay đổi mã liên kết đồng hành sau khi đã tạo.",
+  // Moderated donor wishes wall & heart reactions (DOS/Give#320).
+  GIVE_WISH_NOT_FOUND: "Không tìm thấy lời chúc này, hoặc lời chúc đã bị ẩn.",
+  GIVE_STAFF_HIDE_LOCKED:
+    "Lời chúc này đã bị kiểm duyệt viên ẩn nên chỉ kiểm duyệt viên hoặc quản trị viên mới có thể khôi phục.",
 }
 
 const PG_MESSAGES: Record<string, string> = {
@@ -639,4 +674,59 @@ export function campaignMemberDbErrorMessage(
   overrides: Record<string, string> = {}
 ): string {
   return commentDbErrorMessage(error, { ...CAMPAIGN_MEMBER_MESSAGES, ...overrides })
+}
+
+/**
+ * Refusals of `give.toggle_contribution_heart` worded for the Donor Wishes Wall
+ * (DOS/Give#320).
+ */
+export const WISH_HEART_MESSAGES: Record<string, string> = {
+  GIVE_AUTH_REQUIRED: "Hãy đăng nhập để gửi tim cho lời chúc.",
+  GIVE_ACCOUNT_NOT_ACTIVE: "Tài khoản của bạn hiện không hoạt động nên không thể thả tim.",
+  GIVE_WISH_NOT_FOUND: "Lời chúc này không còn hiển thị công khai.",
+  GIVE_RATE_LIMITED: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
+}
+
+/**
+ * Refusals of `give.report_contribution_message` worded for a signed-in visitor
+ * (DOS/Give#320).
+ */
+export const WISH_REPORT_MESSAGES: Record<string, string> = {
+  GIVE_AUTH_REQUIRED: "Hãy đăng nhập để báo cáo lời chúc.",
+  GIVE_ACCOUNT_NOT_ACTIVE: "Tài khoản của bạn hiện không hoạt động nên không thể gửi báo cáo.",
+  GIVE_NOT_ALLOWED: "Bạn không thể báo cáo lời chúc của chính mình.",
+  GIVE_WISH_NOT_FOUND: "Không tìm thấy lời chúc này, hoặc lời chúc đã bị ẩn.",
+  GIVE_REASON_REQUIRED: "Hãy ghi lý do báo cáo lời chúc.",
+  GIVE_REASON_TOO_LONG: "Lý do báo cáo tối đa 500 ký tự.",
+  GIVE_REPORT_LIMIT: "Bạn đã gửi tối đa 20 báo cáo lời chúc trong 24 giờ qua. Hãy thử lại sau.",
+}
+
+/**
+ * Refusals of `give.moderate_contribution_message` worded for campaign owners,
+ * accepted co-organizer editors, and moderators/admins (DOS/Give#320).
+ */
+export const WISH_MODERATION_MESSAGES: Record<string, string> = {
+  GIVE_AUTH_REQUIRED: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+  GIVE_ACCOUNT_NOT_ACTIVE: "Tài khoản của bạn hiện không hoạt động nên không thể thực hiện thao tác này.",
+  GIVE_NOT_ALLOWED: "Bạn không có quyền kiểm duyệt lời chúc này.",
+  GIVE_NOT_ADMIN: "Chỉ kiểm duyệt viên hoặc quản trị viên mới có thể bác bỏ báo cáo lời chúc.",
+  GIVE_SELF_REVIEW:
+    "Không thể tự kiểm duyệt lời chúc của chính mình hoặc trên chiến dịch bạn tổ chức/biên tập; một kiểm duyệt viên khác cần xử lý.",
+  GIVE_STAFF_HIDE_LOCKED:
+    "Lời chúc này đã bị kiểm duyệt viên ẩn nên chỉ kiểm duyệt viên hoặc quản trị viên mới có thể khôi phục.",
+  GIVE_WISH_NOT_FOUND: "Không tìm thấy lời chúc này. Hãy tải lại trang.",
+  GIVE_REASON_TOO_LONG: "Lý do kiểm duyệt tối đa 500 ký tự.",
+  GIVE_MODERATION_INVALID: "Thao tác kiểm duyệt không hợp lệ.",
+}
+
+/**
+ * Maps database errors from donor-wish RPCs (hearts, reporting, moderation),
+ * preserving retry-after guidance from `GIVE_RATE_LIMITED: <seconds>` without
+ * ever leaking raw Postgres error internals.
+ */
+export function wishDbErrorMessage(
+  error: DbErrorLike | null | undefined,
+  overrides: Record<string, string> = {}
+): string {
+  return commentDbErrorMessage(error, overrides)
 }

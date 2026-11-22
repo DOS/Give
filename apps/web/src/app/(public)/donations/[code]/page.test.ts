@@ -109,6 +109,7 @@ describe("DonationPage (/donations/[code], DOS/Give#50)", () => {
     expect(html).toContain("Bữa trưa cho em")
     expect(html).toContain("GVABCDEFG")
     expect(html).toContain("Đã nhận")
+    expect(html).toContain("Tải thẻ “Tôi đã chung tay”")
     expect(html).toContain("Sao chép đường dẫn")
     expect(html).toContain("Lưu đường dẫn theo dõi")
     // Neither the SSR DOM attributes/text nor the DB select list exposes personal data or raw token.
@@ -247,5 +248,16 @@ describe("DonationPage for a monthly plan's donation (DOS/Give#276)", () => {
 
     expect(html).toContain("Chiến dịch hiện không nhận chuyển khoản")
     expect(html).not.toContain("0123456789")
+    expect(html).not.toContain("Tải thẻ “Tôi đã chung tay”")
+  })
+
+  it("hides the thank-you card button while awaiting transfer and shows it once received (DOS/Give#313)", async () => {
+    setUp(ownRow({ status: "awaiting_transfer", received_amount: 0 }))
+    const awaitingHtml = await render()
+    expect(awaitingHtml).not.toContain("Tải thẻ “Tôi đã chung tay”")
+
+    setUp(ownRow({ status: "received", received_amount: 200000, public_name: "Nguyễn Minh", is_anonymous: false }))
+    const receivedHtml = await render()
+    expect(receivedHtml).toContain("Tải thẻ “Tôi đã chung tay”")
   })
 })

@@ -34,7 +34,7 @@ vi.mock("@/lib/media", async (importOriginal) => ({
   reencodeCover: vi.fn(async () => new Uint8Array([1, 2, 3])),
 }))
 
-const { addEvidence, explainDisbursement } = await import("./actions")
+const { addEvidence, explainDisbursement, linkDisbursementMilestone } = await import("./actions")
 
 const campaign = { id: CAMPAIGN, organizer_id: USER, slug: "quy-a", title: "Quỹ A", status: "live" }
 const tx = { id: TX, campaign_id: CAMPAIGN, amount: 300_000, asset: "VND", booked_at: "2026-11-01T02:00:00Z" }
@@ -436,5 +436,91 @@ describe("addEvidence", () => {
       message: "Mỗi khoản chi có tối đa 20 ảnh chứng từ (không tính ảnh đã bị ẩn).",
     })
     expect(removes()).toHaveLength(1)
+  })
+})
+
+describe("milestone-linked disbursements (DOS/Give#314)", () => {
+  const MILESTONE = "77777777-7777-4777-8777-777777777777"
+
+  it("passes p_milestone_id to record_disbursement when owner picks a milestone", async () => {
+    const res = await explainDisbursement(CAMPAIGN, TX, null, form({ milestone_id: MILESTONE }))
+    expect(res?.ok).toBe(true)
+    expect(op(rpc("record_disbursement"), "args")?.[0]).toMatchObject({ p_milestone_id: MILESTONE })
+  })
+
+  it("refuses linking a refund to a milestone before calling record_disbursement", async () => {
+    const res = await explainDisbursement(
+      CAMPAIGN,
+      TX,
+      null,
+      form({ category: "refund", refund_contribution_id: CONTRIBUTION, milestone_id: MILESTONE })
+    )
+    expect(res).toEqual({ ok: false, message: expect.stringContaining("Khoản hoàn tiền") })
+    expect(rpc("record_disbursement")).toBeUndefined()
+  })
+
+  it("links and unlinks a milestone on an explained non-refund disbursement as owner only", async () => {
+    state.userHandler = reads({ disbursement: { ...explained(), is_refund: false } })
+    state.serviceHandler = (call) =>
+      call.target === "rpc:set_disbursement_milestone"
+        ? { data: { milestone_id: MILESTONE, replayed: false } }
+        : undefined
+
+    const linkForm = new FormData()
+    linkForm.set("milestone_id", MILESTONE)
+    const res = await linkDisbursementMilestone(CAMPAIGN, TX, null, linkForm)
+    expect(res).toEqual({ ok: true, message: expect.stringContaining("Đã gắn khoản chi") })
+    expect(op(rpc("set_disbursement_milestone"), "args")?.[0]).toEqual({
+      p_bank_transaction_id: TX,
+      p_actor_id: USER,
+      p_milestone_id: MILESTONE,
+    })
+
+    // Unlinking passes p_milestone_id: null and returns unlink copy
+    state.serviceCalls.length = 0
+    state.serviceHandler = (call) =>
+      call.target === "rpc:set_disbursement_milestone" ? { data: { milestone_id: null, replayed: false } } : undefined
+    const unlinkForm = new FormData()
+    unlinkForm.set("milestone_id", "")
+    const unlinkRes = await linkDisbursementMilestone(CAMPAIGN, TX, null, unlinkForm)
+    expect(unlinkRes).toEqual({ ok: true, message: expect.stringContaining("Đã bỏ gắn mốc mục tiêu") })
+    expect(op(rpc("set_disbursement_milestone"), "args")?.[0]).toEqual({
+      p_bank_transaction_id: TX,
+      p_actor_id: USER,
+      p_milestone_id: null,
+    })
+
+    // Idempotent replay returns unchanged copy
+    state.serviceHandler = (call) =>
+      call.target === "rpc:set_disbursement_milestone"
+        ? { data: { milestone_id: MILESTONE, replayed: true } }
+        : undefined
+    const replayRes = await linkDisbursementMilestone(CAMPAIGN, TX, null, linkForm)
+    expect(replayRes).toEqual({ ok: true, message: "Mốc mục tiêu của khoản chi không thay đổi." })
+
+    // #264 money boundary: non-owner (e.g. co-organizer editor) is strictly refused before service_role runs
+    state.serviceCalls.length = 0
+    state.userHandler = reads({
+      camp: { ...campaign, organizer_id: OTHER },
+      disbursement: { ...explained(), is_refund: false },
+    })
+    const editorRes = await linkDisbursementMilestone(CAMPAIGN, TX, null, linkForm)
+    expect(editorRes?.ok).toBe(false)
+    expect(rpc("set_disbursement_milestone")).toBeUndefined()
+  })
+
+  it("refuses linking or unlinking a milestone on an already-explained refund disbursement", async () => {
+    state.userHandler = reads({ disbursement: { ...explained(), is_refund: true } })
+    const linkForm = new FormData()
+    linkForm.set("milestone_id", MILESTONE)
+    const res = await linkDisbursementMilestone(CAMPAIGN, TX, null, linkForm)
+    expect(res).toEqual({ ok: false, message: expect.stringContaining("Khoản hoàn tiền") })
+    expect(rpc("set_disbursement_milestone")).toBeUndefined()
+
+    const unlinkForm = new FormData()
+    unlinkForm.set("milestone_id", "")
+    const unlinkRes = await linkDisbursementMilestone(CAMPAIGN, TX, null, unlinkForm)
+    expect(unlinkRes).toEqual({ ok: false, message: expect.stringContaining("Khoản hoàn tiền") })
+    expect(rpc("set_disbursement_milestone")).toBeUndefined()
   })
 })

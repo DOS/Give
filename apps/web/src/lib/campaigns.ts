@@ -78,6 +78,7 @@ export interface Campaign {
   ends_at: string | null
   payment_window_days: number
   status: CampaignStatus
+  prelaunch_public?: boolean
   review_note: string | null
   submitted_at: string | null
   approved_at: string | null
@@ -99,7 +100,10 @@ export type PublicCampaign = Omit<CampaignWithRefs, "organizer_id" | "review_not
 export type CardCampaign = Pick<
   PublicCampaign,
   "id" | "slug" | "type" | "title" | "goal_amount" | "ends_at" | "status" | "display_options" | "cover"
->
+> & {
+  starts_at?: string | null
+  prelaunch_public?: boolean
+}
 
 /**
  * A campaign as discovery and the home page list it: the card columns plus
@@ -173,6 +177,28 @@ export function isPublicStatus(status: CampaignStatus): boolean {
   return PUBLIC_STATUSES.includes(status)
 }
 
+/**
+ * Mirrors give.is_public_prelaunch (DOS-Me 20261201120000): an approved
+ * campaign that opted into public pre-launch teaser visibility and whose
+ * scheduled starts_at is still in the future.
+ */
+export function isPublicPrelaunch(
+  campaign: { status: CampaignStatus; prelaunch_public?: boolean | null; starts_at?: string | null },
+  now: Date = new Date()
+): boolean {
+  if (campaign.status !== "approved" || campaign.prelaunch_public !== true || !campaign.starts_at) return false
+  const startsAt = new Date(campaign.starts_at)
+  return !Number.isNaN(startsAt.getTime()) && startsAt.getTime() > now.getTime()
+}
+
+/** Mirrors give.is_public_campaign_visible: public lifecycle status OR active public pre-launch teaser. */
+export function isPublicCampaignVisible(
+  campaign: { status: CampaignStatus; prelaunch_public?: boolean | null; starts_at?: string | null },
+  now: Date = new Date()
+): boolean {
+  return isPublicStatus(campaign.status) || isPublicPrelaunch(campaign, now)
+}
+
 export function isEditableStatus(status: CampaignStatus): boolean {
   return EDITABLE_STATUSES.includes(status)
 }
@@ -224,24 +250,36 @@ export function categoriesFor(categories: readonly Category[], type: CampaignTyp
 // Discovery filters
 // ---------------------------------------------------------------------------
 
-/** Which public campaigns discovery lists: live ones, ended ones or both. */
-export type DiscoveryStatus = "live" | "ended" | "all"
+/** Which public campaigns discovery lists: live, pre-launch teasers, ended, or all. */
+export type DiscoveryStatus = "live" | "prelaunch" | "ended" | "all"
 
 /**
- * Discovery orders, as give.discover_campaigns defines them (DOS-Me
- * `20261111173000_give_discover_campaigns.sql`; ties end newest first):
+ * Discovery orders & verified highlight filters, as give.discover_campaigns
+ * defines them (DOS-Me `20261111173000_give_discover_campaigns.sql`,
+ * `20261201120000`, and `20261202120000_give_discovery_v2_filters.sql`):
  * - featured ("Nổi bật"): live first, then most supporters (backers for back
  *   campaigns), then the highest share of the goal raised;
  * - newest ("Mới nhất"): most recently approved first;
  * - ending ("Sắp kết thúc"): live by end date, soonest first, then ended
  *   ones, most recently ended first;
  * - near_goal ("Gần đạt mục tiêu"): live first, campaigns under their goal
- *   before those that reached it, then the highest share raised.
+ *   before those that reached it, then the highest share raised;
+ * - ending_soon ("Sắp hết hạn"): live campaigns closing within 7 days,
+ *   soonest first;
+ * - almost_funded ("Sắp đạt mục tiêu"): live campaigns at 60%–<100% of goal
+ *   (honest raised math, excluding other_in), highest completion ratio first;
+ * - recently_audited ("Mới cập nhật sao kê"): public-status campaigns with a
+ *   verified bank statement import timestamp, newest statement first.
  */
-export type DiscoverySort = "featured" | "newest" | "ending" | "near_goal"
+export type DiscoverySort =
+  "featured" | "newest" | "ending" | "near_goal" | "ending_soon" | "almost_funded" | "recently_audited"
+
+/** Discovery 2.0 filtering sort modes that narrow the result set. */
+export type DiscoveryHighlightSort = "ending_soon" | "almost_funded" | "recently_audited"
 
 export const DISCOVERY_STATUSES: readonly { value: DiscoveryStatus; label: string }[] = [
   { value: "live", label: "Đang gây quỹ" },
+  { value: "prelaunch", label: "Sắp ra mắt" },
   { value: "ended", label: "Đã kết thúc" },
   { value: "all", label: "Tất cả" },
 ]
@@ -251,7 +289,21 @@ export const DISCOVERY_SORTS: readonly { value: DiscoverySort; label: string }[]
   { value: "newest", label: "Mới nhất" },
   { value: "ending", label: "Sắp kết thúc" },
   { value: "near_goal", label: "Gần đạt mục tiêu" },
+  { value: "ending_soon", label: "Sắp hết hạn" },
+  { value: "almost_funded", label: "Sắp đạt mục tiêu" },
+  { value: "recently_audited", label: "Mới cập nhật sao kê" },
 ]
+
+/** Quick-filter pills rendered under the /campaigns filter bar (DOS/Give#318). */
+export const DISCOVERY_HIGHLIGHT_PILLS: readonly { value: DiscoveryHighlightSort; label: string }[] = [
+  { value: "ending_soon", label: "Sắp hết hạn" },
+  { value: "almost_funded", label: "Sắp đạt mục tiêu" },
+  { value: "recently_audited", label: "Mới cập nhật sao kê" },
+]
+
+export function isDiscoveryHighlightSort(sort: DiscoverySort): sort is DiscoveryHighlightSort {
+  return sort === "ending_soon" || sort === "almost_funded" || sort === "recently_audited"
+}
 
 /** Cards per "Xem thêm" step. */
 export const DISCOVERY_PAGE_SIZE = 24
@@ -356,7 +408,7 @@ const CAMPAIGN_WITH_REFS = `*, ${REFS}`
  */
 const PUBLIC_CAMPAIGN_WITH_REFS = `id, slug, type, funding_model, category_id, title, summary, story, beneficiary_name,
   beneficiary_relation, cover_media_id, asset, goal_amount, min_contribution, stretch_goal_amount, display_options,
-  starts_at, ends_at, payment_window_days, status, submitted_at, approved_at, outcome_at, created_at, updated_at,
+  starts_at, ends_at, payment_window_days, status, prelaunch_public, submitted_at, approved_at, outcome_at, created_at, updated_at,
   ${REFS}`.replace(/\s+/g, " ")
 
 /**
@@ -364,7 +416,7 @@ const PUBLIC_CAMPAIGN_WITH_REFS = `id, slug, type, funding_model, category_id, t
  * story and other long columns stay out.
  */
 const CARD_COLUMNS =
-  "id, slug, type, title, goal_amount, ends_at, status, display_options, cover:campaign_media!campaigns_cover_media_fk(storage_path, alt)"
+  "id, slug, type, title, goal_amount, starts_at, ends_at, status, prelaunch_public, display_options, cover:campaign_media!campaigns_cover_media_fk(storage_path, alt)"
 
 export async function listCategories(db: Db): Promise<Category[]> {
   const { data, error } = await db
@@ -476,6 +528,42 @@ async function listCampaignOrganizers(db: Db, campaignIds: readonly string[]): P
     return new Map()
   }
   return organizers
+}
+
+/**
+ * Verified bank statement freshness timestamps for public-status campaigns,
+ * by campaign id, through give.public_campaign_statement_freshness (DOS-Me
+ * `20261202120000_give_discovery_v2_filters.sql`). Fail-closed: a failed
+ * lookup is logged and returns an empty map so cards still render cleanly.
+ */
+export async function listCampaignStatementFreshness(
+  db: Db,
+  campaignIds: readonly string[]
+): Promise<Map<string, string>> {
+  const freshness = new Map<string, string>()
+  const uniqueIds = [...new Set(campaignIds)]
+  if (uniqueIds.length === 0) return freshness
+  try {
+    for (const chunk of chunks(uniqueIds, IDS_PER_REQUEST)) {
+      const { data, error } = await db.rpc("public_campaign_statement_freshness", {
+        p_campaign_ids: chunk,
+      })
+      if (error) throw error
+      for (const row of (data ?? []) as { campaign_id?: unknown; last_statement_at?: unknown }[]) {
+        if (
+          typeof row.campaign_id === "string" &&
+          typeof row.last_statement_at === "string" &&
+          !Number.isNaN(Date.parse(row.last_statement_at))
+        ) {
+          freshness.set(row.campaign_id, row.last_statement_at)
+        }
+      }
+    }
+  } catch (error) {
+    console.error("public_campaign_statement_freshness failed; campaign cards omit statement date", error)
+    return new Map()
+  }
+  return freshness
 }
 
 /**

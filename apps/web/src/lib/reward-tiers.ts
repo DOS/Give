@@ -1,3 +1,4 @@
+import { sanitizeAmbassadorRef } from "./ambassadors"
 import type { CampaignStatus, Db } from "./campaigns"
 import { isEditableStatus } from "./campaigns"
 import { formatVnd } from "./format"
@@ -35,13 +36,15 @@ export interface RewardTier {
   status: RewardTierStatus
   sort_order: number
   retired_at: string | null
+  is_early_bird: boolean
+  available_until: string | null
 }
 
 /** The database caps a campaign at 50 tiers (GIVE_REWARD_TIER_LIMIT). */
 export const MAX_TIERS = 50
 
 const TIER_COLUMNS =
-  "id, campaign_id, title, description, min_amount, quantity_limit, quantity_claimed, estimated_delivery, requires_shipping, shipping_note, status, sort_order, retired_at"
+  "id, campaign_id, title, description, min_amount, quantity_limit, quantity_claimed, estimated_delivery, requires_shipping, shipping_note, status, sort_order, retired_at, is_early_bird, available_until"
 
 // ---------------------------------------------------------------------------
 // Rules (mirror give.lock_tier_campaign and give.retire_reward_tier; the
@@ -116,9 +119,11 @@ export function minAmountLabel(amount: number): string {
   return `Từ ${formatVnd(amount)}`
 }
 
-/** The pledge flow (DOS/Give#31) with this tier chosen. */
-export function pledgeHref(slug: string, tierId: string): string {
-  return `/campaigns/${encodeURIComponent(slug)}/pledge?tier=${encodeURIComponent(tierId)}`
+/** The pledge flow (DOS/Give#31) with this tier chosen and optional ambassador `?ref=`. */
+export function pledgeHref(slug: string, tierId: string, refCode?: string | null): string {
+  const cleanRef = sanitizeAmbassadorRef(refCode)
+  const refSuffix = cleanRef ? `&ref=${encodeURIComponent(cleanRef)}` : ""
+  return `/campaigns/${encodeURIComponent(slug)}/pledge?tier=${encodeURIComponent(tierId)}${refSuffix}`
 }
 
 // ---------------------------------------------------------------------------

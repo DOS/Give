@@ -3,6 +3,7 @@ import { bankByBin } from "@/lib/banks"
 import { VIA_CONTACT_EMAIL } from "@/lib/contact"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
+import { isNavigableOrganizerHandle, organizerProfileHref } from "@/lib/organizer-handle"
 import { paymentRequestsStopped } from "@/lib/payment-requests"
 import { NEW_CODE_EVERY_MONTH, PLAN_ENDED_REASON_LABELS, periodLabel, type PlanEndedReason } from "@/lib/plans"
 import { SLUG_PATTERN } from "@/lib/slug"
@@ -472,6 +473,59 @@ export function describeNotice(notice: Notice, options?: NoticeRenderOptions): N
         ...(slug && SLUG_PATTERN.test(slug)
           ? { href: `/campaigns/${slug}`, linkLabel: "Xem trang chiến dịch" }
           : { href: "/me/contributions", linkLabel: "Xem các khoản ủng hộ" }),
+      }
+    }
+    case "campaign_launched": {
+      const isBack = text(p, "campaign_type") === "back"
+      const noun = isBack ? "dự án" : "chiến dịch"
+      const slug = text(p, "campaign_slug")
+      const campaignTitle = text(p, "campaign_title")
+      const subject = campaignTitle ? `${noun} “${campaignTitle}”` : `${noun} bạn theo dõi`
+      return {
+        title: isBack ? "Dự án bạn theo dõi đã mở" : "Chiến dịch bạn theo dõi đã mở",
+        body: capitalize(`${subject} vừa chính thức mở nhận ${isBack ? "cam kết" : "ủng hộ"}.`),
+        ...(slug && SLUG_PATTERN.test(slug)
+          ? { href: `/campaigns/${slug}`, linkLabel: isBack ? "Xem dự án" : "Xem chiến dịch" }
+          : { href: null, linkLabel: null }),
+      }
+    }
+    case "campaign_update_posted": {
+      const slug = text(p, "campaign_slug")
+      const campaignTitle = text(p, "campaign_title")
+      const updateTitle = text(p, "update_title")
+      const subject = campaignTitle ? `chiến dịch “${campaignTitle}”` : "chiến dịch bạn theo dõi"
+      const body = updateTitle
+        ? `${capitalize(subject)} vừa đăng cập nhật mới: “${updateTitle}”.`
+        : `${capitalize(subject)} vừa đăng một cập nhật mới.`
+      return {
+        title: "Cập nhật mới từ chiến dịch",
+        body,
+        ...(slug && SLUG_PATTERN.test(slug)
+          ? { href: `/campaigns/${slug}#cap-nhat`, linkLabel: "Đọc cập nhật" }
+          : { href: null, linkLabel: null }),
+      }
+    }
+    case "organizer_campaign_launched": {
+      const isBack = text(p, "campaign_type") === "back"
+      const noun = isBack ? "dự án mới" : "chiến dịch mới"
+      const slug = text(p, "campaign_slug")
+      const campaignTitle = text(p, "campaign_title")
+      const orgName = text(p, "organizer_display_name")
+      const orgHandle = text(p, "organizer_handle")
+      const subject = campaignTitle ? `${noun} “${campaignTitle}”` : noun
+      const actor = orgName ?? "Người tổ chức bạn theo dõi"
+      const link =
+        slug && SLUG_PATTERN.test(slug)
+          ? { href: `/campaigns/${slug}`, linkLabel: isBack ? "Xem dự án" : "Xem chiến dịch" }
+          : isNavigableOrganizerHandle(orgHandle)
+            ? { href: organizerProfileHref(orgHandle), linkLabel: "Xem hồ sơ" }
+            : { href: null, linkLabel: null }
+      return {
+        title: isBack
+          ? "Người tổ chức bạn theo dõi vừa mở dự án mới"
+          : "Người tổ chức bạn theo dõi vừa mở chiến dịch mới",
+        body: `${actor} vừa chính thức mở ${subject}.`,
+        ...link,
       }
     }
     default:

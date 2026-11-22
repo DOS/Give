@@ -98,6 +98,8 @@ function tierRow(id = TIER, overrides: Partial<PublicRewardTier> = {}): PublicRe
     requires_shipping: false,
     shipping_note: null,
     sort_order: 0,
+    is_early_bird: false,
+    available_until: null,
     ...overrides,
   }
 }
@@ -454,5 +456,58 @@ describe("PledgePage (/campaigns/[slug]/pledge, DOS/Give#216)", () => {
         expect(doc.body.textContent).not.toContain("Bạn đã có cam kết cho dự án này")
       }
     )
+
+    it("ignores ?tier for an expired Early Bird tier (DOS/Give#317)", async () => {
+      const expiredTier = tierRow(TIER, {
+        title: "Early Bird Hết Hạn",
+        is_early_bird: true,
+        available_until: "2020-01-01T00:00:00.000Z",
+        quantity_remaining: 5,
+      })
+      const activeTier = tierRow(OTHER_TIER, { title: "Mức Thường", min_amount: 300_000 })
+      setup({ tiers: [expiredTier, activeTier], pledges: [] })
+      await renderPage({ tier: TIER })
+      expect(formProps().defaults.tier).toBe("")
+    })
+
+    it("reassures a backer holding an existing open pledge on an expired Early Bird tier while allowing cancel or switch (DOS/Give#317)", async () => {
+      const expiredTier = tierRow(TIER, {
+        title: "Early Bird Hết Hạn",
+        is_early_bird: true,
+        available_until: "2020-01-01T00:00:00.000Z",
+        quantity_remaining: 5,
+      })
+      const activeTier = tierRow(OTHER_TIER, { title: "Mức Thường", min_amount: 300_000 })
+      setup({ tiers: [expiredTier, activeTier], pledges: [pledgeRow({ reward_tier_id: TIER })] })
+      const doc = await renderPage()
+      expect(doc.body.textContent).toContain("vẫn giữ nguyên hiệu lực")
+      expect(doc.querySelector('a[href="/me/pledges/GVABCDEFG"]')?.textContent).toBe("Xem cam kết")
+      expect(doc.body.textContent).toContain("Hủy cam kết")
+      expect(formProps().changing).toBe(true)
+      expect(formProps().currentTierId).toBe(TIER)
+      expect(formProps().defaults.tier).toBe("")
+    })
+
+    it("preserves valid ?ref= across requireSession returnPath, shows attribution note, and passes hidden field (DOS/Give#319)", async () => {
+      const baseHandler = state.handler
+      state.handler = (call) => {
+        if (call.target === "rpc:public_ambassador_ref") {
+          return { data: [{ ref_code: "ab23cd45ef", display_name: "Minh Anh KOL" }] }
+        }
+        return baseHandler(call)
+      }
+      const doc = await renderPage({ tier: TIER, ref: "AB23CD45EF" })
+      expect(requireSessionMock).toHaveBeenCalledWith(`/campaigns/${SLUG}/pledge?tier=${TIER}&ref=ab23cd45ef`)
+      expect(doc.body.textContent).toContain("Bạn đang ủng hộ qua lời kêu gọi của Minh Anh KOL.")
+      expect(doc.querySelector('input[name="ambassador_ref"]')?.getAttribute("value")).toBe("ab23cd45ef")
+    })
+
+    it("fails open silently when ?ref= is malformed or unknown (DOS/Give#319)", async () => {
+      const doc = await renderPage({ ref: "invalid!!<script>" })
+      expect(requireSessionMock).toHaveBeenCalledWith(`/campaigns/${SLUG}/pledge`)
+      expect(doc.querySelector('input[name="ambassador_ref"]')).toBeNull()
+      expect(doc.body.textContent).not.toContain("qua lời kêu gọi của")
+      expect(state.calls.some((c) => c.target === "rpc:public_ambassador_ref")).toBe(false)
+    })
   })
 })

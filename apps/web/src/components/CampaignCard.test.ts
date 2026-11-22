@@ -200,4 +200,84 @@ describe("CampaignCard", () => {
     expect(endedHiddenTime).toContain("Thành công")
     expect(endedHiddenTime).not.toContain("6 người ủng hộ")
   })
+
+  it("renders 'Sắp ra mắt' teaser badge, goal amount, and launch date without raised totals or progress bar (DOS/Give#315)", () => {
+    const html = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, {
+          status: "approved",
+          prelaunch_public: true,
+          starts_at: "2099-12-15T00:00:00Z",
+          ends_at: "2100-01-15T00:00:00Z",
+        }),
+        raised: 0,
+      })
+    )
+
+    expect(html).toContain("Sắp ra mắt")
+    expect(html).toContain("Mục tiêu")
+    expect(html).toContain("Mở ngày")
+    expect(html).not.toContain("đã nhận")
+    expect(html).not.toContain("h-1.5")
+
+    // Pre-launch card without a valid starts_at does not throw, does not repeat "Sắp ra mắt",
+    // and suppresses hasImpactReport badge (#314 + #315).
+    const withoutDate = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, {
+          status: "approved",
+          prelaunch_public: true,
+          starts_at: "not-a-date",
+        }),
+        hasImpactReport: true,
+      })
+    )
+    expect(withoutDate.match(/Sắp ra mắt/g)).toHaveLength(1)
+    expect(withoutDate).not.toContain("Mở ngày")
+    expect(withoutDate).not.toContain("Có báo cáo tổng kết")
+  })
+
+  it("displays verified statement freshness on public cards and strictly suppresses it on pre-launch cards (DOS/Give#318)", () => {
+    const auditedLive = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, { status: "live" }),
+        raised: 60_000_000,
+        lastStatementAt: "2026-11-20T10:00:00Z",
+      })
+    )
+    expect(auditedLive).toContain("Sao kê mới nhất: 20/11/2026")
+    expect(auditedLive).toContain("tabular-nums")
+
+    const auditedClosed = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, { status: "closed" }),
+        raised: 100_000_000,
+        lastStatementAt: "2026-11-18T18:00:00Z",
+      })
+    )
+    // 18:00 UTC = 01:00 next day in Asia/Ho_Chi_Minh (UTC+7).
+    expect(auditedClosed).toContain("Sao kê mới nhất: 19/11/2026")
+
+    const invalidDate = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, { status: "live" }),
+        raised: 60_000_000,
+        lastStatementAt: "not-a-timestamp",
+      })
+    )
+    expect(invalidDate).not.toContain("Sao kê mới nhất:")
+
+    const prelaunchSuppressed = renderToStaticMarkup(
+      createElement(CampaignCard, {
+        campaign: campaign(null, {
+          status: "approved",
+          prelaunch_public: true,
+          starts_at: "2099-12-15T00:00:00Z",
+        }),
+        lastStatementAt: "2026-11-20T10:00:00Z",
+      })
+    )
+    expect(prelaunchSuppressed).toContain("Sắp ra mắt")
+    expect(prelaunchSuppressed).not.toContain("Sao kê mới nhất:")
+  })
 })

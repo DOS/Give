@@ -2,20 +2,23 @@ import clsx from "clsx"
 import Link from "next/link"
 
 import { Badge } from "@/components/ui/Badge"
-import { deliveryMonth, isSoldOut, type PublicRewardTier } from "@/lib/pledges"
+import { formatDateTime } from "@/lib/format"
+import { deliveryMonth, isSoldOut, isTierExpired, type PublicRewardTier } from "@/lib/pledges"
 import { minAmountLabel, pledgeHref, quantityLabel } from "@/lib/reward-tiers"
 
 /**
- * The reward tiers of a back campaign on its public page (DOS/Give#83,
- * DESIGN.md 8). While the campaign takes pledges, each tier with slots left
- * is one link into the pledge flow (DOS/Give#31) with the tier chosen; the
- * pledge RPC re-checks both.
+ * The reward tiers of a back campaign on its public page (DOS/Give#83, #317,
+ * DESIGN.md 8). While the campaign takes pledges, each active tier with slots
+ * left and before its Early Bird deadline is one link into the pledge flow
+ * (DOS/Give#31) with the tier chosen; the pledge RPC re-checks every rule.
  */
 export function RewardTiers({
   tiers,
   slug,
   open,
   closedNote,
+  now = new Date(),
+  ambassadorRef,
 }: {
   tiers: readonly PublicRewardTier[]
   slug: string
@@ -23,6 +26,10 @@ export function RewardTiers({
   open: boolean
   /** Why no tier can be chosen, shown when `open` is false. */
   closedNote: string
+  /** Override current time in tests. */
+  now?: Date
+  /** Validated ambassador `?ref=` code to carry into the pledge flow (DOS/Give#319). */
+  ambassadorRef?: string | null
 }) {
   if (tiers.length === 0) return null
   return (
@@ -34,22 +41,28 @@ export function RewardTiers({
       <ol className="mt-3 space-y-3">
         {tiers.map((tier) => {
           const soldOut = isSoldOut(tier)
+          const expired = isTierExpired(tier, now)
           const delivery = deliveryMonth(tier.estimated_delivery)
-          const choosable = open && !soldOut
+          const choosable = open && !soldOut && !expired
           const body = (
             <>
-              <div className="flex items-baseline justify-between gap-3">
-                <p className="font-bold text-fg tabular-nums">{minAmountLabel(tier.min_amount)}</p>
-                {soldOut ? (
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-bold text-fg tabular-nums">{minAmountLabel(tier.min_amount)}</p>
+                  {tier.is_early_bird && <Badge tone="warning">Ưu đãi Early Bird</Badge>}
+                </div>
+                {expired ? (
+                  <Badge tone="danger">Đã hết hạn ưu đãi</Badge>
+                ) : soldOut ? (
                   <Badge tone="danger">{quantityLabel(tier)}</Badge>
                 ) : (
-                  <p className="shrink-0 text-sm text-muted">{quantityLabel(tier)}</p>
+                  <p className="shrink-0 text-sm text-muted tabular-nums">{quantityLabel(tier)}</p>
                 )}
               </div>
               <h3 className="mt-1 font-semibold break-words text-fg">
                 {choosable ? (
                   <Link
-                    href={pledgeHref(slug, tier.id)}
+                    href={pledgeHref(slug, tier.id, ambassadorRef)}
                     className="after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-primary"
                   >
                     {tier.title}
@@ -58,6 +71,13 @@ export function RewardTiers({
                   tier.title
                 )}
               </h3>
+              {tier.available_until && (
+                <p className={clsx("mt-1 text-sm tabular-nums", expired ? "text-muted" : "font-medium text-warning")}>
+                  {expired
+                    ? `Đã hết hạn ưu đãi lúc ${formatDateTime(tier.available_until)}`
+                    : `Ưu đãi đến ${formatDateTime(tier.available_until)}`}
+                </p>
+              )}
               {tier.description && (
                 <p className="mt-1 text-sm break-words whitespace-pre-line text-muted">{tier.description}</p>
               )}

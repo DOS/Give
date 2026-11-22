@@ -7,11 +7,17 @@ import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
 import { Money } from "@/components/ui/Money"
 import { PledgeStatusBadge } from "@/components/ui/PledgeStatusBadge"
+import {
+  campaignPledgeHref,
+  getPublicAmbassadorRef,
+  sanitizeAmbassadorRef,
+  type PublicAmbassadorRef,
+} from "@/lib/ambassadors"
 import { requireSession } from "@/lib/auth/session"
 import { getCampaignBySlug, isPublicStatus } from "@/lib/campaigns"
 import { formatDateTime, formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
-import { acceptsPledges, isSoldOut, NO_REWARD, readShippingAddress } from "@/lib/pledges"
+import { acceptsPledges, isTierExpired, isTierUnavailable, NO_REWARD, readShippingAddress } from "@/lib/pledges"
 import { SLUG_PATTERN } from "@/lib/slug"
 import { dbAs } from "@/lib/supabase"
 import { isSessionRejected } from "@/server/contributions"
@@ -40,35 +46,41 @@ export default async function PledgePage({
   if (!SLUG_PATTERN.test(slug) || slug.length > 80) notFound()
   const query = await searchParams
   const tierParam = typeof query.tier === "string" && isUuid(query.tier) ? query.tier.toLowerCase() : null
-  const returnPath = `/campaigns/${slug}/pledge${tierParam ? `?tier=${tierParam}` : ""}`
+  const refParam = sanitizeAmbassadorRef(query.ref)
+  const returnPath = campaignPledgeHref(slug, { tierId: tierParam, refCode: refParam })
   const session = await requireSession(returnPath)
   const db = dbAs(session.accessToken)
 
   let campaign, tiers, pledges, own
+  let activeAmbassadorRef: PublicAmbassadorRef | null = null
   try {
     campaign = await getCampaignBySlug(db, slug)
     if (!campaign || !isPublicStatus(campaign.status)) notFound()
     if (campaign.type !== "back") redirect(`/campaigns/${slug}`)
-    ;[tiers, pledges, own] = await Promise.all([
+    ;[tiers, pledges, own, activeAmbassadorRef] = await Promise.all([
       listPublicTiers(db, campaign.id),
       ownPledgesOnCampaign(db, session.user.id, campaign.id),
       organizesCampaign(db, campaign.id, session.user.id),
+      refParam ? getPublicAmbassadorRef(db, campaign.id, refParam).catch(() => null) : Promise.resolve(null),
     ])
   } catch (error) {
     if (isSessionRejected(error)) redirect(`/auth/login?return_path=${encodeURIComponent(returnPath)}`)
     throw error
   }
 
+  const now = new Date()
   const open = pledges.find((p) => p.status === "pledged") ?? null
   // A pledge that has moved on (payment due, paid, ...) since the campaign ended.
   const later = open ? null : (pledges.find((p) => p.status !== "cancelled" && p.status !== "pledged") ?? null)
-  const accepting = acceptsPledges(campaign)
+  const accepting = acceptsPledges(campaign, now)
 
-  const chosen = tierParam && tiers.some((t) => t.id === tierParam && !isSoldOut(t)) ? tierParam : null
-  const openTier = open ? (open.reward_tier_id ?? NO_REWARD) : null
+  const chosen = tierParam && tiers.some((t) => t.id === tierParam && !isTierUnavailable(t, now)) ? tierParam : null
+  const openTierExpired =
+    !!open?.reward_tier_id && tiers.some((t) => t.id === open.reward_tier_id && isTierExpired(t, now))
+  const openTier = open ? (openTierExpired ? null : (open.reward_tier_id ?? NO_REWARD)) : null
   const defaults: PledgeDefaults = {
     tier: chosen ?? openTier ?? (tiers.length === 0 ? NO_REWARD : ""),
-    amount: open && (!chosen || chosen === open.reward_tier_id) ? open.intended_amount : null,
+    amount: open && !openTierExpired && (!chosen || chosen === open.reward_tier_id) ? open.intended_amount : null,
     public_name: open ? (open.public_name ?? "") : (session.user.name ?? ""),
     anonymous: open?.is_anonymous ?? false,
     message: open?.message ?? "",
@@ -138,6 +150,12 @@ export default async function PledgePage({
                   ? " Bạn có thể đổi phần quà, số tiền hoặc hủy cam kết cho tới khi dự án kết thúc. Đổi cam kết sẽ tạo mã mới."
                   : ""}
               </p>
+              {openTierExpired && (
+                <p>
+                  Phần quà Early Bird bạn đã chọn đã hết hạn nhận cam kết mới, nhưng cam kết hiện tại của bạn vẫn giữ
+                  nguyên hiệu lực. Bạn có thể giữ nguyên, hủy cam kết, hoặc chuyển sang một phần quà khác bên dưới.
+                </p>
+              )}
               <div className="flex flex-wrap items-center gap-3 pt-2">
                 <ButtonLink href={`/me/pledges/${open.reference_code}`} variant="secondary">
                   Xem cam kết
@@ -164,13 +182,24 @@ export default async function PledgePage({
               </p>
             </Callout>
           ) : accepting && !later ? (
-            <PledgeForm
-              action={savePledge.bind(null, campaign.id, open?.id ?? null)}
-              changing={!!open}
-              tiers={tiers}
-              minContribution={campaign.min_contribution}
-              defaults={defaults}
-            />
+            <>
+              {!open && activeAmbassadorRef && (
+                <p className="rounded-md bg-primary-soft px-4 py-3 text-sm text-fg">
+                  Bạn đang ủng hộ qua lời kêu gọi của{" "}
+                  <span className="font-semibold">{activeAmbassadorRef.display_name}</span>.
+                </p>
+              )}
+              <PledgeForm
+                action={savePledge.bind(null, campaign.id, open?.id ?? null)}
+                changing={!!open}
+                tiers={tiers}
+                minContribution={campaign.min_contribution}
+                defaults={defaults}
+                currentTierId={open?.reward_tier_id ?? null}
+                nowIso={now.toISOString()}
+                ambassadorRef={open ? null : (activeAmbassadorRef?.ref_code ?? null)}
+              />
+            </>
           ) : (
             !later && (
               <Callout title="Dự án hiện không nhận cam kết">

@@ -58,6 +58,11 @@ vi.mock("./comment-actions", () => ({
   reportComment: vi.fn(async () => null),
   moderateCommentFromCampaign: vi.fn(async () => null),
 }))
+vi.mock("./wish-actions", () => ({
+  toggleWishHeart: vi.fn(async () => ({ hearted: true, heartCount: 1 })),
+  reportWish: vi.fn(async () => null),
+  moderateWishFromCampaign: vi.fn(async () => null),
+}))
 vi.mock("@/app/(public)/donations/actions", () => ({ donate: vi.fn(async () => null) }))
 vi.mock("./monthly-actions", () => ({ startMonthlyPlan: vi.fn(async () => null) }))
 
@@ -255,8 +260,8 @@ describe("CampaignPage report flow (DOS/Give#98)", () => {
   })
 })
 
-describe("generateMetadata (/campaigns/[slug], DOS/Give#232)", () => {
-  it("emits canonical URL and complete OpenGraph card with cover image for a public live campaign", async () => {
+describe("generateMetadata (/campaigns/[slug], DOS/Give#232, DOS/Give#313)", () => {
+  it("emits canonical URL and OpenGraph metadata without overriding the dynamic opengraph-image route", async () => {
     state.anonHandler = (call) => {
       if (call.target === "campaigns") {
         return {
@@ -282,7 +287,6 @@ describe("generateMetadata (/campaigns/[slug], DOS/Give#232)", () => {
         title: "Xây trường Bản Mây",
         description: "Cùng dựng lớp học mới.",
         url: `/campaigns/${SLUG}`,
-        images: ["/media/public/campaigns/3333/cover.jpg"],
       },
     })
   })
@@ -1515,5 +1519,657 @@ describe("CampaignPage comments section (DOS/Give#250)", () => {
     }
     const soloDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
     expect(soloDoc.querySelector("section#doi-ngu")).toBeNull()
+  })
+})
+
+describe("CampaignPage downloadable QR poster (DOS/Give#313)", () => {
+  it("renders 'Tải poster QR' on public campaigns without leaking raw account numbers or holder names", async () => {
+    state.serviceHandler = (call) =>
+      call.target === "rpc:payment_account"
+        ? {
+            data: {
+              channel: "statement_import",
+              bank_bin: "970436",
+              account_number: "0011012345678",
+              account_name: "NGUYEN VAN SECRET",
+            },
+          }
+        : undefined
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    const doc = parseDoc(html)
+    const posterBtn = [...doc.querySelectorAll("button")].find((b) => b.textContent?.includes("Tải poster QR"))
+    expect(posterBtn).toBeDefined()
+    expect(posterBtn?.className).toContain("btn-secondary")
+    expect(html).not.toContain("0011012345678")
+    expect(html).not.toContain("NGUYEN VAN SECRET")
+  })
+
+  it("hides 'Tải poster QR' on non-public preview pages", async () => {
+    state.session = {
+      user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
+      accessToken: "org-token",
+    }
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("draft") }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media"
+      )
+        return { data: [] }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(html).not.toContain("Tải poster QR")
+  })
+})
+
+describe("CampaignPage trust moat: transparency summary, milestone evidence & impact report (DOS/Give#314)", () => {
+  it("renders TransparencySummaryBox, milestone rollups, and published ClosingImpactReport on public campaigns without raw HTML", async () => {
+    const MILESTONE = "44444444-4444-4444-8444-444444444444"
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_milestones") {
+        return {
+          data: [
+            {
+              id: MILESTONE,
+              campaign_id: CAMPAIGN,
+              title: "Mốc 1: Mua vật tư",
+              description: null,
+              target_amount: 20_000_000,
+              unlock_note: null,
+              sort_order: 1,
+            },
+          ],
+        }
+      }
+      if (call.target === "rpc:campaign_transparency_summary") {
+        return {
+          data: [
+            {
+              campaign_id: CAMPAIGN,
+              last_statement_at: "2026-11-20T08:00:00Z",
+              matched_incoming_total: 10_000_000,
+              disbursable_total: 10_000_000,
+              disbursed_total: 5_000_000,
+              refunded_total: 0,
+              evidence_count: 6,
+              unexplained_inbound_count: 0,
+              unexplained_out_count: 0,
+              has_impact_report: true,
+              impact_report_published_at: "2026-11-21T00:00:00Z",
+              milestone_rollups: [
+                {
+                  milestone_id: MILESTONE,
+                  title: "Mốc 1: Mua vật tư",
+                  target_amount: 20_000_000,
+                  sort_order: 1,
+                  disbursed_total: 5_000_000,
+                  disbursement_count: 2,
+                  evidence_count: 6,
+                },
+              ],
+            },
+          ],
+        }
+      }
+      if (call.target === "campaign_impact_reports") {
+        return {
+          data: {
+            campaign_id: CAMPAIGN,
+            summary: "## Tổng kết\n\nĐã bàn giao xong.\n\n<script>alert(1)</script>",
+            highlights: [{ label: "Học sinh", value: "120 em" }],
+            published_at: "2026-11-21T00:00:00Z",
+            created_at: "2026-11-20T00:00:00Z",
+            updated_at: "2026-11-21T00:00:00Z",
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(html).toContain("Tóm tắt minh bạch sao kê")
+    expect(html).toContain("50%")
+    expect(html).toContain("0 chưa giải trình")
+    expect(html).toContain("6 chứng từ công khai")
+    expect(html).toContain('id="bao-cao-tong-ket"')
+    expect(html).toContain("120 em")
+    expect(html).not.toContain("<script>alert(1)</script>")
+  })
+
+  it("hides transparency summary, milestone rollups, and impact report on non-public draft previews", async () => {
+    const MILESTONE = "44444444-4444-4444-8444-444444444444"
+    state.session = {
+      user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
+      accessToken: "org-token",
+    }
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("draft") }
+      if (call.target === "campaign_milestones") {
+        return {
+          data: [
+            {
+              id: MILESTONE,
+              campaign_id: CAMPAIGN,
+              title: "Mốc 1: Mua vật tư",
+              description: null,
+              target_amount: 20_000_000,
+              unlock_note: null,
+              sort_order: 1,
+            },
+          ],
+        }
+      }
+      if (call.target === "campaign_updates" || call.target === "campaign_media") return { data: [] }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(html).not.toContain("Tóm tắt minh bạch sao kê")
+    expect(html).not.toContain('id="bao-cao-tong-ket"')
+    expect(html).not.toContain("chứng từ công khai")
+    expect(state.anonCalls.some((c) => c.target === "rpc:campaign_transparency_summary")).toBe(false)
+    expect(state.anonCalls.some((c) => c.target === "campaign_impact_reports")).toBe(false)
+    expect(state.userCalls.some((c) => c.target === "campaign_impact_reports")).toBe(false)
+  })
+
+  it("hides unpublished draft impact reports and avoids dead #bao-cao-tong-ket anchors on public campaigns", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:campaign_transparency_summary") {
+        return {
+          data: [
+            {
+              campaign_id: CAMPAIGN,
+              last_statement_at: "2026-11-20T08:00:00Z",
+              matched_incoming_total: 10_000_000,
+              disbursable_total: 10_000_000,
+              disbursed_total: 0,
+              refunded_total: 0,
+              evidence_count: 0,
+              unexplained_inbound_count: 0,
+              unexplained_out_count: 0,
+              has_impact_report: true,
+              impact_report_published_at: null,
+              milestone_rollups: [],
+            },
+          ],
+        }
+      }
+      if (call.target === "campaign_impact_reports") {
+        return {
+          data: {
+            campaign_id: CAMPAIGN,
+            summary: "Bản nháp nội bộ chưa công bố",
+            highlights: [{ label: "Nháp", value: "99" }],
+            published_at: null,
+            created_at: "2026-11-20T00:00:00Z",
+            updated_at: "2026-11-21T00:00:00Z",
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(html).toContain("Tóm tắt minh bạch sao kê")
+    expect(html).not.toContain("Bản nháp nội bộ chưa công bố")
+    expect(html).not.toContain('id="bao-cao-tong-ket"')
+    expect(html).not.toContain('href="#bao-cao-tong-ket"')
+  })
+})
+
+describe("CampaignPage pre-launch 'Sắp ra mắt' teaser & FollowButton (DOS/Give#315)", () => {
+  it("renders public pre-launch teaser with 'Nhận thông báo khi mở' CTA and ZERO payment/VietQR/donate/pledge/poster/statement/transparency surfaces", async () => {
+    const prelaunchRow = {
+      ...campaignFixture("approved"),
+      prelaunch_public: true,
+      starts_at: "2099-12-01T00:00:00Z",
+      ends_at: "2099-12-31T00:00:00Z",
+    }
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: prelaunchRow }
+      if (call.target === "rpc:public_organizer") {
+        return {
+          data: [
+            {
+              display_name: "Quỹ Bản Mây",
+              kind: "organization",
+              verification_status: "verified",
+              handle: "quy-ban-may",
+            },
+          ],
+        }
+      }
+      if (call.target === "rpc:campaign_follower_count") return { data: 18 }
+      if (call.target === "rpc:campaign_public_team") return { data: [] }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media"
+      ) {
+        return { data: [] }
+      }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    const doc = parseDoc(html)
+
+    expect(html).toContain("Sắp ra mắt")
+    expect(html).toContain("Nhận thông báo khi mở")
+    expect(html).toContain("18 người đang chờ")
+    expect(doc.querySelector(`a[href="/auth/login?return_path=%2Fcampaigns%2F${SLUG}"]`)).not.toBeNull()
+
+    // ZERO money/QR/donation/pledge/poster/statement/transparency/impact leakage on pre-launch!
+    expect(state.serviceCalls.some((c) => c.target === "rpc:payment_account")).toBe(false)
+    expect(state.anonCalls.some((c) => c.target === "rpc:campaign_transparency_summary")).toBe(false)
+    expect(state.anonCalls.some((c) => c.target === "campaign_impact_reports")).toBe(false)
+    expect(html).not.toContain("Tóm tắt minh bạch sao kê")
+    expect(html).not.toContain('id="bao-cao-tong-ket"')
+    expect(html).not.toContain("Tải poster QR")
+    expect(html).not.toContain("VietQR")
+    expect(doc.querySelector("section#ung-ho")).toBeNull()
+    expect(doc.querySelector("section#hang-thang")).toBeNull()
+    expect(doc.querySelector(`a[href="/campaigns/${SLUG}/pledge"]`)).toBeNull()
+    expect(doc.querySelector(`a[href="/campaigns/${SLUG}/statement"]`)).toBeNull()
+    expect(html).not.toContain("Bản xem trước")
+  })
+})
+
+describe("CampaignPage FAQ accordion (DOS/Give#316)", () => {
+  const FAQS = [
+    {
+      id: "faq-1",
+      campaign_id: CAMPAIGN,
+      question: "Tiền ủng hộ có công khai sao kê không?",
+      answer: "Có, toàn bộ giao dịch được công khai tại mục Sao kê.",
+      position: 0,
+      created_at: "2026-11-22T00:00:00Z",
+      updated_at: "2026-11-22T00:00:00Z",
+    },
+  ]
+
+  it("renders FAQ accordion and 'Hỏi đáp' tab on public live campaigns, public pre-launch teasers (#315), and previews", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_faqs") return { data: FAQS }
+      return baseAnon(call)
+    }
+
+    const publicDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(publicDoc.querySelector('a[href="#hoi-dap"]')?.textContent).toContain("Hỏi đáp")
+    expect(publicDoc.querySelector("section#hoi-dap h2")?.textContent).toBe("Câu hỏi thường gặp")
+    expect(publicDoc.querySelector("section#hoi-dap summary")?.textContent).toContain(
+      "Tiền ủng hộ có công khai sao kê không?"
+    )
+
+    // Public pre-launch teaser (approved + prelaunch_public + future starts_at) renders FAQs for anon without money leaks.
+    const prelaunchRow = {
+      ...campaignFixture("approved"),
+      prelaunch_public: true,
+      starts_at: "2099-12-01T00:00:00Z",
+      ends_at: "2099-12-31T00:00:00Z",
+    }
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: prelaunchRow }
+      if (call.target === "campaign_faqs") return { data: FAQS }
+      if (call.target === "rpc:public_organizer") return { data: [] }
+      if (call.target === "rpc:campaign_follower_count") return { data: 5 }
+      if (call.target === "rpc:campaign_public_team") return { data: [] }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media"
+      )
+        return { data: [] }
+      return undefined
+    }
+
+    const prelaunchDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(prelaunchDoc.querySelector('a[href="#hoi-dap"]')?.textContent).toContain("Hỏi đáp")
+    expect(prelaunchDoc.querySelector("section#hoi-dap summary")?.textContent).toContain(
+      "Tiền ủng hộ có công khai sao kê không?"
+    )
+    expect(prelaunchDoc.querySelector(`a[href="/campaigns/${SLUG}/statement"]`)).toBeNull()
+
+    // Organizer preview also renders FAQs.
+    state.session = {
+      user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
+      accessToken: "org-token",
+    }
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("approved") }
+      if (call.target === "campaign_faqs") return { data: FAQS }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media"
+      )
+        return { data: [] }
+      return undefined
+    }
+
+    const previewDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(previewDoc.querySelector('a[href="#hoi-dap"]')?.textContent).toContain("Hỏi đáp")
+    expect(previewDoc.querySelector("section#hoi-dap summary")?.textContent).toContain(
+      "Tiền ủng hộ có công khai sao kê không?"
+    )
+  })
+
+  it("omits FAQ section and 'Hỏi đáp' tab when no FAQs exist or when the FAQ query fails", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_faqs") return { data: null, error: { code: "57014", message: "timeout" } }
+      return baseAnon(call)
+    }
+
+    const doc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(doc.querySelector("section#hoi-dap")).toBeNull()
+    expect(doc.querySelector('a[href="#hoi-dap"]')).toBeNull()
+  })
+})
+
+describe("CampaignPage ambassador referral links & opt-in leaderboard (DOS/Give#319)", () => {
+  it("shows attribution note, passes hidden ambassador_ref to DonateForm, and renders leaderboard on live campaign", async () => {
+    state.serviceHandler = (call) => {
+      if (call.target === "rpc:payment_account") {
+        return {
+          data: {
+            channel: "statement_import",
+            bank_bin: "970436",
+            account_number: "0123456789",
+            account_name: "QUY BAN MAY",
+          },
+        }
+      }
+      return undefined
+    }
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:public_ambassador_ref") {
+        return { data: [{ ref_code: "ab23cd45ef", display_name: "CLB Sinh viên Xanh" }] }
+      }
+      if (call.target === "rpc:campaign_ambassador_leaderboard") {
+        return {
+          data: [
+            {
+              ref_code: "ab23cd45ef",
+              display_name: "CLB Sinh viên Xanh",
+              matched_count: 3,
+              matched_total_vnd: 900_000,
+            },
+          ],
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(
+      await CampaignPage({
+        params: Promise.resolve({ slug: SLUG }),
+        searchParams: Promise.resolve({ ref: "AB23CD45EF" }),
+      })
+    )
+    const doc = parseDoc(html)
+
+    expect(doc.body.textContent).toContain("Bạn đang ủng hộ qua lời kêu gọi của CLB Sinh viên Xanh.")
+    expect(doc.querySelector('input[name="ambassador_ref"]')?.getAttribute("value")).toBe("ab23cd45ef")
+    expect(doc.querySelector("section#nguoi-dong-hanh-lan-toa h2")?.textContent).toBe("Người đồng hành lan tỏa")
+    expect(doc.querySelector("section#nguoi-dong-hanh-lan-toa")?.textContent).toContain("900.000")
+    // Guest sees clean login link preserving ?ref= for creating an ambassador link.
+    const ambassadorLogin = [...doc.querySelectorAll('a[href^="/auth/login"]')].find((a) =>
+      a.textContent?.includes("Tạo link kêu gọi giúp chiến dịch")
+    )
+    expect(ambassadorLogin?.getAttribute("href")).toBe(
+      `/auth/login?return_path=${encodeURIComponent(`/campaigns/${SLUG}?ref=ab23cd45ef`)}`
+    )
+  })
+
+  it("preserves valid ?ref= into back campaign pledge links and RewardTiers, and fails open on invalid ?ref=", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return { data: { ...campaignFixture("live"), type: "back", funding_model: "all_or_nothing" } }
+      }
+      if (call.target === "public_reward_tiers") {
+        return {
+          data: [
+            {
+              id: "44444444-4444-4444-8444-444444444444",
+              campaign_id: CAMPAIGN,
+              title: "Gói Đồng Hành",
+              description: null,
+              min_amount: 200_000,
+              quantity_limit: 50,
+              quantity_claimed: 0,
+              quantity_remaining: 50,
+              estimated_delivery: null,
+              requires_shipping: false,
+              shipping_note: null,
+              sort_order: 0,
+            },
+          ],
+        }
+      }
+      if (call.target === "rpc:public_ambassador_ref") {
+        return { data: [{ ref_code: "ab23cd45ef", display_name: "Minh Anh" }] }
+      }
+      return baseAnon(call)
+    }
+
+    const validDoc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ ref: "ab23cd45ef" }),
+        })
+      )
+    )
+    expect(validDoc.querySelector(`a[href="/campaigns/${SLUG}/pledge?ref=ab23cd45ef"]`)).not.toBeNull()
+    expect(
+      validDoc.querySelector(
+        `a[href="/campaigns/${SLUG}/pledge?tier=44444444-4444-4444-8444-444444444444&ref=ab23cd45ef"]`
+      )
+    ).not.toBeNull()
+
+    // Malformed ?ref= never queries public_ambassador_ref and never blocks rendering.
+    state.anonCalls.length = 0
+    const badDoc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ ref: "bad!!ref" }),
+        })
+      )
+    )
+    expect(state.anonCalls.some((c) => c.target === "rpc:public_ambassador_ref")).toBe(false)
+    expect(badDoc.querySelector(`a[href="/campaigns/${SLUG}/pledge"]`)).not.toBeNull()
+  })
+
+  it("shows ambassador link trigger on public pre-launch, NEVER queries/renders leaderboard on pre-launch or preview, and hides link trigger on ended/draft", async () => {
+    // 1. Public pre-launch: ambassador trigger shown, leaderboard NEVER queried/rendered.
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("approved"),
+            prelaunch_public: true,
+            starts_at: "2099-06-01T00:00:00.000Z",
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+    const preDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(preDoc.body.textContent).toContain("Tạo link kêu gọi giúp chiến dịch")
+    expect(preDoc.querySelector("section#nguoi-dong-hanh-lan-toa")).toBeNull()
+    expect(state.anonCalls.some((c) => c.target === "rpc:campaign_ambassador_leaderboard")).toBe(false)
+
+    // 2. Ended (succeeded) campaign: leaderboard renders, ambassador link creation button hidden.
+    state.anonCalls.length = 0
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("succeeded") }
+      if (call.target === "rpc:campaign_ambassador_leaderboard") {
+        return {
+          data: [{ ref_code: "ended12345", display_name: "Đại Sứ Cũ", matched_count: 2, matched_total_vnd: 500_000 }],
+        }
+      }
+      return baseAnon(call)
+    }
+    const endedDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(endedDoc.body.textContent).not.toContain("Tạo link kêu gọi giúp chiến dịch")
+    expect(endedDoc.querySelector("section#nguoi-dong-hanh-lan-toa")?.textContent).toContain("Đại Sứ Cũ")
+
+    // 3. Draft preview: neither ambassador trigger nor leaderboard queried/rendered.
+    state.anonCalls.length = 0
+    state.userCalls.length = 0
+    state.session = { user: { id: VIEWER, email: "owner@dos.me", name: "Chủ chiến dịch" }, accessToken: "owner-jwt" }
+    state.anonHandler = (call) => (call.target === "campaigns" ? { data: null } : baseAnon(call))
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("draft") }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media" ||
+        call.target === "campaign_faqs"
+      ) {
+        return { data: [] }
+      }
+      return undefined
+    }
+    const draftDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(draftDoc.body.textContent).not.toContain("Tạo link kêu gọi giúp chiến dịch")
+    expect(draftDoc.querySelector("section#nguoi-dong-hanh-lan-toa")).toBeNull()
+    expect(state.anonCalls.some((c) => c.target === "rpc:campaign_ambassador_leaderboard")).toBe(false)
+    expect(state.userCalls.some((c) => c.target === "rpc:get_my_campaign_ambassador")).toBe(false)
+  })
+})
+
+describe("DonorWishesWall on /campaigns/[slug] (DOS/Give#320)", () => {
+  it("renders Tường lời chúc on live public campaign, passes caller JWT when signed in, and enables hidden wishes drawer for accepted editor", async () => {
+    const baseAnon = state.anonHandler
+    state.session = { user: { id: VIEWER, email: "editor@dos.me", name: "Đồng tổ chức" }, accessToken: "editor-jwt" }
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("live") }
+      return baseAnon(call)
+    }
+    state.userHandler = (call) => {
+      if (call.target === "rpc:my_campaign_roles") {
+        return { data: [{ campaign_id: CAMPAIGN, role: "editor" }] }
+      }
+      if (call.target === "rpc:list_campaign_wishes") {
+        return {
+          data: [
+            {
+              contribution_id: "3200d000-0000-4000-8000-000000000001",
+              display_name: "Nguyễn An",
+              is_anonymous: false,
+              amount: 500_000,
+              message: "Chúc chiến dịch sớm đạt mục tiêu!",
+              created_at: "2026-11-22T09:00:00.000Z",
+              heart_count: 3,
+              viewer_hearted: true,
+              total_count: 1,
+            },
+          ],
+        }
+      }
+      if (call.target === "rpc:list_hidden_campaign_wishes") {
+        return {
+          data: [
+            {
+              contribution_id: "3200d000-0000-4000-8000-000000000002",
+              display_name: null,
+              is_anonymous: true,
+              amount: 100_000,
+              message: "Lời chúc đã ẩn bởi biên tập viên",
+              created_at: "2026-11-22T08:00:00.000Z",
+              message_hidden_at: "2026-11-22T08:30:00.000Z",
+              message_hidden_role: "editor",
+              message_hide_reason: "Quảng cáo",
+              can_restore: true,
+            },
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const doc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ show_hidden_wishes: "1" }),
+        })
+      )
+    )
+    const section = doc.querySelector("section#tuong-loi-chuc")
+    expect(section).not.toBeNull()
+    expect(section?.textContent).toContain("Tường lời chúc")
+    expect(section?.textContent).toContain("Chúc chiến dịch sớm đạt mục tiêu!")
+    expect(section?.textContent).toContain("Lời chúc đã ẩn bởi biên tập viên")
+    expect(section?.textContent).toContain("Khôi phục lời chúc")
+    expect(state.userCalls.some((c) => c.target === "rpc:list_campaign_wishes")).toBe(true)
+    expect(state.userCalls.some((c) => c.target === "rpc:list_hidden_campaign_wishes")).toBe(true)
+    expect(state.serviceCalls.some((c) => c.target === "rpc:list_campaign_wishes")).toBe(false)
+  })
+
+  it("NEVER queries or renders Tường lời chúc on public pre-launch or draft preview", async () => {
+    const baseAnon = state.anonHandler
+    // 1. Public pre-launch
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("approved"),
+            prelaunch_public: true,
+            starts_at: "2099-06-01T00:00:00.000Z",
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+    const preDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(preDoc.querySelector("section#tuong-loi-chuc")).toBeNull()
+    expect(state.anonCalls.some((c) => c.target === "rpc:list_campaign_wishes")).toBe(false)
+
+    // 2. Draft preview as signed-in owner
+    state.anonCalls.length = 0
+    state.userCalls.length = 0
+    state.session = { user: { id: VIEWER, email: "owner@dos.me", name: "Owner" }, accessToken: "owner-jwt" }
+    state.anonHandler = (call) => (call.target === "campaigns" ? { data: null } : baseAnon(call))
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("draft") }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media" ||
+        call.target === "campaign_faqs"
+      ) {
+        return { data: [] }
+      }
+      return undefined
+    }
+    const draftDoc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ show_hidden_wishes: "1" }),
+        })
+      )
+    )
+    expect(draftDoc.querySelector("section#tuong-loi-chuc")).toBeNull()
+    expect(state.anonCalls.some((c) => c.target === "rpc:list_campaign_wishes")).toBe(false)
+    expect(state.userCalls.some((c) => c.target === "rpc:list_campaign_wishes")).toBe(false)
+    expect(state.userCalls.some((c) => c.target === "rpc:list_hidden_campaign_wishes")).toBe(false)
   })
 })

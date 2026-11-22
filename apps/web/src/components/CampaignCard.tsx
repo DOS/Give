@@ -3,11 +3,12 @@ import Link from "next/link"
 
 import { TypeBadge } from "@/components/badges"
 import { ProgressBar } from "@/components/ProgressBar"
+import { Badge } from "@/components/ui/Badge"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { CheckIcon } from "@/components/ui/icons"
 import { STATUS_LABELS, type DisplayOptions, type ListedCampaign } from "@/lib/campaigns"
 import { publicCoverUrl } from "@/lib/cover-urls"
-import { daysLeft, formatVnd, progressPercent } from "@/lib/format"
+import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
 import { isNavigableOrganizerHandle, organizerProfileHref } from "@/lib/organizer-handle"
 
 /**
@@ -28,6 +29,8 @@ export function CampaignCard({
   people,
   priority,
   headingLevel = 3,
+  hasImpactReport = false,
+  lastStatementAt = null,
 }: {
   campaign: ListedCampaign
   raised?: number
@@ -36,6 +39,13 @@ export function CampaignCard({
   /** Loads the cover eagerly (above the fold). */
   priority?: boolean
   headingLevel?: 2 | 3
+  /** Shows a trust badge when the campaign has a published closing impact report (DOS/Give#314). */
+  hasImpactReport?: boolean
+  /**
+   * Verified bank statement import timestamp from give.public_campaign_statement_freshness
+   * (DOS/Give#318). Strictly suppressed on pre-launch (`approved`) cards.
+   */
+  lastStatementAt?: string | null
 }) {
   const percent = progressPercent(raised, campaign.goal_amount)
   const days = daysLeft(campaign.ends_at)
@@ -43,19 +53,27 @@ export function CampaignCard({
   const showProgress = options.progress_bar !== false
   const organizer = campaign.organizer
   const isGive = campaign.type === "give"
+  const prelaunch = campaign.status === "approved"
   const Heading = headingLevel === 2 ? "h2" : "h3"
-  const meta = [
-    options.backers_count !== false && people !== undefined
-      ? `${people} ${isGive ? "người ủng hộ" : "người đồng hành"}`
-      : null,
-    campaign.status !== "live"
-      ? STATUS_LABELS[campaign.status]
-      : options.time_remaining !== false && days !== null
-        ? days > 0
-          ? `Còn ${days} ngày`
-          : "Đã hết hạn"
-        : null,
-  ].filter(Boolean)
+  const validStartsAt = campaign.starts_at && !Number.isNaN(Date.parse(campaign.starts_at)) ? campaign.starts_at : null
+  const validLastStatementAt =
+    !prelaunch && lastStatementAt && !Number.isNaN(Date.parse(lastStatementAt)) ? lastStatementAt : null
+  const meta = prelaunch
+    ? validStartsAt
+      ? [`Mở ngày ${formatDate(validStartsAt)}`]
+      : []
+    : [
+        options.backers_count !== false && people !== undefined
+          ? `${people} ${isGive ? "người ủng hộ" : "người đồng hành"}`
+          : null,
+        campaign.status !== "live"
+          ? STATUS_LABELS[campaign.status]
+          : options.time_remaining !== false && days !== null
+            ? days > 0
+              ? `Còn ${days} ngày`
+              : "Đã hết hạn"
+            : null,
+      ].filter(Boolean)
 
   return (
     <article
@@ -77,7 +95,14 @@ export function CampaignCard({
         )}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <TypeBadge type={campaign.type} className="self-start" />
+        <div className="flex flex-wrap items-center gap-2">
+          <TypeBadge type={campaign.type} />
+          {prelaunch ? (
+            <Badge tone="info">Sắp ra mắt</Badge>
+          ) : (
+            hasImpactReport && <Badge tone="brand">Có báo cáo tổng kết</Badge>
+          )}
+        </div>
         <Heading className="line-clamp-2 text-h3 break-words">
           <Link
             href={`/campaigns/${campaign.slug}`}
@@ -112,15 +137,32 @@ export function CampaignCard({
           </p>
         )}
         <div className="mt-auto pt-2">
-          {showProgress && <ProgressBar percent={percent} size="sm" />}
-          <p className={showProgress ? "mt-3" : undefined}>
-            <span className="figure">{formatVnd(raised)}</span>{" "}
-            <span className="text-muted">
-              {isGive ? "đã nhận" : "đã cam kết"}
-              {showProgress && ` · ${percent}%`}
-            </span>
-          </p>
-          {meta.length > 0 && <p className="text-sm text-muted">{meta.join(" · ")}</p>}
+          {prelaunch ? (
+            <>
+              <p>
+                <span className="text-muted">Mục tiêu </span>
+                <span className="figure">{formatVnd(campaign.goal_amount)}</span>
+              </p>
+              {meta.length > 0 && <p className="text-sm text-muted">{meta.join(" · ")}</p>}
+            </>
+          ) : (
+            <>
+              {showProgress && <ProgressBar percent={percent} size="sm" />}
+              <p className={showProgress ? "mt-3" : undefined}>
+                <span className="figure">{formatVnd(raised)}</span>{" "}
+                <span className="text-muted">
+                  {isGive ? "đã nhận" : "đã cam kết"}
+                  {showProgress && ` · ${percent}%`}
+                </span>
+              </p>
+              {meta.length > 0 && <p className="text-sm text-muted">{meta.join(" · ")}</p>}
+              {validLastStatementAt && (
+                <p className="mt-1 text-sm text-primary tabular-nums">
+                  Sao kê mới nhất: {formatDate(validLastStatementAt)}
+                </p>
+              )}
+            </>
+          )}
         </div>
       </div>
     </article>

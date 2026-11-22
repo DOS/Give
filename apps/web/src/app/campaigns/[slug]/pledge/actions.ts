@@ -2,10 +2,11 @@
 
 import { redirect } from "next/navigation"
 
+import { sanitizeAmbassadorRef } from "@/lib/ambassadors"
 import { getSession } from "@/lib/auth/session"
 import { dbErrorMessage, fail, type ActionResult } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
-import { pledgeErrorMessage, pledgeSchema, PLEDGE_MESSAGES, shippingAddressSchema } from "@/lib/pledges"
+import { isTierExpired, pledgeErrorMessage, pledgeSchema, PLEDGE_MESSAGES, shippingAddressSchema } from "@/lib/pledges"
 import { dbAs, dbService } from "@/lib/supabase"
 import { getPublicTier, ownPledgeById } from "@/server/pledges"
 
@@ -51,9 +52,13 @@ export async function savePledge(
   // are given. getSession() does not verify the token, so read with it first:
   // PostgREST rejects a forged or expired token there.
   const db = dbAs(session.accessToken)
-  const { data: visible, error: readError } = await db.from("campaigns").select("id").eq("id", campaignId).maybeSingle()
+  const { data: visible, error: readError } = await db
+    .from("campaigns")
+    .select("id, status")
+    .eq("id", campaignId)
+    .maybeSingle()
   if (readError) return fail(dbErrorMessage(readError))
-  if (!visible) return fail(NOT_ACCEPTING)
+  if (!visible || (visible as { status?: string }).status !== "live") return fail(NOT_ACCEPTING)
 
   // The address is asked for, and kept, only for a tier that ships something.
   let shipping: Record<string, string> | null = null
@@ -65,6 +70,7 @@ export async function savePledge(
       return fail(dbErrorMessage(error as { code?: string; message?: string }))
     }
     if (!tier) return fail(PLEDGE_MESSAGES.GIVE_REWARD_TIER_UNAVAILABLE)
+    if (isTierExpired(tier)) return fail(PLEDGE_MESSAGES.GIVE_REWARD_EXPIRED)
     if (tier.requires_shipping) {
       const address = shippingAddressSchema.safeParse({
         recipient: String(form.get("ship_recipient") ?? ""),
@@ -76,6 +82,11 @@ export async function savePledge(
       shipping = address.data
     }
   }
+
+  // Fail-open ambassador attribution (DOS/Give#319): invalid/blank refs are
+  // silently dropped and NEVER block a pledge; change_pledge preserves any
+  // original attribution in the database.
+  const ambassadorRef = sanitizeAmbassadorRef(form.get("ambassador_ref"))
 
   const fields = {
     p_user_id: session.user.id,
@@ -89,7 +100,11 @@ export async function savePledge(
   const { data, error } = await (
     pledgeId
       ? dbService().rpc("change_pledge", { p_contribution_id: pledgeId, ...fields })
-      : dbService().rpc("create_pledge", { p_campaign_id: campaignId, ...fields })
+      : dbService().rpc("create_pledge", {
+          p_campaign_id: campaignId,
+          ...fields,
+          ...(ambassadorRef ? { p_ambassador_ref: ambassadorRef } : {}),
+        })
   )
     .select("contribution_id, reference_code")
     .single()

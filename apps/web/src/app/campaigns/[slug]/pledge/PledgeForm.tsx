@@ -8,8 +8,15 @@ import { Badge } from "@/components/ui/Badge"
 import { buttonClass } from "@/components/ui/Button"
 import { Field } from "@/components/ui/Field"
 import type { ActionResult } from "@/lib/errors"
-import { formatVnd, parseVnd } from "@/lib/format"
-import { deliveryMonth, isSoldOut, NO_REWARD, type PublicRewardTier, type ShippingAddress } from "@/lib/pledges"
+import { formatDateTime, formatVnd, parseVnd } from "@/lib/format"
+import {
+  deliveryMonth,
+  isSoldOut,
+  isTierExpired,
+  NO_REWARD,
+  type PublicRewardTier,
+  type ShippingAddress,
+} from "@/lib/pledges"
 
 const plain = new Intl.NumberFormat("vi-VN", { maximumFractionDigits: 0 })
 
@@ -47,6 +54,9 @@ export function PledgeForm({
   tiers,
   minContribution,
   defaults,
+  currentTierId = null,
+  nowIso,
+  ambassadorRef,
 }: {
   action: (state: ActionResult, form: FormData) => Promise<ActionResult>
   /** The backer already has an open pledge, which this form replaces. */
@@ -54,7 +64,14 @@ export function PledgeForm({
   tiers: PublicRewardTier[]
   minContribution: number
   defaults: PledgeDefaults
+  /** The tier currently held by the backer's open pledge (even if expired). */
+  currentTierId?: string | null
+  /** Server render timestamp so SSR and hydration evaluate tier expiry identically. */
+  nowIso?: string
+  /** Validated ambassador `?ref=` code to attach fail-open on new pledge creation (DOS/Give#319). */
+  ambassadorRef?: string | null
 }) {
+  const now = nowIso ? new Date(nowIso) : new Date()
   const [tierId, setTierId] = useState(defaults.tier)
   const minimumFor = (id: string) =>
     Math.max(minContribution, tiers.find((t) => t.id === id)?.min_amount ?? minContribution)
@@ -72,35 +89,57 @@ export function PledgeForm({
 
   return (
     <ActionForm action={action} className="space-y-8">
+      {!changing && ambassadorRef && <input type="hidden" name="ambassador_ref" value={ambassadorRef} />}
       <fieldset className="space-y-3">
         <legend className="mb-6 text-h2 text-fg">Chọn phần quà</legend>
         {tiers.map((t) => {
+          const expired = isTierExpired(t, now)
           const soldOut = isSoldOut(t) && t.id !== defaults.tier
+          const disabled = expired || soldOut
+          const isCurrentExpired = expired && currentTierId === t.id
           const month = deliveryMonth(t.estimated_delivery)
           return (
-            <label key={t.id} className={choiceClass(tierId === t.id, soldOut)}>
+            <label key={t.id} className={choiceClass(tierId === t.id, disabled)}>
               <input
                 type="radio"
                 name="tier"
                 value={t.id}
                 checked={tierId === t.id}
-                disabled={soldOut}
+                disabled={disabled}
                 required
                 onChange={() => choose(t.id)}
                 className="mt-1 size-5 shrink-0 accent-primary"
               />
               <span className="min-w-0 flex-1">
                 <span className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-                  <span className="min-w-0 font-semibold break-words text-fg">{t.title}</span>
+                  <span className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="min-w-0 font-semibold break-words text-fg">{t.title}</span>
+                    {t.is_early_bird && <Badge tone="warning">Ưu đãi Early Bird</Badge>}
+                    {isCurrentExpired && <Badge tone="info">Mức hiện tại của bạn</Badge>}
+                  </span>
                   <span className="font-bold text-fg tabular-nums">Từ {formatVnd(t.min_amount)}</span>
                 </span>
+                {t.available_until && (
+                  <span
+                    className={clsx(
+                      "mt-1 block text-sm tabular-nums",
+                      expired ? "text-muted" : "font-medium text-warning"
+                    )}
+                  >
+                    {expired
+                      ? `Đã hết hạn ưu đãi lúc ${formatDateTime(t.available_until)}`
+                      : `Ưu đãi đến ${formatDateTime(t.available_until)}`}
+                  </span>
+                )}
                 {t.description && (
                   <span className="mt-1 block break-words whitespace-pre-line text-fg">{t.description}</span>
                 )}
-                <span className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted">
+                <span className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted tabular-nums">
                   {month && <span>Dự kiến giao: {month}</span>}
                   {t.requires_shipping && <span>Cần địa chỉ nhận quà</span>}
-                  {soldOut ? (
+                  {expired ? (
+                    <Badge tone="danger">Đã hết hạn ưu đãi</Badge>
+                  ) : soldOut ? (
                     <Badge tone="danger">Đã hết suất</Badge>
                   ) : (
                     t.quantity_remaining !== null && <span>Còn {t.quantity_remaining} suất</span>
@@ -226,13 +265,20 @@ export function PledgeForm({
             Give sẽ không hiện tên bạn trên Give. Trang sao kê công khai của ngân hàng vẫn có thể hiện tên người chuyển.
           </p>
         </div>
-        <Field htmlFor="pledge-message" label="Lời nhắn (không bắt buộc)">
+        <Field
+          htmlFor="pledge-message"
+          hintId="pledge-message-hint"
+          label="Lời chúc gửi dự án (không bắt buộc)"
+          hint="Hiển thị công khai trên Tường lời chúc sau khi cam kết được thanh toán và khớp sao kê (tối đa 500 ký tự)."
+        >
           <textarea
             id="pledge-message"
+            aria-describedby="pledge-message-hint"
             name="message"
             rows={3}
             maxLength={500}
             defaultValue={defaults.message}
+            placeholder="Ví dụ: Mong dự án sớm thành hiện thực!"
             className="field"
           />
         </Field>

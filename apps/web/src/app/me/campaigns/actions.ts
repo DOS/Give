@@ -19,6 +19,7 @@ import {
 } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
 import { campaignMediaPrefix, detectImageType, MAX_COVER_BYTES, mediaPath, reencodeCover } from "@/lib/media"
+import { SLUG_PATTERN } from "@/lib/slug"
 import { dbAs, dbService, MEDIA_BUCKET } from "@/lib/supabase"
 import { campaignContentSchema, firstError, formFields, milestoneSchema, updateSchema } from "@/lib/validation"
 
@@ -800,4 +801,83 @@ export async function setCampaignMonthly(
       ? "Đã bật ủng hộ hằng tháng."
       : "Đã tắt ủng hộ hằng tháng. Kế hoạch của người ủng hộ đã dừng; mã ủng hộ của tháng này vẫn dùng được."
   )
+}
+
+const PRELAUNCH_MESSAGES: Record<string, string> = {
+  GIVE_CAMPAIGN_NOT_EDITABLE: "Không thể thay đổi chế độ Sắp ra mắt ở trạng thái hiện tại của chiến dịch.",
+}
+
+/**
+ * Toggles pre-launch "Sắp ra mắt" public teaser opt-in on a campaign before it
+ * goes live (DOS/Give#315). Calls `give.set_campaign_prelaunch_public` directly
+ * under the signed-in caller's JWT (authorizes owner, accepted editor, or
+ * moderator/admin inside the database and writes an audit row).
+ */
+export async function setCampaignPrelaunchPublic(
+  campaignId: string,
+  _state: ActionResult,
+  form: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  if (!isUuid(campaignId)) return fail(NOT_FOUND)
+
+  const choice = String(form.get("enabled") ?? "")
+  if (choice !== "true" && choice !== "false") return fail(INVALID_MONTHLY_CHOICE)
+  const enabled = choice === "true"
+
+  const db = dbAs(session.accessToken)
+  const { error } = await db.rpc("set_campaign_prelaunch_public", {
+    p_campaign_id: campaignId,
+    p_enabled: enabled,
+  })
+  if (error) return fail(dbErrorMessage(error, PRELAUNCH_MESSAGES))
+
+  const slugRead = await db.rpc("managed_campaigns", { p_campaign_id: campaignId }).select("id, slug").maybeSingle()
+  const row = (slugRead.data as { id: string; slug: string } | null) ?? null
+  revalidatePath("/me/campaigns")
+  revalidatePath(`/me/campaigns/${campaignId}`)
+  revalidatePath("/campaigns")
+  revalidatePath("/u/[handle]", "page")
+  if (row?.slug && SLUG_PATTERN.test(row.slug) && row.slug.length <= 80) {
+    revalidatePath(`/campaigns/${row.slug}`)
+  }
+  return done(
+    enabled
+      ? "Đã bật chế độ Sắp ra mắt. Sau khi được duyệt và trước ngày bắt đầu, trang giới thiệu sẽ hiển thị công khai để người ủng hộ đăng ký nhận thông báo."
+      : "Đã tắt chế độ Sắp ra mắt."
+  )
+}
+
+/**
+ * Clones safe content fields (title with "(Bản sao)", type, summary, story,
+ * category, goal, milestones, active reward tiers, FAQs) into a brand-new draft
+ * campaign via give.duplicate_campaign_draft and redirects to its editor
+ * (DOS/Give#316). Strictly owner-only; co-organizer editors and suspended
+ * campaigns are refused.
+ */
+export async function duplicateCampaignDraft(
+  campaignId: string,
+  _state: ActionResult,
+  _form: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  if (!campaign) return fail(loadError)
+  if (campaign.status === "suspended") return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_SUSPENDED" }))
+
+  const { data, error } = await dbAs(session.accessToken).rpc("duplicate_campaign_draft", {
+    p_source_campaign_id: campaign.id,
+  })
+  if (error) return fail(dbErrorMessage(error))
+
+  const rows = Array.isArray(data) ? data : data ? [data] : []
+  const created = rows[0] as { id?: string } | undefined
+  if (!created || !isUuid(created.id)) {
+    return fail("Chưa tạo được bản sao chiến dịch. Hãy thử lại.")
+  }
+
+  revalidatePath("/me/campaigns")
+  redirect(`/me/campaigns/${created.id}`)
 }
