@@ -245,4 +245,28 @@ describe("cancelPledge", () => {
     })
     expect(state.serviceCalls).toHaveLength(0)
   })
+
+  it("passes sanitized p_ambassador_ref to create_pledge and fails open on malformed refs (DOS/Give#319)", async () => {
+    await expect(savePledge(CAMPAIGN, null, null, form({ ambassador_ref: "  AB23CD45EF " }))).rejects.toThrow(
+      "NEXT_REDIRECT /me/pledges/GVABCDEFG"
+    )
+    expect(op(state.serviceCalls[0], "args")?.[0]).toMatchObject({
+      p_campaign_id: CAMPAIGN,
+      p_ambassador_ref: "ab23cd45ef",
+    })
+
+    state.serviceCalls.length = 0
+    await expect(savePledge(CAMPAIGN, null, null, form({ ambassador_ref: "not-valid!!" }))).rejects.toThrow(
+      "NEXT_REDIRECT /me/pledges/GVABCDEFG"
+    )
+    expect(op(state.serviceCalls[0], "args")?.[0]).not.toHaveProperty("p_ambassador_ref")
+
+    // change_pledge preserves original attribution in DB and does not pass p_ambassador_ref.
+    state.serviceCalls.length = 0
+    await expect(savePledge(CAMPAIGN, PLEDGE, null, form({ ambassador_ref: "ab23cd45ef" }))).rejects.toThrow(
+      "NEXT_REDIRECT /me/pledges/GVABCDEFG"
+    )
+    expect(state.serviceCalls[0].target).toBe("rpc:change_pledge")
+    expect(op(state.serviceCalls[0], "args")?.[0]).not.toHaveProperty("p_ambassador_ref")
+  })
 })

@@ -56,6 +56,7 @@ export function PledgeForm({
   defaults,
   currentTierId = null,
   nowIso,
+  ambassadorRef,
 }: {
   action: (state: ActionResult, form: FormData) => Promise<ActionResult>
   /** The backer already has an open pledge, which this form replaces. */
@@ -67,6 +68,8 @@ export function PledgeForm({
   currentTierId?: string | null
   /** Server render timestamp so SSR and hydration evaluate tier expiry identically. */
   nowIso?: string
+  /** Validated ambassador `?ref=` code to attach fail-open on new pledge creation (DOS/Give#319). */
+  ambassadorRef?: string | null
 }) {
   const now = nowIso ? new Date(nowIso) : new Date()
   const [tierId, setTierId] = useState(defaults.tier)
@@ -86,6 +89,7 @@ export function PledgeForm({
 
   return (
     <ActionForm action={action} className="space-y-8">
+      {!changing && ambassadorRef && <input type="hidden" name="ambassador_ref" value={ambassadorRef} />}
       <fieldset className="space-y-3">
         <legend className="mb-6 text-h2 text-fg">Chọn phần quà</legend>
         {tiers.map((t) => {

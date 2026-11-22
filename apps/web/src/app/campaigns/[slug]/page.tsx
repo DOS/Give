@@ -7,6 +7,8 @@ import { cache, type ReactNode } from "react"
 
 import { AccountChanges } from "@/components/AccountChanges"
 import { StatusBadge, TypeBadge } from "@/components/badges"
+import { AmbassadorLeaderboard } from "@/components/campaign/AmbassadorLeaderboard"
+import { AmbassadorLinkModal } from "@/components/campaign/AmbassadorLinkModal"
 import { CampaignFaqAccordion } from "@/components/campaign/CampaignFaqAccordion"
 import { CampaignTeam } from "@/components/campaign/CampaignTeam"
 import { CampaignVideo, isValidYoutubeId } from "@/components/campaign/CampaignVideo"
@@ -31,6 +33,19 @@ import { CheckIcon, ShieldIcon } from "@/components/ui/icons"
 import { Money } from "@/components/ui/Money"
 import { TabNav, type TabItem } from "@/components/ui/Tabs"
 import { listPublicAccountChanges } from "@/lib/account-swaps"
+import {
+  AMBASSADOR_LEADERBOARD_DEFAULT_LIMIT,
+  ambassadorLinkPath,
+  campaignPledgeHref,
+  canCreateAmbassadorLink,
+  getMyCampaignAmbassador,
+  getPublicAmbassadorRef,
+  listCampaignAmbassadorLeaderboard,
+  sanitizeAmbassadorRef,
+  type AmbassadorLeaderboardRow,
+  type MyCampaignAmbassador,
+  type PublicAmbassadorRef,
+} from "@/lib/ambassadors"
 import { siteOrigin } from "@/lib/auth/origin"
 import { getSession } from "@/lib/auth/session"
 import {
@@ -75,6 +90,7 @@ import { acceptsDonations, paymentAccount } from "@/server/contributions"
 import { listPublicTiers, organizesCampaign } from "@/server/pledges"
 import { buildServerPosterData } from "@/server/viral-sharing"
 
+import { saveMyCampaignAmbassador } from "./ambassador-actions"
 import { CampaignComments } from "./CampaignComments"
 import { DonateForm } from "./DonateForm"
 import { toggleCampaignFollow } from "./follow-actions"
@@ -277,6 +293,8 @@ export default async function CampaignPage({
   const preLaunch = (preview && !halted) || publicPrelaunch
   const donationsOpen = isPublicLiveOrEnded && acceptsDonations(campaign)
   const pledgesOpen = isPublicLiveOrEnded && acceptsPledges(campaign)
+  const rawAmbassadorRef = sanitizeAmbassadorRef(queryParams.ref)
+  const ambassadorLinkEligible = canCreateAmbassadorLink(campaign, preview)
   const sessionPromise = getSession()
   const isModeratorPromise = !isPublicLiveOrEnded
     ? Promise.resolve(false)
@@ -302,6 +320,9 @@ export default async function CampaignPage({
     followerCount,
     following,
     faqs,
+    activeAmbassadorRef,
+    ambassadorLeaderboard,
+    myAmbassador,
   ] = await Promise.all([
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
@@ -400,6 +421,25 @@ export default async function CampaignPage({
       console.error("campaign page: faqs lookup failed", error)
       return [] as CampaignFaq[]
     }),
+    // Fail-open ?ref= ambassador display lookup (DOS/Give#319): public campaigns & pre-launch only.
+    !preview && rawAmbassadorRef
+      ? getPublicAmbassadorRef(dbAs(), campaign.id, rawAmbassadorRef).catch(() => null)
+      : Promise.resolve<PublicAmbassadorRef | null>(null),
+    // Opt-in public ambassador leaderboard (DOS/Give#319): strictly isPublicLiveOrEnded (never pre-launch or preview).
+    !isPublicLiveOrEnded
+      ? Promise.resolve<AmbassadorLeaderboardRow[]>([])
+      : listCampaignAmbassadorLeaderboard(dbAs(), campaign.id, AMBASSADOR_LEADERBOARD_DEFAULT_LIMIT).catch(
+          (error: unknown) => {
+            console.error("campaign page: ambassador leaderboard lookup failed", error)
+            return [] as AmbassadorLeaderboardRow[]
+          }
+        ),
+    // Signed-in user's own ambassador record & stats (DOS/Give#319): live & public pre-launch only, under user JWT.
+    !ambassadorLinkEligible
+      ? Promise.resolve<MyCampaignAmbassador | null>(null)
+      : sessionPromise.then((s) =>
+          s ? getMyCampaignAmbassador(dbAs(s.accessToken), campaign.id).catch(() => null) : null
+        ),
   ])
   const showHiddenComments = isModerator && requestedShowHidden
   const pitchVideo =
@@ -410,7 +450,11 @@ export default async function CampaignPage({
   // create_donation_plan also needs an end date and the usable account canDonate checked.
   const monthlyOpen = canDonate && monthly?.allow_monthly === true && campaign.ends_at !== null
   const monthlySupporters = monthly?.monthly_supporters ?? 0
-  const loginHref = `/auth/login?return_path=${encodeURIComponent(`/campaigns/${campaign.slug}`)}`
+  const validAmbassadorRef = activeAmbassadorRef?.ref_code ?? null
+  const returnPath = validAmbassadorRef
+    ? ambassadorLinkPath(campaign.slug, validAmbassadorRef)
+    : `/campaigns/${campaign.slug}`
+  const loginHref = `/auth/login?return_path=${encodeURIComponent(returnPath)}`
   const closedNote =
     campaign.status === "suspended"
       ? isGive
@@ -435,7 +479,7 @@ export default async function CampaignPage({
   const days = daysLeft(campaign.ends_at)
   const options = campaign.display_options
   const people = totals ? (isGive ? totals.supporters_count : totals.backers_count) : null
-  const pledgePath = `/campaigns/${campaign.slug}/pledge`
+  const pledgePath = campaignPledgeHref(campaign.slug, { refCode: validAmbassadorRef })
   const ctaLabel = isGive ? "Ủng hộ" : "Ủng hộ dự án"
 
   const publishedImpactReport = isPublicLiveOrEnded && impactReport?.published_at ? impactReport : null
@@ -640,6 +684,12 @@ export default async function CampaignPage({
               {publicPrelaunch ? (
                 <>
                   <Badge tone="info">Sắp ra mắt</Badge>
+                  {activeAmbassadorRef && (
+                    <p className="mt-3 rounded-md bg-primary-soft px-3 py-2 text-sm text-fg">
+                      Bạn đang xem chiến dịch qua lời kêu gọi của{" "}
+                      <span className="font-semibold">{activeAmbassadorRef.display_name}</span>.
+                    </p>
+                  )}
                   <p className="mt-3 text-sm text-muted">Mục tiêu gây quỹ</p>
                   <p className="mt-1">
                     <Money amount={campaign.goal_amount} size="xl" />
@@ -672,10 +722,29 @@ export default async function CampaignPage({
                       size="lg"
                     />
                     <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={origin} />
+                    {ambassadorLinkEligible && (
+                      <AmbassadorLinkModal
+                        slug={campaign.slug}
+                        origin={origin}
+                        signedIn={!!session}
+                        loginHref={loginHref}
+                        defaultName={session?.user.name ?? ""}
+                        initialAmbassador={myAmbassador}
+                        action={saveMyCampaignAmbassador.bind(null, campaign.id, campaign.slug)}
+                      />
+                    )}
                   </div>
                 </>
               ) : (
                 <>
+                  {!preview && activeAmbassadorRef && (
+                    <p className="mb-4 rounded-md bg-primary-soft px-3 py-2 text-sm text-fg">
+                      {canDonate || canPledge
+                        ? "Bạn đang ủng hộ qua lời kêu gọi của "
+                        : "Bạn đang xem chiến dịch qua lời kêu gọi của "}
+                      <span className="font-semibold">{activeAmbassadorRef.display_name}</span>.
+                    </p>
+                  )}
                   <p>
                     <Money amount={raised} size="xl" />
                   </p>
@@ -767,6 +836,18 @@ export default async function CampaignPage({
                           origin={origin}
                           campaignId={campaign.id}
                         />
+                        {ambassadorLinkEligible && (
+                          <AmbassadorLinkModal
+                            campaignId={campaign.id}
+                            slug={campaign.slug}
+                            origin={origin}
+                            signedIn={!!session}
+                            loginHref={loginHref}
+                            defaultName={session?.user.name ?? ""}
+                            initialAmbassador={myAmbassador}
+                            action={saveMyCampaignAmbassador.bind(null, campaign.id, campaign.slug)}
+                          />
+                        )}
                         {posterData && <QrPosterButton data={posterData} />}
                         {!ownCampaign && (
                           <ReportCampaign campaignId={campaign.id} slug={campaign.slug} signedIn={!!session} />
@@ -804,6 +885,7 @@ export default async function CampaignPage({
                     tiers={tiers}
                     slug={campaign.slug}
                     open={canPledge}
+                    ambassadorRef={validAmbassadorRef}
                     closedNote={
                       ownProject
                         ? "Đây là dự án của bạn nên bạn không chọn mức được."
@@ -857,7 +939,13 @@ export default async function CampaignPage({
                   Góp từ {formatVnd(campaign.min_contribution)}. Tiền chuyển thẳng vào tài khoản nhận của chiến dịch.
                 </p>
                 <div className="mt-6 card p-4 sm:p-6">
-                  <DonateForm campaignId={campaign.id} defaultName={session?.user.name ?? ""} signedIn={!!session} />
+                  <DonateForm
+                    campaignId={campaign.id}
+                    defaultName={session?.user.name ?? ""}
+                    signedIn={!!session}
+                    ambassadorRef={validAmbassadorRef}
+                    ambassadorDisplayName={activeAmbassadorRef?.display_name ?? null}
+                  />
                 </div>
               </section>
             )}
@@ -909,6 +997,7 @@ export default async function CampaignPage({
             {publishedImpactReport && <ClosingImpactReport report={publishedImpactReport} />}
             {totals && <StatementPreview slug={campaign.slug} totals={totals} rows={statementRows} />}
             <AccountChanges changes={accountChanges} />
+            {isPublicLiveOrEnded && <AmbassadorLeaderboard rows={ambassadorLeaderboard} />}
             {!preview && <CampaignTeam members={publicTeam} />}
 
             <section id="cap-nhat" aria-labelledby="updates-heading" className="scroll-mt-24">

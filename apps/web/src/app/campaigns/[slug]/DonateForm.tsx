@@ -8,13 +8,23 @@ export function DonateForm({
   campaignId,
   defaultName,
   signedIn,
+  ambassadorRef,
+  ambassadorDisplayName,
 }: {
   campaignId: string
   defaultName: string
   signedIn: boolean
+  ambassadorRef?: string | null
+  ambassadorDisplayName?: string | null
 }) {
   return (
     <ActionForm action={donate.bind(null, campaignId)} className="space-y-6">
+      {ambassadorRef && <input type="hidden" name="ambassador_ref" value={ambassadorRef} />}
+      {ambassadorDisplayName && (
+        <p className="rounded-md bg-primary-soft px-3 py-2 text-sm text-fg">
+          Bạn đang ủng hộ qua lời kêu gọi của <span className="font-semibold">{ambassadorDisplayName}</span>.
+        </p>
+      )}
       <Field htmlFor="donate-amount" label="Số tiền ủng hộ (đồng)">
         <input
           id="donate-amount"

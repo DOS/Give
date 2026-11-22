@@ -239,6 +239,9 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ACCOUNT_NOT_ACTIVE: "Tài khoản của bạn hiện không hoạt động nên không thể thực hiện thao tác này.",
   GIVE_ORGANIZER_NOT_ACTIVE: "Hồ sơ người tổ chức của bạn hiện không hoạt động nên không thể tạo bản sao chiến dịch.",
   GIVE_CAMPAIGN_SUSPENDED: "Không thể tạo bản sao từ chiến dịch đang bị tạm dừng.",
+  // Peer-to-peer campaign ambassadors (DOS/Give#319).
+  GIVE_AMBASSADOR_NAME_INVALID: "Tên hiển thị phải từ 1 đến 80 ký tự và không chứa ký tự điều khiển.",
+  GIVE_AMBASSADOR_IMMUTABLE: "Không thể thay đổi mã liên kết đồng hành sau khi đã tạo.",
 }
 
 const PG_MESSAGES: Record<string, string> = {

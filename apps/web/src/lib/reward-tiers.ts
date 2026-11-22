@@ -1,3 +1,4 @@
+import { sanitizeAmbassadorRef } from "./ambassadors"
 import type { CampaignStatus, Db } from "./campaigns"
 import { isEditableStatus } from "./campaigns"
 import { formatVnd } from "./format"
@@ -118,9 +119,11 @@ export function minAmountLabel(amount: number): string {
   return `Từ ${formatVnd(amount)}`
 }
 
-/** The pledge flow (DOS/Give#31) with this tier chosen. */
-export function pledgeHref(slug: string, tierId: string): string {
-  return `/campaigns/${encodeURIComponent(slug)}/pledge?tier=${encodeURIComponent(tierId)}`
+/** The pledge flow (DOS/Give#31) with this tier chosen and optional ambassador `?ref=`. */
+export function pledgeHref(slug: string, tierId: string, refCode?: string | null): string {
+  const cleanRef = sanitizeAmbassadorRef(refCode)
+  const refSuffix = cleanRef ? `&ref=${encodeURIComponent(cleanRef)}` : ""
+  return `/campaigns/${encodeURIComponent(slug)}/pledge?tier=${encodeURIComponent(tierId)}${refSuffix}`
 }
 
 // ---------------------------------------------------------------------------

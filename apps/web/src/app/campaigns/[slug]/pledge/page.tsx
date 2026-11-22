@@ -7,6 +7,12 @@ import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Callout } from "@/components/ui/Callout"
 import { Money } from "@/components/ui/Money"
 import { PledgeStatusBadge } from "@/components/ui/PledgeStatusBadge"
+import {
+  campaignPledgeHref,
+  getPublicAmbassadorRef,
+  sanitizeAmbassadorRef,
+  type PublicAmbassadorRef,
+} from "@/lib/ambassadors"
 import { requireSession } from "@/lib/auth/session"
 import { getCampaignBySlug, isPublicStatus } from "@/lib/campaigns"
 import { formatDateTime, formatVnd } from "@/lib/format"
@@ -40,19 +46,22 @@ export default async function PledgePage({
   if (!SLUG_PATTERN.test(slug) || slug.length > 80) notFound()
   const query = await searchParams
   const tierParam = typeof query.tier === "string" && isUuid(query.tier) ? query.tier.toLowerCase() : null
-  const returnPath = `/campaigns/${slug}/pledge${tierParam ? `?tier=${tierParam}` : ""}`
+  const refParam = sanitizeAmbassadorRef(query.ref)
+  const returnPath = campaignPledgeHref(slug, { tierId: tierParam, refCode: refParam })
   const session = await requireSession(returnPath)
   const db = dbAs(session.accessToken)
 
   let campaign, tiers, pledges, own
+  let activeAmbassadorRef: PublicAmbassadorRef | null = null
   try {
     campaign = await getCampaignBySlug(db, slug)
     if (!campaign || !isPublicStatus(campaign.status)) notFound()
     if (campaign.type !== "back") redirect(`/campaigns/${slug}`)
-    ;[tiers, pledges, own] = await Promise.all([
+    ;[tiers, pledges, own, activeAmbassadorRef] = await Promise.all([
       listPublicTiers(db, campaign.id),
       ownPledgesOnCampaign(db, session.user.id, campaign.id),
       organizesCampaign(db, campaign.id, session.user.id),
+      refParam ? getPublicAmbassadorRef(db, campaign.id, refParam).catch(() => null) : Promise.resolve(null),
     ])
   } catch (error) {
     if (isSessionRejected(error)) redirect(`/auth/login?return_path=${encodeURIComponent(returnPath)}`)
@@ -173,15 +182,24 @@ export default async function PledgePage({
               </p>
             </Callout>
           ) : accepting && !later ? (
-            <PledgeForm
-              action={savePledge.bind(null, campaign.id, open?.id ?? null)}
-              changing={!!open}
-              tiers={tiers}
-              minContribution={campaign.min_contribution}
-              defaults={defaults}
-              currentTierId={open?.reward_tier_id ?? null}
-              nowIso={now.toISOString()}
-            />
+            <>
+              {!open && activeAmbassadorRef && (
+                <p className="rounded-md bg-primary-soft px-4 py-3 text-sm text-fg">
+                  Bạn đang ủng hộ qua lời kêu gọi của{" "}
+                  <span className="font-semibold">{activeAmbassadorRef.display_name}</span>.
+                </p>
+              )}
+              <PledgeForm
+                action={savePledge.bind(null, campaign.id, open?.id ?? null)}
+                changing={!!open}
+                tiers={tiers}
+                minContribution={campaign.min_contribution}
+                defaults={defaults}
+                currentTierId={open?.reward_tier_id ?? null}
+                nowIso={now.toISOString()}
+                ambassadorRef={open ? null : (activeAmbassadorRef?.ref_code ?? null)}
+              />
+            </>
           ) : (
             !later && (
               <Callout title="Dự án hiện không nhận cam kết">
