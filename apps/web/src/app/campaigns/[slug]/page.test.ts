@@ -1458,4 +1458,62 @@ describe("CampaignPage comments section (DOS/Give#250)", () => {
       errorSpy.mockRestore()
     }
   })
+
+  it("renders public CampaignTeam block when campaign_public_team returns accepted co-organizers and omits it for solo owner (DOS/Give#253)", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:campaign_public_team") {
+        return {
+          data: [
+            {
+              member_role: "owner",
+              display_name: "Quỹ Bản Mây",
+              avatar_url: null,
+              kind: "organization",
+              verification_status: "verified",
+              joined_at: "2026-11-01T00:00:00Z",
+            },
+            {
+              member_role: "editor",
+              display_name: "Minh Anh",
+              avatar_url: "https://cdn.example.vn/minh.jpg",
+              kind: null,
+              verification_status: null,
+              joined_at: "2026-11-10T00:00:00Z",
+            },
+          ],
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const withTeam = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const teamSection = withTeam.querySelector("section#doi-ngu")
+    expect(teamSection).not.toBeNull()
+    expect(teamSection?.textContent).toContain("Đội ngũ tổ chức")
+    expect(teamSection?.textContent).toContain("Quỹ Bản Mây")
+    expect(teamSection?.textContent).toContain("Minh Anh")
+    expect(teamSection?.textContent).toContain("Đồng tổ chức")
+
+    // Solo owner only -> team section stays omitted.
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:campaign_public_team") {
+        return {
+          data: [
+            {
+              member_role: "owner",
+              display_name: "Quỹ Bản Mây",
+              avatar_url: null,
+              kind: "organization",
+              verification_status: "verified",
+              joined_at: "2026-11-01T00:00:00Z",
+            },
+          ],
+        }
+      }
+      return baseAnon(call)
+    }
+    const soloDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(soloDoc.querySelector("section#doi-ngu")).toBeNull()
+  })
 })

@@ -28,8 +28,17 @@ import {
   parseCampaignManageTab,
   type CampaignAnalytics,
 } from "@/lib/analytics"
+import { siteOrigin } from "@/lib/auth/origin"
 import { requireSession } from "@/lib/auth/session"
-import { dbErrorMessage, giveErrorCode, type DbErrorLike } from "@/lib/errors"
+import {
+  getMyCampaignRole,
+  listCampaignMemberInvites,
+  listCampaignMembers,
+  teamTabHref,
+  type CampaignMemberInviteRow,
+  type CampaignMemberRow,
+} from "@/lib/campaign-members"
+import { campaignMemberDbErrorMessage, dbErrorMessage, giveErrorCode, type DbErrorLike } from "@/lib/errors"
 import { bankLabel } from "@/lib/banks"
 import { canAskSwap, lastDecidedSwap, pendingSwap, SWAP_REASON_MAX, type AccountSwapRequest } from "@/lib/account-swaps"
 import {
@@ -79,6 +88,7 @@ import {
   type PlanSupporter,
 } from "./MonthlySection"
 import { FulfillmentLink, RewardTiersSection } from "./RewardTiersSection"
+import { TeamTab } from "./TeamTab"
 
 import {
   addMilestone,
@@ -131,12 +141,19 @@ export default async function EditCampaignPage({
   const resolvedSearch = searchParams ? await searchParams : {}
   const tab = parseCampaignManageTab(resolvedSearch.tab)
   const days = parseAnalyticsDays(resolvedSearch.days)
-  const returnPath = tab === "analytics" ? analyticsTabHref(id, days) : `/me/campaigns/${id}`
+  const returnPath =
+    tab === "analytics" ? analyticsTabHref(id, days) : tab === "team" ? teamTabHref(id) : `/me/campaigns/${id}`
   const session = await requireSession(returnPath)
   if (!isUuid(id)) notFound()
   const db = dbAs(session.accessToken)
   const campaign = await getCampaignById(db, id)
-  if (!campaign || campaign.organizer_id !== session.user.id) notFound()
+  if (!campaign) notFound()
+  const isOwner = campaign.organizer_id === session.user.id
+  const role = isOwner ? "owner" : await getMyCampaignRole(db, campaign.id)
+  const isEditor = !isOwner && role === "editor"
+  if (!isOwner && !isEditor) notFound()
+  // Analytics and team management are strictly owner-only (DOS/Give#253, #264).
+  if (!isOwner && (tab === "analytics" || tab === "team")) notFound()
 
   const headerAndTabs = (
     <div className="space-y-6">
@@ -146,6 +163,7 @@ export default async function EditCampaignPage({
           <>
             <TypeBadge type={campaign.type} />
             <StatusBadge status={campaign.status} />
+            {isEditor && <Badge tone="info">Đồng tổ chức</Badge>}
           </>
         }
         title={campaign.title}
@@ -155,15 +173,51 @@ export default async function EditCampaignPage({
           </ButtonLink>
         }
       />
-      <TabNav
-        label="Mục chiến dịch"
-        items={[
-          { href: `/me/campaigns/${campaign.id}`, label: "Quản lý", current: tab === "manage" },
-          { href: analyticsTabHref(campaign.id), label: "Thống kê", current: tab === "analytics" },
-        ]}
-      />
+      {isOwner && (
+        <TabNav
+          label="Mục chiến dịch"
+          items={[
+            { href: `/me/campaigns/${campaign.id}`, label: "Quản lý", current: tab === "manage" },
+            { href: analyticsTabHref(campaign.id), label: "Thống kê", current: tab === "analytics" },
+            { href: teamTabHref(campaign.id), label: "Đội ngũ", current: tab === "team" },
+          ]}
+        />
+      )}
     </div>
   )
+
+  if (tab === "team") {
+    const [membersState, invitesState] = await Promise.all([
+      listCampaignMembers(db, campaign.id)
+        .then((rows) => ({ rows, error: null as string | null }))
+        .catch((error: unknown) => ({
+          rows: [] as CampaignMemberRow[],
+          error: campaignMemberDbErrorMessage(error as DbErrorLike | null),
+        })),
+      listCampaignMemberInvites(db, campaign.id)
+        .then((rows) => ({ rows, error: null as string | null }))
+        .catch((error: unknown) => ({
+          rows: [] as CampaignMemberInviteRow[],
+          error: campaignMemberDbErrorMessage(error as DbErrorLike | null),
+        })),
+    ])
+
+    return (
+      <MeDetail>
+        {headerAndTabs}
+        <TeamTab
+          campaignId={campaign.id}
+          campaignSlug={campaign.slug}
+          campaignStatus={campaign.status}
+          members={membersState.rows}
+          invites={invitesState.rows}
+          membersError={membersState.error}
+          invitesError={invitesState.error}
+          origin={siteOrigin()}
+        />
+      </MeDetail>
+    )
+  }
 
   if (tab === "analytics") {
     let analytics: CampaignAnalytics | null = null
@@ -194,7 +248,7 @@ export default async function EditCampaignPage({
   }
 
   const isGive = campaign.type === "give"
-  const showMonthly = showMonthlySection(campaign.type, campaign.status)
+  const showMonthly = isOwner && showMonthlySection(campaign.type, campaign.status)
   const allowMonthly = campaignAllowsMonthly(campaign)
   const [
     categories,
@@ -210,19 +264,17 @@ export default async function EditCampaignPage({
     listCategories(db),
     listMilestones(db, campaign.id),
     listAllUpdates(db, campaign.id),
-    isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
-    // Both types need a usable account before review (DOS/Give#85). A failed
-    // account read shows a notice in its section instead of failing the whole
-    // editor; submitForReview still checks the account on the server.
-    loadEditorAccounts(db, session.user.id, campaign.id, campaign.status, campaign.type).catch(() => null),
+    isOwner && isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
+    // Both types need a usable account before review (DOS/Give#85). Strictly owner-only.
+    isOwner
+      ? loadEditorAccounts(db, session.user.id, campaign.id, campaign.status, campaign.type).catch(() => null)
+      : Promise.resolve(null),
     // Reward tiers of a back campaign (DOS/Give#83); a failed read degrades its section only.
     isGive ? Promise.resolve(null) : listCampaignTiers(db, campaign.id).catch(() => null),
     loadYoutubeVideo(db, campaign.id).catch(() => null),
     listStatusEventsByCampaign(db, [campaign.id]).catch(() => new Map<string, CampaignStatusEvent[]>()),
-    // Monthly supporters (DOS/Give#276): the service-role RPC runs only after the
-    // caller's own token loaded the campaign above and they organize it; a failed
-    // read degrades the monthly section only.
-    showMonthly && allowMonthly
+    // Monthly supporters (DOS/Give#276): strictly owner-only — never run for co-organizers.
+    isOwner && showMonthly && allowMonthly
       ? loadPlanSupporters(campaign.id, session.user.id).catch(() => null)
       : Promise.resolve<PlanSupporter[] | null>([]),
   ])
@@ -234,8 +286,8 @@ export default async function EditCampaignPage({
   const canPublish = canUpdate && !editable && campaign.status !== "in_review"
   const showUpdates = canUpdate || updates.length > 0
 
-  const showMoney = Boolean(totals) || !editable
-  const showFulfillment = !isGive && canUpdateFulfillment(campaign)
+  const showMoney = isOwner && (Boolean(totals) || !editable)
+  const showFulfillment = isOwner && !isGive && canUpdateFulfillment(campaign)
   const toc = [
     showFulfillment && { id: "fulfillment", label: "Giao quà" },
     showMoney && { id: "money", label: "Sao kê và giải trình chi" },
@@ -246,7 +298,7 @@ export default async function EditCampaignPage({
     !isGive && { id: "reward-tiers", label: "Phần thưởng" },
     showMonthly && { id: "monthly", label: "Ủng hộ hằng tháng" },
     showUpdates && { id: "updates", label: "Cập nhật" },
-    { id: "receiving-account", label: "Tài khoản nhận tiền" },
+    isOwner && { id: "receiving-account", label: "Tài khoản nhận tiền" },
     { id: "status", label: "Trạng thái" },
   ].filter((item): item is { id: string; label: string } => Boolean(item))
 
@@ -255,14 +307,22 @@ export default async function EditCampaignPage({
       {headerAndTabs}
 
       <div className="space-y-4">
+        {isEditor && (
+          <Callout tone="info" title="Quyền đồng tổ chức (biên tập viên)">
+            Bạn có thể sửa nội dung, ảnh bìa, video giới thiệu, các mốc mục tiêu, phần thưởng và đăng cập nhật theo
+            trạng thái chiến dịch. Tài khoản nhận tiền, sao kê, giải trình khoản chi, giao quà, gửi duyệt, hủy chiến
+            dịch và quản lý đội ngũ thuộc quyền riêng của người tổ chức chính.
+          </Callout>
+        )}
         <StatusNotice
           status={campaign.status}
           reviewNote={campaign.review_note}
-          accountBlock={openingBlock(accounts)}
+          accountBlock={isOwner ? openingBlock(accounts) : null}
           ended={campaign.ends_at !== null && new Date(campaign.ends_at) <= new Date()}
-          paymentsStopped={Boolean(totals?.payments_stopped_at)}
+          paymentsStopped={isOwner && Boolean(totals?.payments_stopped_at)}
+          isEditor={isEditor}
         />
-        {totals?.payments_stopped_at && (
+        {isOwner && totals?.payments_stopped_at && (
           <Callout
             tone="warning"
             className="break-words"
@@ -916,7 +976,7 @@ export default async function EditCampaignPage({
             </Panel>
           )}
 
-          {!accounts && (
+          {isOwner && !accounts && (
             <Panel id="receiving-account" title="Tài khoản nhận tiền">
               <Callout tone="danger">
                 Không tải được tài khoản nhận tiền của chiến dịch. Hãy tải lại trang, hoặc xem tại trang{" "}
@@ -928,7 +988,7 @@ export default async function EditCampaignPage({
             </Panel>
           )}
 
-          {accounts && (
+          {isOwner && accounts && (
             <ReceivingAccountSection
               campaignId={campaign.id}
               status={campaign.status}
@@ -944,89 +1004,99 @@ export default async function EditCampaignPage({
                   <StatusHistory events={statusEvents} campaignTitle={campaign.title} />
                 </div>
               )}
-              {editable && (
-                <ActionForm
-                  action={submitForReview.bind(null, campaign.id)}
-                  className={
-                    statusEvents.length > 0 ? "max-w-160 space-y-4 border-t border-border pt-6" : "max-w-160 space-y-4"
-                  }
-                >
-                  <p className="text-fg">
-                    Khi gửi duyệt, bạn không sửa được nội dung cho tới khi kiểm duyệt viên trả lời. Cần có danh mục, tóm
-                    tắt, câu chuyện ít nhất 100 ký tự, ngày kết thúc
-                    {isGive ? " và người thụ hưởng" : ""}.
-                  </p>
-                  {submitBlocked && (
-                    <Callout tone="warning" role="alert">
-                      Chưa gửi duyệt được: chiến dịch cần gắn một tài khoản nhận tiền đã xác minh, đứng tên bạn.{" "}
-                      {accounts?.bound &&
-                      accounts.boundHasTransactions &&
-                      !canAskSwap(campaign.status, campaign.type, accounts.boundHasTransactions) ? (
-                        <>
-                          Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: hãy liên hệ
-                          đội ngũ Give qua email <ContactEmailLink /> để được hỗ trợ.
-                        </>
-                      ) : (
-                        <>
-                          {accounts?.bound
-                            ? accounts.boundHasTransactions
-                              ? "Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: gửi yêu cầu đổi tài khoản trong mục "
-                              : "Tài khoản đang gắn không còn dùng được: nhả nó trong mục "
-                            : "Chiến dịch này chưa gắn tài khoản: chọn tài khoản trong mục "}
-                          <a href="#receiving-account" className="font-medium underline">
-                            Tài khoản nhận tiền
-                          </a>{" "}
-                          {accounts?.bound
-                            ? accounts.boundHasTransactions
-                              ? "ở trên để bộ phận tài chính duyệt"
-                              : "ở trên rồi gắn tài khoản khác"
-                            : "ở trên"}
-                          , hoặc khai báo và xác minh tài khoản tại trang{" "}
-                          <Link href="/me/accounts" className="font-medium underline">
-                            Tài khoản nhận tiền
-                          </Link>
-                          .
-                        </>
+              {isOwner ? (
+                <>
+                  {editable && (
+                    <ActionForm
+                      action={submitForReview.bind(null, campaign.id)}
+                      className={
+                        statusEvents.length > 0
+                          ? "max-w-160 space-y-4 border-t border-border pt-6"
+                          : "max-w-160 space-y-4"
+                      }
+                    >
+                      <p className="text-fg">
+                        Khi gửi duyệt, bạn không sửa được nội dung cho tới khi kiểm duyệt viên trả lời. Cần có danh mục,
+                        tóm tắt, câu chuyện ít nhất 100 ký tự, ngày kết thúc
+                        {isGive ? " và người thụ hưởng" : ""}.
+                      </p>
+                      {submitBlocked && (
+                        <Callout tone="warning" role="alert">
+                          Chưa gửi duyệt được: chiến dịch cần gắn một tài khoản nhận tiền đã xác minh, đứng tên bạn.{" "}
+                          {accounts?.bound &&
+                          accounts.boundHasTransactions &&
+                          !canAskSwap(campaign.status, campaign.type, accounts.boundHasTransactions) ? (
+                            <>
+                              Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: hãy liên
+                              hệ đội ngũ Give qua email <ContactEmailLink /> để được hỗ trợ.
+                            </>
+                          ) : (
+                            <>
+                              {accounts?.bound
+                                ? accounts.boundHasTransactions
+                                  ? "Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: gửi yêu cầu đổi tài khoản trong mục "
+                                  : "Tài khoản đang gắn không còn dùng được: nhả nó trong mục "
+                                : "Chiến dịch này chưa gắn tài khoản: chọn tài khoản trong mục "}
+                              <a href="#receiving-account" className="font-medium underline">
+                                Tài khoản nhận tiền
+                              </a>{" "}
+                              {accounts?.bound
+                                ? accounts.boundHasTransactions
+                                  ? "ở trên để bộ phận tài chính duyệt"
+                                  : "ở trên rồi gắn tài khoản khác"
+                                : "ở trên"}
+                              , hoặc khai báo và xác minh tài khoản tại trang{" "}
+                              <Link href="/me/accounts" className="font-medium underline">
+                                Tài khoản nhận tiền
+                              </Link>
+                              .
+                            </>
+                          )}
+                        </Callout>
                       )}
-                    </Callout>
+                      <SubmitButton className={buttonClass({ size: "lg" })} disabled={Boolean(submitBlocked)}>
+                        Gửi duyệt
+                      </SubmitButton>
+                    </ActionForm>
                   )}
-                  <SubmitButton className={buttonClass({ size: "lg" })} disabled={Boolean(submitBlocked)}>
-                    Gửi duyệt
-                  </SubmitButton>
-                </ActionForm>
-              )}
-              {organizerCanCancel(campaign.status) && (
-                <ActionForm
-                  action={cancelCampaign.bind(null, campaign.id)}
-                  className={
-                    editable || statusEvents.length > 0 ? "max-w-160 border-t border-border pt-6" : "max-w-160"
-                  }
-                  confirm="Hủy chiến dịch là vĩnh viễn. Tiếp tục?"
-                >
-                  <label htmlFor="cancel_reason" className="label">
-                    Hủy chiến dịch
-                  </label>
-                  <div className="flex flex-col gap-3 sm:flex-row">
-                    <input
-                      id="cancel_reason"
-                      name="reason"
-                      className="field sm:flex-1"
-                      placeholder="Lý do (không bắt buộc)"
-                      maxLength={500}
-                    />
-                    <SubmitButton className={buttonClass({ variant: "danger", className: "shrink-0" })}>
-                      Hủy chiến dịch
-                    </SubmitButton>
-                  </div>
-                </ActionForm>
-              )}
-              {campaign.status === "draft" && (
-                <ActionForm action={deleteDraft.bind(null, campaign.id)} confirm="Xóa hẳn bản nháp này?">
-                  <SubmitButton className={buttonClass({ variant: "danger" })}>Xóa bản nháp</SubmitButton>
-                </ActionForm>
-              )}
-              {!editable && !organizerCanCancel(campaign.status) && statusEvents.length === 0 && (
-                <p className="text-muted">Không có thao tác nào ở trạng thái này.</p>
+                  {organizerCanCancel(campaign.status) && (
+                    <ActionForm
+                      action={cancelCampaign.bind(null, campaign.id)}
+                      className={
+                        editable || statusEvents.length > 0 ? "max-w-160 border-t border-border pt-6" : "max-w-160"
+                      }
+                      confirm="Hủy chiến dịch là vĩnh viễn. Tiếp tục?"
+                    >
+                      <label htmlFor="cancel_reason" className="label">
+                        Hủy chiến dịch
+                      </label>
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <input
+                          id="cancel_reason"
+                          name="reason"
+                          className="field sm:flex-1"
+                          placeholder="Lý do (không bắt buộc)"
+                          maxLength={500}
+                        />
+                        <SubmitButton className={buttonClass({ variant: "danger", className: "shrink-0" })}>
+                          Hủy chiến dịch
+                        </SubmitButton>
+                      </div>
+                    </ActionForm>
+                  )}
+                  {campaign.status === "draft" && (
+                    <ActionForm action={deleteDraft.bind(null, campaign.id)} confirm="Xóa hẳn bản nháp này?">
+                      <SubmitButton className={buttonClass({ variant: "danger" })}>Xóa bản nháp</SubmitButton>
+                    </ActionForm>
+                  )}
+                  {!editable && !organizerCanCancel(campaign.status) && statusEvents.length === 0 && (
+                    <p className="text-muted">Không có thao tác nào ở trạng thái này.</p>
+                  )}
+                </>
+              ) : (
+                <p className={statusEvents.length > 0 ? "border-t border-border pt-6 text-muted" : "text-muted"}>
+                  Chỉ người tổ chức chính mới có thể gửi duyệt, hủy chiến dịch hoặc xóa bản nháp.
+                </p>
               )}
             </div>
           </Panel>
@@ -1387,6 +1457,7 @@ function StatusNotice({
   accountBlock,
   ended,
   paymentsStopped,
+  isEditor = false,
 }: {
   status: CampaignStatus
   reviewNote: string | null
@@ -1394,6 +1465,7 @@ function StatusNotice({
   accountBlock: "no_account" | "unusable" | null
   ended: boolean
   paymentsStopped?: boolean
+  isEditor?: boolean
 }) {
   const blockedApproval = !accountBlock
     ? null
@@ -1403,11 +1475,18 @@ function StatusNotice({
         ? `Đã duyệt, nhưng chiến dịch chưa mở được vì chưa gắn tài khoản nhận tiền. Gắn một tài khoản đã xác minh ở mục Tài khoản nhận tiền bên dưới; chiến dịch tự mở khi tới ngày bắt đầu. Nếu không gắn được, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
         : `Đã duyệt, nhưng chiến dịch chưa mở được vì tài khoản nhận tiền đang gắn không dùng được. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn đổi tài khoản. Cần hỗ trợ, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
   const notices: Record<CampaignStatus, { tone: CalloutTone; text: string }> = {
-    draft: { tone: "neutral", text: "Bản nháp: chỉ bạn thấy. Hoàn thiện nội dung rồi gửi duyệt." },
+    draft: {
+      tone: "neutral",
+      text: isEditor
+        ? "Bản nháp: chỉ người tổ chức và đội ngũ thấy. Hoàn thiện nội dung rồi báo người tổ chức chính gửi duyệt."
+        : "Bản nháp: chỉ bạn thấy. Hoàn thiện nội dung rồi gửi duyệt.",
+    },
     in_review: { tone: "warning", text: "Đang chờ kiểm duyệt. Nội dung tạm khóa." },
     changes_requested: {
       tone: "warning",
-      text: `Kiểm duyệt viên yêu cầu chỉnh sửa${reviewNote ? `: ${reviewNote}` : "."} Sửa xong thì gửi duyệt lại.`,
+      text: isEditor
+        ? `Kiểm duyệt viên yêu cầu chỉnh sửa${reviewNote ? `: ${reviewNote}` : "."} Sửa xong thì báo người tổ chức chính gửi duyệt lại.`
+        : `Kiểm duyệt viên yêu cầu chỉnh sửa${reviewNote ? `: ${reviewNote}` : "."} Sửa xong thì gửi duyệt lại.`,
     },
     approved: blockedApproval
       ? { tone: "warning", text: blockedApproval }
@@ -1419,9 +1498,11 @@ function StatusNotice({
     },
     succeeded: {
       tone: "success",
-      text: paymentsStopped
-        ? "Dự án đã gây quỹ thành công. Bạn vẫn đăng cập nhật, giải trình chi và cập nhật giao quà cho người đã thanh toán được."
-        : "Dự án đã gây quỹ thành công. Người ủng hộ đang thanh toán cam kết; bạn vẫn đăng cập nhật, giải trình chi và cập nhật giao quà được.",
+      text: isEditor
+        ? "Dự án đã gây quỹ thành công. Bạn vẫn đăng cập nhật cho người ủng hộ được."
+        : paymentsStopped
+          ? "Dự án đã gây quỹ thành công. Bạn vẫn đăng cập nhật, giải trình chi và cập nhật giao quà cho người đã thanh toán được."
+          : "Dự án đã gây quỹ thành công. Người ủng hộ đang thanh toán cam kết; bạn vẫn đăng cập nhật, giải trình chi và cập nhật giao quà được.",
     },
     failed: {
       tone: "neutral",
@@ -1429,7 +1510,9 @@ function StatusNotice({
     },
     closed: {
       tone: "neutral",
-      text: "Chiến dịch đã kết thúc nhận ủng hộ. Sao kê vẫn công khai; bạn vẫn đăng cập nhật và giải trình chi được.",
+      text: isEditor
+        ? "Chiến dịch đã kết thúc nhận ủng hộ. Bạn vẫn đăng cập nhật cho người ủng hộ được."
+        : "Chiến dịch đã kết thúc nhận ủng hộ. Sao kê vẫn công khai; bạn vẫn đăng cập nhật và giải trình chi được.",
     },
     suspended: {
       tone: "danger",

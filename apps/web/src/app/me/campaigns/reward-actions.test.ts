@@ -257,3 +257,34 @@ describe("retireRewardTier", () => {
     expect((await retireRewardTier(CAMPAIGN, T1, null, new FormData()))?.message).toContain("đã có người cam kết")
   })
 })
+
+describe("co-organizer editor access on reward tier actions (DOS/Give#253)", () => {
+  const OTHER_OWNER = "99999999-9999-4999-8999-999999999999"
+
+  it("allows an accepted editor to save and retire reward tiers while refusing staff non-editors", async () => {
+    state.userHandler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignIn("draft", { organizer_id: OTHER_OWNER }) }
+      if (call.target === "reward_tiers") return { data: [] }
+      if (call.target === "rpc:my_campaign_roles") return { data: [{ campaign_id: CAMPAIGN, role: "editor" }] }
+      return undefined
+    }
+    state.serviceHandler = () => ({ data: T1 })
+
+    const form = new FormData()
+    form.set("title", "Sách in đợt 1")
+    form.set("min_amount", "200000")
+    expect(await saveRewardTier(CAMPAIGN, null, null, form)).toEqual({ ok: true, message: "Đã thêm phần thưởng." })
+    expect(state.serviceCalls).toHaveLength(1)
+
+    // Staff who is neither owner nor editor is still refused.
+    state.serviceCalls.length = 0
+    state.userHandler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignIn("draft", { organizer_id: OTHER_OWNER }) }
+      if (call.target === "reward_tiers") return { data: [] }
+      if (call.target === "rpc:my_campaign_roles") return { data: [] }
+      return undefined
+    }
+    expect((await saveRewardTier(CAMPAIGN, null, null, form))?.ok).toBe(false)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+})

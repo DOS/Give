@@ -1198,7 +1198,7 @@ describe("EditCampaignPage Thống kê tab (DOS/Give#252)", () => {
     doc.body.innerHTML = html
 
     const tabLinks = [...doc.querySelectorAll('nav[aria-label="Mục chiến dịch"] a')]
-    expect(tabLinks.map((a) => a.textContent)).toEqual(["Quản lý", "Thống kê"])
+    expect(tabLinks.map((a) => a.textContent)).toEqual(["Quản lý", "Thống kê", "Đội ngũ"])
     expect(tabLinks[1].getAttribute("aria-current")).toBe("page")
 
     const rpcCall = state.calls.find((c) => c.target === "rpc:get_campaign_analytics")
@@ -1275,5 +1275,178 @@ describe("EditCampaignPage Thống kê tab (DOS/Give#252)", () => {
 
     expect(requireSessionMock).toHaveBeenCalledWith(`/me/campaigns/${CAMPAIGN}?tab=analytics&days=7`)
     expect(state.calls).toHaveLength(0)
+  })
+})
+
+describe("EditCampaignPage co-organizer Team tab and editor workspace guards (DOS/Give#253)", () => {
+  const OWNER = "99999999-9999-4999-8999-999999999999"
+  const EDITOR_MEMBER = "88888888-8888-4888-8888-888888888888"
+
+  it("renders owner Team tab (?tab=team) with members, invites, money notice, and zero dbService calls", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "rpc:list_campaign_members") {
+        return {
+          data: [
+            {
+              user_id: EDITOR_MEMBER,
+              role: "editor",
+              display_name: "Minh Anh",
+              avatar_url: null,
+              invited_by: USER,
+              accepted_at: "2026-11-20T09:00:00Z",
+              created_at: "2026-11-20T09:00:00Z",
+            },
+          ],
+        }
+      }
+      if (call.target === "rpc:list_campaign_member_invites") {
+        return {
+          data: [
+            {
+              invite_id: "77777777-7777-4777-8777-777777777777",
+              campaign_id: CAMPAIGN,
+              role: "editor",
+              note: "Gửi cho Nam",
+              expires_at: "2026-12-01T00:00:00Z",
+              accepted_at: null,
+              accepted_by: null,
+              accepted_by_display_name: null,
+              revoked_at: null,
+              created_at: "2026-11-21T09:00:00Z",
+              status: "pending",
+            },
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(
+      await EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "team" }),
+      })
+    )
+    const doc = new Window().document
+    doc.body.innerHTML = html
+
+    const tabLinks = [...doc.querySelectorAll('nav[aria-label="Mục chiến dịch"] a')]
+    expect(tabLinks.map((a) => a.textContent)).toEqual(["Quản lý", "Thống kê", "Đội ngũ"])
+    expect(tabLinks[2].getAttribute("aria-current")).toBe("page")
+
+    expect(html).toContain("Tiền và quyền quyết định luôn thuộc về bạn")
+    expect(html).toContain("Minh Anh")
+    expect(html).toContain("Gỡ khỏi đội ngũ")
+    expect(html).toContain("Tạo liên kết mời")
+    expect(html).toContain("Gửi cho Nam")
+    expect(html).toContain("Thu hồi")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("hides invite creation on cancelled/suspended campaigns in Team tab", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("cancelled", "give") }
+      if (call.target === "rpc:list_campaign_members") return { data: [] }
+      if (call.target === "rpc:list_campaign_member_invites") return { data: [] }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(
+      await EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "team" }),
+      })
+    )
+    expect(html).toContain("Không thể tạo lời mời mới khi chiến dịch đã hủy hoặc đang tạm dừng.")
+    expect(html).not.toContain("Tạo liên kết mời")
+  })
+
+  it("lets an accepted editor view content/media/milestones/tiers/updates while strictly hiding money, accounts, monthly, fulfillment, team, analytics, and lifecycle controls", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") {
+        return { data: { ...campaignRow("draft", "back"), organizer_id: OWNER } }
+      }
+      if (call.target === "rpc:my_campaign_roles") {
+        return { data: [{ campaign_id: CAMPAIGN, role: "editor" }] }
+      }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "reward_tiers") return { data: [] }
+      if (call.target === "campaign_media") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: [] }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+
+    // Allowed editor surfaces
+    expect(html).toContain("Đồng tổ chức")
+    expect(html).toContain("Quyền đồng tổ chức (biên tập viên)")
+    expect(html).toContain('id="content"')
+    expect(html).toContain("Lưu nội dung")
+    expect(html).toContain('id="cover-image"')
+    expect(html).toContain('id="pitch-video"')
+    expect(html).toContain('id="milestones"')
+    expect(html).toContain('id="reward-tiers"')
+    expect(html).toContain('id="updates"')
+    expect(html).toContain("Chỉ người tổ chức chính mới có thể gửi duyệt, hủy chiến dịch hoặc xóa bản nháp.")
+
+    // Strictly hidden owner-only surfaces
+    expect(html).not.toContain('aria-label="Mục chiến dịch"')
+    expect(html).not.toContain(">Thống kê<")
+    expect(html).not.toContain(">Đội ngũ<")
+    expect(html).not.toContain('id="receiving-account"')
+    expect(html).not.toContain('id="money"')
+    expect(html).not.toContain('id="fulfillment"')
+    expect(html).not.toContain('id="monthly"')
+    expect(html).not.toContain(">Gửi duyệt<")
+    expect(html).not.toContain(">Hủy chiến dịch<")
+    expect(html).not.toContain(">Xóa bản nháp<")
+
+    // Never queries owner-only money/account tables or service-role RPCs
+    expect(state.calls.some((c) => c.target === "receiving_accounts")).toBe(false)
+    expect(state.calls.some((c) => c.target === "account_swap_requests")).toBe(false)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it.each(["analytics", "team"] as const)(
+    "blocks an accepted editor from owner-only tab '%s' with notFound",
+    async (tab) => {
+      state.handler = (call) => {
+        if (call.target === "rpc:managed_campaigns") {
+          return { data: { ...campaignRow("live", "give"), organizer_id: OWNER } }
+        }
+        if (call.target === "rpc:my_campaign_roles") {
+          return { data: [{ campaign_id: CAMPAIGN, role: "editor" }] }
+        }
+        return undefined
+      }
+
+      await expect(
+        EditCampaignPage({
+          params: Promise.resolve({ id: CAMPAIGN }),
+          searchParams: Promise.resolve({ tab }),
+        })
+      ).rejects.toThrow("NEXT_NOT_FOUND")
+      expect(state.calls.some((c) => c.target === "rpc:get_campaign_analytics")).toBe(false)
+      expect(state.calls.some((c) => c.target === "rpc:list_campaign_members")).toBe(false)
+      expect(state.calls.some((c) => c.target === "rpc:list_campaign_member_invites")).toBe(false)
+    }
+  )
+
+  it("blocks a staff user who is neither owner nor accepted editor with notFound", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") {
+        return { data: { ...campaignRow("live", "give"), organizer_id: OWNER } }
+      }
+      if (call.target === "rpc:my_campaign_roles") {
+        return { data: [] }
+      }
+      return undefined
+    }
+
+    await expect(EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })).rejects.toThrow("NEXT_NOT_FOUND")
   })
 })

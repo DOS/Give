@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  CAMPAIGN_MEMBER_MESSAGES,
+  campaignMemberDbErrorMessage,
   COMMENT_ACTION_MESSAGES,
   COMMENT_MODERATION_MESSAGES,
   COMMENT_ORGANIZER_HIDE_MESSAGES,
@@ -400,6 +402,50 @@ describe("campaign comments and moderation refusals (DOS/Give#250, #262)", () =>
     )
     expect(commentDbErrorMessage({ message: "GIVE_COMMENT_NOT_FOUND" }, COMMENT_REPORT_RESOLVE_MESSAGES)).toContain(
       "chỉ có thể bác bỏ báo cáo"
+    )
+  })
+})
+
+describe("co-organizer invite and member refusals (DOS/Give#253, #264)", () => {
+  const generic = dbErrorMessage(null)
+
+  const ALL_MEMBER_CODES = [
+    "GIVE_AUTH_REQUIRED",
+    "GIVE_CAMPAIGN_OWNER_ONLY",
+    "GIVE_CAMPAIGN_NOT_INVITABLE",
+    "GIVE_INVITE_EXPIRY_INVALID",
+    "GIVE_INVITE_NOTE_TOO_LONG",
+    "GIVE_CAMPAIGN_MEMBER_LIMIT",
+    "GIVE_CAMPAIGN_INVITE_LIMIT",
+    "GIVE_RATE_LIMITED",
+    "GIVE_INVITE_INVALID",
+    "GIVE_INVITE_REVOKED",
+    "GIVE_INVITE_ALREADY_USED",
+    "GIVE_INVITE_ALREADY_ACCEPTED",
+    "GIVE_INVITE_EXPIRED",
+    "GIVE_ALREADY_CAMPAIGN_OWNER",
+    "GIVE_ALREADY_CAMPAIGN_MEMBER",
+    "GIVE_CAMPAIGN_MEMBER_NOT_FOUND",
+    "GIVE_CAMPAIGN_NOT_EDITABLE",
+  ] as const
+
+  it("maps every GIVE_* error code in DOS/Give#264 without falling back to the generic message", () => {
+    for (const code of ALL_MEMBER_CODES) {
+      const msg = dbErrorMessage({ code: "23514", message: `${code}: detail` })
+      expect(msg, code).not.toBe(generic)
+      expect(msg, code).not.toMatch(/GIVE_/)
+    }
+  })
+
+  it("preserves retry-after guidance in campaignMemberDbErrorMessage for GIVE_RATE_LIMITED: <seconds>", () => {
+    expect(campaignMemberDbErrorMessage({ code: "PT429", message: "GIVE_RATE_LIMITED: 30" })).toBe(
+      "Bạn thao tác quá nhanh. Hãy thử lại sau 30 giây."
+    )
+    expect(campaignMemberDbErrorMessage({ code: "PT429", message: "GIVE_RATE_LIMITED: 180" })).toBe(
+      "Bạn thao tác quá nhanh. Hãy thử lại sau khoảng 3 phút."
+    )
+    expect(campaignMemberDbErrorMessage({ code: "PT429", message: "GIVE_RATE_LIMITED" })).toBe(
+      CAMPAIGN_MEMBER_MESSAGES.GIVE_RATE_LIMITED
     )
   })
 })
