@@ -14,6 +14,102 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Moderated `"Tường lời chúc"` donor wishes wall, heart reactions, reporting
+  and staff wish-report queue: `/campaigns/[slug]` adds `#tuong-loi-chuc`
+  (`DonorWishesWall`, `WishHeartButton`, `wish-actions.ts`, `lib/donor-wishes.ts`)
+  backed by `give.list_campaign_wishes`, `give.toggle_contribution_heart`,
+  `give.report_contribution_message`, `give.list_hidden_campaign_wishes` and
+  `give.moderate_contribution_message` strictly via `dbAs(session?.accessToken)`
+  (zero `dbService()`), supporting `?wishes_page=` pagination,
+  `?show_hidden_wishes=1` owner/editor/staff moderation, anonymous donor masking
+  and `DonateForm`/`PledgeForm` wish guidance. `/admin/reports` and
+  `/admin/reports/comments` gain navigation to `/admin/reports/wishes`
+  (`give.list_reported_contribution_messages` with `open`/`resolved`/`dismissed`/`all`
+  filters, hide/restore/dismiss moderation actions, self-review guards and
+  `lib/errors.ts` mappings), backed by `DOS/DOS.Me#1888` with Vitest suites
+  (#320 / #328).
+- Peer-to-peer campaign ambassadors (`?ref=` links), fail-open attribution,
+  opt-in leaderboard and `/me` links summary: `/campaigns/[slug]` adds
+  `AmbassadorLinkModal` and `ambassador-actions.ts`
+  (`give.upsert_my_campaign_ambassador`, `give.get_my_campaign_ambassador`,
+  immutable opaque `ref_code` on live and opted-in pre-launch campaigns),
+  propagates sanitized `?ref=` codes fail-open (`sanitizeAmbassadorRef`,
+  `give.public_ambassador_ref`) across `/campaigns/[slug]`, `DonateForm`,
+  `RewardTiers` and `/campaigns/[slug]/pledge` (`PledgeForm` and donation/pledge
+  actions so invalid or unknown codes never block donations or pledges), renders
+  the opt-in `"Người đồng hành lan tỏa"` `AmbassadorLeaderboard`
+  (`give.campaign_ambassador_leaderboard`), and adds `MyAmbassadorLinksSection`
+  to `/me` (`give.list_my_ambassador_links`) with zero-PII net matched stats,
+  backed by `DOS/DOS.Me#1887` with Vitest suites (#319 / #327).
+- Discovery 2.0 quick filters, home highlight strips and card statement
+  freshness: extends `/campaigns` and `lib/campaigns.ts`
+  (`DISCOVERY_HIGHLIGHT_PILLS`) with `ending_soon` (`"Sắp hết hạn"`, live
+  campaigns closing within 7 days), `almost_funded` (`"Sắp đạt mục tiêu"`, live
+  campaigns at `60%`–`<100%` honest raised math excluding `other_in`), and
+  anti-spoofing `recently_audited` (`"Mới cập nhật sao kê"`, public campaigns
+  ordered by verified bank statement import timestamp). Home `/` adds matching
+  highlight strips and `CampaignCard` displays verified statement freshness via
+  `listCampaignStatementFreshness` (`give.public_campaign_statement_freshness`,
+  fail-closed), backed by `DOS/DOS.Me#1886` with Vitest suites (#318 / #326).
+- Structured campaign FAQs and owner-only duplicate campaign draft:
+  `/me/campaigns/[id]` adds `FaqSection` and `faq-actions.ts`
+  (`saveCampaignFaq`, `deleteCampaignFaq` and reorder via
+  `give.upsert_campaign_faq`, `give.delete_campaign_faq` and
+  `give.reorder_campaign_faqs`, up to 25 FAQs, editable by owners and accepted
+  co-organizer editors in `draft`, `changes_requested`, `approved` and `live`
+  statuses), while public and pre-launch `/campaigns/[slug]` pages render
+  `CampaignFaqAccordion`. `/me/campaigns` and `/me/campaigns/[id]` add
+  owner-only `duplicateCampaignDraft` (`give.duplicate_campaign_draft`) to clone
+  safe content fields (title with `"(Bản sao)"`, type, summary, story, category,
+  goal, milestones, active reward tiers and FAQs) into a fresh draft while
+  refusing co-organizer editors and `suspended` campaigns, backed by
+  `DOS/DOS.Me#1882` with Vitest suites (#316 / #324).
+- Campaign and handle-only organizer follows, pre-launch `"Sắp ra mắt"`
+  notify-me teasers, launch/update in-app notices and donor impact summary: adds
+  `FollowButton`, `/campaigns/[slug]` `follow-actions.ts`
+  (`give.campaign_follows` under RLS and `give.campaign_follower_count`), and
+  `/u/[handle]` `actions.ts` using strictly handle-only `SECURITY DEFINER` RPCs
+  (`organizer_follower_count_by_handle`, `is_following_organizer_by_handle`,
+  `follow_organizer_by_handle`, `unfollow_organizer_by_handle`,
+  `list_my_followed_organizers`, never exposing follower lists or organizer
+  `user_id`s). `/me/campaigns/[id]` adds `PrelaunchSection` and
+  `setCampaignPrelaunchPublic` (`give.set_campaign_prelaunch_public`) so
+  approved future campaigns can render public `"Sắp ra mắt"` notify-me teasers
+  across `/campaigns/[slug]`, `/campaigns/[slug]/opengraph-image`,
+  `/campaigns?status=prelaunch`, `/u/[handle]` and `CampaignCard` (keeping
+  donate/pledge/monthly actions gated until live). `lib/notices.ts` adds
+  `campaign_launched`, `campaign_update_posted` and
+  `organizer_campaign_launched` in-app notices, and `/me/contributions` adds
+  `DonorImpactCard` (`give.my_donor_impact_summary` totals and category
+  breakdown), backed by `DOS/DOS.Me#1880` with Vitest suites (#315 / #323).
+- 3-second transparency summary box, milestone-linked disbursement evidence
+  timeline and closing impact reports: `/campaigns/[slug]` adds
+  `TransparencySummaryBox` (`lib/transparency.ts`,
+  `give.campaign_transparency_summary`, fail-closed for non-public campaigns
+  with zero PII or raw account numbers) summarizing latest verified statement
+  freshness, matched inflows, disbursable/disbursed/refunded totals, evidence
+  count and unexplained transaction counts. `/me/campaigns/[id]/disbursements`
+  extends `explainDisbursement` with optional `milestone_id` and adds owner-only
+  `linkDisbursementMilestone` (`give.set_disbursement_milestone`, preserving
+  `#264` money boundaries and refusing refunds) so `MilestoneList` surfaces
+  per-milestone disbursed totals and evidence counts. `/me/campaigns/[id]` adds
+  `ImpactReportSection` and `saveImpactReport`
+  (`give.upsert_campaign_impact_report`, owner + accepted co-organizer editor on
+  `closed`, `succeeded` and `settling` campaigns, draft/publish with summary and
+  up to 10 highlights), rendered publicly via `ClosingImpactReport` on
+  `/campaigns/[slug]` and badged on `CampaignCard` and `/u/[handle]`, backed by
+  `DOS/DOS.Me#1881` with Vitest suites (#314 / #322).
+- Viral sharing (dynamic OG card, downloadable QR posters and shareable
+  thank-you cards): `/campaigns/[slug]/opengraph-image` renders dynamic
+  OpenGraph cards with bundled local Be Vietnam Pro fonts
+  (`apps/web/src/assets/fonts/BeVietnamPro-{Regular,Bold}.ttf`, fail-closed on
+  non-public/suspended campaigns); `QrPosterButton` (`ModalDialog`,
+  `lib/canvas-cards.ts`, `lib/viral-sharing.ts`, `server/viral-sharing.ts`)
+  generates downloadable Story (`9:16`) and Square (`1:1`) QR posters with
+  `#93`-safe `payments_stopped_at` gating and masked account details only; and
+  `ThankYouCardButton` (wired into `/donations/[code]` `DonationStatus` and
+  `/me/contributions`) generates shareable `"Tôi đã chung tay"` thank-you cards
+  with an amount-privacy toggle, with Vitest suites (#313 / #321).
 - Atomic moderator status-transition race guard and pre-launch recovery queue:
   `apps/web/src/app/admin/actions.ts` passes `p_expected_status` on
   `approveCampaign` (`in_review` -> `approved`, `approved` -> `live`) and
@@ -445,6 +541,16 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Back campaigns (M3)
 
+- Time-limited and slot-capped Early Bird reward tiers: `RewardTiersSection` and
+  `reward-actions.ts` add `is_early_bird` and `available_until` configuration
+  for `back` campaigns with campaign-window validation
+  (`GIVE_REWARD_TIER_DATES_INVALID`), while `RewardTiers` and
+  `/campaigns/[slug]/pledge` (`PledgeForm`, `lib/pledges.ts`, `lib/errors.ts`)
+  display Early Bird badges and deadlines and block new pledges once expired
+  (`isTierExpired`, `isTierUnavailable`, `GIVE_REWARD_EXPIRED`) while keeping
+  previously claimed Early Bird pledges fully valid for payment and fulfillment
+  after expiry, backed by atomic database expiry enforcement in
+  `DOS/DOS.Me#1885` with Vitest suites (#317 / #325).
 - Finance-approved receiving-account swap for `back` campaigns and
   `payment_due` pledge notifications: extends `canAskSwap`, `approvalBlock`,
   `loadEditorAccounts`, `checkSubmitAccount`, `requestAccountSwap`,
@@ -765,6 +871,65 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Database (DOS.Me)
 
+- Moderated donor wishes wall and heart reactions: adds message-moderation
+  columns on `give.contributions`, `give.contribution_hearts` and
+  `give.contribution_message_reports` with zero-PII RLS and `SECURITY DEFINER`
+  RPCs (`list_campaign_wishes`, `toggle_contribution_heart`,
+  `report_contribution_message`, `list_hidden_campaign_wishes`,
+  `moderate_contribution_message` and `list_reported_contribution_messages`)
+  enforcing owner/editor/staff boundaries, self-review guards and audit logging,
+  with 93 pgTAP assertions (#320 / DOS/DOS.Me#1888, on Beta). Migration
+  `20261202140000_give_donor_wishes_and_hearts`.
+- Peer-to-peer campaign ambassadors and `?ref=` attribution: adds
+  `give.campaign_ambassadors` (immutable opaque 8–12-char `ref_code`), fail-open
+  referral attribution on contributions, and zero-PII `SECURITY DEFINER` RPCs
+  (`public_ambassador_ref`, `campaign_ambassador_leaderboard`,
+  `get_my_campaign_ambassador`, `list_my_ambassador_links` and
+  `upsert_my_campaign_ambassador`) backed by net matched ledger totals, with 98
+  pgTAP assertions (#319 / DOS/DOS.Me#1887, on Beta). Migration
+  `20261202130000_give_campaign_ambassadors`.
+- Discovery 2.0 filters and statement freshness: extends
+  `give.discover_campaigns` with `ending_soon` (live within 7 days),
+  `almost_funded` (live `60%`–`<100%` honest raised math excluding `other_in`)
+  and anti-spoofing `recently_audited` (ordered by verified bank statement
+  import timestamps), and adds `give.public_campaign_statement_freshness`
+  (public campaigns only), with 40 pgTAP assertions (#318 / DOS/DOS.Me#1886, on
+  Beta). Migration `20261202120000_give_discovery_v2_filters`.
+- Early Bird reward tiers for `back` campaigns: adds `is_early_bird` and
+  `available_until` to `give.reward_tiers` and `give.public_reward_tiers` with
+  campaign-window date checks (`GIVE_REWARD_TIER_DATES_INVALID`), atomic
+  `now() >= available_until` expiry enforcement (`GIVE_REWARD_EXPIRED`) on new
+  pledges and tier switches, and full post-expiry validity for existing pledged
+  claims, with 65 pgTAP assertions (#317 / DOS/DOS.Me#1885, on Beta). Migration
+  `20261202110000_give_early_bird_reward_tiers`.
+- Structured campaign FAQs and duplicate campaign draft: adds
+  `give.campaign_faqs` (25-item cap, public/pre-launch read RLS) and
+  `SECURITY DEFINER` RPCs (`upsert_campaign_faq`, `delete_campaign_faq`,
+  `reorder_campaign_faqs` for owners and accepted co-organizer editors in
+  editable statuses; owner-only `duplicate_campaign_draft` cloning safe content
+  fields into a fresh draft while refusing editors and `suspended` campaigns),
+  with 89 pgTAP assertions (#316 / DOS/DOS.Me#1882, on Beta). Migration
+  `20261201160000_give_campaign_faqs_and_duplicate_draft`.
+- Campaign and handle-only organizer follows, pre-launch teasers and donor
+  impact summary: adds `give.campaign_follows` (caller-scoped RLS) and
+  `give.organizer_follows` (zero direct grants; handle-only RPCs
+  `organizer_follower_count_by_handle`, `is_following_organizer_by_handle`,
+  `follow_organizer_by_handle`, `unfollow_organizer_by_handle` and
+  `list_my_followed_organizers`), `campaigns.prelaunch_public` and
+  `give.set_campaign_prelaunch_public`, `campaign_launched`,
+  `campaign_update_posted` and `organizer_campaign_launched` in-app notices, and
+  `give.my_donor_impact_summary`, with 98 pgTAP assertions (#315 /
+  DOS/DOS.Me#1880, on Beta). Migration
+  `20261201120000_give_follows_prelaunch_and_donor_impact`.
+- Transparency summary, milestone-linked disbursement evidence and closing
+  impact reports: adds `milestone_id` on disbursements with
+  `give.set_disbursement_milestone` (owner-only, non-refund, same-campaign
+  milestone), `give.campaign_transparency_summary` (fail-closed for non-public
+  campaigns, zero PII, per-milestone rollups), and `give.campaign_impact_reports`
+  with `give.upsert_campaign_impact_report` (owner and accepted co-organizer
+  editor on `closed`, `succeeded` and `settling` campaigns), with 79 pgTAP
+  assertions (#314 / DOS/DOS.Me#1881, on Beta). Migration
+  `20261201110000_give_transparency_summary_and_impact_reports`.
 - Back-campaign receiving-account swap and `payment_due` pledge notices:
   extends `give.request_account_swap`, `give.decide_account_swap`,
   `give.account_has_swapped_history` and `give.record_bank_transaction`
