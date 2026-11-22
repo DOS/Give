@@ -14,6 +14,63 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Co-organizers (campaign editors), single-use invites, workspace guards and
+  public team block: `/me/campaigns/[id]?tab=team` (`TeamTab`,
+  `CreateInviteForm`, `member-actions.ts`) lets the owning organizer create
+  single-use expiring invite links (raw 64-char hex token shown once on
+  creation, never logged or re-displayed), revoke pending invites and remove
+  accepted editors, while explicitly keeping money, receiving accounts,
+  statements, refunds, fulfillment, monthly plans, analytics, lifecycle
+  transitions and team management owner-only (`notFound()` for editors/staff).
+  `/invites/[token]` sets `Referrer-Policy: no-referrer`,
+  `Cache-Control: private, no-store` and `X-Robots-Tag: noindex, nofollow`,
+  prompts guests to sign in without leaking draft titles or touching
+  `dbService()`, and previews/accepts pending invites via `dbAs(token)` with
+  already-member shortcuts. `/me/campaigns` lists both owned and accepted
+  editor campaigns (badged `"Đồng tổ chức"`), `/me/campaigns/[id]` lets
+  accepted editors manage content, cover, YouTube pitch video, milestones,
+  reward tiers and own updates under strict server guards, and public
+  `/campaigns/[slug]` pages render `CampaignTeam` (`"Đội ngũ tổ chức"`) when
+  a campaign has accepted editors, backed by `DOS/Give#264` (`DOS/DOS.Me#1856`)
+  with Vitest suites (#253 / #298).
+- Public organizer profile page and `/me` handle/bio editor: `/u/[handle]`
+  renders public organizer profiles (`handle`, `bio`, `OrganizerAvatar` with
+  safe `https://` validation and 4px-radius initials fallback, verification
+  badge and public campaigns with ledger totals) strictly through anonymous
+  `dbAs()` calls to `give.public_organizer_profile` and
+  `give.list_organizer_public_campaigns`. `/me` (`PublicProfileForm`,
+  `actions.ts`, wired into `MePage` and `SiteHeader`) lets signed-in organizers
+  edit only `(handle, bio)` with live `give.vn/u/<handle>` URL preview,
+  3–40-char regex and 96-word reserved-handle validation matching
+  `DOS/Give#261` (`DOS/DOS.Me#1851`), Vietnamese error mappings and preserved
+  `verification_status`, while `/campaigns/[slug]` and `CampaignCard` link the
+  organizer name to `/u/<handle>` when set, with Vitest suites (#251 / #297).
+- Campaign comments with one reply level, moderation and comment reports queue:
+  public `/campaigns/[slug]` pages add the `#binh-luan` tab and
+  `CampaignComments` (plain-text comments and 1-level replies with newest roots
+  first and oldest replies first, `"Người tổ chức"` badge, `"(đã chỉnh sửa)"`
+  indicator, deleted-account neutral fallback, `?comments_page=` pagination,
+  authenticated post/reply/edit/delete/report, organizer hide, and staff
+  `?show_hidden=1` inline moderation with self-review guards via `dbAs(token)`).
+  `/admin/reports` gains a `TabNav` (`"Báo cáo chiến dịch"` / `"Báo cáo bình
+luận"`) leading to `/admin/reports/comments` with status/campaign filters,
+  `list_comment_moderation_history` audit disclosure and deleted-comment
+  snapshot handling, backed by `DOS/Give#262` (`DOS/DOS.Me#1853`) with Vitest
+  suites (#250 / #296).
+- Organizer campaign analytics and `Thống kê` tab: `POST /api/analytics/event`
+  (excluded from `proxy.ts` session rotation) validates same-origin /
+  `Sec-Fetch-Site`, enforces JSON/size bounds, silently filters bot User-Agents
+  while allowing Zalo/Facebook in-app browsers and Cốc Cốc, applies ephemeral
+  HMAC-hashed rate limiting, strips referrer paths/queries and normalizes
+  same-origin hosts to `null`, and calls `dbService().rpc("record_campaign_event")`.
+  `CampaignViewBeacon` deduplicates views to once per campaign per Vietnam
+  calendar day per browser (`sendBeacon` with `keepalive` `fetch` fallback,
+  suppressed on previews/prerenders) and `ShareButtons` records `share_click`
+  events. `/me/campaigns/[id]?tab=analytics` (`AnalyticsTab`, `TabNav` and
+  7/30/90-day `SegmentedNav`) reads `give.get_campaign_analytics` via
+  `dbAs(token)` to render KPIs, daily views trend, responsive breakdown and
+  referrer bars, backed by `DOS/Give#263` (`DOS/DOS.Me#1852`) with Vitest
+  suites (#252 / #295).
 - Organizer campaign status and review history: `/me/campaigns/[id]` loads
   `listStatusEventsByCampaign(db, [campaign.id])` inside `Promise.all` with
   `.catch(() => new Map())` resilience and renders `<StatusHistory>` inside
@@ -559,6 +616,15 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Platform
 
+- Parallel PO configuration (CC-PO v2.18.0): `docs/product-owner-config.md`
+  assigns Antigravity `Campaigns Product Owner` (`acc0`) to `line:campaigns`
+  (replacing paused Qwen Code sessions), enforces `po:agy` / `po:claude`
+  mutual-exclusion `po_labels`, keeps Production (`main` / `give.vn`),
+  `line:money` and `line:platform` exclusively under Claude Code
+  `Give Product Owner` (`promotion_po: claude`), records JOY's authorization
+  for Antigravity PO to pick up unclaimed `DOS/DOS.Me` prerequisites
+  `#261`–`#264`, and adds CC-PO v2.18.0 gatekeeper and context-compaction keys
+  (#292 / #293).
 - Email throttling hold: the SMTP transport stays on AWS SES (host, port,
   login and key from env). When SES answers 454 "Daily message quota
   exceeded" (a quota shared with DOS.Me), the email is now held instead of
@@ -614,6 +680,51 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Database (DOS.Me)
 
+- Co-organizers and single-use invites: `give.campaign_members` (editors only,
+  blocking owner self-membership) and `give.campaign_member_invites` (32-byte
+  SHA-256 token hashes only, zero direct table grants), 9 `SECURITY DEFINER`
+  RPCs (`create_campaign_member_invite`, `revoke_campaign_member_invite`,
+  `preview_campaign_member_invite`, `accept_campaign_member_invite`,
+  `remove_campaign_member`, `list_campaign_members`,
+  `list_campaign_member_invites`, `my_campaign_roles`, `campaign_public_team`),
+  editor RLS helpers and concurrent-removal lock triggers
+  (`campaigns_check_editor_on_update`, `campaign_children_lock_campaign`,
+  `campaign_children_verify_insert_auth`), while keeping all money, receiving
+  accounts, statements, refunds, fulfillment, monthly plans, draft deletion,
+  `transition_campaign` and team management strictly owner-only, with 172 pgTAP
+  assertions (#264 / DOS/DOS.Me#1856, on Beta). Migration
+  `20261129170000_give_campaign_members`.
+- Organizer public profile handle and bio: adds `handle` (unique, 3–40-char
+  lowercase slug with reserved-word check) and `bio` (`<= 500` chars) to
+  `give.organizers` with authenticated column grants and unchanged
+  `organizers_reset_verification` so editing `handle`/`bio` preserves
+  `verification_status`; extends `give.public_organizer` and
+  `give.public_campaign_organizers` with `handle` and adds
+  `give.public_organizer_profile` (joining active non-deleted DOS ID avatar)
+  and `give.list_organizer_public_campaigns` (public campaigns only), with 57
+  pgTAP assertions (#261 / DOS/DOS.Me#1851, on Beta). Migration
+  `20261129160000_give_organizer_public_profile`.
+- Campaign comments and comment reporting: `give.campaign_comments` (plain-text
+  1–2000 chars, composite FK enforcing one-level replies within the same
+  campaign) and `give.comment_reports` (6 reason codes, 1 open report per
+  reporter/comment, 20/24h limit), privacy-safe RLS omitting raw user IDs and
+  withholding replies under hidden parents from non-moderators, and 10
+  `SECURITY DEFINER` RPCs (`list_campaign_comments`, `create_campaign_comment`,
+  `edit_campaign_comment`, `delete_campaign_comment`, `hide_campaign_comment`,
+  `report_campaign_comment`, `moderate_campaign_comment`,
+  `resolve_comment_report`, `list_comment_reports`,
+  `list_comment_moderation_history`) with rate limiting, self-review guards and
+  `give.audit_log` entries, with 171 pgTAP assertions (#262 / DOS/DOS.Me#1853,
+  on Beta). Migration `20261129150000_give_campaign_comments`.
+- Privacy-safe daily campaign analytics: zero-PII `give.campaign_daily_analytics`
+  counters keyed by `(campaign_id, metric_date, event_type, referrer_bucket)`,
+  `give.normalize_referrer_bucket` (5 fixed buckets with anti-spoofing checks),
+  service-role `give.record_campaign_event` (public campaigns only) and
+  authenticated organizer/staff `give.get_campaign_analytics` (zero-filled
+  daily series, referrer breakdown and ledger-derived conversion/contributions
+  with cross-day split-payment deduplication), with 99 pgTAP assertions
+  (#263 / DOS/DOS.Me#1852, on Beta). Migration
+  `20261129120000_give_campaign_analytics`.
 - Monthly donation plans A: `give.donation_plans`, `give.plan_stop_tokens`,
   `campaigns.allow_monthly` (needs `ends_at`), plan donations as ordinary
   contributions (`plan_id`, `plan_period`, one per month), RPCs

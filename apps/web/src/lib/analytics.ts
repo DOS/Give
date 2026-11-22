@@ -117,7 +117,7 @@ export function formatAnalyticsShortDate(dateStr: string): string {
 }
 
 export function referrerLabel(bucket: string): string {
-  if (bucket in REFERRER_LABELS) return REFERRER_LABELS[bucket as ReferrerBucket]
+  if (Object.hasOwn(REFERRER_LABELS, bucket)) return REFERRER_LABELS[bucket as ReferrerBucket]
   return REFERRER_LABELS.other
 }
 

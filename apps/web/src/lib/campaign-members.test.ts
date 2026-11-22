@@ -57,14 +57,19 @@ describe("campaign-members pure helpers", () => {
     expect(isInvitableStatus("suspended")).toBe(false)
   })
 
-  it("neutralizes missing, blank, or DB 'Co-organizer' fallback display names", () => {
+  it("neutralizes missing, blank, or DB 'Organizer' / 'Co-organizer' fallback display names", () => {
     expect(memberDisplayName("Minh Anh", "editor")).toBe("Minh Anh")
     expect(memberDisplayName("Co-organizer", "editor")).toBe(CO_ORGANIZER_FALLBACK_NAME)
     expect(memberDisplayName("  co-organizer  ", "editor")).toBe(CO_ORGANIZER_FALLBACK_NAME)
+    expect(memberDisplayName("Organizer", "owner")).toBe(OWNER_FALLBACK_NAME)
+    expect(memberDisplayName("  organizer  ", "owner")).toBe(OWNER_FALLBACK_NAME)
+    expect(memberDisplayName("ORGANIZER", "owner")).toBe(OWNER_FALLBACK_NAME)
+    expect(memberDisplayName("Organizer", "editor")).toBe(CO_ORGANIZER_FALLBACK_NAME)
     expect(memberDisplayName(null, "editor")).toBe(CO_ORGANIZER_FALLBACK_NAME)
     expect(memberDisplayName("   ", "owner")).toBe(OWNER_FALLBACK_NAME)
     expect(memberInitial("đặng văn bình", "editor")).toBe("Đ")
     expect(memberInitial(null, "editor")).toBe("Đ")
+    expect(memberInitial("Organizer", "owner")).toBe("N")
   })
 
   it("allows only clean public https:// avatar URLs without credentials, private hosts, IP literals, or control chars", () => {
