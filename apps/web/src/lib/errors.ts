@@ -9,6 +9,7 @@ import { ORGANIZER_HANDLE_INVALID_MESSAGE, ORGANIZER_HANDLE_RESERVED_MESSAGE } f
 
 const GIVE_MESSAGES: Record<string, string> = {
   GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch, hoặc bạn không có quyền với chiến dịch này.",
+  GIVE_CAMPAIGN_STATUS_CHANGED: "Chiến dịch đã đổi trạng thái từ khi trang này tải. Hãy tải lại trang rồi xem lại.",
   GIVE_TRANSITION_NOT_ALLOWED: "Không thể chuyển chiến dịch sang trạng thái này lúc này.",
   GIVE_REASON_REQUIRED: "Cần ghi lý do.",
   GIVE_SUBMISSION_INCOMPLETE: "Cần chọn danh mục, viết tóm tắt và câu chuyện ít nhất 100 ký tự trước khi gửi duyệt.",
@@ -52,7 +53,7 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ACCOUNT_ALREADY_BOUND:
     "Tài khoản này đang gắn với một chiến dịch khác. Hãy nhả tài khoản khỏi chiến dịch đó trước: bản nháp, hay chiến dịch được yêu cầu chỉnh sửa mà tài khoản chưa nhận giao dịch nào, nhả được ngay; các chiến dịch khác đã gửi duyệt chỉ nhả được khi đã xong hẳn phần tiền.",
   GIVE_BINDING_NOT_FOUND: "Tài khoản này hiện không gắn với chiến dịch nào.",
-  GIVE_BINDING_NOT_RELEASABLE: `Chưa nhả được tài khoản: chiến dịch phải là bản nháp, được yêu cầu chỉnh sửa, hoặc đã hủy, mà tài khoản chưa nhận giao dịch nào; hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày). Giao dịch đã vào tài khoản là lịch sử tiền của chiến dịch nên tài khoản không nhả sớm được. Nếu tài khoản không dùng được nữa khi chiến dịch từ thiện đang gây quỹ, tạm dừng hoặc cần chỉnh sửa, hãy gửi yêu cầu đổi tài khoản ở mục Tài khoản nhận tiền của chiến dịch; với dự án có quà tặng, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`,
+  GIVE_BINDING_NOT_RELEASABLE: `Chưa nhả được tài khoản: chiến dịch phải là bản nháp, được yêu cầu chỉnh sửa, hoặc đã hủy, mà tài khoản chưa nhận giao dịch nào; hoặc đã kết thúc và xong hẳn phần tiền (chiến dịch từ thiện cần kết thúc ít nhất 30 ngày). Giao dịch đã vào tài khoản là lịch sử tiền của chiến dịch nên tài khoản không nhả sớm được. Nếu tài khoản không dùng được nữa khi chiến dịch đang gây quỹ, tạm dừng, cần chỉnh sửa, hoặc dự án có quà tặng đã đạt mục tiêu còn cam kết chờ thanh toán, hãy gửi yêu cầu đổi tài khoản ở mục Tài khoản nhận tiền của chiến dịch; trong các trường hợp khác, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`,
   GIVE_BINDING_HAS_OPEN_TRANSACTIONS:
     "Chưa nhả được tài khoản: còn giao dịch của chiến dịch chưa được đối chiếu hoặc chưa được giải trình.",
   GIVE_CAMPAIGN_ALREADY_BOUND: "Chiến dịch này đã có tài khoản nhận khác.",
@@ -95,9 +96,9 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_EVIDENCE_PATH_INVALID:
     "Ảnh chứng từ không nằm đúng thư mục của khoản chi này, hoặc đã được lưu trước đó. Hãy tải lại ảnh.",
   GIVE_EVIDENCE_LIMIT: "Mỗi khoản chi có tối đa 20 ảnh chứng từ (không tính ảnh đã bị ẩn).",
-  // Account swaps of give campaigns that may hold money (DOS/Give#55).
+  // Account swaps of campaigns that may hold money (DOS/Give#55, #92).
   GIVE_SWAP_NOT_ALLOWED:
-    "Chỉ đổi được tài khoản nhận của chiến dịch từ thiện đang gây quỹ, đang tạm dừng, hoặc cần chỉnh sửa mà tài khoản cũ đã nhận giao dịch.",
+    "Chỉ đổi được tài khoản nhận khi chiến dịch đang gây quỹ, đang tạm dừng, cần chỉnh sửa mà tài khoản cũ đã nhận giao dịch, hoặc dự án có quà tặng đã đạt mục tiêu nhưng vẫn còn cam kết chờ thanh toán.",
   GIVE_SWAP_USE_RELEASE:
     "Tài khoản đang gắn chưa nhận giao dịch nào: bạn nhả tài khoản đó rồi gắn tài khoản khác được ngay, không cần chờ tài chính duyệt.",
   GIVE_SWAP_SAME_ACCOUNT: "Hãy chọn một tài khoản khác với tài khoản đang gắn.",
@@ -131,7 +132,7 @@ const GIVE_MESSAGES: Record<string, string> = {
     "Khoản tiền vào này đã được ghi nhận là tiền bị trả lại, với khoản chuyển đi gốc, lý do hoặc bằng chứng khác. Ghi nhận đã lưu thì không sửa được.",
   GIVE_ORIGINAL_ALREADY_RETURNED: "Khoản chuyển đi gốc này đã được ghi nhận là bị trả lại bởi một khoản tiền vào khác.",
   GIVE_ACCOUNT_HISTORY_OPEN:
-    "Tài khoản này đã được đổi ra khỏi một chiến dịch mà phần tiền chưa xong (chiến dịch chưa kết thúc đủ 30 ngày, hoặc còn giao dịch chưa đối chiếu, chưa giải trình, hoặc còn dòng sao kê chưa ghi nhận), nên chưa dùng cho chiến dịch khác được.",
+    "Tài khoản này đã được đổi ra khỏi một chiến dịch mà phần tiền chưa xong (chiến dịch từ thiện chưa kết thúc đủ 30 ngày, hoặc còn cam kết chờ thanh toán, hoàn tiền, giao dịch chưa đối chiếu, chưa giải trình, hay dòng sao kê chưa ghi nhận), nên chưa dùng cho chiến dịch khác được.",
   // Transfers between a campaign's own accounts after a swap (DOS/Give#84);
   // the finance action words them for its context (OWN_TRANSFER_MESSAGES).
   GIVE_TRANSACTION_OWN_TRANSFER:
@@ -252,7 +253,7 @@ export function dbErrorMessage(error: DbErrorLike | null | undefined, overrides:
  * organizer's own name.
  */
 export const SUBMIT_MESSAGES: Record<string, string> = {
-  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: `Chưa gửi duyệt được: chiến dịch cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác (tài khoản đã nhận giao dịch thì không nhả được: với chiến dịch từ thiện, gửi yêu cầu đổi tài khoản trong cùng mục; với dự án có quà tặng, liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}). Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại, và tài khoản nhận tiền phải đứng tên pháp lý mới.`,
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: `Chưa gửi duyệt được: chiến dịch cần một tài khoản nhận tiền đã xác minh, đứng tên bạn, gắn vào chiến dịch. Vào mục Tài khoản nhận tiền để khai báo, xác minh và gắn tài khoản; nếu tài khoản đang gắn đã bị khóa hoặc không còn dùng được, hãy nhả nó rồi gắn tài khoản khác (tài khoản đã nhận giao dịch thì không nhả được: khi chiến dịch đang ở trạng thái cần chỉnh sửa, hãy gửi yêu cầu đổi tài khoản trong cùng mục; nếu là bản nháp, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}). Nếu bạn vừa đổi tên pháp lý, hồ sơ người tổ chức cần được xác minh lại, và tài khoản nhận tiền phải đứng tên pháp lý mới.`,
 }
 
 /** The same code worded for a moderator approving or opening a campaign. */
@@ -278,6 +279,12 @@ export const OPEN_MESSAGES: Record<string, string> = {
 export const SEND_BACK_MESSAGES: Record<string, string> = {
   GIVE_TRANSITION_NOT_ALLOWED:
     "Không yêu cầu chỉnh sửa được: chiến dịch vừa đổi trạng thái (có thể đã được mở công khai). Hãy tải lại trang.",
+}
+
+/** The transition refusal worded for a moderator sending a suspended-before-start campaign back (DOS/Give#77). */
+export const SUSPENDED_SEND_BACK_MESSAGES: Record<string, string> = {
+  GIVE_TRANSITION_NOT_ALLOWED:
+    "Không yêu cầu chỉnh sửa được: chỉ gửi lại chỉnh sửa cho chiến dịch tạm dừng trước ngày bắt đầu và chưa từng gây quỹ hay có lượt ủng hộ. Hãy tải lại trang.",
 }
 
 /**

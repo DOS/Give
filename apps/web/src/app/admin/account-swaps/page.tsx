@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/EmptyState"
 import { Field } from "@/components/ui/Field"
 import {
   approvalBlock,
+  campaignsWithPaymentsDue,
   listDecidedSwaps,
   listSwapsToReview,
   SWAP_PUBLIC_NOTE_MAX,
@@ -37,10 +38,11 @@ const SWAP_TONES: Record<SwapForReview["status"], BadgeTone> = {
 }
 
 /**
- * Finance queue of account swaps (DOS/Give#55): organizers of give campaigns
- * that may hold money ask to replace an account that stopped being usable;
+ * Finance queue of account swaps (DOS/Give#55, #92): organizers of give or
+ * back campaigns that may hold money (or succeeded back campaigns with
+ * payments still due) ask to replace an account that stopped being usable;
  * finance or an admin approves (the old binding ends and the new one starts
- * at the same instant) or rejects.
+ * at the same instant, and waiting backers are notified) or rejects.
  */
 export default async function AdminAccountSwapsPage() {
   const session = await requireSession("/admin/account-swaps")
@@ -49,22 +51,32 @@ export default async function AdminAccountSwapsPage() {
   if (!(await isStaff(db, FINANCE_ROLES))) notFound()
 
   const [pending, decided] = await Promise.all([listSwapsToReview(db), listDecidedSwaps(db)])
-  const counts = await transactionCounts(
-    db,
-    pending.map((s) => s.old_binding_id)
-  )
+  const succeededBackCampaigns = pending
+    .map((s) => s.campaign)
+    .filter((c): c is NonNullable<SwapForReview["campaign"]> =>
+      Boolean(c && c.type === "back" && c.status === "succeeded")
+    )
+  const [counts, dueCampaigns] = await Promise.all([
+    transactionCounts(
+      db,
+      pending.map((s) => s.old_binding_id)
+    ),
+    campaignsWithPaymentsDue(db, succeededBackCampaigns),
+  ])
 
   return (
     <AdminPage
       title="Đổi tài khoản nhận"
       intro={
         <p>
-          Người tổ chức của chiến dịch từ thiện đang gây quỹ, đang tạm dừng, hoặc cần chỉnh sửa mà tài khoản đã nhận
-          giao dịch, đề nghị thay tài khoản nhận không còn dùng được bằng một tài khoản khác đã xác minh, đứng tên họ.
-          Chỉ duyệt khi có căn cứ rằng tài khoản cũ không dùng được nữa (thư hoặc thông báo của ngân hàng, kết quả kiểm
-          tra gian lận). Khi duyệt, tài khoản cũ ngừng nhận cho chiến dịch và bị khóa, tài khoản mới bắt đầu nhận ngay;
-          tiền đã vào tài khoản cũ trước lúc đó vẫn thuộc chiến dịch. Trang chiến dịch và sao kê công khai ngày đổi. Mọi
-          thao tác được ghi vào nhật ký kiểm toán.
+          Người tổ chức của chiến dịch từ thiện hoặc dự án có quà tặng đang gây quỹ, đang tạm dừng, cần chỉnh sửa mà tài
+          khoản đã nhận giao dịch, hoặc dự án có quà tặng đã đạt mục tiêu nhưng còn cam kết chờ thanh toán, đề nghị thay
+          tài khoản nhận không còn dùng được bằng một tài khoản khác đã xác minh, đứng tên họ. Chỉ duyệt khi có căn cứ
+          rằng tài khoản cũ không dùng được nữa (thư hoặc thông báo của ngân hàng, kết quả kiểm tra gian lận). Khi
+          duyệt, tài khoản cũ ngừng nhận cho chiến dịch và bị khóa, tài khoản mới bắt đầu nhận ngay; tiền đã vào tài
+          khoản cũ trước lúc đó vẫn thuộc chiến dịch. Với dự án có quà tặng đã đạt mục tiêu, người ủng hộ đang chờ thanh
+          toán sẽ được thông báo thông tin tài khoản mới. Trang chiến dịch và sao kê công khai ngày đổi. Mọi thao tác
+          được ghi vào nhật ký kiểm toán.
         </p>
       }
     >
@@ -80,6 +92,7 @@ export default async function AdminAccountSwapsPage() {
                 key={swap.id}
                 swap={swap}
                 oldTransactions={counts.get(swap.old_binding_id) ?? 0}
+                hasPaymentsDue={Boolean(swap.campaign && dueCampaigns.has(swap.campaign.id))}
                 selfId={session.user.id}
               />
             ))}
@@ -93,7 +106,13 @@ export default async function AdminAccountSwapsPage() {
         ) : (
           <ItemList>
             {decided.map((swap) => (
-              <SwapCard key={swap.id} swap={swap} oldTransactions={null} selfId={session.user.id} />
+              <SwapCard
+                key={swap.id}
+                swap={swap}
+                oldTransactions={null}
+                hasPaymentsDue={false}
+                selfId={session.user.id}
+              />
             ))}
           </ItemList>
         )}
@@ -118,17 +137,19 @@ function AccountLine({ account }: { account: NonNullable<SwapForReview["old_bind
 function SwapCard({
   swap,
   oldTransactions,
+  hasPaymentsDue,
   selfId,
 }: {
   swap: SwapForReview
   /** Transactions the old binding recorded, for a pending request; null for a decided one. */
   oldTransactions: number | null
+  hasPaymentsDue: boolean
   selfId: string
 }) {
   const campaign = swap.campaign
   const organizer = swap.new_account?.organizer ?? null
   const own = swap.new_account?.owner_user_id === selfId
-  const block = oldTransactions === null ? null : approvalBlock(swap, oldTransactions)
+  const block = oldTransactions === null ? null : approvalBlock(swap, oldTransactions, hasPaymentsDue)
 
   return (
     <ItemCard>

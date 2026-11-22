@@ -14,10 +14,13 @@ import {
   planDayLabel,
   planDonationPayable,
   planEndedReasonLabel,
+  vnMonthStart,
 } from "@/lib/plans"
 
 import { DONATION_TONES, toneOf } from "../_components/tones"
 import { cancelPlan, updatePlan } from "./actions"
+
+export { vnMonthStart }
 
 export interface MyPlan {
   id: string
@@ -48,10 +51,16 @@ export function effectiveNextPeriod(nextPeriod: string, month: string): string {
   return nextPeriod < month ? month : nextPeriod
 }
 
-/** The first day of the current month in Vietnam time (UTC+7), as YYYY-MM-DD. */
-export function vnMonthStart(now = new Date()): string {
-  const vn = new Date(now.getTime() + 7 * 60 * 60 * 1000)
-  return `${vn.getUTCFullYear()}-${String(vn.getUTCMonth() + 1).padStart(2, "0")}-01`
+/**
+ * This month's plan donation for the campaign: a plan cancelled and signed up
+ * again in the same month keeps the earlier plan's donation.
+ */
+export function currentPlanDonation(
+  campaignId: string,
+  donations: readonly PlanDonation[],
+  month: string
+): PlanDonation | null {
+  return donations.find((d) => d.plan_id !== null && d.plan_period === month && d.campaign_id === campaignId) ?? null
 }
 
 const DAYS = Array.from({ length: 28 }, (_, i) => i + 1)
@@ -91,13 +100,7 @@ export function PlanList({
             plan={plan}
             month={month}
             now={now}
-            // This month's donation of the campaign: a plan cancelled and signed
-            // up again in the same month keeps the earlier plan's donation.
-            current={
-              donations.find(
-                (d) => d.plan_id !== null && d.plan_period === month && d.campaign_id === plan.campaign_id
-              ) ?? null
-            }
+            current={currentPlanDonation(plan.campaign_id, donations, month)}
           />
         ))}
       </ul>

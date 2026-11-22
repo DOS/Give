@@ -82,6 +82,7 @@ export interface Campaign {
   submitted_at: string | null
   approved_at: string | null
   outcome_at: string | null
+  payments_stopped_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -765,6 +766,37 @@ export interface WaitingForAccount extends ReviewItem {
   account_has_transactions: boolean
 }
 
+export type RecoveryKind = "approved_past_end" | "suspended_before_start"
+
+export interface RecoveryCampaign extends ReviewItem {
+  recovery_kind: RecoveryKind
+  /** Why the bound receiving account is unusable, or null when usable. */
+  account_problem: string | null
+  /** The bound account already recorded a bank transaction, so the organizer cannot release it. */
+  account_has_transactions: boolean
+}
+
+/** Hydrates full review rows (with organizer) for a list of campaign ids. */
+async function loadReviewItemsByIds(db: Db, ids: readonly string[]): Promise<Map<string, ReviewItem>> {
+  const byId = new Map<string, ReviewItem>()
+  if (ids.length === 0) return byId
+  const uniqueIds = [...new Set(ids)]
+  const reads = await Promise.all(
+    chunks(uniqueIds, IDS_PER_REQUEST).map((chunk) =>
+      managedCampaigns(db)
+        .select(
+          `${CAMPAIGN_WITH_REFS}, organizer:organizers(user_id, kind, legal_name, display_name, verification_status)`
+        )
+        .in("id", chunk)
+    )
+  )
+  for (const read of reads) {
+    if (read.error) throw read.error
+    for (const campaign of (read.data ?? []) as ReviewItem[]) byId.set(campaign.id, campaign)
+  }
+  return byId
+}
+
 /**
  * Approved campaigns (give and, since DOS/Give#85, back) without a usable receiving account, which the
  * activation cron skips, earliest start first (moderators and admins; others
@@ -779,27 +811,163 @@ export async function listWaitingForAccount(db: Db): Promise<WaitingForAccount[]
     account_has_transactions: boolean
   }[]
   if (rows.length === 0) return []
-  const ids = [...new Set(rows.map((r) => r.campaign_id))]
-  const byId = new Map<string, ReviewItem>()
-  const reads = await Promise.all(
-    chunks(ids, IDS_PER_REQUEST).map((chunk) =>
-      managedCampaigns(db)
-        .select(
-          `${CAMPAIGN_WITH_REFS}, organizer:organizers(user_id, kind, legal_name, display_name, verification_status)`
-        )
-        .in("id", chunk)
-    )
+  const byId = await loadReviewItemsByIds(
+    db,
+    rows.map((r) => r.campaign_id)
   )
-  for (const read of reads) {
-    if (read.error) throw read.error
-    for (const campaign of (read.data ?? []) as ReviewItem[]) byId.set(campaign.id, campaign)
-  }
   return rows.flatMap((r) => {
     const campaign = byId.get(r.campaign_id)
     return campaign
       ? [{ ...campaign, account_problem: r.account_problem, account_has_transactions: r.account_has_transactions }]
       : []
   })
+}
+
+/**
+ * Pre-launch campaigns needing moderator recovery, disjoint from
+ * give.campaigns_waiting_for_account (DOS/Give#77):
+ * - approved_past_end: approved campaigns past ends_at with a usable account;
+ * - suspended_before_start: campaigns suspended with starts_at > now() that
+ *   were never live and have no contributions.
+ */
+export async function listCampaignsNeedingRecovery(db: Db): Promise<RecoveryCampaign[]> {
+  const recovery = await db.rpc("campaigns_needing_recovery")
+  if (recovery.error) throw recovery.error
+  const rows = (recovery.data ?? []) as {
+    campaign_id: string
+    recovery_kind: RecoveryKind
+    account_problem: string | null
+    account_has_transactions: boolean
+  }[]
+  if (rows.length === 0) return []
+  const byId = await loadReviewItemsByIds(
+    db,
+    rows.map((r) => r.campaign_id)
+  )
+  return rows.flatMap((r) => {
+    const campaign = byId.get(r.campaign_id)
+    return campaign
+      ? [
+          {
+            ...campaign,
+            recovery_kind: r.recovery_kind,
+            account_problem: r.account_problem,
+            account_has_transactions: r.account_has_transactions,
+          },
+        ]
+      : []
+  })
+}
+
+/**
+ * What a moderator should do with a pre-launch campaign in
+ * give.campaigns_needing_recovery (DOS/Give#77):
+ * - approved_past_end: usable account, but ends_at already passed so the
+ *   activation cron will never open it; send back so the organizer updates
+ *   dates and resubmits.
+ * - suspended_before_start: never live and no contributions, so a reviewer can
+ *   send it to changes_requested (suspended -> changes_requested) to fix
+ *   issues or replace an unusable account without cancelling. Replacing a
+ *   receiving account stays owner-only (DOS/Give#264), and bindings with
+ *   recorded transactions still cannot be released early (both give and back
+ *   campaigns use the #55/#92 finance-approved swap).
+ */
+export function recoveryAdvice(
+  row: Pick<RecoveryCampaign, "recovery_kind" | "type" | "account_problem" | "account_has_transactions"> & {
+    organizer: Pick<Organizer, "verification_status"> | null
+  }
+): WaitingAdvice {
+  if (row.recovery_kind === "approved_past_end") {
+    return {
+      note: "Chiến dịch đã quá ngày kết thúc nên hệ thống không tự mở dù tài khoản nhận tiền vẫn dùng được. Hãy yêu cầu chỉnh sửa để người tổ chức cập nhật ngày rồi gửi duyệt lại, hoặc hủy nếu không còn gây quỹ.",
+      sendBackReason:
+        "Chiến dịch đã quá ngày kết thúc nên chưa thể tự mở. Hãy sửa ngày kết thúc rồi gửi duyệt lại. Nếu không còn cần gây quỹ, hãy hủy chiến dịch.",
+    }
+  }
+
+  const problem = row.account_problem
+  if (problem === null) {
+    return {
+      note: "Chiến dịch đang tạm dừng trước ngày bắt đầu (chưa từng công khai và chưa có lượt ủng hộ) và tài khoản nhận tiền vẫn dùng được. Nếu cần người tổ chức sửa nội dung rồi gửi duyệt lại, hãy gửi yêu cầu chỉnh sửa bên dưới.",
+      sendBackReason: "",
+    }
+  }
+
+  const verified = row.organizer?.verification_status === "verified" && problem !== "organizer_not_verified"
+  const money = row.account_has_transactions
+
+  if (problem === "organizer_not_verified") {
+    if (money) {
+      return {
+        note: "Hồ sơ người tổ chức chưa được xác minh và tài khoản đang gắn đã nhận giao dịch (lịch sử tiền của chiến dịch, không nhả sớm được): hãy xác minh lại hồ sơ ở mục Xác minh người tổ chức trước. Nếu tên pháp lý đã đổi, chủ chiến dịch cần gửi yêu cầu đổi tài khoản (bộ phận tài chính duyệt) sau khi hồ sơ được xác minh.",
+        sendBackReason:
+          "Chiến dịch đang tạm dừng trước ngày bắt đầu và hồ sơ người tổ chức của bạn cần được xác minh lại trước khi dùng tài khoản nhận tiền. Tài khoản đang gắn đã nhận giao dịch nên không nhả được; nếu cần đổi tài khoản sau khi hồ sơ được xác minh, hãy gửi yêu cầu đổi tài khoản trong mục Tài khoản nhận tiền để bộ phận tài chính duyệt, rồi gửi duyệt lại.",
+      }
+    }
+    return {
+      note: "Hồ sơ người tổ chức chưa được xác minh: hãy xác minh lại hồ sơ (với tên pháp lý hiện tại) ở mục Xác minh người tổ chức. Nếu cần người tổ chức chỉnh sửa hoặc gắn tài khoản mới, bạn vẫn có thể yêu cầu chỉnh sửa.",
+      sendBackReason:
+        "Chiến dịch đang tạm dừng trước ngày bắt đầu và hồ sơ người tổ chức của bạn cần được xác minh lại trước khi dùng tài khoản nhận tiền. Hãy kiểm tra lại thông tin và tài khoản nhận tiền rồi gửi duyệt lại.",
+    }
+  }
+
+  if (money) {
+    if (problem === "account_not_owned") {
+      return {
+        note: "Tài khoản đang gắn không thuộc người tổ chức và đã nhận giao dịch (lịch sử tiền của chiến dịch, chỉ nhả được 30 ngày sau khi chiến dịch bị hủy hoặc kết thúc), nên chủ chiến dịch không tự đổi tài khoản được. Hãy liên hệ quản trị viên hệ thống; nếu không thể xử lý, hãy hủy chiến dịch.",
+        sendBackReason: null,
+      }
+    }
+    const notes = [
+      "Tài khoản đang gắn đã nhận giao dịch (lịch sử tiền của chiến dịch, không nhả sớm được). Sau khi yêu cầu chỉnh sửa, chủ chiến dịch có thể gửi yêu cầu đổi tài khoản (bộ phận tài chính duyệt) trong mục Tài khoản nhận tiền.",
+    ]
+    const parts = [
+      "Chiến dịch đang tạm dừng trước ngày bắt đầu và tài khoản nhận tiền đang gắn không còn dùng được. Vì tài khoản đã nhận giao dịch nên không nhả được, hãy gửi yêu cầu đổi tài khoản trong mục Tài khoản nhận tiền của chiến dịch để bộ phận tài chính duyệt, rồi gửi duyệt lại.",
+    ]
+    if (!verified) {
+      notes.unshift(
+        "Hồ sơ người tổ chức chưa được xác minh: hãy xác minh lại hồ sơ (với tên pháp lý hiện tại) ở mục Xác minh người tổ chức trước để chủ chiến dịch có thể gửi yêu cầu đổi tài khoản."
+      )
+      parts.push("Hồ sơ người tổ chức của bạn cần được xác minh lại trước khi gửi yêu cầu đổi tài khoản.")
+    }
+    return {
+      note: notes.join(" "),
+      sendBackReason: parts.join(" "),
+    }
+  }
+
+  const notes: string[] = []
+  if (!verified) {
+    notes.push(
+      "Hồ sơ người tổ chức chưa được xác minh: hãy xác minh lại hồ sơ (với tên pháp lý hiện tại) ở mục Xác minh người tổ chức để chủ chiến dịch có thể gắn tài khoản mới."
+    )
+  }
+  if (problem === "account_not_owned") {
+    notes.push(
+      "Tài khoản đang gắn không thuộc người tổ chức: sau khi yêu cầu chỉnh sửa, hãy nhờ bộ phận tài chính hoặc quản trị viên nhả tài khoản đó."
+    )
+  }
+
+  const lead =
+    problem === "no_account"
+      ? "Chiến dịch đang tạm dừng trước ngày bắt đầu và chưa có tài khoản nhận tiền dùng được."
+      : problem === "name_mismatch"
+        ? "Tên chủ tài khoản nhận tiền đang gắn không còn trùng tên pháp lý của bạn."
+        : problem === "account_not_owned"
+          ? "Tài khoản nhận tiền đang gắn không đứng tên bạn."
+          : "Tài khoản nhận tiền đang gắn không còn dùng được."
+  const step =
+    problem === "no_account"
+      ? "gắn một tài khoản đã xác minh đứng tên bạn"
+      : problem === "account_not_owned"
+        ? "chờ đội ngũ Give nhả tài khoản không đứng tên bạn, sau đó gắn một tài khoản đã xác minh đứng tên bạn"
+        : "nhả tài khoản đang gắn, gắn một tài khoản đã xác minh đứng tên pháp lý hiện tại của bạn"
+
+  const parts = [lead, `Hãy ${step} rồi gửi duyệt lại.`]
+  if (!verified) parts.push("Hồ sơ người tổ chức của bạn cần được xác minh lại trước khi gắn hay dùng được tài khoản.")
+  if (step.startsWith("nhả")) parts.push(`Nếu không nhả được tài khoản, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`)
+
+  return { sendBackReason: parts.join(" "), note: notes.length > 0 ? notes.join(" ") : null }
 }
 
 /**

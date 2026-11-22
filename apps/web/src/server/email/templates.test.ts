@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { formatVnd } from "@/lib/format"
 import { NEW_CODE_EVERY_MONTH } from "@/lib/plans"
 
 import { EmailRenderError, escapeHtml, renderEmail, type OutboxEmail } from "./templates"
@@ -274,6 +275,221 @@ describe("renderEmail: monthly plans (DOS/Give#276)", () => {
     const r = renderEmail(plan("plan_ended", { ended_reason: "donor_cancelled" }), ORIGIN)
     expect(r.text).toContain("Lý do: bạn đã dừng kế hoạch.")
     expect(r.text).toContain("mẫu chuyển tiền tới tài khoản nhận của chiến dịch")
+  })
+})
+
+describe("renderEmail: plan_account_swapped (DOS/Give#291)", () => {
+  const SIGNED = `${"cd".repeat(32)}.${"A".repeat(21)}w`
+  const swap = (payload: Record<string, unknown> = {}, overrides: Partial<OutboxEmail> = {}) =>
+    email({
+      kind: "plan_account_swapped",
+      category: "notification",
+      tracking_token: null,
+      reference_code: null,
+      unsubscribe_token: UNSUB,
+      stop_token: "cd".repeat(32),
+      payload: {
+        campaign_id: CAMPAIGN,
+        campaign_slug: "nuoc-sach",
+        campaign_title: "Nước sạch cho bản",
+        campaign_type: "give",
+        plan_id: "33333333-3333-4333-8333-333333333333",
+        swap_request_id: "55555555-5555-4555-8555-555555555555",
+        new_binding_id: "66666666-6666-4666-8666-666666666666",
+        changed_at: "2026-11-22T09:00:00Z",
+        changed_date: "2026-11-22",
+        new_channel: "statement_import",
+        new_bank_bin: "970422",
+        new_chain: null,
+        new_account_name: "NGUYEN MINH TAM",
+        new_account_last4: "0002",
+        new_account_masked: "****0002",
+        old_bank_bin: "970436",
+        old_account_last4: "0001",
+        old_account_masked: "****0001",
+        ...payload,
+      },
+      ...overrides,
+    })
+  const FORBIDDEN = /quá hạn|nợ|còn thiếu/i
+
+  it("states holder name, bank, masked last 4 digits, swap date, campaign link, stop link and unsubscribe without asking to transfer", () => {
+    const r = renderEmail(swap(), ORIGIN, { signedStopToken: SIGNED })
+    expect(r.subject).toBe("Tài khoản nhận của chiến dịch “Nước sạch cho bản” đã thay đổi")
+    expect(r.text).toContain("Ngày 22/11/2026, Give đã duyệt thay đổi tài khoản nhận")
+    expect(r.text).toContain(
+      "Tài khoản nhận mới: chủ tài khoản NGUYEN MINH TAM, ngân hàng MBBank, số tài khoản •••• 0002."
+    )
+    expect(r.text).toContain("không yêu cầu bạn chuyển tiền")
+    expect(r.text).toContain("tài khoản cũ Vietcombank •••• 0001")
+    expect(r.text).toContain(`Xem trang chiến dịch: ${ORIGIN}/campaigns/nuoc-sach`)
+    const stop = `${ORIGIN}/plans/stop?t=${encodeURIComponent(SIGNED)}`
+    const unsub = `${ORIGIN}/email/unsubscribe?t=${UNSUB}`
+    expect(r.text).toContain(`Không muốn nhận lời nhắc nữa? Dừng ủng hộ hằng tháng: ${stop}`)
+    expect(r.text).toContain(`Không muốn nhận các email thông báo như thế này? Hủy đăng ký: ${unsub}`)
+    expect(r.text).not.toContain("email tổng kết")
+    expect(r.html).toContain(`href="${stop}"`)
+    expect(r.html).toContain(`href="${unsub}"`)
+    expect(r.unsubscribeUrl).toBe(unsub)
+    expect(r.oneClickUnsubscribeUrl).toBe(`${ORIGIN}/api/plans/stop?t=${encodeURIComponent(SIGNED)}`)
+    expect(r.text).not.toMatch(FORBIDDEN)
+    expect(r.text.split("\n--\n")[0]).not.toMatch(/\d{6,}/)
+    expect(r.html).not.toMatch(/<img|<link|url\(/i)
+  })
+
+  it("formats changed_at in Vietnam time when changed_date is absent and falls back cleanly on missing optional fields", () => {
+    const r = renderEmail(
+      swap({
+        changed_date: null,
+        changed_at: "2026-11-22T18:30:00Z", // 2026-11-23 01:30 Asia/Ho_Chi_Minh
+        campaign_slug: null,
+        old_bank_bin: null,
+        old_account_last4: null,
+        old_account_masked: null,
+      }),
+      ORIGIN,
+      { signedStopToken: SIGNED }
+    )
+    expect(r.text).toContain("Ngày 23/11/2026")
+    expect(r.text).toContain("tài khoản cũ của chiến dịch")
+    expect(r.text).toContain(`${ORIGIN}/me/contributions`)
+  })
+
+  it("supports crypto channel formatting with masked last 4 characters", () => {
+    const r = renderEmail(
+      swap({
+        new_channel: "crypto",
+        new_bank_bin: null,
+        new_account_name: null,
+        new_chain: "polygon",
+        new_account_last4: "a9F2",
+        new_account_masked: "****a9F2",
+      }),
+      ORIGIN,
+      { signedStopToken: SIGNED }
+    )
+    expect(r.text).toContain("Ví nhận mới trên mạng polygon: •••• a9F2.")
+  })
+
+  it("never renders raw multi-digit account numbers even from a malformed payload and escapes HTML", () => {
+    const r = renderEmail(
+      swap({
+        new_account_name: 'TAM <script>alert("x")</script>',
+        new_account_last4: "291000220002",
+        new_account_masked: "291000220002",
+        old_account_last4: "291000110001",
+        old_account_masked: "291000110001",
+      }),
+      ORIGIN,
+      { signedStopToken: SIGNED }
+    )
+    expect(r.text).not.toContain("291000220002")
+    expect(r.text).not.toContain("291000110001")
+    expect(r.html).not.toContain("291000220002")
+    expect(r.html).not.toContain("<script>")
+    expect(r.html).toContain("&lt;script&gt;")
+  })
+
+  it("refuses plan_account_swapped without a signed stop token or without an unsubscribe token", () => {
+    expect(() => renderEmail(swap(), ORIGIN)).toThrow(new EmailRenderError("stop_token_missing"))
+    expect(() => renderEmail(swap({}, { unsubscribe_token: null }), ORIGIN, { signedStopToken: SIGNED })).toThrow(
+      new EmailRenderError("unsubscribe_token_missing")
+    )
+  })
+})
+
+describe("pledge_account_swapped email (DOS/Give#92)", () => {
+  const pledgeSwap = (payload: Record<string, unknown> = {}, overrides: Partial<OutboxEmail> = {}) =>
+    email({
+      kind: "pledge_account_swapped",
+      category: "transactional",
+      unsubscribe_token: null,
+      stop_token: null,
+      reference_code: "GV92ABC23",
+      payload: {
+        campaign_slug: "den-ngu-go",
+        campaign_title: "Đèn ngủ gỗ",
+        reference_code: "GV92ABC23",
+        intended_amount: 500_000,
+        received_amount: 150_000,
+        refunded_amount: 50_000,
+        payment_due_at: "2026-11-29T03:00:00Z",
+        changed_date: "2026-11-22",
+        new_channel: "statement_import",
+        new_bank_bin: "970422",
+        new_account_name: "NGUYEN THI DAO",
+        new_account_last4: "0002",
+        new_account_masked: "****0002",
+        old_bank_bin: "970436",
+        old_account_last4: "0001",
+        old_account_masked: "****0001",
+        public_note: "Ngân hàng đã đóng tài khoản cũ.",
+        ...payload,
+      },
+      ...overrides,
+    })
+
+  it("renders transactional payment-account change email with masked details, net due, deadline and pledge link", () => {
+    const r = renderEmail(pledgeSwap(), ORIGIN)
+    expect(r.subject).toBe("Tài khoản nhận thanh toán của dự án “Đèn ngủ gỗ” đã thay đổi")
+    expect(r.unsubscribeUrl).toBeNull()
+    expect(r.oneClickUnsubscribeUrl).toBeNull()
+    expect(r.text).toContain("Ngày 22/11/2026")
+    expect(r.text).toContain("chủ tài khoản NGUYEN THI DAO")
+    expect(r.text).toContain("ngân hàng MBBank")
+    expect(r.text).toContain("số tài khoản •••• 0002")
+    expect(r.text).toContain("Ghi chú công khai: Ngân hàng đã đóng tài khoản cũ.")
+    expect(r.text).toContain(formatVnd(400_000))
+    expect(r.text).toContain("29/11/2026")
+    expect(r.text).toContain("GV92ABC23")
+    expect(r.text).toContain("Đừng chuyển tiền vào tài khoản cũ Vietcombank •••• 0001")
+    expect(r.text).toContain(`${ORIGIN}/me/pledges/GV92ABC23`)
+    expect(r.text).not.toContain("/email/unsubscribe")
+    expect(r.text).not.toContain("/plans/stop")
+  })
+
+  it("falls back to /me/contributions when reference_code is missing or invalid and supports crypto", () => {
+    const r = renderEmail(
+      pledgeSwap(
+        {
+          reference_code: "../evil",
+          new_channel: "crypto",
+          new_bank_bin: null,
+          new_account_name: null,
+          new_chain: "polygon",
+          new_account_last4: "a9F2",
+          public_note: null,
+        },
+        { reference_code: null }
+      ),
+      ORIGIN
+    )
+    expect(r.text).toContain("Ví nhận mới trên mạng polygon: •••• a9F2.")
+    expect(r.text).toContain(`${ORIGIN}/me/contributions`)
+    expect(r.text).not.toContain("../evil")
+  })
+
+  it("never leaks raw multi-digit account numbers, escapes HTML, and strips CR/LF from subject", () => {
+    const r = renderEmail(
+      pledgeSwap({
+        campaign_title: "Đèn\r\nBcc: evil@example.com",
+        new_account_name: 'DAO <script>alert("x")</script>',
+        public_note: '<img src=x onerror="alert(1)">',
+        new_account_last4: "920002220002",
+        new_account_masked: "920002220002",
+        old_account_last4: "920001110001",
+        old_account_masked: "920001110001",
+      }),
+      ORIGIN
+    )
+    expect(r.subject).not.toMatch(/[\r\n]/)
+    expect(r.text).not.toContain("920002220002")
+    expect(r.text).not.toContain("920001110001")
+    expect(r.html).not.toContain("920002220002")
+    expect(r.html).not.toContain("<script>")
+    expect(r.html).not.toContain("<img")
+    expect(r.html).toContain("&lt;script&gt;")
+    expect(r.html).toContain("&lt;img")
   })
 })
 

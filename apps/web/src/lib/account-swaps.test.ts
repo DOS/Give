@@ -4,6 +4,8 @@ import { fakeDb, op, type Call } from "@/test/fake-db"
 
 import {
   approvalBlock,
+  campaignHasPaymentsDue,
+  campaignsWithPaymentsDue,
   canAskSwap,
   describeAccountChange,
   lastDecidedSwap,
@@ -34,21 +36,56 @@ function request(id: string, status: AccountSwapRequest["status"]): AccountSwapR
 }
 
 describe("canAskSwap", () => {
-  it("offers a swap for a live or suspended give campaign", () => {
-    expect(canAskSwap("live", "give", false)).toBe(true)
-    expect(canAskSwap("suspended", "give", false)).toBe(true)
-  })
-
-  it("offers it to a give campaign under changes only when the account holds money history", () => {
-    expect(canAskSwap("changes_requested", "give", true)).toBe(true)
-    expect(canAskSwap("changes_requested", "give", false)).toBe(false)
-  })
-
-  it("never offers it to other statuses or to back campaigns", () => {
-    for (const status of ["draft", "in_review", "approved", "closed", "cancelled"] as const) {
-      expect(canAskSwap(status, "give", true)).toBe(false)
+  it("offers a swap for live or suspended give and back campaigns (DOS/Give#55, #92)", () => {
+    for (const type of ["give", "back"] as const) {
+      expect(canAskSwap("live", type, false)).toBe(true)
+      expect(canAskSwap("suspended", type, false)).toBe(true)
     }
-    expect(canAskSwap("live", "back", true)).toBe(false)
+  })
+
+  it("offers it under changes_requested only when the account holds money history", () => {
+    for (const type of ["give", "back"] as const) {
+      expect(canAskSwap("changes_requested", type, true)).toBe(true)
+      expect(canAskSwap("changes_requested", type, false)).toBe(false)
+    }
+  })
+
+  it("offers it to a succeeded back campaign only while pledges still have payments due (DOS/Give#92)", () => {
+    expect(canAskSwap("succeeded", "back", false, true)).toBe(true)
+    expect(canAskSwap("succeeded", "back", true, false)).toBe(false)
+    expect(canAskSwap("succeeded", "give", true, true)).toBe(false)
+  })
+
+  it("never offers it to other statuses", () => {
+    for (const status of ["draft", "in_review", "approved", "settling", "failed", "closed", "cancelled"] as const) {
+      expect(canAskSwap(status, "give", true, true)).toBe(false)
+      expect(canAskSwap(status, "back", true, true)).toBe(false)
+    }
+  })
+})
+
+describe("campaignHasPaymentsDue and campaignsWithPaymentsDue (DOS/Give#92)", () => {
+  it("queries active payment_due/partially_paid pledges past payments_stopped_at or now", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(() => ({ data: [{ id: "p-1" }] }), calls)
+    expect(await campaignHasPaymentsDue(db as unknown as Db, "c-1", "2026-11-10T00:00:00Z")).toBe(true)
+    expect(calls[0].target).toBe("contributions")
+    expect(calls[0].ops).toContainEqual(["eq", "campaign_id", "c-1"])
+    expect(calls[0].ops).toContainEqual(["eq", "kind", "pledge"])
+    expect(calls[0].ops).toContainEqual(["in", "status", ["payment_due", "partially_paid"]])
+    expect(calls[0].ops).toContainEqual(["gt", "payment_due_at", "2026-11-10T00:00:00Z"])
+  })
+
+  it("batches unique succeeded back campaigns and returns only those with payments due", async () => {
+    const calls: Call[] = []
+    const db = fakeDb((call) => ({ data: op(call, "eq")?.[1] === "c-1" ? [{ id: "p-1" }] : [] }), calls)
+    const due = await campaignsWithPaymentsDue(db as unknown as Db, [
+      { id: "c-1", payments_stopped_at: null },
+      { id: "c-2", payments_stopped_at: "2026-11-10T00:00:00Z" },
+      { id: "c-1", payments_stopped_at: null },
+    ])
+    expect([...due]).toEqual(["c-1"])
+    expect(calls).toHaveLength(2)
   })
 })
 
@@ -88,8 +125,15 @@ function review(overrides: Partial<SwapForReview> = {}): SwapForReview {
 }
 
 describe("approvalBlock", () => {
-  it("lets a request that still describes the campaign be approved", () => {
+  it("lets a request that still describes an eligible give or back campaign be approved", () => {
     expect(approvalBlock(review(), 3)).toBeNull()
+    expect(approvalBlock(review({ campaign: { ...review().campaign!, type: "back", status: "live" } }), 0)).toBeNull()
+    expect(
+      approvalBlock(review({ campaign: { ...review().campaign!, type: "back", status: "suspended" } }), 0)
+    ).toBeNull()
+    expect(
+      approvalBlock(review({ campaign: { ...review().campaign!, type: "back", status: "succeeded" } }), 0, true)
+    ).toBeNull()
   })
 
   it("explains a stale request", () => {
@@ -97,11 +141,20 @@ describe("approvalBlock", () => {
       "không còn ở trạng thái"
     )
     expect(
+      approvalBlock(review({ campaign: { ...review().campaign!, type: "back", status: "succeeded" } }), 3, false)
+    ).toContain("không còn cam kết nào đang chờ thanh toán")
+    expect(
+      approvalBlock(review({ campaign: { ...review().campaign!, type: "back", status: "failed" } }), 3, true)
+    ).toContain("không còn ở trạng thái")
+    expect(
       approvalBlock(review({ old_binding: { ...review().old_binding!, released_at: "2026-11-02T00:00:00Z" } }), 3)
     ).toContain("đã thay đổi")
     expect(approvalBlock(review({ campaign: { ...review().campaign!, status: "changes_requested" } }), 0)).toContain(
       "tự nhả"
     )
+    expect(
+      approvalBlock(review({ campaign: { ...review().campaign!, type: "back", status: "changes_requested" } }), 0)
+    ).toContain("tự nhả")
     expect(
       approvalBlock(review({ new_account: { ...review().new_account!, verification_status: "disabled" } }), 3)
     ).toContain("Tài khoản mới")
@@ -122,7 +175,8 @@ describe("approvalBlock", () => {
 describe("REVIEW_COLUMNS", () => {
   it("never reads campaigns.organizer_id, which authenticated may not select", () => {
     const campaignEmbed = /campaign:campaigns\(([^)]*)\)/.exec(REVIEW_COLUMNS)?.[1]
-    expect(campaignEmbed).toBe("id, slug, title, status, type")
+    expect(campaignEmbed).toBe("id, slug, title, status, type, payments_stopped_at")
+    expect(campaignEmbed).not.toContain("organizer_id")
     expect(REVIEW_COLUMNS).toContain("new_account:receiving_accounts(id, owner_user_id,")
     expect(REVIEW_COLUMNS).toContain("organizer:organizers(legal_name, display_name, verification_status)")
     expect(REVIEW_COLUMNS).toContain("account_bindings!account_swap_requests_old_binding_id_fkey")

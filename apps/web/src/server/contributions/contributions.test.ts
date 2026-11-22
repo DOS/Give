@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 
 import { fakeDb, op, type Call } from "@/test/fake-db"
 
@@ -13,7 +13,9 @@ import {
   guestContribution,
   guestContributionAccess,
   ownContribution,
+  PAYMENT_ACCOUNT_BATCH_CONCURRENCY,
   paymentAccount,
+  paymentAccounts,
   statusTokenHash,
 } from "."
 
@@ -299,6 +301,71 @@ describe("paymentAccount", () => {
   it("passes database errors on", async () => {
     const db = fakeDb(() => ({ error: { code: "42501", message: "permission denied" } }))
     await expect(paymentAccount(db as never, CAMPAIGN)).rejects.toMatchObject({ code: "42501" })
+  })
+})
+
+describe("paymentAccounts", () => {
+  const row = (accountNumber: string) => ({
+    channel: "statement_import",
+    bank_bin: "970436",
+    account_number: accountNumber,
+    account_name: "NGUYEN VAN A",
+  })
+
+  it("returns an empty map without touching the database for an empty list", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(() => ({ data: row("0000") }), calls)
+    expect(await paymentAccounts(db as never, [])).toEqual(new Map())
+    expect(calls).toHaveLength(0)
+  })
+
+  it("deduplicates campaign ids and isolates per-campaign errors", async () => {
+    const c1 = "11111111-1111-4111-8111-111111111111"
+    const c2 = "22222222-2222-4222-8222-222222222222"
+    const c3 = "33333333-3333-4333-8333-333333333333"
+    const calls: Call[] = []
+    const onError = vi.fn()
+    const db = fakeDb((call) => {
+      const id = (op(call, "args")?.[0] as { p_campaign_id: string }).p_campaign_id
+      if (id === c1) return { data: row("1111") }
+      if (id === c2) return { data: null }
+      return { error: { code: "57014", message: "timeout" } }
+    }, calls)
+
+    const result = await paymentAccounts(db as never, [c1, c2, c1, c3, c2], { onError })
+    expect(calls).toHaveLength(3)
+    expect(result.get(c1)).toEqual({ bank_bin: "970436", account_number: "1111", account_name: "NGUYEN VAN A" })
+    expect(result.get(c2)).toBeNull()
+    expect(result.has(c3)).toBe(false)
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onError).toHaveBeenCalledWith(c3, expect.objectContaining({ code: "57014" }))
+  })
+
+  it("bounds concurrent RPCs to the configured concurrency limit", async () => {
+    const ids = Array.from({ length: 12 }, (_, i) => `00000000-0000-4000-8000-${String(i).padStart(12, "0")}`)
+    let inFlight = 0
+    let peak = 0
+    const db = {
+      rpc: (_fn: string, args: { p_campaign_id: string }) => ({
+        select: () => ({
+          maybeSingle: async () => {
+            inFlight += 1
+            peak = Math.max(peak, inFlight)
+            await new Promise((resolve) => setTimeout(resolve, 5))
+            inFlight -= 1
+            return { data: row(args.p_campaign_id.slice(-4)), error: null }
+          },
+        }),
+      }),
+    }
+
+    const result = await paymentAccounts(db as never, ids)
+    expect(result.size).toBe(12)
+    expect(peak).toBeGreaterThan(1)
+    expect(peak).toBeLessThanOrEqual(PAYMENT_ACCOUNT_BATCH_CONCURRENCY)
+
+    const fallback = await paymentAccounts(db as never, ids.slice(0, 3), { concurrency: Number.NaN })
+    expect(fallback.size).toBe(3)
   })
 })
 

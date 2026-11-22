@@ -40,8 +40,12 @@ const COMPLETE_RETRY_MS = [250, 1_000]
 const NO_HOLD_FUNCTION = new Set(["PGRST202", "42883"])
 /** Each RPC after a send (complete, release) is abandoned after this long. */
 export const RPC_TIMEOUT_MS = 5_000
-/** A claim is abandoned after this long (it may wait on locks while it settles rows). */
-export const CLAIM_TIMEOUT_MS = 10_000
+/**
+ * A claim is abandoned after this long. Kept well above PostgREST's 8 s
+ * statement timeout plus connection-pooler / network jitter so a committing
+ * claim_outbox call is not aborted in flight (DOS/Give#273 item 5).
+ */
+export const CLAIM_TIMEOUT_MS = 15_000
 /**
  * No retry or release starts unless it can finish by this point, under the
  * 60 s function limit: a run killed mid-batch loses its results and leaves
@@ -297,6 +301,18 @@ async function release(db: Db, rows: OutboxEmail[], clock: Clock): Promise<numbe
 }
 
 /**
+ * Whether an RPC error looks like a client-side abort/timeout (as opposed to
+ * a server-side rollback such as Postgres 57014 statement_timeout), meaning
+ * the DB transaction may still have committed and leased rows.
+ */
+function isAbortError(error: { code?: string; name?: string; message?: string; details?: string }): boolean {
+  if (error.code === "57014") return false
+  if (error.name === "AbortError" || error.name === "TimeoutError") return true
+  const text = `${error.message ?? ""} ${error.details ?? ""}`
+  return /\b(AbortError|TimeoutError|aborted|timed out)\b/i.test(text)
+}
+
+/**
  * One send-outbox run. Throws only when the first claim fails. After a send
  * times out its connection is cut off (transport.abort), the attempt is
  * recorded as outcome unknown, and the run stops and gives back the rest of
@@ -321,12 +337,19 @@ export async function sendDueEmails(
 
   try {
     run: while (now() - started < budget) {
-      const { data, error } = await db
-        .rpc("claim_outbox", { p_limit: CLAIM_BATCH })
-        .abortSignal(AbortSignal.timeout(CLAIM_TIMEOUT_MS))
+      const claimSignal = AbortSignal.timeout(CLAIM_TIMEOUT_MS)
+      const { data, error } = await db.rpc("claim_outbox", { p_limit: CLAIM_BATCH }).abortSignal(claimSignal)
       if (error) {
+        if (claimSignal.aborted || isAbortError(error)) {
+          console.error(
+            "claim_outbox aborted after timeout; DB transaction may still have committed and leased rows until their 5-minute lease expires",
+            error.code,
+            error.message
+          )
+        } else {
+          console.error("claim_outbox failed", error.code, error.message)
+        }
         if (result.claimed === 0) throw error
-        console.error("claim_outbox failed", error.code, error.message)
         break
       }
       const raws = Array.isArray(data) ? data : []

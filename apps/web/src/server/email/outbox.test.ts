@@ -4,8 +4,10 @@ import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 import {
   CLAIM_BATCH,
+  CLAIM_TIMEOUT_MS,
   COMPLETE_TRIES,
   RPC_TIMEOUT_MS,
+  RUN_BUDGET_MS,
   RUN_LIMIT_MS,
   SEND_DEADLINE_MS,
   SEND_TIMEOUT_MS,
@@ -175,6 +177,107 @@ describe("sendDueEmails", () => {
       expect(sent).toHaveLength(1)
       expect(sent[0].headers["List-Unsubscribe"]).toBeUndefined()
     })
+
+    it("signs stop_token and includes unsubscribe link for plan_account_swapped (DOS/Give#291)", async () => {
+      claims = [
+        [
+          row(24, {
+            kind: "plan_account_swapped",
+            category: "notification",
+            unsubscribe_token: UNSUB,
+            stop_token: STOP,
+            payload: {
+              campaign_slug: "nuoc-sach",
+              campaign_title: "Nước sạch",
+              changed_date: "2026-11-22",
+              new_channel: "statement_import",
+              new_bank_bin: "970422",
+              new_account_name: "NGUYEN MINH TAM",
+              new_account_last4: "0002",
+              new_account_masked: "****0002",
+              old_bank_bin: "970436",
+              old_account_last4: "0001",
+              old_account_masked: "****0001",
+            },
+          }),
+        ],
+      ]
+      await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
+      const signed = signStopToken(STOP, SECRET)!
+      expect(sent).toHaveLength(1)
+      expect(sent[0].headers["List-Unsubscribe"]).toBe(
+        `<https://give.vn/api/plans/stop?t=${encodeURIComponent(signed)}>`
+      )
+      expect(sent[0].headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click")
+      expect(sent[0].text).toContain(`https://give.vn/plans/stop?t=${encodeURIComponent(signed)}`)
+      expect(sent[0].text).toContain(`https://give.vn/email/unsubscribe?t=${UNSUB}`)
+    })
+
+    it("sends transactional pledge_account_swapped without stop or unsubscribe headers (DOS/Give#92)", async () => {
+      claims = [
+        [
+          row(27, {
+            kind: "pledge_account_swapped",
+            category: "transactional",
+            unsubscribe_token: null,
+            stop_token: null,
+            reference_code: "GV92ABC23",
+            payload: {
+              campaign_slug: "den-ngu-go",
+              campaign_title: "Đèn ngủ gỗ",
+              reference_code: "GV92ABC23",
+              intended_amount: 500_000,
+              received_amount: 0,
+              refunded_amount: 0,
+              payment_due_at: "2026-11-29T03:00:00Z",
+              changed_date: "2026-11-22",
+              new_channel: "statement_import",
+              new_bank_bin: "970422",
+              new_account_name: "NGUYEN THI DAO",
+              new_account_last4: "0002",
+              new_account_masked: "****0002",
+              old_bank_bin: "970436",
+              old_account_last4: "0001",
+              old_account_masked: "****0001",
+            },
+          }),
+        ],
+      ]
+      await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
+      expect(sent).toHaveLength(1)
+      expect(sent[0].headers["List-Unsubscribe"]).toBeUndefined()
+      expect(sent[0].headers["List-Unsubscribe-Post"]).toBeUndefined()
+      expect(sent[0].text).toContain("https://give.vn/me/pledges/GV92ABC23")
+      expect(sent[0].text).toContain("•••• 0002")
+    })
+
+    it("marks plan_account_swapped dead when stop_token or unsubscribe_token is missing", async () => {
+      claims = [
+        [
+          row(25, {
+            kind: "plan_account_swapped",
+            category: "notification",
+            unsubscribe_token: UNSUB,
+            stop_token: null,
+            payload: { campaign_title: "Nước sạch" },
+          }),
+          row(26, {
+            kind: "plan_account_swapped",
+            category: "notification",
+            unsubscribe_token: null,
+            stop_token: STOP,
+            payload: { campaign_title: "Nước sạch" },
+          }),
+        ],
+      ]
+      completeStatus = "dead"
+      await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
+      expect(sent).toHaveLength(0)
+      expect(completes()).toMatchObject([
+        { p_id: row(25).id, p_permanent: true, p_error: "render: stop_token_missing" },
+        { p_id: row(26).id, p_permanent: true, p_error: "render: unsubscribe_token_missing" },
+      ])
+    })
   })
 
   it("reports a failure without the recipient's address, as permanent only when the provider says so", async () => {
@@ -337,6 +440,58 @@ describe("sendDueEmails", () => {
   it("throws when the first claim fails", async () => {
     const db = fakeDb(() => ({ error: { code: "42501", message: "denied" } }), calls)
     await expect(sendDueEmails(db as never, transport, OPTIONS)).rejects.toMatchObject({ code: "42501" })
+  })
+
+  it("uses a 15 s claim timeout above PostgREST's 8 s statement timeout and logs aborted claims (DOS/Give#273)", async () => {
+    expect(CLAIM_TIMEOUT_MS).toBe(15_000)
+    expect(CLAIM_TIMEOUT_MS).toBeLessThan(RUN_BUDGET_MS)
+
+    const errorSpy = vi.mocked(console.error)
+    errorSpy.mockClear()
+    const abortDb = fakeDb(
+      () => ({ error: { code: "", message: "TimeoutError: The operation was aborted due to timeout" } }),
+      calls
+    )
+    await expect(sendDueEmails(abortDb as never, transport, OPTIONS)).rejects.toMatchObject({
+      message: expect.stringMatching(/aborted due to timeout/),
+    })
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/claim_outbox aborted after timeout; DB transaction may still have committed/),
+      "",
+      expect.stringMatching(/TimeoutError/)
+    )
+
+    // Subsequent claim abort logs the committed-lease warning and stops without losing earlier counts.
+    errorSpy.mockClear()
+    let claimCount = 0
+    const secondAbortDb = fakeDb((call) => {
+      if (call.target === "rpc:claim_outbox") {
+        claimCount += 1
+        if (claimCount === 1) return { data: Array.from({ length: CLAIM_BATCH }, (_, i) => row(100 + i)) }
+        return { error: { code: "", message: "AbortError: This operation was aborted" } }
+      }
+      return handler(call)
+    }, calls)
+    const outcome = await sendDueEmails(secondAbortDb as never, transport, OPTIONS)
+    expect(outcome).toMatchObject({ claimed: CLAIM_BATCH, sent: CLAIM_BATCH })
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/claim_outbox aborted after timeout; DB transaction may still have committed/),
+      "",
+      expect.stringMatching(/AbortError/)
+    )
+
+    // Server-side Postgres statement_timeout (57014) rolled back cleanly: log ordinary failure, not abort warning.
+    errorSpy.mockClear()
+    const pgTimeoutDb = fakeDb(
+      () => ({ error: { code: "57014", message: "canceling statement due to statement timeout" } }),
+      calls
+    )
+    await expect(sendDueEmails(pgTimeoutDb as never, transport, OPTIONS)).rejects.toMatchObject({ code: "57014" })
+    expect(errorSpy).toHaveBeenCalledWith(
+      "claim_outbox failed",
+      "57014",
+      "canceling statement due to statement timeout"
+    )
   })
 
   it("skips a malformed row", async () => {

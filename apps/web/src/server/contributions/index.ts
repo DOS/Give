@@ -411,3 +411,44 @@ export async function paymentAccount(service: Db, campaignId: string): Promise<P
   if (!a || a.channel === "crypto" || !a.bank_bin || !a.account_number) return null
   return { bank_bin: a.bank_bin, account_number: a.account_number, account_name: a.account_name ?? "" }
 }
+
+/** Maximum concurrent give.payment_account RPCs in one batch lookup. */
+export const PAYMENT_ACCOUNT_BATCH_CONCURRENCY = 5
+
+/**
+ * Looks up give.payment_account for a set of campaigns with deduplication and
+ * bounded concurrency, isolating per-campaign failures so one failed lookup
+ * does not block or hide other campaigns. Failed lookups are omitted from the
+ * returned map (leaving their status unknown); a campaign with no usable bank
+ * account maps to null.
+ */
+export async function paymentAccounts(
+  service: Db,
+  campaignIds: readonly string[],
+  options: { concurrency?: number; onError?: (campaignId: string, error: unknown) => void } = {}
+): Promise<Map<string, PaymentAccount | null>> {
+  const ids = [...new Set(campaignIds)]
+  const accounts = new Map<string, PaymentAccount | null>()
+  if (ids.length === 0) return accounts
+
+  const rawConcurrency = options.concurrency
+  const limit =
+    typeof rawConcurrency === "number" && Number.isFinite(rawConcurrency)
+      ? Math.floor(rawConcurrency)
+      : PAYMENT_ACCOUNT_BATCH_CONCURRENCY
+  const workers = Math.max(1, Math.min(limit, ids.length))
+  let next = 0
+  await Promise.all(
+    Array.from({ length: workers }, async () => {
+      while (next < ids.length) {
+        const id = ids[next++]!
+        try {
+          accounts.set(id, await paymentAccount(service, id))
+        } catch (error: unknown) {
+          options.onError?.(id, error)
+        }
+      }
+    })
+  )
+  return accounts
+}

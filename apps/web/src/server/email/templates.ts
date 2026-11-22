@@ -1,8 +1,15 @@
 import { donationTrackingPath } from "@/lib/contributions"
 import { GIVE_CONTACT_EMAIL } from "@/lib/contact"
-import { formatVnd } from "@/lib/format"
+import { formatDateTime, formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
-import { describeNotice, planCampaign, planEndedParagraphs } from "@/lib/notices"
+import {
+  describeNotice,
+  planCampaign,
+  planEndedParagraphs,
+  swapDateLabel,
+  swappedNewAccountLine,
+  swappedOldAccountTarget,
+} from "@/lib/notices"
 import { NEW_CODE_EVERY_MONTH, periodLabel, planStopOneClickPath, planStopPath } from "@/lib/plans"
 import { SLUG_PATTERN } from "@/lib/slug"
 
@@ -36,6 +43,8 @@ export const EMAIL_KINDS = [
   "plan_reminder",
   "plan_followup",
   "plan_ended",
+  "plan_account_swapped",
+  "pledge_account_swapped",
 ] as const
 export type EmailKind = (typeof EMAIL_KINDS)[number]
 
@@ -55,12 +64,12 @@ export interface OutboxEmail {
   unsubscribe_token: string | null
   reference_code: string | null
   tracking_token: string | null
-  /** The plan's stop token (64 hex), minted by claim_outbox for plan_reminder and plan_followup only. */
+  /** The plan's stop token (64 hex), minted by claim_outbox for plan reminders and swap notices. */
   stop_token: string | null
 }
 
 /** Kinds whose email carries the plan's stop link and must not go out without it. */
-export const STOP_LINK_KINDS: readonly EmailKind[] = ["plan_reminder", "plan_followup"]
+export const STOP_LINK_KINDS: readonly EmailKind[] = ["plan_reminder", "plan_followup", "plan_account_swapped"]
 
 export function carriesStopLink(kind: string): boolean {
   return (STOP_LINK_KINDS as readonly string[]).includes(kind)
@@ -317,6 +326,81 @@ function planEnded(email: OutboxEmail): Content {
   }
 }
 
+/** Receiving-account swap notice for active monthly plan donors (DOS/Give#291). */
+function planAccountSwapped(email: OutboxEmail): Content {
+  const p = email.payload
+  const campaign = planCampaign(p)
+  const path = campaignPath(p)
+  const date = swapDateLabel(p)
+  const newAccountLine = swappedNewAccountLine(p, "Bạn có thể xem thông tin tài khoản nhận mới trên trang chiến dịch.")
+  const oldTarget = swappedOldAccountTarget(p, "chiến dịch")
+
+  return {
+    subject: `Tài khoản nhận của ${campaign} đã thay đổi`,
+    heading: "Tài khoản nhận của chiến dịch đã thay đổi",
+    paragraphs: [
+      date
+        ? `Ngày ${date}, Give đã duyệt thay đổi tài khoản nhận cho ${campaign}.`
+        : `Give đã duyệt thay đổi tài khoản nhận cho ${campaign}.`,
+      newAccountLine,
+      "Email này chỉ để thông báo thay đổi tài khoản và không yêu cầu bạn chuyển tiền. Các lời nhắc ủng hộ hằng tháng tiếp theo của bạn sẽ tự động hiển thị mã QR cho tài khoản mới.",
+      `Nếu bạn đã lưu mẫu chuyển tiền tới ${oldTarget} trong app ngân hàng, hãy xóa mẫu đó: tiền chuyển vào tài khoản cũ sau ngày đổi sẽ không còn được ghi nhận cho chiến dịch này.`,
+      "Tiền đi thẳng vào tài khoản của người tổ chức; Give không giữ tiền và không tự trừ tiền của bạn.",
+    ],
+    link: path
+      ? { href: path, label: "Xem trang chiến dịch" }
+      : { href: "/me/contributions", label: "Xem các khoản ủng hộ của bạn" },
+    footer: PLAN_FOOTER,
+  }
+}
+
+/** Receiving-account swap notice for backers with pledges still awaiting payment (DOS/Give#92). */
+function pledgeAccountSwapped(email: OutboxEmail): Content {
+  const p = email.payload
+  const project = quoted(p, "dự án")
+  const date = swapDateLabel(p)
+  const rawCode = email.reference_code ?? text(p, "reference_code")
+  const code = rawCode && DONATION_CODE.test(rawCode) ? rawCode : null
+  const intended = amount(p, "intended_amount")
+  const received = amount(p, "received_amount") ?? 0
+  const refunded = amount(p, "refunded_amount") ?? 0
+  const due =
+    amount(p, "amount_due") ?? (intended !== null ? Math.max(0, intended - Math.max(0, received - refunded)) : null)
+  const rawDueAt = text(p, "payment_due_at")
+  const dueAt = rawDueAt && !Number.isNaN(Date.parse(rawDueAt)) ? formatDateTime(rawDueAt) : null
+  const publicNote = text(p, "public_note")
+  const newAccountLine = swappedNewAccountLine(
+    p,
+    "Bạn có thể xem thông tin tài khoản nhận mới và mã VietQR trên trang cam kết."
+  )
+  const oldTarget = swappedOldAccountTarget(p, "dự án")
+
+  const paymentLine =
+    `Hãy thanh toán${due ? ` ${formatVnd(due)}` : ""} cho cam kết của bạn${dueAt ? ` trước ${dueAt}` : ""} vào tài khoản nhận mới` +
+    (code ? ` (mã chuyển khoản giữ nguyên: ${code}).` : ".") +
+    " Mở trang cam kết để lấy số tài khoản đầy đủ và mã VietQR mới."
+
+  const paragraphs = [
+    date
+      ? `Ngày ${date}, Give đã duyệt thay đổi tài khoản nhận tiền cho ${project}.`
+      : `Give đã duyệt thay đổi tài khoản nhận tiền cho ${project}.`,
+    newAccountLine,
+    ...(publicNote ? [`Ghi chú công khai: ${publicNote}`] : []),
+    paymentLine,
+    `Đừng chuyển tiền vào ${oldTarget}: tiền chuyển vào tài khoản cũ sau ngày đổi sẽ không còn được ghi nhận cho cam kết của bạn.`,
+    "Tiền đi thẳng vào tài khoản của người tổ chức; Give không giữ tiền. Nếu bạn đã chuyển khoản trước khi đổi tài khoản, đừng chuyển lại: Give vẫn ghi nhận theo thời điểm ngân hàng hạch toán.",
+  ]
+
+  return {
+    subject: `Tài khoản nhận thanh toán của ${project} đã thay đổi`,
+    heading: "Tài khoản nhận thanh toán đã thay đổi",
+    paragraphs,
+    link: code
+      ? { href: `/me/pledges/${code}`, label: "Xem thông tin thanh toán mới" }
+      : { href: "/me/contributions", label: "Xem các khoản ủng hộ của bạn" },
+  }
+}
+
 function content(email: OutboxEmail): Content {
   const p = email.payload
   switch (email.kind) {
@@ -369,6 +453,10 @@ function content(email: OutboxEmail): Content {
       return planReminder(email)
     case "plan_ended":
       return planEnded(email)
+    case "plan_account_swapped":
+      return planAccountSwapped(email)
+    case "pledge_account_swapped":
+      return pledgeAccountSwapped(email)
     default:
       throw new EmailRenderError(`unknown_kind:${String(email.kind).slice(0, 40)}`)
   }
@@ -433,11 +521,16 @@ export function renderEmail(email: OutboxEmail, origin: string, options: RenderO
       : "Email giao dịch gửi tự động từ Give.")
   const help = `Cần hỗ trợ: ${GIVE_CONTACT_EMAIL}.`
 
+  const unsubscribePrompt =
+    email.kind === "campaign_ended"
+      ? "Không muốn nhận email tổng kết như thế này?"
+      : "Không muốn nhận các email thông báo như thế này?"
+
   const textParts = [c.heading, "", ...c.paragraphs.flatMap((p) => [p, ""])]
   if (link) textParts.push(`${link.label}: ${link.href}`, "")
   if (c.note) textParts.push(c.note, "")
   textParts.push("--", `${footer} ${help}`)
-  if (unsubscribeUrl) textParts.push(`Không muốn nhận email tổng kết như thế này? Hủy đăng ký: ${unsubscribeUrl}`)
+  if (unsubscribeUrl) textParts.push(`${unsubscribePrompt} Hủy đăng ký: ${unsubscribeUrl}`)
   if (stopUrl) textParts.push(`Không muốn nhận lời nhắc nữa? Dừng ủng hộ hằng tháng: ${stopUrl}`)
 
   const p = (body: string, style = "margin:0 0 16px;font-size:16px;line-height:24px;color:#1f2937") =>
@@ -463,7 +556,7 @@ export function renderEmail(email: OutboxEmail, origin: string, options: RenderO
     p(`${escapeHtml(footer)} ${escapeHtml(help)}`, "margin:16px 0 0;font-size:13px;line-height:20px;color:#57534e"),
     unsubscribeUrl
       ? p(
-          `Không muốn nhận email tổng kết như thế này? <a href="${escapeHtml(unsubscribeUrl)}" style="color:#57534e">Hủy đăng ký</a>.`,
+          `${escapeHtml(unsubscribePrompt)} <a href="${escapeHtml(unsubscribeUrl)}" style="color:#57534e">Hủy đăng ký</a>.`,
           "margin:8px 0 0;font-size:13px;line-height:20px;color:#57534e"
         )
       : "",

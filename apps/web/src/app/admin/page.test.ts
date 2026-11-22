@@ -16,9 +16,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
   accountProblemLabel,
+  recoveryAdvice,
   STATUS_LABELS,
   waitingAdvice,
   type Organizer,
+  type RecoveryCampaign,
+  type RecoveryKind,
   type ReviewItem,
   type WaitingForAccount,
 } from "@/lib/campaigns"
@@ -130,6 +133,26 @@ function waitingRow(id: string, problem: string, overrides: Partial<WaitingForAc
   }
 }
 
+function recoveryRow(
+  id: string,
+  kind: RecoveryKind,
+  problem: string | null,
+  overrides: Partial<RecoveryCampaign> = {}
+): RecoveryCampaign {
+  return {
+    ...reviewRow(id, {
+      status: kind === "suspended_before_start" ? "suspended" : "approved",
+      approved_at: "2026-11-12T09:00:00.000Z",
+      starts_at: kind === "suspended_before_start" ? "2099-01-01T00:00:00.000Z" : "2026-10-01T00:00:00.000Z",
+      ends_at: kind === "suspended_before_start" ? "2099-02-01T00:00:00.000Z" : "2026-11-01T00:00:00.000Z",
+      ...overrides,
+    }),
+    recovery_kind: kind,
+    account_problem: problem,
+    account_has_transactions: overrides.account_has_transactions ?? false,
+  }
+}
+
 function organizerRow(userId: string, overrides: Partial<Organizer> = {}): Organizer {
   return {
     user_id: userId,
@@ -150,6 +173,8 @@ function setupAdmin({
   queue = [] as ReviewItem[],
   waiting = [] as WaitingForAccount[],
   waitingError = null as { code?: string; message?: string } | null,
+  recovery = [] as RecoveryCampaign[],
+  recoveryError = null as { code?: string; message?: string } | null,
   organizers = [] as Organizer[],
   statusEvents = [] as CampaignStatusEvent[],
   statusEventsError = null as { code?: string; message?: string } | null,
@@ -169,12 +194,28 @@ function setupAdmin({
         })),
       }
     }
+    if (call.target === "rpc:campaigns_needing_recovery") {
+      if (recoveryError) return { error: recoveryError }
+      return {
+        data: recovery.map((r) => ({
+          campaign_id: r.id,
+          recovery_kind: r.recovery_kind,
+          account_problem: r.account_problem,
+          account_has_transactions: r.account_has_transactions,
+        })),
+      }
+    }
     if (call.target === "rpc:managed_campaigns") {
       if (op(call, "eq")?.[0] === "status") return { data: queue }
       if (op(call, "in")?.[0] === "id") {
-        return {
-          data: waiting.map(({ account_problem: _p, account_has_transactions: _t, ...campaign }) => campaign),
-        }
+        const ids = (op(call, "in")?.[1] ?? []) as string[]
+        const pool = [
+          ...waiting.map(({ account_problem: _p, account_has_transactions: _t, ...campaign }) => campaign),
+          ...recovery.map(
+            ({ recovery_kind: _k, account_problem: _p, account_has_transactions: _t, ...campaign }) => campaign
+          ),
+        ]
+        return { data: pool.filter((c) => ids.includes(c.id)) }
       }
     }
     if (call.target === "campaign_status_events") {
@@ -209,6 +250,7 @@ async function renderAdmin() {
     doc,
     queueSection: doc.querySelector('section[aria-labelledby="queue"]')!,
     waitingSection: doc.querySelector('section[aria-labelledby="waiting"]')!,
+    recoverySection: doc.querySelector('section[aria-labelledby="recovery"]')!,
     organizersSection: doc.querySelector('section[aria-labelledby="organizers"]')!,
   }
 }
@@ -678,6 +720,121 @@ describe("AdminReviewPage (/admin, DOS/Give#218)", () => {
       expect(queueSection.querySelector("details")).toBeNull()
       expect(waitingSection.textContent).toContain("Cầu dân sinh Xóm Bến")
       expect(waitingSection.querySelector("details")).toBeNull()
+    })
+  })
+
+  describe("pre-launch recovery section (#recovery, DOS/Give#77)", () => {
+    it("renders EmptyState when no campaign needs pre-launch recovery and isolates RPC errors", async () => {
+      setupAdmin({ recovery: [] })
+      const { recoverySection } = await renderAdmin()
+      expect(recoverySection.querySelector("h2")?.textContent).toContain("0")
+      expect(recoverySection.querySelector("h3")?.textContent.trim()).toBe(
+        "Không có chiến dịch nào cần xử lý trước khi mở."
+      )
+
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+      const queued = reviewRow("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", { title: "Áo ấm vùng cao" })
+      setupAdmin({
+        queue: [queued],
+        recoveryError: { code: "42501", message: "permission denied" },
+      })
+      const rendered = await renderAdmin()
+      expect(errorSpy).toHaveBeenCalledWith("campaigns_needing_recovery failed", "42501", "permission denied")
+      expect(rendered.recoverySection.querySelector(".bg-danger-soft")?.textContent).toContain(
+        "Chưa tải được danh sách này."
+      )
+      expect(rendered.queueSection.textContent).toContain("Áo ấm vùng cao")
+    })
+
+    it("renders approved_past_end and suspended_before_start items with from_status guards, self-review guards, and StatusHistory", async () => {
+      const pastEnd = recoveryRow("77111111-1111-4111-8111-111111111111", "approved_past_end", null, {
+        title: "Học bổng mùa thu",
+      })
+      const suspendedDisabled = recoveryRow(
+        "77222222-2222-4222-8222-222222222222",
+        "suspended_before_start",
+        "account_not_verified",
+        {
+          title: "Trạm nước sạch",
+          review_note: "Kiểm tra lại giấy tờ thụ hưởng.",
+        }
+      )
+      const suspendedUsable = recoveryRow("77333333-3333-4333-8333-333333333333", "suspended_before_start", null, {
+        title: "Tủ sách bản cao",
+      })
+      const suspendedBackWithTx = recoveryRow(
+        "77444444-4444-4444-8444-444444444444",
+        "suspended_before_start",
+        "account_not_verified",
+        {
+          type: "back",
+          funding_model: "all_or_nothing",
+          title: "Sách ảnh thủ công",
+          account_has_transactions: true,
+        }
+      )
+      const ownSuspended = recoveryRow("77555555-5555-4555-8555-555555555555", "suspended_before_start", "no_account", {
+        organizer_id: STAFF_USER,
+        title: "Chiến dịch tạm dừng của kiểm duyệt viên",
+      })
+
+      setupAdmin({
+        recovery: [pastEnd, suspendedDisabled, suspendedUsable, suspendedBackWithTx, ownSuspended],
+        statusEvents: [
+          {
+            id: 99,
+            campaign_id: suspendedDisabled.id,
+            from_status: "approved",
+            to_status: "suspended",
+            reason: "Kiểm tra lại giấy tờ thụ hưởng.",
+            created_at: "2026-11-19T10:00:00.000Z",
+          },
+        ],
+      })
+
+      const { recoverySection } = await renderAdmin()
+      expect(recoverySection.querySelector("h2")?.textContent).toContain("5")
+      expect(recoverySection.querySelectorAll(".btn-primary")).toHaveLength(0)
+
+      const cards = Array.from(recoverySection.querySelectorAll("ul > li"))
+      expect(cards).toHaveLength(5)
+
+      // 1) approved_past_end -> from_status="approved" + prefilled reason
+      expect(cards[0]!.textContent).toContain("Học bổng mùa thu")
+      expect(cards[0]!.textContent).toContain("Đã duyệt nhưng quá ngày kết thúc")
+      const pastEndForm = cards[0]!.querySelector("form")!
+      expect(pastEndForm.querySelector('input[name="from_status"]')?.getAttribute("value")).toBe("approved")
+      expect(pastEndForm.querySelector("textarea")?.textContent).toBe(recoveryAdvice(pastEnd).sendBackReason)
+
+      // 2) suspended_before_start with disabled account -> from_status="suspended", shows review_note + StatusHistory
+      expect(cards[1]!.textContent).toContain("Trạm nước sạch")
+      expect(cards[1]!.textContent).toContain("Tạm dừng trước ngày bắt đầu")
+      expect(cards[1]!.textContent).toContain(accountProblemLabel("account_not_verified"))
+      expect(cards[1]!.textContent).toContain("Kiểm tra lại giấy tờ thụ hưởng.")
+      expect(cards[1]!.querySelector("details summary")?.textContent).toContain(
+        "Lịch sử trạng thái (1): Trạm nước sạch"
+      )
+      const suspendedForm = cards[1]!.querySelector("form")!
+      expect(suspendedForm.querySelector('input[name="from_status"]')?.getAttribute("value")).toBe("suspended")
+      expect(suspendedForm.querySelector("textarea")?.textContent).toBe(
+        recoveryAdvice(suspendedDisabled).sendBackReason
+      )
+
+      // 3) suspended_before_start with usable account -> empty textarea with placeholder, from_status="suspended"
+      const usableForm = cards[2]!.querySelector("form")!
+      expect(usableForm.querySelector('input[name="from_status"]')?.getAttribute("value")).toBe("suspended")
+      expect(usableForm.querySelector("textarea")?.textContent).toBe("")
+      expect(usableForm.querySelector("textarea")?.getAttribute("placeholder")).toContain("Người tổ chức cần sửa gì")
+
+      // 4) back campaign with transactions -> now guides #55/#92 swap with prefilled send-back form
+      expect(cards[3]!.textContent).toContain("yêu cầu đổi tài khoản")
+      const backTxForm = cards[3]!.querySelector("form")!
+      expect(backTxForm.querySelector('input[name="from_status"]')?.getAttribute("value")).toBe("suspended")
+      expect(backTxForm.querySelector("textarea")?.textContent).toBe(recoveryAdvice(suspendedBackWithTx).sendBackReason)
+
+      // 5) moderator's own suspended campaign -> self-review guard, no form
+      expect(cards[4]!.textContent).toContain("Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý.")
+      expect(cards[4]!.querySelectorAll("form")).toHaveLength(0)
     })
   })
 })

@@ -23,11 +23,15 @@ describe("outbox maximum age", () => {
     expect(outboxMaxAgeDays("plan_reminder")).toBe(3)
     expect(outboxMaxAgeDays("plan_followup")).toBe(2)
     expect(outboxMaxAgeDays("plan_ended")).toBe(14)
+    expect(outboxMaxAgeDays("plan_account_swapped")).toBe(14)
+    expect(outboxMaxAgeDays("pledge_account_swapped")).toBe(14)
   })
 
   it("labels every email kind the sender knows", () => {
     for (const kind of EMAIL_KINDS) expect(OUTBOX_KIND_LABELS[kind], kind).toBeTruthy()
     expect(OUTBOX_SKIP_LABELS.not_payable).toBeTruthy()
+    expect(OUTBOX_SKIP_LABELS.plan_not_active).toBeTruthy()
+    expect(OUTBOX_SKIP_LABELS.account_superseded).toBeTruthy()
   })
 
   it("counts from the later of queueing and the last deferral", () => {

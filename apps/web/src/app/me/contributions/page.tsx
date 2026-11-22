@@ -12,17 +12,17 @@ import { SkeletonList } from "@/components/ui/Skeleton"
 import { requireSession, type Session } from "@/lib/auth/session"
 import { donationStatusLabel } from "@/lib/contributions"
 import { formatDate, formatVnd } from "@/lib/format"
-import { periodLabel } from "@/lib/plans"
+import { periodLabel, planDonationPayable, vnMonthStart } from "@/lib/plans"
 import { fulfillmentLabel, offersPayment, pledgeListSummary, withoutReplacedPledges } from "@/lib/pledges"
 import { dbAs, dbService } from "@/lib/supabase"
-import { paymentAccount } from "@/server/contributions"
+import { paymentAccounts } from "@/server/contributions"
 import { pledgeBalances, type PledgeBalance } from "@/server/pledges"
 
 import { MePage } from "../_components/MePage"
 import { DONATION_TONES, toneOf } from "../_components/tones"
 import { RefCode } from "@/components/ui/RefCode"
 
-import { PlanList, type MyPlan } from "./PlanList"
+import { currentPlanDonation, PlanList, type MyPlan } from "./PlanList"
 
 export const metadata: Metadata = { title: "Ủng hộ của tôi", robots: { index: false } }
 
@@ -61,6 +61,46 @@ export default async function MyContributionsPage() {
 }
 
 /**
+ * Marks each active plan whose current-month donation is otherwise payable
+ * with whether its campaign has a usable account (give.payment_account, as
+ * the service role, deduped and bounded in parallel), so "Chuyển khoản tháng
+ * này" is offered only when the payment page can show a QR, as
+ * give.plan_donation_payable decides. Plans without an awaiting current-month
+ * donation skip the lookup; a failed lookup leaves it unknown and the payment
+ * page checks again.
+ */
+async function withUsableAccounts(plans: MyPlan[], donations: readonly MyContribution[], now: Date): Promise<MyPlan[]> {
+  const month = vnMonthStart(now)
+  const ids = plans
+    .filter((p) => {
+      if (p.status !== "active" || !p.campaign) return false
+      const current = currentPlanDonation(p.campaign_id, donations, month)
+      return current !== null && planDonationPayable({ ...current, campaign: p.campaign }, now)
+    })
+    .map((p) => p.campaign_id)
+  if (ids.length === 0) return plans
+
+  const accounts = await paymentAccounts(dbService(), ids, {
+    onError: (campaignId, error) => {
+      const rawCode = (error as { code?: unknown } | null)?.code
+      const code = typeof rawCode === "string" && rawCode.length > 0 ? rawCode : undefined
+      console.error(
+        JSON.stringify({
+          event: "contributions.payment_account_lookup_failed",
+          campaign_id: campaignId,
+          ...(code ? { code } : {}),
+        })
+      )
+    },
+  })
+  return plans.map((p) =>
+    p.campaign && accounts.has(p.campaign_id)
+      ? { ...p, campaign: { ...p.campaign, usable_account: accounts.get(p.campaign_id) !== null } }
+      : p
+  )
+}
+
+/**
  * The signed-in user's donations and pledges, read with their own token under
  * RLS. Pledges that change_pledge replaced are hidden; the current one shows
  * its payment and, once paid, its delivery status (section 4.2 step 7).
@@ -71,37 +111,6 @@ export default async function MyContributionsPage() {
  * Monthly plans (DOS/Give#276) come first, also read under RLS; this month's
  * donation of each is among the newest contributions.
  */
-/**
- * Marks each active plan's live campaign with whether it has a usable
- * account (give.payment_account, as the service role, for campaigns the
- * donor's own plans name), so "Chuyển khoản tháng này" is offered only when
- * the payment page can show a QR, as give.plan_donation_payable decides. A
- * failed lookup leaves it unknown; the payment page checks again.
- */
-async function withUsableAccounts(plans: MyPlan[]): Promise<MyPlan[]> {
-  const ids = [
-    ...new Set(plans.filter((p) => p.status === "active" && p.campaign?.status === "live").map((p) => p.campaign_id)),
-  ]
-  if (ids.length === 0) return plans
-  const service = dbService()
-  const usable = new Map(
-    await Promise.all(
-      ids.map(async (id) => {
-        const account = await paymentAccount(service, id).catch((e: unknown) => {
-          console.error("contributions: payment account lookup failed", e)
-          return undefined
-        })
-        return [id, account === undefined ? undefined : account !== null] as const
-      })
-    )
-  )
-  return plans.map((p) =>
-    p.campaign && usable.get(p.campaign_id) !== undefined
-      ? { ...p, campaign: { ...p.campaign, usable_account: usable.get(p.campaign_id) } }
-      : p
-  )
-}
-
 async function ContributionList({ session }: { session: Session }) {
   const db = dbAs(session.accessToken)
   const [{ data, error }, plansRead] = await Promise.all([
@@ -126,15 +135,19 @@ async function ContributionList({ session }: { session: Session }) {
   ])
   if (error) throw error
   if (plansRead.error) throw plansRead.error
-  const plans = await withUsableAccounts((plansRead.data ?? []) as unknown as MyPlan[])
+  const now = new Date()
   const contributions = withoutReplacedPledges((data ?? []) as unknown as MyContribution[])
-  const balances: Map<string, PledgeBalance> = contributions.some((c) => c.kind === "pledge")
-    ? await pledgeBalances(dbService(), session.user.id).catch((e: unknown) => {
-        // The list still renders; pledge lines leave out what refunds could change.
-        console.error("contributions: pledge balances lookup failed", e)
-        return new Map<string, PledgeBalance>()
-      })
-    : new Map()
+  const planDonations = contributions.filter((c) => c.plan_id !== null)
+  const [plans, balances] = await Promise.all([
+    withUsableAccounts((plansRead.data ?? []) as unknown as MyPlan[], planDonations, now),
+    contributions.some((c) => c.kind === "pledge")
+      ? pledgeBalances(dbService(), session.user.id).catch((e: unknown) => {
+          // The list still renders; pledge lines leave out what refunds could change.
+          console.error("contributions: pledge balances lookup failed", e)
+          return new Map<string, PledgeBalance>()
+        })
+      : Promise.resolve(new Map<string, PledgeBalance>()),
+  ])
 
   if (contributions.length === 0 && plans.length === 0) {
     return (
@@ -150,7 +163,7 @@ async function ContributionList({ session }: { session: Session }) {
 
   return (
     <div className="space-y-10">
-      {plans.length > 0 && <PlanList plans={plans} donations={contributions.filter((c) => c.plan_id !== null)} />}
+      {plans.length > 0 && <PlanList plans={plans} donations={planDonations} now={now} />}
       {contributions.length > 0 &&
         (plans.length > 0 ? (
           <section aria-labelledby="all-contributions-title" className="space-y-4">

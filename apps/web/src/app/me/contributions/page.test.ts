@@ -26,6 +26,7 @@ const state = vi.hoisted(() => ({
   calls: [] as Call[],
   // The service role's give.payment_account: the campaign's usable account.
   service: (() => undefined) as Handler,
+  serviceCalls: [] as Call[],
 }))
 
 vi.mock("@/lib/auth/session", () => ({
@@ -33,7 +34,7 @@ vi.mock("@/lib/auth/session", () => ({
 }))
 vi.mock("@/lib/supabase", () => ({
   dbAs: () => fakeDb((call) => state.handler(call), state.calls),
-  dbService: () => fakeDb((call) => state.service(call)),
+  dbService: () => fakeDb((call) => state.service(call), state.serviceCalls),
 }))
 vi.mock("../_components/MePage", () => ({
   MePage: ({ children }: { children: ReactNode }) => createElement("main", null, children),
@@ -125,10 +126,12 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] })
   vi.setSystemTime(NOW)
   state.calls.length = 0
+  state.serviceCalls.length = 0
   state.service = (call) => (call.target === "rpc:payment_account" ? { data: ACCOUNT } : undefined)
 })
 afterEach(() => {
   vi.useRealTimers()
+  vi.restoreAllMocks()
 })
 
 describe("MyContributionsPage monthly plans (DOS/Give#276)", () => {
@@ -246,5 +249,69 @@ describe("MyContributionsPage monthly plans (DOS/Give#276)", () => {
     serve([], [])
     ;({ doc } = await render())
     expect(doc.body.textContent).toContain("Bạn chưa ủng hộ chiến dịch hay dự án nào.")
+  })
+
+  it("skips payment_account lookups when no active plan has a payable current-month donation", async () => {
+    serve(
+      [
+        plan({ id: "a1", campaign_id: CAMPAIGN }),
+        plan({ id: "a2", campaign_id: OTHER_CAMPAIGN, day_of_month: 25, next_period: "2026-11-01" }),
+        plan({ id: "a3", campaign_id: "77777777-7777-4777-8777-777777777777", status: "ended" }),
+      ],
+      [donation({ campaign_id: CAMPAIGN, status: "received", received_amount: 200000 })]
+    )
+    await render()
+    expect(state.serviceCalls.filter((c) => c.target === "rpc:payment_account")).toHaveLength(0)
+  })
+
+  it("deduplicates payment_account lookups across plans and isolates a failing lookup without logging PII", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    const THIRD_CAMPAIGN = "77777777-7777-4777-8777-777777777777"
+    serve(
+      [
+        plan({ id: PLAN, campaign_id: CAMPAIGN }),
+        plan({ id: "88888888-8888-4888-8888-888888888888", campaign_id: CAMPAIGN }),
+        plan({ id: OLD_PLAN, campaign_id: OTHER_CAMPAIGN }),
+        plan({ id: "99999999-9999-4999-8999-999999999999", campaign_id: THIRD_CAMPAIGN }),
+      ],
+      [
+        donation({ id: "d1", campaign_id: CAMPAIGN, reference_code: "GVCAMP001" }),
+        donation({ id: "d2", campaign_id: OTHER_CAMPAIGN, plan_id: OLD_PLAN, reference_code: "GVCAMP002" }),
+        donation({
+          id: "d3",
+          campaign_id: THIRD_CAMPAIGN,
+          plan_id: "99999999-9999-4999-8999-999999999999",
+          reference_code: "GVCAMP003",
+        }),
+      ]
+    )
+    state.service = (call) => {
+      if (call.target !== "rpc:payment_account") return undefined
+      const id = (call.ops.find(([n]) => n === "args")?.[1] as { p_campaign_id: string }).p_campaign_id
+      if (id === CAMPAIGN) return { data: ACCOUNT }
+      if (id === OTHER_CAMPAIGN) return { data: null }
+      return { error: { code: "57014", message: "donor@example.com secret" } }
+    }
+
+    const { doc } = await render()
+    const accountCalls = state.serviceCalls.filter((c) => c.target === "rpc:payment_account")
+    expect(accountCalls).toHaveLength(3)
+    const section = planSection(doc)!
+    // CAMPAIGN has usable account -> shows transfer button
+    expect(section.querySelector('a[href="/donations/GVCAMP001"]')?.textContent).toBe("Chuyển khoản tháng này")
+    // OTHER_CAMPAIGN has no usable account -> hides transfer button
+    expect(section.querySelector('a[href="/donations/GVCAMP002"]')?.textContent).not.toBe("Chuyển khoản tháng này")
+    // THIRD_CAMPAIGN failed lookup -> stays unknown (shows button; payment page re-checks)
+    expect(section.querySelector('a[href="/donations/GVCAMP003"]')?.textContent).toBe("Chuyển khoản tháng này")
+
+    expect(errorSpy).toHaveBeenCalledTimes(1)
+    const logged = JSON.parse(String(errorSpy.mock.calls[0][0])) as Record<string, unknown>
+    expect(logged).toEqual({
+      event: "contributions.payment_account_lookup_failed",
+      campaign_id: THIRD_CAMPAIGN,
+      code: "57014",
+    })
+    expect(JSON.stringify(logged)).not.toContain("donor@example.com")
+    expect(JSON.stringify(logged)).not.toContain(USER)
   })
 })

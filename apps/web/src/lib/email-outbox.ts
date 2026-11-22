@@ -20,6 +20,8 @@ export const OUTBOX_KIND_LABELS: Record<string, string> = {
   plan_reminder: "Mã ủng hộ hằng tháng",
   plan_followup: "Nhắc lại mã ủng hộ hằng tháng",
   plan_ended: "Kế hoạch hằng tháng đã dừng",
+  plan_account_swapped: "Thay đổi tài khoản nhận của kế hoạch hằng tháng",
+  pledge_account_swapped: "Thay đổi tài khoản nhận của cam kết thanh toán",
 }
 
 export const OUTBOX_STATUS_LABELS: Record<string, string> = {
@@ -39,6 +41,8 @@ export const OUTBOX_SKIP_LABELS: Record<string, string> = {
   not_due: "cam kết không còn đến hạn thanh toán",
   not_payable:
     "khoản ủng hộ hằng tháng không còn chuyển được (kế hoạch đã dừng, hết tháng hoặc chiến dịch không còn nhận)",
+  plan_not_active: "kế hoạch ủng hộ hằng tháng đã dừng",
+  account_superseded: "tài khoản nhận đã được thay đổi một lần nữa trước khi gửi",
 }
 
 /**
@@ -53,7 +57,14 @@ export const THROTTLE_HOLD_PREFIX = "THROTTLE:"
 export function outboxMaxAgeDays(kind: string): number {
   if (kind === "pledge_payment_reminder" || kind === "plan_followup") return 2
   if (kind === "plan_reminder") return 3
-  if (kind === "pledge_payment_due" || kind === "campaign_ended" || kind === "plan_ended") return 14
+  if (
+    kind === "pledge_payment_due" ||
+    kind === "campaign_ended" ||
+    kind === "plan_ended" ||
+    kind === "plan_account_swapped" ||
+    kind === "pledge_account_swapped"
+  )
+    return 14
   return 7
 }
 

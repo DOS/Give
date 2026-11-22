@@ -55,29 +55,35 @@ Lines follow risk and ownership, not campaign type: give (charity) and back
 stricter review and legal track.
 
 Two parallel POs work this repository (split 2026-11-14, updated by JOY on
-2026-11-21). The Antigravity PO session `Campaigns Product Owner` (profile
-`acc0`, replacing paused Qwen Code sessions) runs Campaigns; the Claude Code
-PO session `Give Product Owner` keeps Money, Platform, and exclusive
-Production (`main` / `give.vn`) ownership (`promotion_po: claude`), so the
-owner still approves Production in one chat. Parallel POs enforce mutual
-exclusion via `po_labels` (`claude: po:claude, antigravity: po:agy`): each
-PO dispatches only issues of its own lines that carry its own runtime label
-or none of these labels, adds its own label on dispatch, checks the latest
-protocol comment for another session's claim before taking an issue, and runs
-the acceptance gate only on its own PRs. Neither PO merges, accepts or posts
-an acceptance on the other's PR. Production promotions (`DOS/Give` `main` /
-`give.vn` and `DOS/DOS.Me` `main`) and all other `DOS/DOS.Me` migration steps
-remain Platform's and strictly exclusive to `Give Product Owner` (Claude Code)
-with JOY's approval; as one explicit exception authorized by JOY (2026-11-21),
-Antigravity PO is authorized to pick up unclaimed `DOS/DOS.Me` DB
-prerequisites `#261`–`#264` for `DOS/DOS.Me` `dev` migrations/PRs only to
-unblock `#250`–`#253` (never `DOS/DOS.Me` `main` / Production promotions).
+2026-11-21 and 2026-11-22). Normally, Antigravity PO
+(`Give Product Owner (Antigravity)`, profile `acc0`; formerly
+`Campaigns Product Owner`, replacing paused Qwen Code sessions) runs Campaigns
+and Claude Code PO (`Give Product Owner`) runs Money and Platform. Under JOY's
+2026-11-22 instruction, while Claude Code PO is quota-limited, Antigravity PO
+proactively covers all three lines (`line:campaigns`, `line:money`,
+`line:platform`), including taking over Claude PO's unfinished `line:money` and
+`line:platform` tasks and `DOS/DOS.Me` migrations. Parallel POs keep mutual
+exclusion active via `po_labels` (`claude: po:claude, antigravity: po:agy`) so
+both POs cooperate without duplicating tasks when Claude resumes: each PO
+dispatches only issues carrying its own runtime label or none of these labels
+(except when Antigravity explicitly takes over a quota-stalled issue with no
+live Claude session under JOY's 2026-11-22 takeover instruction, in which case
+it replaces `po:claude` with `po:agy` and posts a take-over `release:` of any
+stalled Claude claim before re-claiming), adds its own label on dispatch, checks
+the latest protocol comment for another session's claim before taking an issue,
+and runs the acceptance gate only on its own PRs. Neither PO merges, accepts or
+posts an acceptance on the other's PR. Both Antigravity PO and Claude Code PO
+hold equal Production promotion authority (`promotion_po: any`, updated by JOY
+on 2026-11-22) for `DOS/Give` `main` / `give.vn` and `DOS/DOS.Me` `main`; every
+Production promotion still requires JOY's explicit popup approval on a concrete
+step list plus rollback plan, and the promoting PO must confirm zero competing
+open `main` promotion PRs before starting.
 
-| Line                                                   | Label            | Product Line option id | PO session                                                                          |
-| ------------------------------------------------------ | ---------------- | ---------------------- | ----------------------------------------------------------------------------------- |
-| Campaigns                                              | `line:campaigns` | `ef952ffb`             | `Campaigns Product Owner` (Antigravity `acc0`, replacing paused Qwen Code sessions) |
-| Money                                                  | `line:money`     | `2640fb7c`             | `Give Product Owner`                                                                |
-| Platform (CI, release, auth, infra, DOS.Me migrations) | `line:platform`  | `9a434f49`             | none (covered by `Give Product Owner`)                                              |
+| Line                                                   | Label            | Product Line option id | PO session                                                                                              |
+| ------------------------------------------------------ | ---------------- | ---------------------- | ------------------------------------------------------------------------------------------------------- |
+| Campaigns                                              | `line:campaigns` | `ef952ffb`             | `Give Product Owner (Antigravity)` (profile `acc0`; formerly `Campaigns Product Owner`, replacing Qwen) |
+| Money                                                  | `line:money`     | `2640fb7c`             | `Give Product Owner` (Claude Code; covered by `Give Product Owner (Antigravity)` while quota-limited)   |
+| Platform (CI, release, auth, infra, DOS.Me migrations) | `line:platform`  | `9a434f49`             | none (covered by `Give Product Owner`, and by `Give Product Owner (Antigravity)` while quota-limited)   |
 
 - Campaigns: organizer onboarding, campaign editor and review, discovery,
   campaign pages, updates, milestones, reward tiers and fulfillment status,
@@ -101,8 +107,9 @@ unblock `#250`–`#253` (never `DOS/DOS.Me` `main` / Production promotions).
 ## Rule documents
 
 - agent_instructions: `AGENTS.md` (`QWEN.md` and `GEMINI.md` point to it). No
-  local Docker or local Supabase for Give work (JOY, 2026-11-21); pgTAP tests
-  and migration replay run in GitHub CI on the DOS/DOS.Me PR.
+  local Docker or local Supabase for Give work (JOY, 2026-11-21; `Give#294` /
+  `DOS/DOS.Me#1855`); Give pgTAP tests and migration replay run in GitHub CI
+  on the `DOS/DOS.Me` PR.
 - task_scope: none
 - tracking_doc: none
 - review_rules: none
@@ -125,11 +132,14 @@ unblock `#250`–`#253` (never `DOS/DOS.Me` `main` / Production promotions).
 - production_merge: merge commit
 - production_effect: a merge into `main` deploys Production: Vercel
   (project `give`, team `metados`) builds `main` and serves it at
-  https://give.vn. It is a Production step: only the Give Product Owner
-  runs it, after JOY approves it, and only once every DOS.Me migration the
-  app code needs is on DOS.Me `main`. give.vn already served `main` before
-  this was recorded; #224 (2026-11-17) is the first promotion run as a
-  Production step.
+  https://give.vn. It is a Production step (`promotion_po: any`, updated
+  2026-11-22): either Antigravity PO (`Give Product Owner (Antigravity)`) or
+  Claude Code PO (`Give Product Owner`) may run it, only after JOY's explicit
+  popup approval on a concrete step list plus rollback plan, after confirming
+  zero competing open `main` promotion PRs, and only once every DOS.Me
+  migration the app code needs is on DOS.Me `main`. give.vn already served
+  `main` before this was recorded; #224 (2026-11-17) is the first promotion
+  run as a Production step.
 - test_environment: Vercel preview deployments of the `give` project. The
   `dev` branch is served at https://beta.give.vn and each PR branch gets its
   own `give-git-<branch>-metados.vercel.app` preview, both behind Vercel
@@ -151,7 +161,7 @@ unblock `#250`–`#253` (never `DOS/DOS.Me` `main` / Production promotions).
 ## Claim lock and parallel POs
 
 - po_labels: claude: po:claude, antigravity: po:agy
-- promotion_po: claude
+- promotion_po: any
 
 ## Sessions
 
@@ -184,7 +194,9 @@ unblock `#250`–`#253` (never `DOS/DOS.Me` `main` / Production promotions).
   project đi. Việc của ai người đó nghiệm thu."; and, on the PO's proposal
   to split by line (Qwen: Campaigns; Claude Code: Money and Platform):
   "Chia như vậy". A `PO acceptance:` comment counts only from the PO that
-  owns the PR's line. (Campaigns runtime superseded 2026-11-21, below.)
+  owns the PR's line. (Campaigns runtime superseded 2026-11-21; line-only
+  acceptance widened to the PR-owning PO via `po_labels` during the 2026-11-22
+  Claude quota takeover, below.)
 - JOY (2026-11-16), on empty-site discovery links: "Giữ nguyeyen" — with no
   live campaign, keep the header, "Hai cách" and footer "Khám phá" links to
   `/campaigns` (its empty state) as they are.
@@ -199,7 +211,26 @@ unblock `#250`–`#253` (never `DOS/DOS.Me` `main` / Production promotions).
   picks up unclaimed `DOS/DOS.Me` DB prerequisites `#261`–`#264` for
   `DOS/DOS.Me` `dev` migrations/PRs only to unblock `#250`–`#253`
   (`DOS/DOS.Me` `main` / Production promotions remain strictly exclusive to
-  `Give Product Owner` (Claude Code) with JOY's approval).
+  `Give Product Owner` (Claude Code) with JOY's approval). (Production
+  exclusivity, single-line limit, and `DOS/DOS.Me` dev-only migration scope
+  superseded 2026-11-22, below.)
+- JOY (2026-11-21), on local databases (`Give#294` / `DOS/DOS.Me#1855`): no
+  local Docker or local Supabase for Give work; run Give pgTAP tests and
+  migration replay in GitHub CI on `DOS/DOS.Me`.
+- JOY (2026-11-22), via PO `ask_question` popup on `promotion_po`: approved
+  changing `promotion_po` from `claude` to `any` so Antigravity PO and Claude
+  Code PO hold equal Production promotion authority (`DOS/Give` `main` /
+  `give.vn` and `DOS/DOS.Me` `main`), always requiring JOY's popup approval on
+  a concrete step list plus rollback plan and zero competing open `main`
+  promotion PRs before starting.
+- JOY (2026-11-22), in PO chat on Claude PO quota takeover: "PO claude hết
+  limit rồi nên mày chủ động nhé. Takover các task đang dở của nó luôn."
+  Antigravity PO (`Give Product Owner (Antigravity)`, profile `acc0`)
+  proactively covers all three lines (`line:campaigns`, `line:money`,
+  `line:platform`) and takes over Claude PO's unfinished `line:money` and
+  `line:platform` tasks while Claude is out of quota, keeping
+  `po_labels: claude: po:claude, antigravity: po:agy` active so both POs
+  cooperate without duplicating tasks when Claude resumes.
 
 Screenshot branches (`assets/pr-<n>-screenshots`): every commit on them adds
 `apps/web/vercel.json` with `{"git":{"deploymentEnabled":false}}`, so Vercel
