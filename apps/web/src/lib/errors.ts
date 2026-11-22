@@ -9,6 +9,7 @@ import { ORGANIZER_HANDLE_INVALID_MESSAGE, ORGANIZER_HANDLE_RESERVED_MESSAGE } f
 
 const GIVE_MESSAGES: Record<string, string> = {
   GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch, hoặc bạn không có quyền với chiến dịch này.",
+  GIVE_CAMPAIGN_STATUS_CHANGED: "Chiến dịch đã đổi trạng thái từ khi trang này tải. Hãy tải lại trang rồi xem lại.",
   GIVE_TRANSITION_NOT_ALLOWED: "Không thể chuyển chiến dịch sang trạng thái này lúc này.",
   GIVE_REASON_REQUIRED: "Cần ghi lý do.",
   GIVE_SUBMISSION_INCOMPLETE: "Cần chọn danh mục, viết tóm tắt và câu chuyện ít nhất 100 ký tự trước khi gửi duyệt.",
@@ -278,6 +279,12 @@ export const OPEN_MESSAGES: Record<string, string> = {
 export const SEND_BACK_MESSAGES: Record<string, string> = {
   GIVE_TRANSITION_NOT_ALLOWED:
     "Không yêu cầu chỉnh sửa được: chiến dịch vừa đổi trạng thái (có thể đã được mở công khai). Hãy tải lại trang.",
+}
+
+/** The transition refusal worded for a moderator sending a suspended-before-start campaign back (DOS/Give#77). */
+export const SUSPENDED_SEND_BACK_MESSAGES: Record<string, string> = {
+  GIVE_TRANSITION_NOT_ALLOWED:
+    "Không yêu cầu chỉnh sửa được: chỉ gửi lại chỉnh sửa cho chiến dịch tạm dừng trước ngày bắt đầu và chưa từng gây quỹ hay có lượt ủng hộ. Hãy tải lại trang.",
 }
 
 /**
