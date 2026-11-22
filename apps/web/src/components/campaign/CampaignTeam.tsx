@@ -1,9 +1,8 @@
+import { OrganizerAvatar } from "@/components/OrganizerAvatar"
 import { Badge } from "@/components/ui/Badge"
 import { CheckIcon } from "@/components/ui/icons"
 import { memberDisplayName, type PublicTeamMember } from "@/lib/campaign-members"
 import { VERIFICATION_LABELS } from "@/lib/campaigns"
-
-import { MemberAvatar } from "./MemberAvatar"
 
 /**
  * Public campaign team block on `/campaigns/[slug]` (DOS/Give#253).
@@ -36,10 +35,10 @@ export function CampaignTeam({ members }: { members: readonly PublicTeamMember[]
               key={`${member.member_role}-${member.joined_at ?? index}-${index}`}
               className="flex items-center gap-3 p-4"
             >
-              <MemberAvatar displayName={member.display_name} avatarUrl={member.avatar_url} role={member.member_role} />
+              <OrganizerAvatar displayName={name} avatarUrl={member.avatar_url} size="md" />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold break-words text-fg">{name}</span>
+                  <span className="min-w-0 font-semibold break-words text-fg">{name}</span>
                   {isOwner && member.verification_status === "verified" && (
                     <CheckIcon
                       width={16}
@@ -53,7 +52,7 @@ export function CampaignTeam({ members }: { members: readonly PublicTeamMember[]
                   <Badge tone={isOwner ? "brand" : "info"}>{isOwner ? "Người tổ chức chính" : "Đồng tổ chức"}</Badge>
                 </div>
                 {isOwner && member.verification_status && (
-                  <p className="mt-0.5 text-sm text-muted">
+                  <p className="mt-1 text-sm text-muted">
                     {member.kind === "organization" ? "Tổ chức gây quỹ" : "Người gây quỹ"} ·{" "}
                     {VERIFICATION_LABELS[member.verification_status]}
                   </p>

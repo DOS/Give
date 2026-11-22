@@ -67,15 +67,21 @@ describe("campaign-members pure helpers", () => {
     expect(memberInitial(null, "editor")).toBe("Đ")
   })
 
-  it("allows only clean https:// avatar URLs without credentials or control chars", () => {
+  it("allows only clean public https:// avatar URLs without credentials, private hosts, IP literals, or control chars", () => {
     expect(safeAvatarUrl("https://cdn.example.vn/avatars/a.jpg")).toBe("https://cdn.example.vn/avatars/a.jpg")
     expect(safeAvatarUrl("http://cdn.example.vn/avatars/a.jpg")).toBeNull()
     expect(safeAvatarUrl("javascript:alert(1)")).toBeNull()
     expect(safeAvatarUrl("data:image/svg+xml,<svg/>")).toBeNull()
     expect(safeAvatarUrl("//cdn.example.vn/a.jpg")).toBeNull()
     expect(safeAvatarUrl("https://user:pass@cdn.example.vn/a.jpg")).toBeNull()
+    expect(safeAvatarUrl("https://localhost/a.jpg")).toBeNull()
+    expect(safeAvatarUrl("https://intranet/a.jpg")).toBeNull()
+    expect(safeAvatarUrl("https://127.0.0.1/a.jpg")).toBeNull()
+    expect(safeAvatarUrl("https://169.254.169.254/latest")).toBeNull()
+    expect(safeAvatarUrl("https://[::1]/a.jpg")).toBeNull()
     expect(safeAvatarUrl(`https://cdn.example.vn/${"a".repeat(2050)}`)).toBeNull()
     expect(safeAvatarUrl("https://cdn.example.vn/a\n.jpg")).toBeNull()
+    expect(safeAvatarUrl("https://cdn.example.vn/a\u007f.jpg")).toBeNull()
     expect(safeAvatarUrl(null)).toBeNull()
   })
 

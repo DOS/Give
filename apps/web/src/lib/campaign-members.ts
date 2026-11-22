@@ -8,6 +8,9 @@ import {
   type OrganizerKind,
   type VerificationStatus,
 } from "./campaigns"
+import { safeAvatarUrl } from "./organizer-handle"
+
+export { safeAvatarUrl }
 
 /**
  * Co-organizers (campaign editors), single-use expiring invites, and public
@@ -108,7 +111,6 @@ export interface WorkspaceCampaign extends CampaignWithRefs {
 }
 
 const MAX_ROLES_PER_CALL = 200
-const MAX_AVATAR_URL_LENGTH = 2048
 
 /** Owners can create invites on any campaign that is not cancelled or suspended. */
 export function isInvitableStatus(status: CampaignStatus): boolean {
@@ -148,27 +150,6 @@ export function memberDisplayName(displayName: string | null | undefined, role: 
 export function memberInitial(displayName: string | null | undefined, role: CampaignMemberRole = "editor"): string {
   const label = memberDisplayName(displayName, role)
   return Array.from(label)[0]?.toUpperCase() ?? "?"
-}
-
-/**
- * Allows only clean `https://` avatar URLs without embedded credentials so
- * untrusted profile strings can never inject `javascript:`, `data:`, or HTTP
- * mixed content.
- */
-export function safeAvatarUrl(raw: string | null | undefined): string | null {
-  if (typeof raw !== "string") return null
-  const trimmed = raw.trim()
-  if (!trimmed || trimmed.length > MAX_AVATAR_URL_LENGTH) return null
-  if (/[\u0000-\u001f]/.test(trimmed)) return null
-  try {
-    const parsed = new URL(trimmed)
-    if (parsed.protocol !== "https:") return null
-    if (parsed.username || parsed.password) return null
-    if (!parsed.hostname) return null
-    return parsed.toString()
-  } catch {
-    return null
-  }
 }
 
 export const createInviteSchema = z.object({

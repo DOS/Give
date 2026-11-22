@@ -16,6 +16,7 @@ import {
   previewCampaignMemberInvite,
   type InvitePreviewStatus,
 } from "@/lib/campaign-members"
+import { campaignMemberDbErrorMessage, giveErrorCode, type DbErrorLike } from "@/lib/errors"
 import { formatDateTime } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { dbAs } from "@/lib/supabase"
@@ -91,7 +92,7 @@ export default async function InviteAcceptPage({ params }: { params: Promise<{ t
         icon={<UsersIcon width={40} height={40} />}
         action={
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
-            <ButtonLink href="/" variant="secondary">
+            <ButtonLink href="/" variant="secondary" size="lg">
               Về trang chủ
             </ButtonLink>
             <a href={loginHref} className={buttonClass({ size: "lg" })}>
@@ -111,7 +112,27 @@ export default async function InviteAcceptPage({ params }: { params: Promise<{ t
   try {
     preview = await previewCampaignMemberInvite(db, normalizedToken)
   } catch (error) {
-    if (isSessionRejected(error)) redirect(loginHref)
+    const dbError = error as DbErrorLike | null
+    if (isSessionRejected(error) || giveErrorCode(dbError) === "GIVE_AUTH_REQUIRED") redirect(loginHref)
+    if (giveErrorCode(dbError) === "GIVE_RATE_LIMITED" || dbError?.code === "PT429") {
+      return (
+        <EmptyState
+          level={1}
+          title="Bạn thao tác quá nhanh"
+          icon={<UsersIcon width={40} height={40} />}
+          action={
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row">
+              <ButtonLink href="/" variant="secondary">
+                Về trang chủ
+              </ButtonLink>
+              <ButtonLink href="/me/campaigns">Chiến dịch của tôi</ButtonLink>
+            </div>
+          }
+        >
+          {campaignMemberDbErrorMessage(dbError)}
+        </EmptyState>
+      )
+    }
     throw error
   }
 

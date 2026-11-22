@@ -48,7 +48,7 @@ describe("CampaignTeam (DOS/Give#253)", () => {
 
     // Owner row: safe https avatar with referrerPolicy="no-referrer", verified check, owner role badge.
     expect(html).toContain('src="https://cdn.example.vn/owner.jpg"')
-    expect(html).toContain('referrerPolicy="no-referrer"')
+    expect(html.toLowerCase()).toContain('referrerpolicy="no-referrer"')
     expect(html).toContain("Quỹ Bếp Ấm")
     expect(html).toContain("Người tổ chức chính")
     expect(html).toContain('aria-label="Đã xác minh"')

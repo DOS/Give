@@ -611,7 +611,7 @@ export const CAMPAIGN_MEMBER_MESSAGES: Record<string, string> = {
   GIVE_INVITE_NOTE_TOO_LONG: "Ghi chú lời mời tối đa 120 ký tự.",
   GIVE_CAMPAIGN_MEMBER_LIMIT: "Chiến dịch đã đạt giới hạn tối đa 20 đồng tổ chức.",
   GIVE_CAMPAIGN_INVITE_LIMIT: "Chiến dịch đã đạt giới hạn tối đa 20 lời mời đang chờ.",
-  GIVE_RATE_LIMITED: "Bạn vừa tạo nhiều liên kết mời trong thời gian ngắn. Hãy thử lại sau ít phút.",
+  GIVE_RATE_LIMITED: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
   GIVE_INVITE_INVALID: "Liên kết lời mời không hợp lệ hoặc không tồn tại.",
   GIVE_INVITE_REVOKED: "Lời mời này đã bị người tổ chức thu hồi.",
   GIVE_INVITE_ALREADY_USED: "Liên kết lời mời này đã được sử dụng (mỗi liên kết chỉ dùng một lần).",

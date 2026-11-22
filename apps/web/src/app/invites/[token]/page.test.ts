@@ -160,18 +160,43 @@ describe("InviteAcceptPage (DOS/Give#253)", () => {
     expect(state.serviceUsed).toBe(false)
   })
 
-  it("redirects to login when preview rejects an expired JWT (PGRST301)", async () => {
+  it("redirects to login when preview rejects an expired JWT (PGRST301) or raises GIVE_AUTH_REQUIRED", async () => {
     state.session = { user: { id: USER, email: null, name: "Minh" }, accessToken: "expired-jwt" }
+    const expected = `/auth/login?return_path=${encodeURIComponent(`/invites/${TOKEN}`)}`
+
     state.handler = (call) => {
       if (call.target === "rpc:preview_campaign_member_invite") {
         return { error: { code: "PGRST301", message: "JWT expired" } }
       }
       return undefined
     }
-
-    const expected = `/auth/login?return_path=${encodeURIComponent(`/invites/${TOKEN}`)}`
     await expect(InviteAcceptPage({ params: Promise.resolve({ token: TOKEN }) })).rejects.toThrow(
       `NEXT_REDIRECT:${expected}`
     )
+
+    state.handler = (call) => {
+      if (call.target === "rpc:preview_campaign_member_invite") {
+        return { error: { code: "42501", message: "GIVE_AUTH_REQUIRED" } }
+      }
+      return undefined
+    }
+    await expect(InviteAcceptPage({ params: Promise.resolve({ token: TOKEN }) })).rejects.toThrow(
+      `NEXT_REDIRECT:${expected}`
+    )
+  })
+
+  it("renders a calm Vietnamese rate-limit EmptyState when preview raises GIVE_RATE_LIMITED / PT429", async () => {
+    state.session = { user: { id: USER, email: null, name: "Minh" }, accessToken: "editor-jwt" }
+    state.handler = (call) => {
+      if (call.target === "rpc:preview_campaign_member_invite") {
+        return { error: { code: "PT429", message: "GIVE_RATE_LIMITED: 90" } }
+      }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(await InviteAcceptPage({ params: Promise.resolve({ token: TOKEN }) }))
+    expect(html).toContain("Bạn thao tác quá nhanh")
+    expect(html).toContain("Hãy thử lại sau khoảng 2 phút.")
+    expect(html).not.toContain("Chấp nhận lời mời")
   })
 })

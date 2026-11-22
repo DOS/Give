@@ -1,4 +1,4 @@
-import { MemberAvatar } from "@/components/campaign/MemberAvatar"
+import { OrganizerAvatar } from "@/components/OrganizerAvatar"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { Badge, type BadgeTone } from "@/components/ui/Badge"
 import { buttonClass } from "@/components/ui/Button"
@@ -59,8 +59,13 @@ export function TeamTab({
 }) {
   const invitable = isInvitableStatus(campaignStatus)
   const pendingInvites = invites.filter((invite) => invite.status === "pending")
-  const memberLimitReached = members.length >= MAX_CAMPAIGN_MEMBERS
-  const inviteLimitReached = pendingInvites.length >= MAX_CAMPAIGN_INVITES
+  const memberLimitReached = !membersError && members.length >= MAX_CAMPAIGN_MEMBERS
+  const inviteLimitReached = !invitesError && pendingInvites.length >= MAX_CAMPAIGN_INVITES
+  const limitNotice = memberLimitReached
+    ? `Chiến dịch đã đạt giới hạn tối đa ${MAX_CAMPAIGN_MEMBERS} đồng tổ chức. Hãy gỡ bớt thành viên trước khi mời thêm.`
+    : inviteLimitReached
+      ? `Chiến dịch đang có ${MAX_CAMPAIGN_INVITES} lời mời chờ chấp nhận. Hãy thu hồi bớt lời mời chưa dùng trước khi tạo liên kết mới.`
+      : null
 
   return (
     <div className="lg:grid lg:grid-cols-12 lg:gap-x-6">
@@ -77,9 +82,11 @@ export function TeamTab({
           id="team-members"
           title="Đội ngũ hiện tại"
           description={
-            <p className="tabular-nums">
-              {members.length} / {MAX_CAMPAIGN_MEMBERS} đồng tổ chức đang hoạt động.
-            </p>
+            membersError ? undefined : (
+              <p className="tabular-nums">
+                {members.length} / {MAX_CAMPAIGN_MEMBERS} đồng tổ chức đang hoạt động.
+              </p>
+            )
           }
         >
           {membersError ? (
@@ -100,13 +107,13 @@ export function TeamTab({
                     className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="flex min-w-0 flex-1 items-center gap-3">
-                      <MemberAvatar displayName={member.display_name} avatarUrl={member.avatar_url} role="editor" />
+                      <OrganizerAvatar displayName={name} avatarUrl={member.avatar_url} size="md" />
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-semibold break-words text-fg">{name}</span>
+                          <span className="min-w-0 font-semibold break-words text-fg">{name}</span>
                           <Badge tone="info">Biên tập viên</Badge>
                         </div>
-                        <p className="mt-0.5 text-sm text-muted tabular-nums">
+                        <p className="mt-1 text-sm text-muted tabular-nums">
                           Tham gia lúc {formatDateTime(member.accepted_at)}
                         </p>
                       </div>
@@ -114,6 +121,7 @@ export function TeamTab({
                     <ActionForm
                       action={removeCampaignMember.bind(null, campaignId, member.user_id, campaignSlug)}
                       confirm={`Gỡ “${name}” khỏi đội ngũ? Quyền chỉnh sửa của họ sẽ bị thu hồi ngay lập tức.`}
+                      className="shrink-0 sm:text-right"
                     >
                       <SubmitButton className={buttonClass({ variant: "danger", size: "sm" })}>
                         Gỡ khỏi đội ngũ<span className="sr-only">: {name}</span>
@@ -133,18 +141,12 @@ export function TeamTab({
         >
           {!invitable ? (
             <Callout tone="neutral">Không thể tạo lời mời mới khi chiến dịch đã hủy hoặc đang tạm dừng.</Callout>
-          ) : memberLimitReached ? (
-            <Callout tone="warning">
-              Chiến dịch đã đạt giới hạn tối đa {MAX_CAMPAIGN_MEMBERS} đồng tổ chức. Hãy gỡ bớt thành viên trước khi mời
-              thêm.
-            </Callout>
-          ) : inviteLimitReached ? (
-            <Callout tone="warning">
-              Chiến dịch đang có {MAX_CAMPAIGN_INVITES} lời mời chờ chấp nhận. Hãy thu hồi bớt lời mời chưa dùng trước
-              khi tạo liên kết mới.
-            </Callout>
           ) : (
-            <CreateInviteForm action={createCampaignInvite.bind(null, campaignId)} origin={origin} />
+            <CreateInviteForm
+              action={createCampaignInvite.bind(null, campaignId)}
+              origin={origin}
+              limitNotice={limitNotice}
+            />
           )}
         </Panel>
 
@@ -152,10 +154,14 @@ export function TeamTab({
           id="team-invites"
           title="Lời mời đã tạo"
           description={
-            <p className="tabular-nums">
-              {pendingInvites.length} / {MAX_CAMPAIGN_INVITES} lời mời đang chờ. Liên kết chỉ hiện một lần lúc tạo và
-              không thể xem lại vì lý do bảo mật.
-            </p>
+            invitesError ? (
+              "Liên kết chỉ hiện một lần lúc tạo và không thể xem lại vì lý do bảo mật."
+            ) : (
+              <p className="tabular-nums">
+                {pendingInvites.length} / {MAX_CAMPAIGN_INVITES} lời mời đang chờ. Liên kết chỉ hiện một lần lúc tạo và
+                không thể xem lại vì lý do bảo mật.
+              </p>
+            )
           }
         >
           {invitesError ? (
@@ -202,6 +208,7 @@ export function TeamTab({
                       <ActionForm
                         action={revokeCampaignInvite.bind(null, campaignId, invite.invite_id)}
                         confirm="Thu hồi liên kết mời này? Người nhận sẽ không thể dùng liên kết này nữa."
+                        className="shrink-0 sm:text-right"
                       >
                         <SubmitButton className={buttonClass({ variant: "secondary", size: "sm" })}>
                           Thu hồi<span className="sr-only"> lời mời tạo lúc {formatDateTime(invite.created_at)}</span>

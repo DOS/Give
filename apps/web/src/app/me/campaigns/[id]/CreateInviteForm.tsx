@@ -21,10 +21,17 @@ type CreateInviteAction = (state: CreateInviteResult, formData: FormData) => Pro
 export function CreateInviteForm({
   action,
   origin,
+  limitNotice,
 }: {
   action: CreateInviteAction
   /** Configured site origin, if set; otherwise uses window.location.origin on the client. */
   origin?: string
+  /**
+   * Shown instead of the creation form once the campaign hits the member or
+   * pending-invite cap, while keeping this component mounted so the owner can
+   * still copy a one-time link that was just created (e.g. the 20th invite).
+   */
+  limitNotice?: string | null
 }) {
   const [state, formAction, pending] = useActionState(action, null)
   const formRef = useRef<HTMLFormElement>(null)
@@ -43,59 +50,63 @@ export function CreateInviteForm({
 
   return (
     <div className="max-w-160 space-y-6">
-      <form
-        ref={formRef}
-        action={formAction}
-        className="space-y-6"
-        onSubmit={(event) => {
-          event.preventDefault()
-          if (pending) return
-          const formData = new FormData(event.currentTarget)
-          startTransition(() => formAction(formData))
-        }}
-      >
-        <div className="grid gap-6 sm:grid-cols-2 [&>*]:min-w-0">
-          <Field htmlFor="invite_expires_in_hours" label="Thời hạn liên kết">
-            <select
-              id="invite_expires_in_hours"
-              name="expires_in_hours"
-              className="field"
-              defaultValue={String(DEFAULT_INVITE_EXPIRY_HOURS)}
+      {limitNotice ? (
+        <Callout tone="warning">{limitNotice}</Callout>
+      ) : (
+        <form
+          ref={formRef}
+          action={formAction}
+          className="space-y-6"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (pending) return
+            const formData = new FormData(event.currentTarget)
+            startTransition(() => formAction(formData))
+          }}
+        >
+          <div className="grid gap-6 sm:grid-cols-2 [&>*]:min-w-0">
+            <Field htmlFor="invite_expires_in_hours" label="Thời hạn liên kết">
+              <select
+                id="invite_expires_in_hours"
+                name="expires_in_hours"
+                className="field"
+                defaultValue={String(DEFAULT_INVITE_EXPIRY_HOURS)}
+              >
+                {INVITE_EXPIRY_PRESETS.map((preset) => (
+                  <option key={preset.hours} value={String(preset.hours)}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field
+              htmlFor="invite_note"
+              label="Ghi chú nội bộ (không bắt buộc)"
+              hintId="invite_note_hint"
+              hint={`Tối đa ${INVITE_NOTE_MAX} ký tự, chỉ bạn thấy để nhớ đã gửi cho ai.`}
             >
-              {INVITE_EXPIRY_PRESETS.map((preset) => (
-                <option key={preset.hours} value={String(preset.hours)}>
-                  {preset.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field
-            htmlFor="invite_note"
-            label="Ghi chú nội bộ (không bắt buộc)"
-            hintId="invite_note_hint"
-            hint={`Tối đa ${INVITE_NOTE_MAX} ký tự, chỉ bạn thấy để nhớ đã gửi cho ai.`}
-          >
-            <input
-              id="invite_note"
-              name="note"
-              className="field"
-              maxLength={INVITE_NOTE_MAX}
-              aria-describedby="invite_note_hint"
-              placeholder="Ví dụ: Gửi cho Minh phụ trách cập nhật"
-            />
-          </Field>
-        </div>
+              <input
+                id="invite_note"
+                name="note"
+                className="field"
+                maxLength={INVITE_NOTE_MAX}
+                aria-describedby="invite_note_hint"
+                placeholder="Ví dụ: Gửi cho Minh phụ trách cập nhật"
+              />
+            </Field>
+          </div>
 
-        <button type="submit" className={buttonClass()} disabled={pending}>
-          {pending ? "Đang tạo liên kết…" : "Tạo liên kết mời"}
-        </button>
+          <button type="submit" className={buttonClass()} disabled={pending}>
+            {pending ? "Đang tạo liên kết…" : "Tạo liên kết mời"}
+          </button>
 
-        {state?.message && !state.invite && (
-          <p role={state.ok ? "status" : "alert"} className={`text-sm ${state.ok ? "text-primary" : "text-danger"}`}>
-            {state.message}
-          </p>
-        )}
-      </form>
+          {state?.message && !state.invite && (
+            <p role={state.ok ? "status" : "alert"} className={`text-sm ${state.ok ? "text-primary" : "text-danger"}`}>
+              {state.message}
+            </p>
+          )}
+        </form>
+      )}
 
       {state?.ok && state.invite && inviteUrl && (
         <Callout tone="success" role="status" title="Liên kết mời chỉ hiển thị một lần này">
