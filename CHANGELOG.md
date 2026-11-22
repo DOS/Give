@@ -691,7 +691,7 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   (`campaigns_check_editor_on_update`, `campaign_children_lock_campaign`,
   `campaign_children_verify_insert_auth`), while keeping all money, receiving
   accounts, statements, refunds, fulfillment, monthly plans, draft deletion,
-  `transition_campaign` and team management strictly owner-only, with 152 pgTAP
+  `transition_campaign` and team management strictly owner-only, with 172 pgTAP
   assertions (#264 / DOS/DOS.Me#1856, on Beta). Migration
   `20261129170000_give_campaign_members`.
 - Organizer public profile handle and bio: adds `handle` (unique, 3–40-char
@@ -714,7 +714,7 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
   `report_campaign_comment`, `moderate_campaign_comment`,
   `resolve_comment_report`, `list_comment_reports`,
   `list_comment_moderation_history`) with rate limiting, self-review guards and
-  `give.audit_log` entries, with 148 pgTAP assertions (#262 / DOS/DOS.Me#1853,
+  `give.audit_log` entries, with 171 pgTAP assertions (#262 / DOS/DOS.Me#1853,
   on Beta). Migration `20261129150000_give_campaign_comments`.
 - Privacy-safe daily campaign analytics: zero-PII `give.campaign_daily_analytics`
   counters keyed by `(campaign_id, metric_date, event_type, referrer_bucket)`,
