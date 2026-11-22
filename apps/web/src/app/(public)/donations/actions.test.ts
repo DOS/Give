@@ -304,4 +304,20 @@ describe("donate", () => {
     })
     expect(state.serviceCalls).toHaveLength(0)
   })
+
+  it("passes sanitized p_ambassador_ref when valid and fails open on malformed refs (DOS/Give#319)", async () => {
+    await expect(donate(CAMPAIGN, null, form({ ambassador_ref: "  AB23CD45EF  " }))).rejects.toThrow(
+      "NEXT_REDIRECT /donations/GVABCDEFG"
+    )
+    expect(op(state.serviceCalls[0], "args")?.[0]).toMatchObject({
+      p_campaign_id: CAMPAIGN,
+      p_ambassador_ref: "ab23cd45ef",
+    })
+
+    state.serviceCalls.length = 0
+    await expect(donate(CAMPAIGN, null, form({ ambassador_ref: "<script>bad</script>" }))).rejects.toThrow(
+      "NEXT_REDIRECT /donations/GVABCDEFG"
+    )
+    expect(op(state.serviceCalls[0], "args")?.[0]).not.toHaveProperty("p_ambassador_ref")
+  })
 })

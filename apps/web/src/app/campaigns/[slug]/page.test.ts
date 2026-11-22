@@ -1871,3 +1871,180 @@ describe("CampaignPage FAQ accordion (DOS/Give#316)", () => {
     expect(doc.querySelector('a[href="#hoi-dap"]')).toBeNull()
   })
 })
+
+describe("CampaignPage ambassador referral links & opt-in leaderboard (DOS/Give#319)", () => {
+  it("shows attribution note, passes hidden ambassador_ref to DonateForm, and renders leaderboard on live campaign", async () => {
+    state.serviceHandler = (call) => {
+      if (call.target === "rpc:payment_account") {
+        return {
+          data: {
+            channel: "statement_import",
+            bank_bin: "970436",
+            account_number: "0123456789",
+            account_name: "QUY BAN MAY",
+          },
+        }
+      }
+      return undefined
+    }
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:public_ambassador_ref") {
+        return { data: [{ ref_code: "ab23cd45ef", display_name: "CLB Sinh viên Xanh" }] }
+      }
+      if (call.target === "rpc:campaign_ambassador_leaderboard") {
+        return {
+          data: [
+            {
+              ref_code: "ab23cd45ef",
+              display_name: "CLB Sinh viên Xanh",
+              matched_count: 3,
+              matched_total_vnd: 900_000,
+            },
+          ],
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(
+      await CampaignPage({
+        params: Promise.resolve({ slug: SLUG }),
+        searchParams: Promise.resolve({ ref: "AB23CD45EF" }),
+      })
+    )
+    const doc = parseDoc(html)
+
+    expect(doc.body.textContent).toContain("Bạn đang ủng hộ qua lời kêu gọi của CLB Sinh viên Xanh.")
+    expect(doc.querySelector('input[name="ambassador_ref"]')?.getAttribute("value")).toBe("ab23cd45ef")
+    expect(doc.querySelector("section#nguoi-dong-hanh-lan-toa h2")?.textContent).toBe("Người đồng hành lan tỏa")
+    expect(doc.querySelector("section#nguoi-dong-hanh-lan-toa")?.textContent).toContain("900.000")
+    // Guest sees clean login link preserving ?ref= for creating an ambassador link.
+    const ambassadorLogin = [...doc.querySelectorAll('a[href^="/auth/login"]')].find((a) =>
+      a.textContent?.includes("Tạo link kêu gọi giúp chiến dịch")
+    )
+    expect(ambassadorLogin?.getAttribute("href")).toBe(
+      `/auth/login?return_path=${encodeURIComponent(`/campaigns/${SLUG}?ref=ab23cd45ef`)}`
+    )
+  })
+
+  it("preserves valid ?ref= into back campaign pledge links and RewardTiers, and fails open on invalid ?ref=", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return { data: { ...campaignFixture("live"), type: "back", funding_model: "all_or_nothing" } }
+      }
+      if (call.target === "public_reward_tiers") {
+        return {
+          data: [
+            {
+              id: "44444444-4444-4444-8444-444444444444",
+              campaign_id: CAMPAIGN,
+              title: "Gói Đồng Hành",
+              description: null,
+              min_amount: 200_000,
+              quantity_limit: 50,
+              quantity_claimed: 0,
+              quantity_remaining: 50,
+              estimated_delivery: null,
+              requires_shipping: false,
+              shipping_note: null,
+              sort_order: 0,
+            },
+          ],
+        }
+      }
+      if (call.target === "rpc:public_ambassador_ref") {
+        return { data: [{ ref_code: "ab23cd45ef", display_name: "Minh Anh" }] }
+      }
+      return baseAnon(call)
+    }
+
+    const validDoc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ ref: "ab23cd45ef" }),
+        })
+      )
+    )
+    expect(validDoc.querySelector(`a[href="/campaigns/${SLUG}/pledge?ref=ab23cd45ef"]`)).not.toBeNull()
+    expect(
+      validDoc.querySelector(
+        `a[href="/campaigns/${SLUG}/pledge?tier=44444444-4444-4444-8444-444444444444&ref=ab23cd45ef"]`
+      )
+    ).not.toBeNull()
+
+    // Malformed ?ref= never queries public_ambassador_ref and never blocks rendering.
+    state.anonCalls.length = 0
+    const badDoc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ ref: "bad!!ref" }),
+        })
+      )
+    )
+    expect(state.anonCalls.some((c) => c.target === "rpc:public_ambassador_ref")).toBe(false)
+    expect(badDoc.querySelector(`a[href="/campaigns/${SLUG}/pledge"]`)).not.toBeNull()
+  })
+
+  it("shows ambassador link trigger on public pre-launch, NEVER queries/renders leaderboard on pre-launch or preview, and hides link trigger on ended/draft", async () => {
+    // 1. Public pre-launch: ambassador trigger shown, leaderboard NEVER queried/rendered.
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("approved"),
+            prelaunch_public: true,
+            starts_at: "2099-06-01T00:00:00.000Z",
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+    const preDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(preDoc.body.textContent).toContain("Tạo link kêu gọi giúp chiến dịch")
+    expect(preDoc.querySelector("section#nguoi-dong-hanh-lan-toa")).toBeNull()
+    expect(state.anonCalls.some((c) => c.target === "rpc:campaign_ambassador_leaderboard")).toBe(false)
+
+    // 2. Ended (succeeded) campaign: leaderboard renders, ambassador link creation button hidden.
+    state.anonCalls.length = 0
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("succeeded") }
+      if (call.target === "rpc:campaign_ambassador_leaderboard") {
+        return {
+          data: [{ ref_code: "ended12345", display_name: "Đại Sứ Cũ", matched_count: 2, matched_total_vnd: 500_000 }],
+        }
+      }
+      return baseAnon(call)
+    }
+    const endedDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(endedDoc.body.textContent).not.toContain("Tạo link kêu gọi giúp chiến dịch")
+    expect(endedDoc.querySelector("section#nguoi-dong-hanh-lan-toa")?.textContent).toContain("Đại Sứ Cũ")
+
+    // 3. Draft preview: neither ambassador trigger nor leaderboard queried/rendered.
+    state.anonCalls.length = 0
+    state.userCalls.length = 0
+    state.session = { user: { id: VIEWER, email: "owner@dos.me", name: "Chủ chiến dịch" }, accessToken: "owner-jwt" }
+    state.anonHandler = (call) => (call.target === "campaigns" ? { data: null } : baseAnon(call))
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("draft") }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media" ||
+        call.target === "campaign_faqs"
+      ) {
+        return { data: [] }
+      }
+      return undefined
+    }
+    const draftDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(draftDoc.body.textContent).not.toContain("Tạo link kêu gọi giúp chiến dịch")
+    expect(draftDoc.querySelector("section#nguoi-dong-hanh-lan-toa")).toBeNull()
+    expect(state.anonCalls.some((c) => c.target === "rpc:campaign_ambassador_leaderboard")).toBe(false)
+    expect(state.userCalls.some((c) => c.target === "rpc:get_my_campaign_ambassador")).toBe(false)
+  })
+})

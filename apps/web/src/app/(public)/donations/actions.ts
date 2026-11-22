@@ -3,6 +3,7 @@
 import { cookies, headers } from "next/headers"
 import { redirect } from "next/navigation"
 
+import { sanitizeAmbassadorRef } from "@/lib/ambassadors"
 import { getSession } from "@/lib/auth/session"
 import { donationSchema, isStatusToken } from "@/lib/contributions"
 import { dbErrorMessage, fail, giveErrorCode, type ActionResult } from "@/lib/errors"
@@ -67,6 +68,10 @@ export async function donate(campaignId: string, _state: ActionResult, form: For
   // Signed-in donors are counted by account, so only guests get address keys.
   const { clientKey, networkKey } = session ? { clientKey: null, networkKey: null } : requestClientKeys(requestHeaders)
 
+  // Fail-open ambassador attribution (DOS/Give#319): invalid/blank refs are
+  // silently dropped and NEVER block or fail a donation.
+  const ambassadorRef = sanitizeAmbassadorRef(form.get("ambassador_ref"))
+
   const { data, error } = await dbService()
     .rpc("create_donation", {
       p_campaign_id: campaignId,
@@ -77,6 +82,7 @@ export async function donate(campaignId: string, _state: ActionResult, form: For
       p_message: input.message,
       p_client_key: clientKey,
       p_client_network_key: networkKey,
+      ...(ambassadorRef ? { p_ambassador_ref: ambassadorRef } : {}),
     })
     .select("contribution_id, reference_code, status_token, status_token_expires_at")
     .single()

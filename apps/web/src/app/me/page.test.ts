@@ -111,4 +111,39 @@ describe("MyProfilePage (/me, DOS/Give#251)", () => {
     expect(html).not.toContain('href="/u/')
     expect(html).not.toContain("Xem trang công khai")
   })
+
+  it("renders 'Liên kết đồng hành của tôi' from list_my_ambassador_links under user JWT for non-organizers and organizers (DOS/Give#319)", async () => {
+    state.handler = (call) => {
+      if (call.target === "organizers") return { data: null }
+      if (call.target === "rpc:list_my_ambassador_links") {
+        return {
+          data: [
+            {
+              campaign_id: "22222222-2222-4222-8222-222222222222",
+              campaign_slug: "xay-truong-ban-may",
+              campaign_title: "Xây trường Bản Mây",
+              campaign_status: "live",
+              campaign_type: "give",
+              ref_code: "ab23cd45ef",
+              display_name: "CLB Sinh viên Xanh",
+              show_on_leaderboard: true,
+              matched_count: 3,
+              matched_total_vnd: 900_000,
+              created_at: "2026-11-22T00:00:00Z",
+              updated_at: "2026-11-22T00:00:00Z",
+            },
+          ],
+        }
+      }
+      return undefined
+    }
+    const html = renderToStaticMarkup(await MyProfilePage())
+    expect(state.tokens).toEqual(["org-jwt"])
+    expect(state.calls.some((c) => c.target === "rpc:list_my_ambassador_links")).toBe(true)
+    expect(html).toContain("Liên kết đồng hành của tôi")
+    expect(html).toContain("Xây trường Bản Mây")
+    expect(html).toContain("?ref=ab23cd45ef")
+    expect(html).toContain("900.000")
+    expect(html).toContain("Sao chép liên kết")
+  })
 })

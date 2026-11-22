@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation"
 
+import { sanitizeAmbassadorRef } from "@/lib/ambassadors"
 import { getSession } from "@/lib/auth/session"
 import { dbErrorMessage, fail, type ActionResult } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
@@ -82,6 +83,11 @@ export async function savePledge(
     }
   }
 
+  // Fail-open ambassador attribution (DOS/Give#319): invalid/blank refs are
+  // silently dropped and NEVER block a pledge; change_pledge preserves any
+  // original attribution in the database.
+  const ambassadorRef = sanitizeAmbassadorRef(form.get("ambassador_ref"))
+
   const fields = {
     p_user_id: session.user.id,
     p_amount: input.amount,
@@ -94,7 +100,11 @@ export async function savePledge(
   const { data, error } = await (
     pledgeId
       ? dbService().rpc("change_pledge", { p_contribution_id: pledgeId, ...fields })
-      : dbService().rpc("create_pledge", { p_campaign_id: campaignId, ...fields })
+      : dbService().rpc("create_pledge", {
+          p_campaign_id: campaignId,
+          ...fields,
+          ...(ambassadorRef ? { p_ambassador_ref: ambassadorRef } : {}),
+        })
   )
     .select("contribution_id, reference_code")
     .single()

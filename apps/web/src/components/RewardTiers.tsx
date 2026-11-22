@@ -18,6 +18,7 @@ export function RewardTiers({
   open,
   closedNote,
   now = new Date(),
+  ambassadorRef,
 }: {
   tiers: readonly PublicRewardTier[]
   slug: string
@@ -27,6 +28,8 @@ export function RewardTiers({
   closedNote: string
   /** Override current time in tests. */
   now?: Date
+  /** Validated ambassador `?ref=` code to carry into the pledge flow (DOS/Give#319). */
+  ambassadorRef?: string | null
 }) {
   if (tiers.length === 0) return null
   return (
@@ -59,7 +62,7 @@ export function RewardTiers({
               <h3 className="mt-1 font-semibold break-words text-fg">
                 {choosable ? (
                   <Link
-                    href={pledgeHref(slug, tier.id)}
+                    href={pledgeHref(slug, tier.id, ambassadorRef)}
                     className="after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:outline-none focus-visible:after:outline-2 focus-visible:after:-outline-offset-2 focus-visible:after:outline-primary"
                   >
                     {tier.title}
