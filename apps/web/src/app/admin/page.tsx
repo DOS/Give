@@ -17,11 +17,14 @@ import { requireSession } from "@/lib/auth/session"
 import {
   accountProblemLabel,
   isStaff,
+  listCampaignsNeedingRecovery,
   listOrganizersToVerify,
   listReviewQueue,
   listWaitingForAccount,
+  recoveryAdvice,
   waitingAdvice,
   type CampaignType,
+  type RecoveryCampaign,
   type WaitingForAccount,
 } from "@/lib/campaigns"
 import { formatDate, formatVnd } from "@/lib/format"
@@ -45,19 +48,26 @@ export default async function AdminReviewPage() {
   }
 
   // Links to the other admin pages are the admin layout's tabs.
-  const [queue, waiting, organizers] = await Promise.all([
+  const [queue, waiting, recovery, organizers] = await Promise.all([
     listReviewQueue(db),
     // A read error hides only this section, not the review queue.
     listWaitingForAccount(db).catch((e: { code?: string; message?: string } | null): WaitingForAccount[] | null => {
       console.error("campaigns_waiting_for_account failed", e?.code, e?.message)
       return null
     }),
+    listCampaignsNeedingRecovery(db).catch(
+      (e: { code?: string; message?: string } | null): RecoveryCampaign[] | null => {
+        console.error("campaigns_needing_recovery failed", e?.code, e?.message)
+        return null
+      }
+    ),
     listOrganizersToVerify(db),
   ])
 
   const statusEventsByCampaign = await listStatusEventsByCampaign(db, [
     ...queue.map((campaign) => campaign.id),
     ...(waiting ?? []).map((campaign) => campaign.id),
+    ...(recovery ?? []).map((campaign) => campaign.id),
   ]).catch(() => new Map<string, CampaignStatusEvent[]>())
 
   return (
@@ -217,6 +227,107 @@ export default async function AdminReviewPage() {
                           required
                           maxLength={2000}
                           defaultValue={advice.sendBackReason}
+                        />
+                      </Field>
+                      <SubmitButton className="btn-secondary">Gửi yêu cầu</SubmitButton>
+                    </ActionForm>
+                  )}
+                </ItemCard>
+              )
+            })}
+          </ItemList>
+        )}
+      </AdminSection>
+
+      <AdminSection
+        id="recovery"
+        title="Cần xử lý trước khi mở"
+        count={recovery?.length}
+        lead="Chiến dịch đã duyệt nhưng quá ngày kết thúc (dù tài khoản vẫn dùng được) hoặc bị tạm dừng trước ngày bắt đầu (chưa từng công khai và chưa có lượt ủng hộ). Bạn có thể yêu cầu chỉnh sửa để chủ chiến dịch cập nhật ngày, sửa nội dung hoặc thay tài khoản nhận tiền rồi gửi duyệt lại."
+      >
+        {recovery === null ? (
+          <Callout tone="danger" title="Chưa tải được danh sách này.">
+            Các phần khác của trang vẫn dùng được. Hãy tải lại trang sau.
+          </Callout>
+        ) : recovery.length === 0 ? (
+          <EmptyState title="Không có chiến dịch nào cần xử lý trước khi mở." />
+        ) : (
+          <ItemList>
+            {recovery.map((campaign) => {
+              const own = campaign.organizer_id === session.user.id
+              const isSuspended = campaign.recovery_kind === "suspended_before_start"
+              const advice = recoveryAdvice(campaign)
+              return (
+                <ItemCard key={campaign.id}>
+                  <CampaignHead
+                    campaign={campaign}
+                    meta={
+                      <span className="text-sm text-muted">
+                        {isSuspended ? "Tạm dừng trước ngày bắt đầu" : "Đã duyệt nhưng quá ngày kết thúc"}
+                      </span>
+                    }
+                  >
+                    {campaign.account_problem !== null ? (
+                      <p className="mt-1 font-medium text-danger">{accountProblemLabel(campaign.account_problem)}</p>
+                    ) : !isSuspended ? (
+                      <p className="mt-1 font-medium text-danger">
+                        Chiến dịch đã quá ngày kết thúc nên hệ thống không tự mở.
+                      </p>
+                    ) : null}
+                  </CampaignHead>
+                  <Facts>
+                    <Fact label="Ngày bắt đầu">
+                      {campaign.starts_at ? formatDate(campaign.starts_at) : "Khi duyệt"}
+                    </Fact>
+                    <Fact label="Ngày kết thúc">
+                      {formatDate(campaign.ends_at)}
+                      {!isSuspended ? " (đã qua)" : ""}
+                    </Fact>
+                    <Fact label="Duyệt lúc">{formatDate(campaign.approved_at)}</Fact>
+                    {isSuspended && campaign.review_note && (
+                      <Fact label="Lý do tạm dừng" wide>
+                        <span className="whitespace-pre-line">{campaign.review_note}</span>
+                      </Fact>
+                    )}
+                    {campaign.organizer && (
+                      <Fact label="Người tổ chức" wide>
+                        <span className="flex flex-wrap items-center gap-2">
+                          {campaign.organizer.display_name} (tên pháp lý: {campaign.organizer.legal_name})
+                          <VerificationBadge status={campaign.organizer.verification_status} />
+                        </span>
+                      </Fact>
+                    )}
+                  </Facts>
+                  <StatusHistory
+                    events={statusEventsByCampaign.get(campaign.id) ?? []}
+                    campaignTitle={campaign.title}
+                  />
+                  {advice.note && <Callout tone="warning">{advice.note}</Callout>}
+                  {advice.sendBackReason === null ? null : own ? (
+                    <Callout tone="warning">Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý.</Callout>
+                  ) : (
+                    <ActionForm
+                      action={requestChanges.bind(null, campaign.id)}
+                      confirm={
+                        isSuspended
+                          ? "Chuyển chiến dịch đang tạm dừng trước ngày bắt đầu về cho người tổ chức chỉnh sửa? Chiến dịch sẽ phải gửi duyệt lại."
+                          : "Trả chiến dịch đã duyệt quá ngày kết thúc về cho người tổ chức chỉnh sửa? Chiến dịch sẽ phải gửi duyệt lại."
+                      }
+                      className="max-w-160 space-y-6 border-t border-border pt-6"
+                    >
+                      <input type="hidden" name="from_status" value={isSuspended ? "suspended" : "approved"} />
+                      <Field htmlFor={`recovery-reason-${campaign.id}`} label="Yêu cầu chỉnh sửa">
+                        <textarea
+                          id={`recovery-reason-${campaign.id}`}
+                          name="reason"
+                          className="field"
+                          rows={4}
+                          required
+                          maxLength={2000}
+                          defaultValue={advice.sendBackReason || undefined}
+                          placeholder={
+                            advice.sendBackReason ? undefined : "Người tổ chức cần sửa gì trước khi gửi duyệt lại?"
+                          }
                         />
                       </Field>
                       <SubmitButton className="btn-secondary">Gửi yêu cầu</SubmitButton>

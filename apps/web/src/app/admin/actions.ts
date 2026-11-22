@@ -10,6 +10,7 @@ import {
   OPEN_MESSAGES,
   REVIEW_MESSAGES,
   SEND_BACK_MESSAGES,
+  SUSPENDED_SEND_BACK_MESSAGES,
   type ActionResult,
 } from "@/lib/errors"
 import { isUuid } from "@/lib/ids"
@@ -49,12 +50,20 @@ export async function approveCampaign(
     return fail("Chiến dịch đã quá ngày kết thúc. Hãy yêu cầu người tổ chức sửa ngày thay vì duyệt.")
   }
 
-  const approved = await db.rpc("transition_campaign", { p_campaign_id: campaignId, p_to_status: "approved" })
+  const approved = await db.rpc("transition_campaign", {
+    p_campaign_id: campaignId,
+    p_to_status: "approved",
+    p_expected_status: "in_review",
+  })
   if (approved.error) return fail(dbErrorMessage(approved.error, REVIEW_MESSAGES))
 
   let message = "Đã duyệt. Chiến dịch sẽ tự mở khi tới ngày bắt đầu."
   if (!campaign.starts_at || new Date(campaign.starts_at) <= new Date()) {
-    const live = await db.rpc("transition_campaign", { p_campaign_id: campaignId, p_to_status: "live" })
+    const live = await db.rpc("transition_campaign", {
+      p_campaign_id: campaignId,
+      p_to_status: "live",
+      p_expected_status: "approved",
+    })
     message = live.error
       ? `Đã duyệt, nhưng chưa mở được: ${dbErrorMessage(live.error, OPEN_MESSAGES)}`
       : "Đã duyệt và mở chiến dịch công khai."
@@ -71,10 +80,11 @@ export async function approveCampaign(
 }
 
 /**
- * Sends a campaign back for changes, from review or (give campaigns) after
- * approval. Each form says which status it was shown for, so a form left
- * open while another moderator approved the campaign does not send the
- * approved campaign back by mistake. The database still decides.
+ * Sends a campaign back for changes, from review, after approval (DOS/Give#64,
+ * #85), or when suspended before its start (DOS/Give#77). Each form says which
+ * status it was shown for, and give.transition_campaign checks
+ * p_expected_status atomically under its row lock so a stale form left open
+ * while another moderator moved the campaign cannot overwrite their decision.
  */
 export async function requestChanges(campaignId: string, _state: ActionResult, form: FormData): Promise<ActionResult> {
   const session = await getSession()
@@ -85,7 +95,7 @@ export async function requestChanges(campaignId: string, _state: ActionResult, f
     .slice(0, 2000)
   if (!reason) return fail("Ghi rõ người tổ chức cần sửa gì.")
   const fromStatus = String(form.get("from_status") ?? "")
-  if (fromStatus !== "in_review" && fromStatus !== "approved") return fail(STATUS_CHANGED)
+  if (fromStatus !== "in_review" && fromStatus !== "approved" && fromStatus !== "suspended") return fail(STATUS_CHANGED)
   const db = dbAs(session.accessToken)
 
   const { data, error: readError } = await db
@@ -102,8 +112,17 @@ export async function requestChanges(campaignId: string, _state: ActionResult, f
     p_campaign_id: campaignId,
     p_to_status: "changes_requested",
     p_reason: reason,
+    p_expected_status: fromStatus,
   })
-  if (error) return fail(dbErrorMessage(error, fromStatus === "approved" ? SEND_BACK_MESSAGES : undefined))
+  if (error) {
+    const overrides =
+      fromStatus === "approved"
+        ? SEND_BACK_MESSAGES
+        : fromStatus === "suspended"
+          ? SUSPENDED_SEND_BACK_MESSAGES
+          : undefined
+    return fail(dbErrorMessage(error, overrides))
+  }
   revalidatePath("/admin")
   revalidatePath(`/me/campaigns/${campaignId}`)
   revalidatePath("/me/campaigns")

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import { OPEN_MESSAGES, REVIEW_MESSAGES, SEND_BACK_MESSAGES } from "@/lib/errors"
+import { OPEN_MESSAGES, REVIEW_MESSAGES, SEND_BACK_MESSAGES, SUSPENDED_SEND_BACK_MESSAGES } from "@/lib/errors"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
@@ -40,7 +40,7 @@ describe("approveCampaign", () => {
     ["/"],
   ]
 
-  it("approves and opens a campaign whose start time has come", async () => {
+  it("approves and opens a campaign whose start time has come with atomic expected-status guards", async () => {
     state.handler = (call) =>
       op(call, "maybeSingle")
         ? { data: { slug: "a-b", starts_at: null, ends_at: new Date(Date.now() + 30 * day).toISOString() } }
@@ -48,7 +48,45 @@ describe("approveCampaign", () => {
     const result = await approveCampaign(CAMPAIGN, null, new FormData())
     expect(result).toEqual({ ok: true, message: "Đã duyệt và mở chiến dịch công khai." })
     expect(transitions()).toEqual(["approved", "live"])
+    const rpcArgs = state.calls.filter((c) => c.target === "rpc:transition_campaign").map((c) => op(c, "args")?.[0])
+    expect(rpcArgs).toEqual([
+      { p_campaign_id: CAMPAIGN, p_to_status: "approved", p_expected_status: "in_review" },
+      { p_campaign_id: CAMPAIGN, p_to_status: "live", p_expected_status: "approved" },
+    ])
     expect(revalidatePathMock.mock.calls).toEqual(expectedApprovalRevalidations)
+  })
+
+  it("maps GIVE_CAMPAIGN_STATUS_CHANGED when another moderator moves the campaign before approval or opening (DOS/Give#77)", async () => {
+    state.handler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: { slug: "a-b", starts_at: null, ends_at: new Date(Date.now() + 30 * day).toISOString() } }
+        : call.target === "rpc:transition_campaign"
+          ? {
+              error: {
+                code: "40001",
+                message: "GIVE_CAMPAIGN_STATUS_CHANGED: expected in_review, got changes_requested",
+              },
+            }
+          : undefined
+    expect(await approveCampaign(CAMPAIGN, null, new FormData())).toEqual({
+      ok: false,
+      message: "Chiến dịch đã đổi trạng thái từ khi trang này tải. Hãy tải lại trang rồi xem lại.",
+    })
+    expect(revalidatePathMock).not.toHaveBeenCalled()
+
+    state.calls.length = 0
+    state.handler = (call) =>
+      op(call, "maybeSingle")
+        ? { data: { slug: "a-b", starts_at: null, ends_at: new Date(Date.now() + 30 * day).toISOString() } }
+        : call.target === "rpc:transition_campaign" &&
+            (op(call, "args")?.[0] as { p_to_status: string }).p_to_status === "live"
+          ? { error: { code: "40001", message: "GIVE_CAMPAIGN_STATUS_CHANGED: expected approved, got suspended" } }
+          : undefined
+    expect(await approveCampaign(CAMPAIGN, null, new FormData())).toEqual({
+      ok: true,
+      message:
+        "Đã duyệt, nhưng chưa mở được: Chiến dịch đã đổi trạng thái từ khi trang này tải. Hãy tải lại trang rồi xem lại.",
+    })
   })
 
   it("only approves a campaign scheduled for later and still revalidates organizer and campaign routes", async () => {
@@ -165,6 +203,7 @@ describe("requestChanges", () => {
       p_campaign_id: CAMPAIGN,
       p_to_status: "changes_requested",
       p_reason: "Bind another account.",
+      p_expected_status: "approved",
     })
     expect(revalidatePathMock.mock.calls).toEqual([
       ["/admin"],
@@ -255,6 +294,54 @@ describe("requestChanges", () => {
       message: "Có lỗi xảy ra. Hãy thử lại sau.",
     })
     expect(transitions()).toEqual([])
+  })
+
+  it("maps GIVE_CAMPAIGN_STATUS_CHANGED when another moderator transitions the campaign between read and RPC (DOS/Give#77)", async () => {
+    state.handler = statusIs("in_review", (call) =>
+      call.target === "rpc:transition_campaign"
+        ? { error: { code: "40001", message: "GIVE_CAMPAIGN_STATUS_CHANGED: expected in_review, got approved" } }
+        : undefined
+    )
+    expect(await requestChanges(CAMPAIGN, null, form("Fix story.", "in_review"))).toEqual({
+      ok: false,
+      message: "Chiến dịch đã đổi trạng thái từ khi trang này tải. Hãy tải lại trang rồi xem lại.",
+    })
+    expect(revalidatePathMock).not.toHaveBeenCalled()
+  })
+
+  it("sends back a suspended-before-start campaign with p_expected_status='suspended' and maps ineligible refusals (DOS/Give#77)", async () => {
+    state.handler = statusIs("suspended", undefined, "a-b")
+    expect(await requestChanges(CAMPAIGN, null, form("Replace disabled account.", "suspended"))).toEqual({
+      ok: true,
+      message: "Đã gửi yêu cầu chỉnh sửa cho người tổ chức.",
+    })
+    const call = state.calls.find((c) => c.target === "rpc:transition_campaign")
+    expect(op(call, "args")?.[0]).toEqual({
+      p_campaign_id: CAMPAIGN,
+      p_to_status: "changes_requested",
+      p_reason: "Replace disabled account.",
+      p_expected_status: "suspended",
+    })
+    expect(revalidatePathMock.mock.calls).toEqual([
+      ["/admin"],
+      [`/me/campaigns/${CAMPAIGN}`],
+      ["/me/campaigns"],
+      ["/me/notices"],
+      ["/campaigns/a-b"],
+    ])
+
+    revalidatePathMock.mockClear()
+    state.calls.length = 0
+    state.handler = statusIs("suspended", (c) =>
+      c.target === "rpc:transition_campaign"
+        ? { error: { code: "42501", message: "GIVE_TRANSITION_NOT_ALLOWED: suspended -> changes_requested" } }
+        : undefined
+    )
+    expect(await requestChanges(CAMPAIGN, null, form("Replace disabled account.", "suspended"))).toEqual({
+      ok: false,
+      message: SUSPENDED_SEND_BACK_MESSAGES.GIVE_TRANSITION_NOT_ALLOWED,
+    })
+    expect(revalidatePathMock).not.toHaveBeenCalled()
   })
 })
 

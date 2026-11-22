@@ -14,6 +14,18 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Atomic moderator status-transition race guard and pre-launch recovery queue:
+  `apps/web/src/app/admin/actions.ts` passes `p_expected_status` on
+  `approveCampaign` (`in_review` -> `approved`, `approved` -> `live`) and
+  `requestChanges` (`in_review`, `approved`, `suspended`) and maps
+  `GIVE_CAMPAIGN_STATUS_CHANGED` (`40001`) and `suspended -> changes_requested`
+  refusals in `apps/web/src/lib/errors.ts`; `/admin` adds the `#recovery`
+  (`"Cần xử lý trước khi mở"`) section backed by
+  `give.campaigns_needing_recovery()` (`listCampaignsNeedingRecovery`,
+  `recoveryAdvice`) so moderators can see and recover approved campaigns past
+  `ends_at` with usable accounts and campaigns suspended before `starts_at`
+  (never live, no contributions), with unit and RSC Vitest coverage, backed by
+  `DOS/DOS.Me#1872` (#77).
 - Co-organizers (campaign editors), single-use invites, workspace guards and
   public team block: `/me/campaigns/[id]?tab=team` (`TeamTab`,
   `CreateInviteForm`, `member-actions.ts`) lets the owning organizer create

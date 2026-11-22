@@ -12,9 +12,11 @@ import {
   fundingModelFor,
   isEditableStatus,
   isPublicStatus,
+  listCampaignsNeedingRecovery,
   listOrganizersToVerify,
   listPublicCampaigns,
   listWaitingForAccount,
+  recoveryAdvice,
   waitingAdvice,
   normalizeSearch,
   organizerCanCancel,
@@ -707,5 +709,156 @@ describe("waitingAdvice", () => {
     expect(advise("no_account", { ends_at: PAST }).sendBackReason).toContain(
       "Hãy sửa ngày kết thúc, gắn một tài khoản đã xác minh đứng tên bạn rồi gửi duyệt lại."
     )
+  })
+})
+
+describe("listCampaignsNeedingRecovery (DOS/Give#77)", () => {
+  const A = "7700c000-0000-4000-8000-000000000001"
+  const B = "7700c000-0000-4000-8000-000000000002"
+  const GONE = "7700c000-0000-4000-8000-000000000003"
+
+  it("preserves database order, drops disappeared rows, and skips managed_campaigns when empty", async () => {
+    const emptyLog: Call[] = []
+    const emptyDb = fakeDb(() => ({ data: [] }), emptyLog)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(await listCampaignsNeedingRecovery(emptyDb as any)).toEqual([])
+    expect(emptyLog.map((c) => c.target)).toEqual(["rpc:campaigns_needing_recovery"])
+
+    const db = fakeDb((call) => {
+      if (call.target === "rpc:campaigns_needing_recovery") {
+        return {
+          data: [
+            {
+              campaign_id: B,
+              recovery_kind: "approved_past_end",
+              account_problem: null,
+              account_has_transactions: false,
+            },
+            {
+              campaign_id: GONE,
+              recovery_kind: "suspended_before_start",
+              account_problem: "no_account",
+              account_has_transactions: false,
+            },
+            {
+              campaign_id: A,
+              recovery_kind: "suspended_before_start",
+              account_problem: "account_not_verified",
+              account_has_transactions: true,
+            },
+          ],
+        }
+      }
+      if (call.target === "rpc:managed_campaigns") {
+        return {
+          data: [
+            { id: A, title: "A" },
+            { id: B, title: "B" },
+          ],
+        }
+      }
+      return undefined
+    })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const items = await listCampaignsNeedingRecovery(db as any)
+    expect(items.map((r) => [r.id, r.recovery_kind, r.account_problem, r.account_has_transactions])).toEqual([
+      [B, "approved_past_end", null, false],
+      [A, "suspended_before_start", "account_not_verified", true],
+    ])
+  })
+
+  it("throws when the RPC or managed_campaigns lookup fails", async () => {
+    const rpcErr = fakeDb(() => ({ error: { code: "42501", message: "denied" } }))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(listCampaignsNeedingRecovery(rpcErr as any)).rejects.toMatchObject({ code: "42501" })
+
+    const readErr = fakeDb((call) =>
+      call.target === "rpc:campaigns_needing_recovery"
+        ? {
+            data: [
+              {
+                campaign_id: A,
+                recovery_kind: "approved_past_end",
+                account_problem: null,
+                account_has_transactions: false,
+              },
+            ],
+          }
+        : { error: { code: "57014", message: "timeout" } }
+    )
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(listCampaignsNeedingRecovery(readErr as any)).rejects.toMatchObject({ code: "57014" })
+  })
+})
+
+describe("recoveryAdvice (DOS/Give#77)", () => {
+  const advise = (
+    recovery_kind: "approved_past_end" | "suspended_before_start",
+    overrides: Partial<{
+      type: "give" | "back"
+      account_problem: string | null
+      account_has_transactions: boolean
+      verified: boolean
+    }> = {}
+  ) =>
+    recoveryAdvice({
+      recovery_kind,
+      type: overrides.type ?? "give",
+      account_problem: overrides.account_problem === undefined ? null : overrides.account_problem,
+      account_has_transactions: overrides.account_has_transactions ?? false,
+      organizer: { verification_status: overrides.verified === false ? "pending" : "verified" },
+    })
+
+  it("sends back approved_past_end campaigns to update dates", () => {
+    const res = advise("approved_past_end")
+    expect(res.note).toContain("quá ngày kết thúc")
+    expect(res.sendBackReason).toContain("sửa ngày kết thúc rồi gửi duyệt lại")
+  })
+
+  it("offers a free-text send-back form for suspended_before_start with a usable account", () => {
+    const res = advise("suspended_before_start", { account_problem: null })
+    expect(res.sendBackReason).toBe("")
+    expect(res.note).toContain("tài khoản nhận tiền vẫn dùng được")
+  })
+
+  it("guides account release/binding when suspended_before_start has no transactions", () => {
+    const disabled = advise("suspended_before_start", { account_problem: "account_not_verified" })
+    expect(disabled.note).toBeNull()
+    expect(disabled.sendBackReason).toContain("nhả tài khoản đang gắn")
+    expect(disabled.sendBackReason).toContain("hi@give.vn")
+
+    const noAccount = advise("suspended_before_start", { account_problem: "no_account" })
+    expect(noAccount.sendBackReason).toContain("gắn một tài khoản đã xác minh đứng tên bạn")
+
+    const foreign = advise("suspended_before_start", { account_problem: "account_not_owned" })
+    expect(foreign.note).toContain("bộ phận tài chính hoặc quản trị viên nhả tài khoản đó")
+    expect(foreign.sendBackReason).toContain("chờ đội ngũ Give nhả tài khoản không đứng tên bạn")
+
+    const unverified = advise("suspended_before_start", { account_problem: "name_mismatch", verified: false })
+    expect(unverified.note).toContain("Xác minh người tổ chức")
+    expect(unverified.sendBackReason).toContain("Tên chủ tài khoản nhận tiền đang gắn không còn trùng")
+    expect(unverified.sendBackReason).toContain("cần được xác minh lại")
+
+    const orgReset = advise("suspended_before_start", { account_problem: "organizer_not_verified", verified: false })
+    expect(orgReset.note).toContain("xác minh lại hồ sơ")
+    expect(orgReset.sendBackReason).toContain("cần được xác minh lại")
+  })
+
+  it("guides #55 swap for give campaigns with transactions and blocks send-back for back campaigns with transactions", () => {
+    const giveTx = advise("suspended_before_start", {
+      type: "give",
+      account_problem: "account_not_verified",
+      account_has_transactions: true,
+    })
+    expect(giveTx.note).toContain("yêu cầu đổi tài khoản")
+    expect(giveTx.sendBackReason).toContain("để bộ phận tài chính duyệt")
+
+    const backTx = advise("suspended_before_start", {
+      type: "back",
+      account_problem: "account_not_verified",
+      account_has_transactions: true,
+    })
+    expect(backTx.sendBackReason).toBeNull()
+    expect(backTx.note).toContain("dự án có quà tặng chưa hỗ trợ đổi tài khoản")
   })
 })
