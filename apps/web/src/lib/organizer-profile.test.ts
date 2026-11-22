@@ -128,6 +128,7 @@ describe("organizer-profile data layer (DOS/Give#251, #261)", () => {
         type: "give",
         title: "Xây trường Bản Mây",
         goal_amount: 50_000_000,
+        starts_at: null,
         ends_at: "2026-12-31T00:00:00Z",
         status: "live",
         display_options: { progress_bar: true, backers_count: true, time_remaining: true },
@@ -142,11 +143,49 @@ describe("organizer-profile data layer (DOS/Give#251, #261)", () => {
         type: "back",
         title: "Sách ảnh",
         goal_amount: 10_000_000,
+        starts_at: null,
         ends_at: null,
         status: "succeeded",
         display_options: { progress_bar: true, backers_count: true, time_remaining: true },
         cover: null,
       },
     ])
+  })
+
+  it("enriches starts_at for approved pre-launch campaigns on organizer profiles (DOS/Give#315)", async () => {
+    const log: Call[] = []
+    const db = fakeDb((call) => {
+      if (call.target === "rpc:list_organizer_public_campaigns") {
+        return {
+          data: [
+            {
+              id: "44444444-4444-4444-8444-444444444444",
+              slug: "thu-vien-sap-mo",
+              type: "give",
+              title: "Thư viện sắp mở",
+              summary: null,
+              goal_amount: 30_000_000,
+              ends_at: "2099-12-31T00:00:00Z",
+              status: "approved",
+              display_options: { progress_bar: true, backers_count: true, time_remaining: true },
+              cover_storage_path: null,
+              cover_alt: null,
+              created_at: "2026-11-22T00:00:00Z",
+            },
+          ],
+        }
+      }
+      if (call.target === "campaigns") {
+        return {
+          data: [{ id: "44444444-4444-4444-8444-444444444444", starts_at: "2099-12-01T00:00:00Z" }],
+        }
+      }
+      return undefined
+    }, log)
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const campaigns = await listOrganizerPublicCampaigns(db as any, "quy-ban-may")
+    expect(campaigns).toHaveLength(1)
+    expect(campaigns[0].starts_at).toBe("2099-12-01T00:00:00Z")
   })
 })

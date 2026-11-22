@@ -54,9 +54,14 @@ function tierRow(requiresShipping: boolean) {
 }
 
 /** The user's reads: the campaign check, the tier and their pledge. */
-function userReads({ campaign = true, tier = tierRow(false) as unknown, pledge = null as unknown } = {}): Handler {
+function userReads({
+  campaign = true,
+  campaignStatus = "live",
+  tier = tierRow(false) as unknown,
+  pledge = null as unknown,
+} = {}): Handler {
   return (call) => {
-    if (call.target === "campaigns") return { data: campaign ? { id: CAMPAIGN } : null }
+    if (call.target === "campaigns") return { data: campaign ? { id: CAMPAIGN, status: campaignStatus } : null }
     if (call.target === "public_reward_tiers") return { data: tier }
     if (call.target === "contributions") return { data: pledge }
     return undefined
@@ -214,5 +219,14 @@ describe("cancelPledge", () => {
       ok: false,
       message: expect.stringContaining("kết thúc"),
     })
+  })
+
+  it("refuses savePledge on a public pre-launch (approved) campaign before calling create_pledge (DOS/Give#315)", async () => {
+    state.userHandler = userReads({ campaignStatus: "approved" })
+    expect(await savePledge(CAMPAIGN, null, null, form())).toEqual({
+      ok: false,
+      message: "Dự án hiện không nhận cam kết (chưa mở hoặc đã kết thúc).",
+    })
+    expect(state.serviceCalls).toHaveLength(0)
   })
 })

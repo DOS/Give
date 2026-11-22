@@ -78,6 +78,7 @@ export interface Campaign {
   ends_at: string | null
   payment_window_days: number
   status: CampaignStatus
+  prelaunch_public?: boolean
   review_note: string | null
   submitted_at: string | null
   approved_at: string | null
@@ -99,7 +100,10 @@ export type PublicCampaign = Omit<CampaignWithRefs, "organizer_id" | "review_not
 export type CardCampaign = Pick<
   PublicCampaign,
   "id" | "slug" | "type" | "title" | "goal_amount" | "ends_at" | "status" | "display_options" | "cover"
->
+> & {
+  starts_at?: string | null
+  prelaunch_public?: boolean
+}
 
 /**
  * A campaign as discovery and the home page list it: the card columns plus
@@ -173,6 +177,28 @@ export function isPublicStatus(status: CampaignStatus): boolean {
   return PUBLIC_STATUSES.includes(status)
 }
 
+/**
+ * Mirrors give.is_public_prelaunch (DOS-Me 20261201120000): an approved
+ * campaign that opted into public pre-launch teaser visibility and whose
+ * scheduled starts_at is still in the future.
+ */
+export function isPublicPrelaunch(
+  campaign: { status: CampaignStatus; prelaunch_public?: boolean | null; starts_at?: string | null },
+  now: Date = new Date()
+): boolean {
+  if (campaign.status !== "approved" || campaign.prelaunch_public !== true || !campaign.starts_at) return false
+  const startsAt = new Date(campaign.starts_at)
+  return !Number.isNaN(startsAt.getTime()) && startsAt.getTime() > now.getTime()
+}
+
+/** Mirrors give.is_public_campaign_visible: public lifecycle status OR active public pre-launch teaser. */
+export function isPublicCampaignVisible(
+  campaign: { status: CampaignStatus; prelaunch_public?: boolean | null; starts_at?: string | null },
+  now: Date = new Date()
+): boolean {
+  return isPublicStatus(campaign.status) || isPublicPrelaunch(campaign, now)
+}
+
 export function isEditableStatus(status: CampaignStatus): boolean {
   return EDITABLE_STATUSES.includes(status)
 }
@@ -224,12 +250,12 @@ export function categoriesFor(categories: readonly Category[], type: CampaignTyp
 // Discovery filters
 // ---------------------------------------------------------------------------
 
-/** Which public campaigns discovery lists: live ones, ended ones or both. */
-export type DiscoveryStatus = "live" | "ended" | "all"
+/** Which public campaigns discovery lists: live, pre-launch teasers, ended, or all. */
+export type DiscoveryStatus = "live" | "prelaunch" | "ended" | "all"
 
 /**
  * Discovery orders, as give.discover_campaigns defines them (DOS-Me
- * `20261111173000_give_discover_campaigns.sql`; ties end newest first):
+ * `20261111173000_give_discover_campaigns.sql` + `20261201120000`; ties end newest first):
  * - featured ("Nổi bật"): live first, then most supporters (backers for back
  *   campaigns), then the highest share of the goal raised;
  * - newest ("Mới nhất"): most recently approved first;
@@ -242,6 +268,7 @@ export type DiscoverySort = "featured" | "newest" | "ending" | "near_goal"
 
 export const DISCOVERY_STATUSES: readonly { value: DiscoveryStatus; label: string }[] = [
   { value: "live", label: "Đang gây quỹ" },
+  { value: "prelaunch", label: "Sắp ra mắt" },
   { value: "ended", label: "Đã kết thúc" },
   { value: "all", label: "Tất cả" },
 ]
@@ -356,7 +383,7 @@ const CAMPAIGN_WITH_REFS = `*, ${REFS}`
  */
 const PUBLIC_CAMPAIGN_WITH_REFS = `id, slug, type, funding_model, category_id, title, summary, story, beneficiary_name,
   beneficiary_relation, cover_media_id, asset, goal_amount, min_contribution, stretch_goal_amount, display_options,
-  starts_at, ends_at, payment_window_days, status, submitted_at, approved_at, outcome_at, created_at, updated_at,
+  starts_at, ends_at, payment_window_days, status, prelaunch_public, submitted_at, approved_at, outcome_at, created_at, updated_at,
   ${REFS}`.replace(/\s+/g, " ")
 
 /**
@@ -364,7 +391,7 @@ const PUBLIC_CAMPAIGN_WITH_REFS = `id, slug, type, funding_model, category_id, t
  * story and other long columns stay out.
  */
 const CARD_COLUMNS =
-  "id, slug, type, title, goal_amount, ends_at, status, display_options, cover:campaign_media!campaigns_cover_media_fk(storage_path, alt)"
+  "id, slug, type, title, goal_amount, starts_at, ends_at, status, prelaunch_public, display_options, cover:campaign_media!campaigns_cover_media_fk(storage_path, alt)"
 
 export async function listCategories(db: Db): Promise<Category[]> {
   const { data, error } = await db

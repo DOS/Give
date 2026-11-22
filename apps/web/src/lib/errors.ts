@@ -222,6 +222,9 @@ const GIVE_MESSAGES: Record<string, string> = {
     "Các chỉ số nổi bật tối đa 10 mục, mỗi mục cần có đủ tiêu đề và giá trị (tối đa 120 ký tự).",
   GIVE_IMPACT_REPORT_ALREADY_PUBLISHED:
     "Báo cáo tổng kết đã công khai nên không thể chuyển về bản nháp. Bạn vẫn có thể cập nhật nội dung công khai.",
+  // Follows & pre-launch opt-in (DOS/Give#315).
+  GIVE_CANNOT_FOLLOW_SELF: "Bạn không thể tự theo dõi trang của chính mình.",
+  GIVE_PRELAUNCH_REQUIRES_FUTURE_START: "Cần đặt ngày bắt đầu trong tương lai để bật chế độ Sắp ra mắt.",
 }
 
 const PG_MESSAGES: Record<string, string> = {

@@ -134,6 +134,40 @@ describe("CampaignOpenGraphImage (/campaigns/[slug]/opengraph-image, DOS/Give#31
     }
   )
 
+  it("renders a valid teaser PNG without reading public_campaigns for an opted-in future pre-launch campaign (DOS/Give#315)", async () => {
+    const base = state.anonHandler
+    state.anonHandler = (call) =>
+      call.target === "campaigns"
+        ? {
+            data: campaignFixture("approved", {
+              prelaunch_public: true,
+              starts_at: "2099-12-01T00:00:00.000Z",
+            }),
+          }
+        : base(call)
+
+    const response = await CampaignOpenGraphImage({ params: Promise.resolve({ slug: SLUG }) })
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("image/png")
+    expect(state.anonCalls.some((c) => c.target === "public_campaigns")).toBe(false)
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    expect(Array.from(bytes.slice(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47])
+
+    // Past starts_at approved campaign must still return 404.
+    state.anonHandler = (call) =>
+      call.target === "campaigns"
+        ? {
+            data: campaignFixture("approved", {
+              prelaunch_public: true,
+              starts_at: "2020-01-01T00:00:00.000Z",
+            }),
+          }
+        : base(call)
+    const expired = await CampaignOpenGraphImage({ params: Promise.resolve({ slug: SLUG }) })
+    expect(expired.status).toBe(404)
+    expect(expired.headers.get("cache-control")).toBe("no-store")
+  })
+
   it("returns 404 for nonexistent campaigns and invalid slugs without querying the database for invalid slugs", async () => {
     state.anonHandler = () => ({ data: null })
     const missing = await CampaignOpenGraphImage({ params: Promise.resolve({ slug: SLUG }) })

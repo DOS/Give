@@ -46,13 +46,17 @@ export async function startMonthlyPlan(
   if (!parsed.success) return fail(firstError(parsed.error))
   const input = parsed.data
 
-  const visible = await dbAs(session.accessToken).from("campaigns").select("id").eq("id", campaignId).maybeSingle()
+  const visible = await dbAs(session.accessToken)
+    .from("campaigns")
+    .select("id, status")
+    .eq("id", campaignId)
+    .maybeSingle()
   if (visible.error) {
     return fail(
       visible.error.code?.startsWith("PGRST30") ? SESSION_EXPIRED : dbErrorMessage(visible.error, PLAN_MESSAGES)
     )
   }
-  if (!visible.data) return fail(NOT_ACCEPTING)
+  if (!visible.data || (visible.data as { status?: string }).status !== "live") return fail(NOT_ACCEPTING)
 
   const { data, error } = await dbService()
     .rpc("create_donation_plan", {

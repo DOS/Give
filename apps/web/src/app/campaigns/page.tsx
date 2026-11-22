@@ -151,7 +151,7 @@ export default async function CampaignsPage({
   const { campaigns, total } = await listPublicCampaigns(db, filters, categories, filters.page * DISCOVERY_PAGE_SIZE)
   const totals = await listMoneyTotals(
     db,
-    campaigns.map((c) => c.id)
+    campaigns.filter((c) => c.status !== "approved").map((c) => c.id)
   )
   const status = DISCOVERY_STATUSES.find((s) => s.value === filters.status) ?? DISCOVERY_STATUSES[0]
   const sort = DISCOVERY_SORTS.find((s) => s.value === filters.sort) ?? DISCOVERY_SORTS[0]

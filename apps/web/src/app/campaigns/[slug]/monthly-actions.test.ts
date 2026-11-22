@@ -59,7 +59,7 @@ const created = (overrides: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   state.session = { user: { id: USER, email: null, name: null }, accessToken: "jwt" }
-  state.userHandler = (call) => (call.target === "campaigns" ? { data: { id: CAMPAIGN } } : undefined)
+  state.userHandler = (call) => (call.target === "campaigns" ? { data: { id: CAMPAIGN, status: "live" } } : undefined)
   state.serviceHandler = (call) => (call.target === "rpc:create_donation_plan" ? created() : undefined)
   state.userCalls.length = 0
   state.serviceCalls.length = 0
@@ -141,8 +141,16 @@ describe("startMonthlyPlan (DOS/Give#276)", () => {
     expect(state.serviceCalls).toHaveLength(0)
   })
 
-  it("refuses a campaign the donor cannot see", async () => {
+  it("refuses a campaign the donor cannot see or that is still in pre-launch (approved)", async () => {
     state.userHandler = () => ({ data: null })
+    expect(await startMonthlyPlan(CAMPAIGN, null, form())).toEqual({
+      ok: false,
+      message: PLAN_MESSAGES.GIVE_CAMPAIGN_NOT_ACCEPTING,
+    })
+    expect(state.serviceCalls).toHaveLength(0)
+
+    state.userHandler = (call) =>
+      call.target === "campaigns" ? { data: { id: CAMPAIGN, status: "approved" } } : undefined
     expect(await startMonthlyPlan(CAMPAIGN, null, form())).toEqual({
       ok: false,
       message: PLAN_MESSAGES.GIVE_CAMPAIGN_NOT_ACCEPTING,

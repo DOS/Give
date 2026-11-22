@@ -57,6 +57,7 @@ import {
   type Db,
   getCampaignById,
   isEditableStatus,
+  isPublicCampaignVisible,
   isPublicStatus,
   listAllUpdates,
   listCategories,
@@ -90,6 +91,8 @@ import {
   showMonthlySection,
   type PlanSupporter,
 } from "./MonthlySection"
+import { campaignPrelaunchPublic, PrelaunchSection, showPrelaunchSection } from "./PrelaunchSection"
+import { getCampaignFollowerCount } from "@/lib/follows"
 import { FulfillmentLink, RewardTiersSection } from "./RewardTiersSection"
 import { TeamTab } from "./TeamTab"
 
@@ -172,7 +175,7 @@ export default async function EditCampaignPage({
         title={campaign.title}
         actions={
           <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary">
-            {isPublicStatus(campaign.status) ? "Xem trang công khai" : "Xem trước trang chiến dịch"}
+            {isPublicCampaignVisible(campaign) ? "Xem trang công khai" : "Xem trước trang chiến dịch"}
           </ButtonLink>
         }
       />
@@ -253,6 +256,8 @@ export default async function EditCampaignPage({
   const isGive = campaign.type === "give"
   const showMonthly = isOwner && showMonthlySection(campaign.type, campaign.status)
   const allowMonthly = campaignAllowsMonthly(campaign)
+  const showPrelaunch = showPrelaunchSection(campaign.status)
+  const prelaunchPublic = campaignPrelaunchPublic(campaign)
   const [
     categories,
     milestones,
@@ -264,6 +269,7 @@ export default async function EditCampaignPage({
     statusEventsByCampaign,
     planSupporters,
     impactReport,
+    prelaunchFollowers,
   ] = await Promise.all([
     listCategories(db),
     listMilestones(db, campaign.id),
@@ -295,6 +301,9 @@ export default async function EditCampaignPage({
     campaign.status === "cancelled"
       ? getCampaignImpactReport(db, campaign.id).catch(() => null)
       : Promise.resolve<CampaignImpactReport | null>(null),
+    showPrelaunch && prelaunchPublic && campaign.status === "approved"
+      ? getCampaignFollowerCount(db, campaign.id).catch(() => 0)
+      : Promise.resolve(0),
   ])
   const youtubeVideo = youtubeState?.video ?? null
   const statusEvents = statusEventsByCampaign.get(campaign.id) ?? []
@@ -316,6 +325,7 @@ export default async function EditCampaignPage({
     { id: "milestones", label: "Các mốc mục tiêu" },
     !isGive && { id: "reward-tiers", label: "Phần thưởng" },
     showMonthly && { id: "monthly", label: "Ủng hộ hằng tháng" },
+    showPrelaunch && { id: "prelaunch", label: "Trang Sắp ra mắt" },
     showUpdates && { id: "updates", label: "Cập nhật" },
     showImpactReport && { id: "impact-report", label: "Báo cáo tổng kết" },
     isOwner && { id: "receiving-account", label: "Tài khoản nhận tiền" },
@@ -872,6 +882,17 @@ export default async function EditCampaignPage({
               status={campaign.status}
               minContribution={campaign.min_contribution}
               tiers={tiers}
+            />
+          )}
+
+          {showPrelaunch && (
+            <PrelaunchSection
+              campaignId={campaign.id}
+              slug={campaign.slug}
+              status={campaign.status}
+              startsAt={campaign.starts_at}
+              prelaunchPublic={prelaunchPublic}
+              followerCount={prelaunchFollowers}
             />
           )}
 

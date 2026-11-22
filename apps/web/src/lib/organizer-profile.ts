@@ -95,6 +95,7 @@ interface RawOrganizerCampaignRow {
   title: string
   summary: string | null
   goal_amount: number | string
+  starts_at?: string | null
   ends_at: string | null
   status: CampaignStatus
   display_options: DisplayOptions
@@ -104,7 +105,8 @@ interface RawOrganizerCampaignRow {
 }
 
 /**
- * Lists up to 100 public-status campaigns for an organizer handle via
+ * Lists up to 100 public-status campaigns (including opted-in future pre-launch
+ * teasers) for an organizer handle via
  * `give.list_organizer_public_campaigns(p_handle, p_limit, p_offset)`.
  * Ledger totals are joined separately from `give.public_campaigns` by id.
  */
@@ -127,15 +129,38 @@ export async function listOrganizerPublicCampaigns(
   })
   if (error) throw error
 
-  return ((data ?? []) as RawOrganizerCampaignRow[]).map((row) => ({
+  const mapped: CardCampaign[] = ((data ?? []) as RawOrganizerCampaignRow[]).map((row) => ({
     id: row.id,
     slug: row.slug,
     type: row.type,
     title: row.title,
     goal_amount: Number(row.goal_amount) || 0,
+    starts_at: row.starts_at ?? null,
     ends_at: row.ends_at ?? null,
     status: row.status,
     display_options: row.display_options,
     cover: row.cover_storage_path ? { storage_path: row.cover_storage_path, alt: row.cover_alt ?? null } : null,
   }))
+
+  // Enrich `starts_at` for opted-in pre-launch (`approved`) cards when the RPC
+  // projection doesn't include `starts_at`; public pre-launch rows are readable
+  // under anonymous RLS and degrade cleanly if unavailable.
+  const missingStartsAtIds = mapped.filter((c) => c.status === "approved" && !c.starts_at).map((c) => c.id)
+  if (missingStartsAtIds.length > 0) {
+    try {
+      const { data: scheduleRows } = await db.from("campaigns").select("id, starts_at").in("id", missingStartsAtIds)
+      const byId = new Map(
+        ((scheduleRows ?? []) as { id: string; starts_at: string | null }[]).map((r) => [r.id, r.starts_at])
+      )
+      for (const campaign of mapped) {
+        if (campaign.status === "approved" && !campaign.starts_at) {
+          campaign.starts_at = byId.get(campaign.id) ?? null
+        }
+      }
+    } catch {
+      // Best-effort schedule enrichment only.
+    }
+  }
+
+  return mapped
 }
