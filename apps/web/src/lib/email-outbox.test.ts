@@ -24,6 +24,7 @@ describe("outbox maximum age", () => {
     expect(outboxMaxAgeDays("plan_followup")).toBe(2)
     expect(outboxMaxAgeDays("plan_ended")).toBe(14)
     expect(outboxMaxAgeDays("plan_account_swapped")).toBe(14)
+    expect(outboxMaxAgeDays("pledge_account_swapped")).toBe(14)
   })
 
   it("labels every email kind the sender knows", () => {

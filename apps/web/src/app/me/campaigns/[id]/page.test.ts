@@ -140,13 +140,121 @@ describe("EditCampaignPage unusable bound account with recorded transactions (DO
     expect(html).toContain(`hãy liên hệ đội ngũ Give qua email ${LINK} để được hỗ trợ.`)
   })
 
-  it("hides early release and directs a sent-back back campaign to contact Give without offering a swap", async () => {
+  it("guides a sent-back back campaign with transactions to the finance-approved swap and hides early release (DOS/Give#92)", async () => {
     setupUnusableWithTransactions("changes_requested", "back")
     const html = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
     expect(html).not.toContain(">Nhả tài khoản<")
-    expect(html).not.toContain("Đổi tài khoản nhận")
-    expect(html).toContain(`nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give qua email ${LINK}.`)
-    expect(html).toContain(`hãy liên hệ đội ngũ Give qua email ${LINK} để được hỗ trợ.`)
+    expect(html).toContain("đề nghị đổi tài khoản bên dưới")
+    expect(html).toContain(">Đổi tài khoản nhận</h3>")
+    expect(html).toContain("gửi yêu cầu đổi tài khoản trong mục")
+    expect(html).not.toContain("để được hỗ trợ")
+  })
+
+  it("offers account swap on live, suspended, and succeeded-with-payments-due back campaigns (DOS/Give#92)", async () => {
+    for (const status of ["live", "suspended"] as const) {
+      setupUnusableWithTransactions(status, "back")
+      const html = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+      expect(html).toContain(">Đổi tài khoản nhận</h3>")
+      expect(html).not.toContain("Dự án có quà tặng chưa đổi được tài khoản")
+    }
+
+    // Succeeded back campaign with active payment_due pledges shows swap block with backer notice copy.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("succeeded", "back") }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "reward_tiers") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: accountWithDisabledBinding() }
+      if (call.target === "organizers")
+        return { data: { legal_name: "Nguyễn Thị Đào", verification_status: "verified" } }
+      if (call.target === "contributions") return { data: [{ id: "pledge-due" }] }
+      if (call.target === "account_swap_requests") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: [] }
+      return undefined
+    }
+    const succeededDueHtml = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+    expect(succeededDueHtml).toContain(">Đổi tài khoản nhận</h3>")
+    expect(succeededDueHtml).toContain("người ủng hộ đang chờ thanh toán cam kết sẽ nhận thông báo")
+
+    // Succeeded back campaign with NO payments due and no pending swap hides the swap block.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("succeeded", "back") }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "reward_tiers") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: accountWithDisabledBinding() }
+      if (call.target === "organizers")
+        return { data: { legal_name: "Nguyễn Thị Đào", verification_status: "verified" } }
+      if (call.target === "contributions") return { data: [] }
+      if (call.target === "account_swap_requests") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: [] }
+      return undefined
+    }
+    const succeededPaidHtml = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    expect(succeededPaidHtml).not.toContain(">Đổi tài khoản nhận</h3>")
+
+    // Succeeded back campaign with NO payments due but a stale pending swap still lets owner withdraw it (without form).
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("succeeded", "back") }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "reward_tiers") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: accountWithDisabledBinding() }
+      if (call.target === "organizers")
+        return { data: { legal_name: "Nguyễn Thị Đào", verification_status: "verified" } }
+      if (call.target === "contributions") return { data: [] }
+      if (call.target === "account_swap_requests") {
+        return {
+          data: [
+            {
+              id: "77777777-7777-4777-8777-777777777777",
+              campaign_id: CAMPAIGN,
+              old_binding_id: "b-1",
+              new_receiving_account_id: "acc-2",
+              new_binding_id: null,
+              reason: "Ngân hàng đã đóng tài khoản cũ.",
+              status: "pending",
+              decided_at: null,
+              decision_note: null,
+              public_note: null,
+              created_at: "2026-11-22T01:00:00Z",
+            },
+          ],
+        }
+      }
+      if (call.target === "campaign_status_events") return { data: [] }
+      return undefined
+    }
+    const stalePendingHtml = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+    expect(stalePendingHtml).toContain(">Rút yêu cầu<")
+    expect(stalePendingHtml).not.toContain(">Gửi yêu cầu đổi tài khoản<")
+
+    // #264 co-organizer (editor, not owner) NEVER sees ReceivingAccountSection or AccountSwapBlock on back campaigns.
+    state.calls.length = 0
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns")
+        return { data: { ...campaignRow("live", "back"), organizer_id: "99999999-9999-4999-8999-999999999999" } }
+      if (call.target === "rpc:my_campaign_roles") return { data: [{ campaign_id: CAMPAIGN, role: "editor" }] }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "reward_tiers") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: [] }
+      return undefined
+    }
+    const editorHtml = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+    expect(editorHtml).not.toContain('id="receiving-account"')
+    expect(editorHtml).not.toContain("Đổi tài khoản nhận")
+    expect(state.calls.map((c) => c.target)).not.toContain("receiving_accounts")
+    expect(state.calls.map((c) => c.target)).not.toContain("account_swap_requests")
   })
 })
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 
+import { formatVnd } from "@/lib/format"
 import { NEW_CODE_EVERY_MONTH } from "@/lib/plans"
 
 import { EmailRenderError, escapeHtml, renderEmail, type OutboxEmail } from "./templates"
@@ -394,6 +395,101 @@ describe("renderEmail: plan_account_swapped (DOS/Give#291)", () => {
     expect(() => renderEmail(swap({}, { unsubscribe_token: null }), ORIGIN, { signedStopToken: SIGNED })).toThrow(
       new EmailRenderError("unsubscribe_token_missing")
     )
+  })
+})
+
+describe("pledge_account_swapped email (DOS/Give#92)", () => {
+  const pledgeSwap = (payload: Record<string, unknown> = {}, overrides: Partial<OutboxEmail> = {}) =>
+    email({
+      kind: "pledge_account_swapped",
+      category: "transactional",
+      unsubscribe_token: null,
+      stop_token: null,
+      reference_code: "GV92ABC23",
+      payload: {
+        campaign_slug: "den-ngu-go",
+        campaign_title: "Đèn ngủ gỗ",
+        reference_code: "GV92ABC23",
+        intended_amount: 500_000,
+        received_amount: 150_000,
+        refunded_amount: 50_000,
+        payment_due_at: "2026-11-29T03:00:00Z",
+        changed_date: "2026-11-22",
+        new_channel: "statement_import",
+        new_bank_bin: "970422",
+        new_account_name: "NGUYEN THI DAO",
+        new_account_last4: "0002",
+        new_account_masked: "****0002",
+        old_bank_bin: "970436",
+        old_account_last4: "0001",
+        old_account_masked: "****0001",
+        public_note: "Ngân hàng đã đóng tài khoản cũ.",
+        ...payload,
+      },
+      ...overrides,
+    })
+
+  it("renders transactional payment-account change email with masked details, net due, deadline and pledge link", () => {
+    const r = renderEmail(pledgeSwap(), ORIGIN)
+    expect(r.subject).toBe("Tài khoản nhận thanh toán của dự án “Đèn ngủ gỗ” đã thay đổi")
+    expect(r.unsubscribeUrl).toBeNull()
+    expect(r.oneClickUnsubscribeUrl).toBeNull()
+    expect(r.text).toContain("Ngày 22/11/2026")
+    expect(r.text).toContain("chủ tài khoản NGUYEN THI DAO")
+    expect(r.text).toContain("ngân hàng MBBank")
+    expect(r.text).toContain("số tài khoản •••• 0002")
+    expect(r.text).toContain("Ghi chú công khai: Ngân hàng đã đóng tài khoản cũ.")
+    expect(r.text).toContain(formatVnd(400_000))
+    expect(r.text).toContain("29/11/2026")
+    expect(r.text).toContain("GV92ABC23")
+    expect(r.text).toContain("Đừng chuyển tiền vào tài khoản cũ Vietcombank •••• 0001")
+    expect(r.text).toContain(`${ORIGIN}/me/pledges/GV92ABC23`)
+    expect(r.text).not.toContain("/email/unsubscribe")
+    expect(r.text).not.toContain("/plans/stop")
+  })
+
+  it("falls back to /me/contributions when reference_code is missing or invalid and supports crypto", () => {
+    const r = renderEmail(
+      pledgeSwap(
+        {
+          reference_code: "../evil",
+          new_channel: "crypto",
+          new_bank_bin: null,
+          new_account_name: null,
+          new_chain: "polygon",
+          new_account_last4: "a9F2",
+          public_note: null,
+        },
+        { reference_code: null }
+      ),
+      ORIGIN
+    )
+    expect(r.text).toContain("Ví nhận mới trên mạng polygon: •••• a9F2.")
+    expect(r.text).toContain(`${ORIGIN}/me/contributions`)
+    expect(r.text).not.toContain("../evil")
+  })
+
+  it("never leaks raw multi-digit account numbers, escapes HTML, and strips CR/LF from subject", () => {
+    const r = renderEmail(
+      pledgeSwap({
+        campaign_title: "Đèn\r\nBcc: evil@example.com",
+        new_account_name: 'DAO <script>alert("x")</script>',
+        public_note: '<img src=x onerror="alert(1)">',
+        new_account_last4: "920002220002",
+        new_account_masked: "920002220002",
+        old_account_last4: "920001110001",
+        old_account_masked: "920001110001",
+      }),
+      ORIGIN
+    )
+    expect(r.subject).not.toMatch(/[\r\n]/)
+    expect(r.text).not.toContain("920002220002")
+    expect(r.text).not.toContain("920001110001")
+    expect(r.html).not.toContain("920002220002")
+    expect(r.html).not.toContain("<script>")
+    expect(r.html).not.toContain("<img")
+    expect(r.html).toContain("&lt;script&gt;")
+    expect(r.html).toContain("&lt;img")
   })
 })
 

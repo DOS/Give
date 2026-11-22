@@ -21,6 +21,7 @@ export const OUTBOX_KIND_LABELS: Record<string, string> = {
   plan_followup: "Nhắc lại mã ủng hộ hằng tháng",
   plan_ended: "Kế hoạch hằng tháng đã dừng",
   plan_account_swapped: "Thay đổi tài khoản nhận của kế hoạch hằng tháng",
+  pledge_account_swapped: "Thay đổi tài khoản nhận của cam kết thanh toán",
 }
 
 export const OUTBOX_STATUS_LABELS: Record<string, string> = {
@@ -60,7 +61,8 @@ export function outboxMaxAgeDays(kind: string): number {
     kind === "pledge_payment_due" ||
     kind === "campaign_ended" ||
     kind === "plan_ended" ||
-    kind === "plan_account_swapped"
+    kind === "plan_account_swapped" ||
+    kind === "pledge_account_swapped"
   )
     return 14
   return 7

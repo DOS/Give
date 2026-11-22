@@ -161,4 +161,74 @@ describe("MyNoticesPage (DOS/Give#93)", () => {
     expect(html).toContain(`href="/me/campaigns/${ACTIVE_CAMPAIGN}"`)
     expect(html).toContain(">Quản lý chiến dịch<")
   })
+
+  it("renders payment_account_changed neutrally when stopped and with payment CTA when active (DOS/Give#92)", async () => {
+    state.handler = (call) => {
+      if (call.target === "notices") {
+        if (call.ops.some(([name]) => name === "is")) return { count: 2 }
+        return {
+          data: [
+            {
+              id: "77777777-7777-4777-8777-777777777777",
+              kind: "payment_account_changed",
+              campaign_id: STOPPED_CAMPAIGN,
+              payload: {
+                campaign_title: "Đèn ngủ gỗ",
+                reference_code: "GVSWP234",
+                intended_amount: 500_000,
+                received_amount: 0,
+                changed_date: "2026-11-22",
+                new_bank_bin: "970422",
+                new_account_last4: "0002",
+              },
+              created_at: "2026-11-22T02:00:00Z",
+              read_at: null,
+            },
+            {
+              id: "88888888-8888-4888-8888-888888888888",
+              kind: "payment_account_changed",
+              campaign_id: ACTIVE_CAMPAIGN,
+              payload: {
+                campaign_title: "Bàn phím cơ",
+                reference_code: "GVSWP567",
+                intended_amount: 400_000,
+                received_amount: 0,
+                changed_date: "2026-11-22",
+                new_bank_bin: "970422",
+                new_account_name: "NGUYEN THI DAO",
+                new_account_last4: "0002",
+                old_bank_bin: "970436",
+                old_account_last4: "0001",
+              },
+              created_at: "2026-11-22T01:00:00Z",
+              read_at: null,
+            },
+          ],
+        }
+      }
+      if (call.target === "campaigns") {
+        return {
+          data: [
+            { id: STOPPED_CAMPAIGN, payments_stopped_at: "2026-11-22T03:00:00Z" },
+            { id: ACTIVE_CAMPAIGN, payments_stopped_at: null },
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const html = await renderAsync(await MyNoticesPage())
+    const items = [...html.matchAll(/<li[\s\S]*?<\/li>/g)].map((m) => m[0])
+    expect(items).toHaveLength(2)
+
+    expect(items[0]).toContain("Yêu cầu thanh toán đang tạm dừng")
+    expect(items[0]).toContain('href="/me/pledges/GVSWP234"')
+    expect(items[0]).toContain(">Xem cam kết<")
+    expect(items[0]).not.toContain(">Thanh toán ngay<")
+
+    expect(items[1]).toContain("Tài khoản nhận thanh toán đã thay đổi")
+    expect(items[1]).toContain("•••• 0002")
+    expect(items[1]).toContain('href="/me/pledges/GVSWP567"')
+    expect(items[1]).toContain(">Thanh toán ngay<")
+  })
 })

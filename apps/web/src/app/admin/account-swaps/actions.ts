@@ -26,7 +26,7 @@ type Decision = (typeof DECISIONS)[number]
 
 const DONE_MESSAGES: Record<Decision, string> = {
   approved:
-    "Đã đổi tài khoản nhận: tài khoản cũ đã ngừng và bị khóa, tài khoản mới nhận tiền từ bây giờ. Trang chiến dịch và sao kê hiện thông báo đổi tài khoản khi chiến dịch đang công khai.",
+    "Đã đổi tài khoản nhận: tài khoản cũ đã ngừng và bị khóa, tài khoản mới nhận tiền từ bây giờ. Trang chiến dịch và sao kê hiện thông báo đổi tài khoản khi chiến dịch đang công khai; nếu là dự án có quà tặng đang chờ thanh toán, người ủng hộ cũng đã được thông báo tài khoản mới.",
   rejected: "Đã từ chối yêu cầu đổi tài khoản.",
 }
 
@@ -85,5 +85,7 @@ export async function decideAccountSwap(
   revalidatePath("/me/campaigns/[id]", "page")
   revalidatePath("/campaigns/[slug]", "page")
   revalidatePath("/campaigns/[slug]/statement", "page")
+  revalidatePath("/me/pledges/[code]", "page")
+  revalidatePath("/me/notices")
   return done(DONE_MESSAGES[decision])
 }

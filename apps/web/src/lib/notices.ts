@@ -121,8 +121,65 @@ export function planEndedParagraphs(payload: Notice["payload"]): string[] {
   ]
 }
 
+const LAST4_PATTERN = /^[0-9A-Za-z]{1,4}$/
+const MASKED_LAST4_PATTERN = /^\*{4}([0-9A-Za-z]{1,4})$/
+const CHAIN_PATTERN = /^[a-z0-9-]{2,32}$/
+const ISO_DATE_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
+
+/**
+ * Formats strictly the last 1-4 characters as "•••• XXXX". Rejects longer
+ * values so a malformed payload can never leak a raw account number or wallet
+ * address into a notice or email.
+ */
+export function maskedAccountLast4(last4: string | null, masked: string | null): string | null {
+  const cleanLast4 = last4?.trim() ?? null
+  if (cleanLast4 && LAST4_PATTERN.test(cleanLast4)) return `•••• ${cleanLast4}`
+  const cleanMasked = masked?.trim() ?? null
+  const match = cleanMasked ? MASKED_LAST4_PATTERN.exec(cleanMasked) : null
+  return match ? `•••• ${match[1]}` : null
+}
+
+/** Date of an approved account swap as DD/MM/YYYY, from changed_date or changed_at. */
+export function swapDateLabel(payload: Notice["payload"]): string | null {
+  const changedDate = text(payload, "changed_date")?.trim() ?? null
+  const match = changedDate ? ISO_DATE_PATTERN.exec(changedDate) : null
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`
+  const changedAt = text(payload, "changed_at")?.trim() ?? null
+  if (changedAt && !Number.isNaN(Date.parse(changedAt))) return formatDate(changedAt)
+  return null
+}
+
+/** One sentence describing the new receiving account after a swap, strictly masked. */
+export function swappedNewAccountLine(payload: Notice["payload"], fallback: string): string {
+  const channel = text(payload, "new_channel")?.trim() ?? null
+  const newMasked = maskedAccountLast4(text(payload, "new_account_last4"), text(payload, "new_account_masked"))
+  if (channel === "crypto") {
+    const rawChain = text(payload, "new_chain")?.trim() ?? null
+    const chain = rawChain && CHAIN_PATTERN.test(rawChain) ? rawChain : null
+    if (chain && newMasked) return `Ví nhận mới trên mạng ${chain}: ${newMasked}.`
+    if (newMasked) return `Ví nhận mới: ${newMasked}.`
+    return fallback
+  }
+  const holder = text(payload, "new_account_name")?.trim() ?? null
+  const bank = bankByBin(text(payload, "new_bank_bin")?.trim() ?? null)?.shortName ?? null
+  const parts: string[] = []
+  if (holder) parts.push(`chủ tài khoản ${holder}`)
+  if (bank) parts.push(`ngân hàng ${bank}`)
+  if (newMasked) parts.push(`số tài khoản ${newMasked}`)
+  return parts.length > 0 ? `Tài khoản nhận mới: ${parts.join(", ")}.` : fallback
+}
+
+/** "tài khoản cũ Vietcombank •••• 1234", or a neutral fallback when unmasked/missing. */
+export function swappedOldAccountTarget(payload: Notice["payload"], noun = "chiến dịch"): string {
+  const oldBank = bankByBin(text(payload, "old_bank_bin")?.trim() ?? null)?.shortName ?? null
+  const oldMasked = maskedAccountLast4(text(payload, "old_account_last4"), text(payload, "old_account_masked"))
+  if (!oldMasked) return `tài khoản cũ của ${noun}`
+  return oldBank ? `tài khoản cũ ${oldBank} ${oldMasked}` : `tài khoản cũ ${oldMasked}`
+}
+
 function asksForPayment(notice: Pick<Notice, "kind" | "payload">): boolean {
-  if (notice.kind === "payment_due" || notice.kind === "payment_reminder") return true
+  if (notice.kind === "payment_due" || notice.kind === "payment_reminder" || notice.kind === "payment_account_changed")
+    return true
   return notice.kind === "payment_requests_resumed" && text(notice.payload, "reference_code") !== null
 }
 
@@ -176,6 +233,47 @@ export function describeNotice(notice: Notice, options?: NoticeRenderOptions): N
       return {
         title: notice.kind === "payment_due" ? "Đến hạn thanh toán cam kết" : "Nhắc thanh toán cam kết",
         body: capitalize(body),
+        ...pledgeLink(p, "Thanh toán ngay"),
+      }
+    }
+    case "payment_account_changed": {
+      // Backer with a pledge awaiting payment whose campaign swapped receiving account (DOS/Give#92).
+      if (options?.paymentRequestsStopped) {
+        return {
+          title: "Yêu cầu thanh toán đang tạm dừng",
+          body: `Give đang tạm dừng yêu cầu thanh toán của ${campaignName(p, "dự án")}. Thông báo đổi tài khoản nhận này được gửi trước khi tạm dừng; đừng chuyển tiền cho cam kết của bạn trong lúc tạm dừng.`,
+          ...pledgeLink(p, "Xem cam kết"),
+        }
+      }
+      const intended = count(p, "intended_amount")
+      const received = count(p, "received_amount") ?? 0
+      const refunded = count(p, "refunded_amount") ?? 0
+      const due =
+        count(p, "amount_due") ?? (intended !== null ? Math.max(0, intended - Math.max(0, received - refunded)) : null)
+      const rawDueAt = text(p, "payment_due_at")?.trim() ?? null
+      const dueAt = rawDueAt && !Number.isNaN(Date.parse(rawDueAt)) ? formatDateTime(rawDueAt) : null
+      const rawCode = text(p, "reference_code")?.trim() ?? null
+      const code = rawCode && /^GV[0-9A-Z]{6,7}$/.test(rawCode) ? rawCode : null
+      const date = swapDateLabel(p)
+      const newAccount = swappedNewAccountLine(p, "Xem thông tin tài khoản nhận mới và mã VietQR trên trang cam kết.")
+      const oldTarget = swappedOldAccountTarget(p, "dự án")
+      const publicNote = text(p, "public_note")?.trim() ?? null
+
+      let body = `Tài khoản nhận tiền của ${campaignName(p, "dự án")} đã được Give duyệt đổi`
+      body += date ? ` ngày ${date}.` : "."
+      body += ` ${newAccount}`
+      body += " Hãy thanh toán"
+      if (due) body += ` ${formatVnd(due)}`
+      body += " cho cam kết của bạn"
+      if (dueAt) body += ` trước ${dueAt}`
+      body += " bằng tài khoản mới"
+      body += code ? ` (giữ nguyên mã chuyển khoản ${code}).` : "."
+      body += ` Đừng chuyển tiền vào ${oldTarget}: tiền chuyển vào tài khoản cũ sau khi đổi không được ghi nhận cho cam kết của bạn.`
+      if (publicNote) body += ` Ghi chú công khai: ${publicNote}`
+
+      return {
+        title: "Tài khoản nhận thanh toán đã thay đổi",
+        body,
         ...pledgeLink(p, "Thanh toán ngay"),
       }
     }

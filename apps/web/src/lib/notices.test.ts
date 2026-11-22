@@ -82,6 +82,7 @@ describe("stoppedNoticeCampaigns (DOS/Give#93)", () => {
     const stopped = await stoppedNoticeCampaigns(asDb(db), [
       notice({ kind: "payment_due", campaign_id: CAMPAIGN }),
       notice({ kind: "payment_reminder", campaign_id: CAMPAIGN }),
+      notice({ kind: "payment_account_changed", campaign_id: CAMPAIGN }),
       notice({ kind: "payment_requests_resumed", campaign_id: OTHER, payload: { reference_code: "GVAB12CD" } }),
     ])
     expect([...stopped]).toEqual([CAMPAIGN])
@@ -543,5 +544,84 @@ describe("planTemplateAccount", () => {
     expect(planTemplateAccount({ bank_bin: "999999", account_last4: "6789" })).toBe("•••• 6789")
     expect(planTemplateAccount({ bank_bin: "970436", account_last4: null })).toBeNull()
     expect(planTemplateAccount({ account_last4: "12345" })).toBeNull()
+  })
+})
+
+describe("payment_account_changed notice (DOS/Give#92)", () => {
+  const payload = {
+    campaign_slug: "den-ngu-go",
+    campaign_title: "Đèn ngủ gỗ",
+    reference_code: "GVAB23CD",
+    intended_amount: 500_000,
+    received_amount: 150_000,
+    refunded_amount: 50_000,
+    payment_due_at: "2026-11-29T03:00:00Z",
+    changed_date: "2026-11-22",
+    new_channel: "statement_import",
+    new_bank_bin: "970422",
+    new_account_name: "NGUYEN THI DAO",
+    new_account_last4: "0002",
+    new_account_masked: "****0002",
+    old_bank_bin: "970436",
+    old_account_last4: "0001",
+    old_account_masked: "****0001",
+    public_note: "Ngân hàng đóng tài khoản cũ.",
+  }
+
+  it("shows the masked new account, old-account warning, live net due, deadline, public note and payment link", () => {
+    const view = describeNotice(notice({ kind: "payment_account_changed", payload }))
+    expect(view.title).toBe("Tài khoản nhận thanh toán đã thay đổi")
+    expect(view.body).toContain("dự án “Đèn ngủ gỗ”")
+    expect(view.body).toContain("ngày 22/11/2026")
+    expect(view.body).toContain("chủ tài khoản NGUYEN THI DAO")
+    expect(view.body).toContain("ngân hàng MBBank")
+    expect(view.body).toContain("số tài khoản •••• 0002")
+    expect(view.body).toContain("tài khoản cũ Vietcombank •••• 0001")
+    expect(view.body).toContain(formatVnd(400_000))
+    expect(view.body).toContain("29/11/2026")
+    expect(view.body).toContain("GVAB23CD")
+    expect(view.body).toContain("Ngân hàng đóng tài khoản cũ.")
+    expect(view).toMatchObject({ href: "/me/pledges/GVAB23CD", linkLabel: "Thanh toán ngay" })
+  })
+
+  it("hides payment CTA and warns neutrally while payment requests are stopped (DOS/Give#93)", () => {
+    const view = describeNotice(notice({ kind: "payment_account_changed", payload }), { paymentRequestsStopped: true })
+    expect(view.title).toBe("Yêu cầu thanh toán đang tạm dừng")
+    expect(view.body).toContain("đừng chuyển tiền")
+    expect(view.body).not.toContain("Hãy thanh toán")
+    expect(view).toMatchObject({ href: "/me/pledges/GVAB23CD", linkLabel: "Xem cam kết" })
+  })
+
+  it("never leaks raw multi-digit account numbers even from malformed payloads and supports crypto", () => {
+    const leaked = describeNotice(
+      notice({
+        kind: "payment_account_changed",
+        payload: {
+          ...payload,
+          new_account_last4: "920002220002",
+          new_account_masked: "920002220002",
+          old_account_last4: "920001110001",
+          old_account_masked: "920001110001",
+        },
+      })
+    )
+    expect(leaked.body).not.toContain("920002220002")
+    expect(leaked.body).not.toContain("920001110001")
+    expect(leaked.body).toContain("tài khoản cũ của dự án")
+
+    const crypto = describeNotice(
+      notice({
+        kind: "payment_account_changed",
+        payload: {
+          ...payload,
+          new_channel: "crypto",
+          new_bank_bin: null,
+          new_account_name: null,
+          new_chain: "polygon",
+          new_account_last4: "a9F2",
+        },
+      })
+    )
+    expect(crypto.body).toContain("Ví nhận mới trên mạng polygon: •••• a9F2.")
   })
 })

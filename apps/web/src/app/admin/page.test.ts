@@ -826,9 +826,11 @@ describe("AdminReviewPage (/admin, DOS/Give#218)", () => {
       expect(usableForm.querySelector("textarea")?.textContent).toBe("")
       expect(usableForm.querySelector("textarea")?.getAttribute("placeholder")).toContain("Người tổ chức cần sửa gì")
 
-      // 4) back campaign with transactions -> guidance Callout only, no send-back form
-      expect(cards[3]!.textContent).toContain("dự án có quà tặng chưa hỗ trợ đổi tài khoản")
-      expect(cards[3]!.querySelectorAll("form")).toHaveLength(0)
+      // 4) back campaign with transactions -> now guides #55/#92 swap with prefilled send-back form
+      expect(cards[3]!.textContent).toContain("yêu cầu đổi tài khoản")
+      const backTxForm = cards[3]!.querySelector("form")!
+      expect(backTxForm.querySelector('input[name="from_status"]')?.getAttribute("value")).toBe("suspended")
+      expect(backTxForm.querySelector("textarea")?.textContent).toBe(recoveryAdvice(suspendedBackWithTx).sendBackReason)
 
       // 5) moderator's own suspended campaign -> self-review guard, no form
       expect(cards[4]!.textContent).toContain("Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý.")

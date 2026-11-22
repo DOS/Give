@@ -1,9 +1,15 @@
-import { bankByBin } from "@/lib/banks"
 import { donationTrackingPath } from "@/lib/contributions"
 import { GIVE_CONTACT_EMAIL } from "@/lib/contact"
-import { formatDate, formatVnd } from "@/lib/format"
+import { formatDateTime, formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
-import { describeNotice, planCampaign, planEndedParagraphs } from "@/lib/notices"
+import {
+  describeNotice,
+  planCampaign,
+  planEndedParagraphs,
+  swapDateLabel,
+  swappedNewAccountLine,
+  swappedOldAccountTarget,
+} from "@/lib/notices"
 import { NEW_CODE_EVERY_MONTH, periodLabel, planStopOneClickPath, planStopPath } from "@/lib/plans"
 import { SLUG_PATTERN } from "@/lib/slug"
 
@@ -38,6 +44,7 @@ export const EMAIL_KINDS = [
   "plan_followup",
   "plan_ended",
   "plan_account_swapped",
+  "pledge_account_swapped",
 ] as const
 export type EmailKind = (typeof EMAIL_KINDS)[number]
 
@@ -319,67 +326,14 @@ function planEnded(email: OutboxEmail): Content {
   }
 }
 
-const LAST4_PATTERN = /^[0-9A-Za-z]{1,4}$/
-const MASKED_LAST4_PATTERN = /^\*{4}([0-9A-Za-z]{1,4})$/
-const CHAIN_PATTERN = /^[a-z0-9-]{2,32}$/
-const ISO_DATE_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
-
-/**
- * Formats strictly the last 1-4 characters as "•••• XXXX". Rejects longer
- * values so a malformed payload can never leak a raw account number or wallet
- * address into an email.
- */
-function maskedLast4(last4: string | null, masked: string | null): string | null {
-  if (last4 && LAST4_PATTERN.test(last4)) return `•••• ${last4}`
-  const match = masked ? MASKED_LAST4_PATTERN.exec(masked) : null
-  return match ? `•••• ${match[1]}` : null
-}
-
-function swapDateLabel(payload: OutboxEmail["payload"]): string | null {
-  const changedDate = text(payload, "changed_date")
-  const match = changedDate ? ISO_DATE_PATTERN.exec(changedDate) : null
-  if (match) return `${match[3]}/${match[2]}/${match[1]}`
-  const changedAt = text(payload, "changed_at")
-  if (changedAt && !Number.isNaN(Date.parse(changedAt))) return formatDate(changedAt)
-  return null
-}
-
 /** Receiving-account swap notice for active monthly plan donors (DOS/Give#291). */
 function planAccountSwapped(email: OutboxEmail): Content {
   const p = email.payload
   const campaign = planCampaign(p)
   const path = campaignPath(p)
   const date = swapDateLabel(p)
-  const channel = text(p, "new_channel")
-  const newMasked = maskedLast4(text(p, "new_account_last4"), text(p, "new_account_masked"))
-
-  let newAccountLine: string
-  if (channel === "crypto") {
-    const rawChain = text(p, "new_chain")
-    const chain = rawChain && CHAIN_PATTERN.test(rawChain) ? rawChain : null
-    if (chain && newMasked) newAccountLine = `Ví nhận mới trên mạng ${chain}: ${newMasked}.`
-    else if (newMasked) newAccountLine = `Ví nhận mới: ${newMasked}.`
-    else newAccountLine = "Bạn có thể xem thông tin tài khoản nhận mới trên trang chiến dịch."
-  } else {
-    const holder = text(p, "new_account_name")
-    const bank = bankByBin(text(p, "new_bank_bin"))?.shortName ?? null
-    const parts: string[] = []
-    if (holder) parts.push(`chủ tài khoản ${holder}`)
-    if (bank) parts.push(`ngân hàng ${bank}`)
-    if (newMasked) parts.push(`số tài khoản ${newMasked}`)
-    newAccountLine =
-      parts.length > 0
-        ? `Tài khoản nhận mới: ${parts.join(", ")}.`
-        : "Bạn có thể xem thông tin tài khoản nhận mới trên trang chiến dịch."
-  }
-
-  const oldBank = bankByBin(text(p, "old_bank_bin"))?.shortName ?? null
-  const oldMasked = maskedLast4(text(p, "old_account_last4"), text(p, "old_account_masked"))
-  const oldTarget = oldMasked
-    ? oldBank
-      ? `tài khoản cũ ${oldBank} ${oldMasked}`
-      : `tài khoản cũ ${oldMasked}`
-    : "tài khoản cũ của chiến dịch"
+  const newAccountLine = swappedNewAccountLine(p, "Bạn có thể xem thông tin tài khoản nhận mới trên trang chiến dịch.")
+  const oldTarget = swappedOldAccountTarget(p, "chiến dịch")
 
   return {
     subject: `Tài khoản nhận của ${campaign} đã thay đổi`,
@@ -397,6 +351,53 @@ function planAccountSwapped(email: OutboxEmail): Content {
       ? { href: path, label: "Xem trang chiến dịch" }
       : { href: "/me/contributions", label: "Xem các khoản ủng hộ của bạn" },
     footer: PLAN_FOOTER,
+  }
+}
+
+/** Receiving-account swap notice for backers with pledges still awaiting payment (DOS/Give#92). */
+function pledgeAccountSwapped(email: OutboxEmail): Content {
+  const p = email.payload
+  const project = quoted(p, "dự án")
+  const date = swapDateLabel(p)
+  const rawCode = email.reference_code ?? text(p, "reference_code")
+  const code = rawCode && DONATION_CODE.test(rawCode) ? rawCode : null
+  const intended = amount(p, "intended_amount")
+  const received = amount(p, "received_amount") ?? 0
+  const refunded = amount(p, "refunded_amount") ?? 0
+  const due =
+    amount(p, "amount_due") ?? (intended !== null ? Math.max(0, intended - Math.max(0, received - refunded)) : null)
+  const rawDueAt = text(p, "payment_due_at")
+  const dueAt = rawDueAt && !Number.isNaN(Date.parse(rawDueAt)) ? formatDateTime(rawDueAt) : null
+  const publicNote = text(p, "public_note")
+  const newAccountLine = swappedNewAccountLine(
+    p,
+    "Bạn có thể xem thông tin tài khoản nhận mới và mã VietQR trên trang cam kết."
+  )
+  const oldTarget = swappedOldAccountTarget(p, "dự án")
+
+  const paymentLine =
+    `Hãy thanh toán${due ? ` ${formatVnd(due)}` : ""} cho cam kết của bạn${dueAt ? ` trước ${dueAt}` : ""} vào tài khoản nhận mới` +
+    (code ? ` (mã chuyển khoản giữ nguyên: ${code}).` : ".") +
+    " Mở trang cam kết để lấy số tài khoản đầy đủ và mã VietQR mới."
+
+  const paragraphs = [
+    date
+      ? `Ngày ${date}, Give đã duyệt thay đổi tài khoản nhận tiền cho ${project}.`
+      : `Give đã duyệt thay đổi tài khoản nhận tiền cho ${project}.`,
+    newAccountLine,
+    ...(publicNote ? [`Ghi chú công khai: ${publicNote}`] : []),
+    paymentLine,
+    `Đừng chuyển tiền vào ${oldTarget}: tiền chuyển vào tài khoản cũ sau ngày đổi sẽ không còn được ghi nhận cho cam kết của bạn.`,
+    "Tiền đi thẳng vào tài khoản của người tổ chức; Give không giữ tiền. Nếu bạn đã chuyển khoản trước khi đổi tài khoản, đừng chuyển lại: Give vẫn ghi nhận theo thời điểm ngân hàng hạch toán.",
+  ]
+
+  return {
+    subject: `Tài khoản nhận thanh toán của ${project} đã thay đổi`,
+    heading: "Tài khoản nhận thanh toán đã thay đổi",
+    paragraphs,
+    link: code
+      ? { href: `/me/pledges/${code}`, label: "Xem thông tin thanh toán mới" }
+      : { href: "/me/contributions", label: "Xem các khoản ủng hộ của bạn" },
   }
 }
 
@@ -454,6 +455,8 @@ function content(email: OutboxEmail): Content {
       return planEnded(email)
     case "plan_account_swapped":
       return planAccountSwapped(email)
+    case "pledge_account_swapped":
+      return pledgeAccountSwapped(email)
     default:
       throw new EmailRenderError(`unknown_kind:${String(email.kind).slice(0, 40)}`)
   }

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 
 import {
   bindingHasTransactions,
+  campaignHasPaymentsDue,
   canAskSwap,
   listCampaignSwaps,
   pendingSwap,
@@ -17,9 +18,10 @@ import { accountUnusableReason, activeBinding, activeBindingsOfCampaign, getAcco
 import { dbAs, dbService } from "@/lib/supabase"
 
 /**
- * The organizer's side of an account swap (DOS/Give#55): ask finance to
- * replace the receiving account of a give campaign that may hold money, or
- * withdraw the request while it waits.
+ * The organizer's side of an account swap (DOS/Give#55, #92): ask finance to
+ * replace the receiving account of a campaign (give or back) that may hold
+ * money or still has backer payments due, or withdraw the request while it
+ * waits. Strictly owner-only (DOS/Give#264 editors are refused).
  *
  * Like the other money actions (app/me/accounts/actions.ts), the RPCs run as
  * the service role and trust the actor id passed in, so every action first
@@ -70,18 +72,21 @@ export async function requestAccountSwap(
   if (!bound) return fail(NO_BINDING)
   if (bound.receiving_account_id === account.id) return fail(dbErrorMessage({ message: "GIVE_SWAP_SAME_ACCOUNT" }))
   let hasTransactions
+  let hasPaymentsDue = false
   try {
-    hasTransactions = await bindingHasTransactions(db, bound.id)
+    ;[hasTransactions, hasPaymentsDue] = await Promise.all([
+      bindingHasTransactions(db, bound.id),
+      campaign.status === "succeeded" && campaign.type === "back"
+        ? campaignHasPaymentsDue(db, campaign.id, campaign.payments_stopped_at ?? null)
+        : Promise.resolve(false),
+    ])
   } catch (error) {
     return fail(dbErrorMessage(error as { message?: string; code?: string }))
   }
-  if (!canAskSwap(campaign.status, campaign.type, hasTransactions)) {
+  if (!canAskSwap(campaign.status, campaign.type, hasTransactions, hasPaymentsDue)) {
     return fail(
       dbErrorMessage({
-        message:
-          campaign.status === "changes_requested" && campaign.type === "give"
-            ? "GIVE_SWAP_USE_RELEASE"
-            : "GIVE_SWAP_NOT_ALLOWED",
+        message: campaign.status === "changes_requested" ? "GIVE_SWAP_USE_RELEASE" : "GIVE_SWAP_NOT_ALLOWED",
       })
     )
   }

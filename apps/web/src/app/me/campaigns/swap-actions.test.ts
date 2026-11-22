@@ -46,6 +46,7 @@ interface Reads {
   account?: unknown
   bindings?: unknown[]
   transactions?: unknown[]
+  pledgesDue?: unknown[]
   swaps?: unknown[]
 }
 
@@ -62,6 +63,7 @@ function reads({
   },
   bindings = [{ id: BINDING, receiving_account_id: OLD_ACCOUNT }],
   transactions = [{ id: "t1" }],
+  pledgesDue = [],
   swaps = [],
 }: Reads = {}): Handler {
   return (call) => {
@@ -70,6 +72,7 @@ function reads({
     if (call.target === "account_bindings") return { data: bindings }
     if (call.target === "organizers") return { data: organizer }
     if (call.target === "bank_transactions") return { data: transactions }
+    if (call.target === "contributions") return { data: pledgesDue }
     if (call.target === "account_swap_requests") return { data: swaps }
     return undefined
   }
@@ -104,31 +107,65 @@ describe("requestAccountSwap", () => {
     ).toEqual(["binding_id", BINDING])
   })
 
-  it("lets a suspended campaign ask too", async () => {
-    state.userHandler = reads({ campaign: { id: CAMPAIGN, organizer_id: USER, status: "suspended", type: "give" } })
-    expect((await requestAccountSwap(CAMPAIGN, null, swapForm()))?.ok).toBe(true)
+  it("lets a suspended campaign (give or back) and live back campaign ask too (DOS/Give#92)", async () => {
+    for (const fields of [
+      { status: "suspended", type: "give" },
+      { status: "live", type: "back" },
+      { status: "suspended", type: "back" },
+    ]) {
+      state.userHandler = reads({ campaign: { id: CAMPAIGN, organizer_id: USER, ...fields } })
+      expect((await requestAccountSwap(CAMPAIGN, null, swapForm()))?.ok).toBe(true)
+    }
   })
 
-  it("sends a campaign under changes whose account recorded nothing to release it instead", async () => {
+  it("lets a succeeded back campaign ask only when pledges still have payments due (DOS/Give#92)", async () => {
     state.userHandler = reads({
-      campaign: { id: CAMPAIGN, organizer_id: USER, status: "changes_requested", type: "give" },
-      transactions: [],
+      campaign: { id: CAMPAIGN, organizer_id: USER, status: "succeeded", type: "back", payments_stopped_at: null },
+      pledgesDue: [{ id: "p-1" }],
     })
-    const result = await requestAccountSwap(CAMPAIGN, null, swapForm())
-    expect(result).toEqual({ ok: false, message: expect.stringContaining("nhả tài khoản đó rồi gắn tài khoản khác") })
+    expect((await requestAccountSwap(CAMPAIGN, null, swapForm()))?.ok).toBe(true)
+
+    state.serviceCalls.length = 0
+    state.userHandler = reads({
+      campaign: { id: CAMPAIGN, organizer_id: USER, status: "succeeded", type: "back", payments_stopped_at: null },
+      pledgesDue: [],
+    })
+    const refused = await requestAccountSwap(CAMPAIGN, null, swapForm())
+    expect(refused?.ok).toBe(false)
+    expect(refused?.message).toContain("Chỉ đổi được tài khoản nhận")
     expect(state.serviceCalls).toEqual([])
   })
 
-  it("lets a campaign under changes ask when its account holds money history", async () => {
-    state.userHandler = reads({
-      campaign: { id: CAMPAIGN, organizer_id: USER, status: "changes_requested", type: "give" },
-    })
-    expect((await requestAccountSwap(CAMPAIGN, null, swapForm()))?.ok).toBe(true)
+  it("sends a campaign (give or back) under changes whose account recorded nothing to release it instead", async () => {
+    for (const type of ["give", "back"] as const) {
+      state.serviceCalls.length = 0
+      state.userHandler = reads({
+        campaign: { id: CAMPAIGN, organizer_id: USER, status: "changes_requested", type },
+        transactions: [],
+      })
+      const result = await requestAccountSwap(CAMPAIGN, null, swapForm())
+      expect(result).toEqual({
+        ok: false,
+        message: expect.stringContaining("nhả tài khoản đó rồi gắn tài khoản khác"),
+      })
+      expect(state.serviceCalls).toEqual([])
+    }
+  })
+
+  it("lets a campaign (give or back) under changes ask when its account holds money history", async () => {
+    for (const type of ["give", "back"] as const) {
+      state.userHandler = reads({
+        campaign: { id: CAMPAIGN, organizer_id: USER, status: "changes_requested", type },
+      })
+      expect((await requestAccountSwap(CAMPAIGN, null, swapForm()))?.ok).toBe(true)
+    }
   })
 
   it.each([
     ["an approved campaign", { status: "approved", type: "give" }],
-    ["a back campaign", { status: "live", type: "back" }],
+    ["an approved back campaign", { status: "approved", type: "back" }],
+    ["a settling back campaign", { status: "settling", type: "back" }],
+    ["a failed back campaign", { status: "failed", type: "back" }],
     ["a closed campaign", { status: "closed", type: "give" }],
   ])("refuses %s", async (_label, fields) => {
     state.userHandler = reads({ campaign: { id: CAMPAIGN, organizer_id: USER, ...fields } })
@@ -138,8 +175,13 @@ describe("requestAccountSwap", () => {
     expect(state.serviceCalls).toEqual([])
   })
 
-  it("refuses a campaign of someone else, and an account of someone else", async () => {
+  it("refuses a campaign of someone else (including #264 co-organizers on back campaigns), and an account of someone else", async () => {
     state.userHandler = reads({ campaign: { id: CAMPAIGN, organizer_id: OTHER, status: "live", type: "give" } })
+    expect((await requestAccountSwap(CAMPAIGN, null, swapForm()))?.message).toContain("Không tìm thấy chiến dịch")
+    state.userHandler = reads({
+      campaign: { id: CAMPAIGN, organizer_id: OTHER, status: "succeeded", type: "back" },
+      pledgesDue: [{ id: "p-1" }],
+    })
     expect((await requestAccountSwap(CAMPAIGN, null, swapForm()))?.message).toContain("Không tìm thấy chiến dịch")
     state.userHandler = reads({ account: { id: NEW_ACCOUNT, owner_user_id: OTHER, bindings: [] } })
     expect((await requestAccountSwap(CAMPAIGN, null, swapForm()))?.message).toContain("Không tìm thấy tài khoản nhận")
