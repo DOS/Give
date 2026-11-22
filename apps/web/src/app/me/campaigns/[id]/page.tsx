@@ -265,9 +265,16 @@ export default async function EditCampaignPage({
     listMilestones(db, campaign.id),
     listAllUpdates(db, campaign.id),
     isOwner && isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
-    // Both types need a usable account before review (DOS/Give#85). Strictly owner-only.
+    // Both types need a usable account before review (DOS/Give#85, #92). Strictly owner-only.
     isOwner
-      ? loadEditorAccounts(db, session.user.id, campaign.id, campaign.status, campaign.type).catch(() => null)
+      ? loadEditorAccounts(
+          db,
+          session.user.id,
+          campaign.id,
+          campaign.status,
+          campaign.type,
+          campaign.payments_stopped_at ?? null
+        ).catch(() => null)
       : Promise.resolve(null),
     // Reward tiers of a back campaign (DOS/Give#83); a failed read degrades its section only.
     isGive ? Promise.resolve(null) : listCampaignTiers(db, campaign.id).catch(() => null),
@@ -1145,9 +1152,11 @@ function ReceivingAccountSection({
   type: CampaignType
   accounts: EditorAccounts
 }) {
-  const { bound, boundUnusable, boundHasTransactions, choices, swaps } = accounts
-  // A binding that recorded money is never released early; where eligible it is swapped instead (DOS/Give#55, #77).
+  const { bound, boundUnusable, boundHasTransactions, hasPaymentsDue, choices, swaps } = accounts
+  // A binding that recorded money is never released early; where eligible it is swapped instead (DOS/Give#55, #77, #92).
   const releasable = canAskRelease(status, type) && !(isEditableStatus(status) && boundHasTransactions)
+  const canSwap = canAskSwap(status, type, boundHasTransactions, hasPaymentsDue)
+  const showSwapBlock = canSwap || pendingSwap(swaps) !== null
   return (
     <Panel
       id="receiving-account"
@@ -1172,13 +1181,6 @@ function ReceivingAccountSection({
           {boundUnusable && (
             <Callout tone="warning">
               Tài khoản đang gắn tạm không dùng được: {boundUnusable} Chiến dịch không nhận được tiền qua tài khoản này.
-              {type === "back" && (status === "live" || status === "suspended") && (
-                <>
-                  {" "}
-                  Dự án có quà tặng chưa đổi được tài khoản khi đang gây quỹ hoặc tạm dừng: hãy liên hệ đội ngũ Give qua
-                  email <ContactEmailLink />.
-                </>
-              )}
             </Callout>
           )}
           {releasable ? (
@@ -1197,7 +1199,7 @@ function ReceivingAccountSection({
               <ContactText
                 text={
                   boundHasTransactions && isEditableStatus(status)
-                    ? canAskSwap(status, type, boundHasTransactions)
+                    ? canSwap
                       ? "Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy đề nghị đổi tài khoản bên dưới."
                       : `Tài khoản đã nhận giao dịch nên là lịch sử tiền của chiến dịch và không nhả sớm được; nếu nó không dùng được nữa, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
                     : "Khi chiến dịch đang chờ duyệt, đã duyệt hoặc đang chạy, tài khoản không nhả được; tài khoản được nhả khi chiến dịch đã xong hẳn phần tiền."
@@ -1205,8 +1207,15 @@ function ReceivingAccountSection({
               />
             </p>
           )}
-          {canAskSwap(status, type, boundHasTransactions) && (
-            <AccountSwapBlock campaignId={campaignId} choices={choices} swaps={swaps} />
+          {showSwapBlock && (
+            <AccountSwapBlock
+              campaignId={campaignId}
+              type={type}
+              status={status}
+              canRequest={canSwap}
+              choices={choices}
+              swaps={swaps}
+            />
           )}
         </div>
       ) : !canPickAccount(status, bound) ? (
@@ -1245,16 +1254,23 @@ function ReceivingAccountSection({
 }
 
 /**
- * The organizer's request to replace the bound account of a give campaign
- * that may hold money (DOS/Give#55): finance approves, and the old binding
- * ends and the new one starts at the same instant.
+ * The organizer's request to replace the bound account of a campaign (give or
+ * back) that may hold money or still has backer payments due (DOS/Give#55,
+ * #92): finance approves, and the old binding ends and the new one starts at
+ * the same instant.
  */
 function AccountSwapBlock({
   campaignId,
+  type,
+  status,
+  canRequest,
   choices,
   swaps,
 }: {
   campaignId: string
+  type: CampaignType
+  status: CampaignStatus
+  canRequest: boolean
   choices: AccountChoice[]
   swaps: AccountSwapRequest[]
 }) {
@@ -1274,6 +1290,9 @@ function AccountSwapBlock({
         sao kê. Tiền chuyển ra khỏi tài khoản cũ sau lúc đổi (kể cả khi bạn chuyển số dư sang tài khoản mới) vẫn ghi vào
         sao kê là khoản chi của chiến dịch, và bạn cần giải trình như mọi khoản chi. Trang chiến dịch công khai ngày đổi
         tài khoản.
+        {type === "back" && status === "succeeded"
+          ? " Với dự án có quà tặng đã đạt mục tiêu, người ủng hộ đang chờ thanh toán cam kết sẽ nhận thông báo kèm thông tin tài khoản mới, và trang thanh toán cùng mã VietQR cập nhật ngay theo tài khoản mới."
+          : ""}
       </p>
       {last && last.status === "rejected" && !pending && (
         <Callout tone="warning" className="break-words">
@@ -1304,7 +1323,7 @@ function AccountSwapBlock({
             </ActionForm>
           </div>
         </Callout>
-      ) : usable.length === 0 ? (
+      ) : !canRequest ? null : usable.length === 0 ? (
         <p className="text-muted">
           Bạn chưa có tài khoản nào khác dùng được (đã xác minh, chưa gắn với chiến dịch nào). Khai báo và xác minh tài
           khoản mới tại trang{" "}

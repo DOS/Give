@@ -4,19 +4,23 @@ import { formatDateTime } from "./format"
 import type { ReceivingAccount } from "./receiving-accounts"
 
 /**
- * Replacing the receiving account of a give campaign that may hold money
- * (DOS/Give#55; DDL in DOS-Me
- * `supabase/migrations/20261105090000_give_live_campaign_account_swap.sql`).
+ * Replacing the receiving account of a campaign that may hold money
+ * (DOS/Give#55, extended to back campaigns in DOS/Give#92; DDL in DOS-Me
+ * `supabase/migrations/20261105090000_give_live_campaign_account_swap.sql`
+ * and `20261130140000_give_back_campaign_account_swap.sql`).
  *
- * A live or suspended give campaign, or one sent back for changes whose
- * account already recorded a bank transaction, cannot release its account.
- * When that account stops being usable, the organizer asks for a swap to
- * another of their verified accounts (give.request_account_swap), and finance
- * or an admin approves it (give.decide_account_swap): in one transaction the
- * old binding ends and the new one starts at the same instant. Transactions
- * keep their campaign by the time the bank booked them, so money that reached
- * the old account before the swap stays the campaign's, and the public pages
- * show the change with its date (give.public_account_changes).
+ * A live or suspended campaign (give or back), one sent back for changes whose
+ * account already recorded a bank transaction, or a succeeded back campaign
+ * that still has pledges awaiting payment cannot release its account. When
+ * that account stops being usable, the organizer asks for a swap to another of
+ * their verified accounts (give.request_account_swap), and finance or an admin
+ * approves it (give.decide_account_swap): in one transaction the old binding
+ * ends and the new one starts at the same instant. Transactions keep their
+ * campaign by the time the bank booked them, so money that reached the old
+ * account before the swap stays the campaign's, public pages show the change
+ * with its date (give.public_account_changes), and for a succeeded back
+ * campaign, backers with payments still due receive a notice and email with
+ * the new payment details.
  */
 
 export type SwapStatus = "pending" | "approved" | "rejected" | "cancelled"
@@ -53,14 +57,61 @@ export const SWAP_PUBLIC_NOTE_MAX = 300
 /**
  * Campaign statuses a swap is for (give.is_swap_status). A campaign sent back
  * for changes swaps only when its bound account recorded a transaction;
- * otherwise the organizer releases it and binds another (DOS/Give#38).
+ * otherwise the organizer releases it and binds another (DOS/Give#38, #77).
+ * A succeeded back campaign may also swap while pledges still have payments
+ * due (DOS/Give#92).
  */
 export const SWAP_STATUSES: readonly CampaignStatus[] = ["live", "suspended", "changes_requested"]
 
 /** Whether the organizer may ask to swap the campaign's bound account now. */
-export function canAskSwap(status: CampaignStatus, type: CampaignType, boundHasTransactions: boolean): boolean {
-  if (type !== "give" || !SWAP_STATUSES.includes(status)) return false
+export function canAskSwap(
+  status: CampaignStatus,
+  type: CampaignType,
+  boundHasTransactions: boolean,
+  hasPaymentsDue = false
+): boolean {
+  if (status === "succeeded") return type === "back" && hasPaymentsDue
+  if (!SWAP_STATUSES.includes(status)) return false
   return status !== "changes_requested" || boundHasTransactions
+}
+
+/**
+ * Whether a succeeded back campaign still has at least one pledge awaiting
+ * payment (mirrors give.campaign_has_payments_due; the database stays the
+ * authority under its locks). Accessible to the campaign's organizer and
+ * finance/admin staff under RLS on give.contributions.
+ */
+export async function campaignHasPaymentsDue(
+  db: Db,
+  campaignId: string,
+  paymentsStoppedAt: string | null = null
+): Promise<boolean> {
+  const cutoff = paymentsStoppedAt ?? new Date().toISOString()
+  const { data, error } = await db
+    .from("contributions")
+    .select("id")
+    .eq("campaign_id", campaignId)
+    .eq("kind", "pledge")
+    .in("status", ["payment_due", "partially_paid"])
+    .gt("payment_due_at", cutoff)
+    .limit(1)
+  if (error) throw error
+  return (data ?? []).length > 0
+}
+
+/** Which of the given succeeded back campaigns still have pledges awaiting payment. */
+export async function campaignsWithPaymentsDue(
+  db: Db,
+  campaigns: readonly { id: string; payments_stopped_at?: string | null }[]
+): Promise<Set<string>> {
+  const byId = new Map<string, string | null>()
+  for (const c of campaigns) {
+    if (!byId.has(c.id)) byId.set(c.id, c.payments_stopped_at ?? null)
+  }
+  const results = await Promise.all(
+    [...byId.entries()].map(async ([id, stoppedAt]) => [id, await campaignHasPaymentsDue(db, id, stoppedAt)] as const)
+  )
+  return new Set(results.filter(([, due]) => due).map(([id]) => id))
 }
 
 /** The organizer's pending request, if any (one per campaign). */
@@ -108,7 +159,14 @@ type SwapAccount = Pick<
 >
 
 export interface SwapForReview extends AccountSwapRequest {
-  campaign: { id: string; slug: string; title: string; status: CampaignStatus; type: CampaignType } | null
+  campaign: {
+    id: string
+    slug: string
+    title: string
+    status: CampaignStatus
+    type: CampaignType
+    payments_stopped_at?: string | null
+  } | null
   /** The requested account; its owner is the campaign's organizer (the RPCs require it). */
   new_account:
     | (SwapAccount & {
@@ -129,7 +187,7 @@ const ACCOUNT_FIELDS =
 // so the organizer comes through the new account, whose owner it is. Two foreign
 // keys point at account_bindings, so the old binding is named by its constraint.
 export const REVIEW_COLUMNS = `${SWAP_COLUMNS},
-  campaign:campaigns(id, slug, title, status, type),
+  campaign:campaigns(id, slug, title, status, type, payments_stopped_at),
   new_account:receiving_accounts(${ACCOUNT_FIELDS},
     organizer:organizers(legal_name, display_name, verification_status)),
   old_binding:account_bindings!account_swap_requests_old_binding_id_fkey(id, bound_at, released_at,
@@ -184,10 +242,24 @@ export async function transactionCounts(db: Db, bindingIds: readonly string[]): 
  * checks give.decide_account_swap repeats under its locks; the database stays
  * the authority.
  */
-export function approvalBlock(swap: SwapForReview, oldBindingTransactions: number): string | null {
+export function approvalBlock(
+  swap: SwapForReview,
+  oldBindingTransactions: number,
+  hasPaymentsDue = false
+): string | null {
   const campaign = swap.campaign
-  if (!campaign || campaign.type !== "give" || !SWAP_STATUSES.includes(campaign.status)) {
-    return "Chiến dịch không còn ở trạng thái được đổi tài khoản (đang gây quỹ, tạm dừng, hoặc cần chỉnh sửa mà tài khoản đã có giao dịch)."
+  if (!campaign) {
+    return "Chiến dịch không còn ở trạng thái được đổi tài khoản (đang gây quỹ, tạm dừng, cần chỉnh sửa mà tài khoản đã có giao dịch, hoặc dự án có quà tặng đã đạt mục tiêu còn cam kết chờ thanh toán)."
+  }
+  if (campaign.status === "succeeded") {
+    if (campaign.type !== "back") {
+      return "Chiến dịch không còn ở trạng thái được đổi tài khoản (đang gây quỹ, tạm dừng, cần chỉnh sửa mà tài khoản đã có giao dịch, hoặc dự án có quà tặng đã đạt mục tiêu còn cam kết chờ thanh toán)."
+    }
+    if (!hasPaymentsDue) {
+      return "Dự án đã đạt mục tiêu nhưng không còn cam kết nào đang chờ thanh toán để đổi tài khoản."
+    }
+  } else if (!SWAP_STATUSES.includes(campaign.status)) {
+    return "Chiến dịch không còn ở trạng thái được đổi tài khoản (đang gây quỹ, tạm dừng, cần chỉnh sửa mà tài khoản đã có giao dịch, hoặc dự án có quà tặng đã đạt mục tiêu còn cam kết chờ thanh toán)."
   }
   if (!swap.old_binding || swap.old_binding.released_at !== null) {
     return "Tài khoản đang gắn của chiến dịch đã thay đổi từ khi người tổ chức gửi yêu cầu."

@@ -844,22 +844,16 @@ describe("recoveryAdvice (DOS/Give#77)", () => {
     expect(orgReset.sendBackReason).toContain("cần được xác minh lại")
   })
 
-  it("guides #55 swap for give campaigns with transactions and blocks send-back for back campaigns with transactions", () => {
-    const giveTx = advise("suspended_before_start", {
-      type: "give",
-      account_problem: "account_not_verified",
-      account_has_transactions: true,
-    })
-    expect(giveTx.note).toContain("yêu cầu đổi tài khoản")
-    expect(giveTx.sendBackReason).toContain("để bộ phận tài chính duyệt")
-
-    const backTx = advise("suspended_before_start", {
-      type: "back",
-      account_problem: "account_not_verified",
-      account_has_transactions: true,
-    })
-    expect(backTx.sendBackReason).toBeNull()
-    expect(backTx.note).toContain("dự án có quà tặng chưa hỗ trợ đổi tài khoản")
+  it("guides #55/#92 swap for both give and back campaigns with transactions", () => {
+    for (const type of ["give", "back"] as const) {
+      const withTx = advise("suspended_before_start", {
+        type,
+        account_problem: "account_not_verified",
+        account_has_transactions: true,
+      })
+      expect(withTx.note).toContain("yêu cầu đổi tài khoản")
+      expect(withTx.sendBackReason).toContain("để bộ phận tài chính duyệt")
+    }
 
     // Foreign account with transactions cannot be swapped in editor or released early (give or back).
     for (const type of ["give", "back"] as const) {
@@ -872,35 +866,27 @@ describe("recoveryAdvice (DOS/Give#77)", () => {
       expect(foreignTx.note).toContain("quản trị viên hệ thống")
     }
 
-    // Give campaign with transactions + unverified organizer must ask to re-verify organizer first.
-    const giveTxUnverified = advise("suspended_before_start", {
-      type: "give",
-      account_problem: "account_not_verified",
-      account_has_transactions: true,
-      verified: false,
-    })
-    expect(giveTxUnverified.note).toContain("Xác minh người tổ chức")
-    expect(giveTxUnverified.sendBackReason).toContain("cần được xác minh lại trước khi gửi yêu cầu đổi tài khoản")
+    // Campaign with transactions + unverified organizer must ask to re-verify organizer first.
+    for (const type of ["give", "back"] as const) {
+      const txUnverified = advise("suspended_before_start", {
+        type,
+        account_problem: "account_not_verified",
+        account_has_transactions: true,
+        verified: false,
+      })
+      expect(txUnverified.note).toContain("Xác minh người tổ chức")
+      expect(txUnverified.sendBackReason).toContain("cần được xác minh lại trước khi gửi yêu cầu đổi tài khoản")
 
-    // organizer_not_verified with transactions never suggests direct rebinding.
-    const giveOrgResetTx = advise("suspended_before_start", {
-      type: "give",
-      account_problem: "organizer_not_verified",
-      account_has_transactions: true,
-      verified: false,
-    })
-    expect(giveOrgResetTx.note).not.toContain("gắn tài khoản mới")
-    expect(giveOrgResetTx.note).toContain("yêu cầu đổi tài khoản")
-    expect(giveOrgResetTx.sendBackReason).toContain("yêu cầu đổi tài khoản")
-
-    const backOrgResetTx = advise("suspended_before_start", {
-      type: "back",
-      account_problem: "organizer_not_verified",
-      account_has_transactions: true,
-      verified: false,
-    })
-    expect(backOrgResetTx.sendBackReason).toBeNull()
-    expect(backOrgResetTx.note).not.toContain("gắn tài khoản mới")
-    expect(backOrgResetTx.note).toContain("Xác minh người tổ chức")
+      // organizer_not_verified with transactions never suggests direct rebinding.
+      const orgResetTx = advise("suspended_before_start", {
+        type,
+        account_problem: "organizer_not_verified",
+        account_has_transactions: true,
+        verified: false,
+      })
+      expect(orgResetTx.note).not.toContain("gắn tài khoản mới")
+      expect(orgResetTx.note).toContain("yêu cầu đổi tài khoản")
+      expect(orgResetTx.sendBackReason).toContain("yêu cầu đổi tài khoản")
+    }
   })
 })

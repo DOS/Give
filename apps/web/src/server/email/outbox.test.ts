@@ -213,6 +213,44 @@ describe("sendDueEmails", () => {
       expect(sent[0].text).toContain(`https://give.vn/email/unsubscribe?t=${UNSUB}`)
     })
 
+    it("sends transactional pledge_account_swapped without stop or unsubscribe headers (DOS/Give#92)", async () => {
+      claims = [
+        [
+          row(27, {
+            kind: "pledge_account_swapped",
+            category: "transactional",
+            unsubscribe_token: null,
+            stop_token: null,
+            reference_code: "GV92ABC23",
+            payload: {
+              campaign_slug: "den-ngu-go",
+              campaign_title: "Đèn ngủ gỗ",
+              reference_code: "GV92ABC23",
+              intended_amount: 500_000,
+              received_amount: 0,
+              refunded_amount: 0,
+              payment_due_at: "2026-11-29T03:00:00Z",
+              changed_date: "2026-11-22",
+              new_channel: "statement_import",
+              new_bank_bin: "970422",
+              new_account_name: "NGUYEN THI DAO",
+              new_account_last4: "0002",
+              new_account_masked: "****0002",
+              old_bank_bin: "970436",
+              old_account_last4: "0001",
+              old_account_masked: "****0001",
+            },
+          }),
+        ],
+      ]
+      await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
+      expect(sent).toHaveLength(1)
+      expect(sent[0].headers["List-Unsubscribe"]).toBeUndefined()
+      expect(sent[0].headers["List-Unsubscribe-Post"]).toBeUndefined()
+      expect(sent[0].text).toContain("https://give.vn/me/pledges/GV92ABC23")
+      expect(sent[0].text).toContain("•••• 0002")
+    })
+
     it("marks plan_account_swapped dead when stop_token or unsubscribe_token is missing", async () => {
       claims = [
         [
