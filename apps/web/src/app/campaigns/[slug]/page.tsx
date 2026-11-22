@@ -27,16 +27,25 @@ import { listPublicAccountChanges } from "@/lib/account-swaps"
 import { siteOrigin } from "@/lib/auth/origin"
 import { getSession } from "@/lib/auth/session"
 import {
+  COMMENTS_PAGE_SIZE,
+  listCampaignComments,
+  parseCommentsPage,
+  parseShowHiddenComments,
+  type CampaignCommentsPage,
+} from "@/lib/campaign-comments"
+import {
   discoveryHref,
   getCampaignBySlug,
   getPublicOrganizer,
   isPublicStatus,
+  isStaff,
   listMilestones,
   listPublishedUpdates,
   VERIFICATION_LABELS,
   type PublicCampaign,
   type Db,
 } from "@/lib/campaigns"
+import { MODERATION_ROLES } from "@/lib/evidence-moderation"
 import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
 import { acceptsPledges } from "@/lib/pledges"
 import { listCampaignTiers, previewTiers } from "@/lib/reward-tiers"
@@ -47,6 +56,7 @@ import { dbAs, dbService } from "@/lib/supabase"
 import { acceptsDonations, paymentAccount } from "@/server/contributions"
 import { listPublicTiers, organizesCampaign } from "@/server/pledges"
 
+import { CampaignComments } from "./CampaignComments"
 import { DonateForm } from "./DonateForm"
 import { MonthlyForm } from "./MonthlyForm"
 import { ReportCampaign } from "./ReportCampaign"
@@ -185,6 +195,39 @@ async function listYoutubeMedia(db: Db, campaignId: string): Promise<YoutubeMedi
   return (data ?? []) as YoutubeMediaRow[]
 }
 
+async function loadPublicComments(
+  campaignId: string,
+  token: string | undefined,
+  page: number,
+  includeHidden: boolean
+): Promise<CampaignCommentsPage> {
+  const offset = (page - 1) * COMMENTS_PAGE_SIZE
+  if (token) {
+    try {
+      return await listCampaignComments(dbAs(token), campaignId, {
+        limit: COMMENTS_PAGE_SIZE,
+        offset,
+        includeHidden,
+      })
+    } catch (error: unknown) {
+      const code = (error as { code?: string } | null)?.code
+      if (typeof code === "string" && code.startsWith("PGRST30")) {
+        return listCampaignComments(dbAs(), campaignId, {
+          limit: COMMENTS_PAGE_SIZE,
+          offset,
+          includeHidden: false,
+        })
+      }
+      throw error
+    }
+  }
+  return listCampaignComments(dbAs(), campaignId, {
+    limit: COMMENTS_PAGE_SIZE,
+    offset,
+    includeHidden: false,
+  })
+}
+
 /**
  * The campaign page (DESIGN.md 8): breadcrumb, H1 and the organizer line,
  * then an 8/4 grid from 1024px: cover, tabs, story, statement and updates in
@@ -193,10 +236,19 @@ async function listYoutubeMedia(db: Db, campaignId: string): Promise<YoutubeMedi
  * box follows the title, and a bar at the bottom of the screen keeps the
  * main action in reach.
  */
-export default async function CampaignPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function CampaignPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
   const loaded = await loadCampaign((await params).slug)
   if (!loaded) notFound()
   const { campaign, db, preview } = loaded
+  const queryParams = searchParams ? await searchParams : {}
+  const commentsPage = parseCommentsPage(queryParams)
+  const requestedShowHidden = parseShowHiddenComments(queryParams)
 
   const isGive = campaign.type === "give"
   const halted = campaign.status === "suspended" || campaign.status === "cancelled"
@@ -204,6 +256,9 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   const donationsOpen = !preview && acceptsDonations(campaign)
   const pledgesOpen = !preview && acceptsPledges(campaign)
   const sessionPromise = getSession()
+  const isModeratorPromise = preview
+    ? Promise.resolve(false)
+    : sessionPromise.then((s) => (s ? isStaff(dbAs(s.accessToken), MODERATION_ROLES).catch(() => false) : false))
   const [
     milestones,
     updates,
@@ -212,11 +267,13 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
     account,
     session,
     ownCampaign,
+    isModerator,
     totals,
     accountChanges,
     tiers,
     statementRows,
     monthly,
+    comments,
   ] = await Promise.all([
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
@@ -241,6 +298,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
       : sessionPromise.then((s) =>
           s ? organizesCampaign(dbAs(s.accessToken), campaign.id, s.user.id).catch(() => false) : false
         ),
+    isModeratorPromise,
     // Public views only: a preview has no public totals yet.
     preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
     // A failed read hides the notice rather than the page; the statement shows it too.
@@ -272,7 +330,17 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
           return null
         })
       : Promise.resolve(null),
+    // Public comments (DOS/Give#250): public campaigns only. A failed read degrades cleanly.
+    preview
+      ? Promise.resolve(null)
+      : Promise.all([sessionPromise, requestedShowHidden ? isModeratorPromise : Promise.resolve(false)])
+          .then(([s, includeHidden]) => loadPublicComments(campaign.id, s?.accessToken, commentsPage, includeHidden))
+          .catch((error: unknown) => {
+            console.error("campaign page: comments lookup failed", error)
+            return null
+          }),
   ])
+  const showHiddenComments = isModerator && requestedShowHidden
   const pitchVideo =
     youtubeMedia.find((m): m is YoutubeMediaRow & { youtube_id: string } => isValidYoutubeId(m.youtube_id)) ?? null
   const canDonate = donationsOpen && account !== null
@@ -317,6 +385,16 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
     ...(preview
       ? []
       : [
+          ...(comments
+            ? [
+                {
+                  href: "#binh-luan",
+                  label: "Bình luận",
+                  current: false,
+                  count: comments.totalTopLevel,
+                },
+              ]
+            : []),
           {
             href: statementHref(campaign.slug, "in"),
             label: isGive ? "Người ủng hộ" : "Người đồng hành",
@@ -708,6 +786,20 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 <p className="mt-6 text-muted">Chưa có cập nhật nào.</p>
               )}
             </section>
+
+            {!preview && comments && (
+              <CampaignComments
+                campaignId={campaign.id}
+                slug={campaign.slug}
+                threads={comments.threads}
+                totalTopLevel={comments.totalTopLevel}
+                page={commentsPage}
+                signedIn={!!session}
+                ownCampaign={ownCampaign}
+                isModerator={isModerator}
+                showHidden={showHiddenComments}
+              />
+            )}
           </div>
         </div>
       </div>

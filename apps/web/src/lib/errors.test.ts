@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest"
 
 import {
+  COMMENT_ACTION_MESSAGES,
+  COMMENT_MODERATION_MESSAGES,
+  COMMENT_ORGANIZER_HIDE_MESSAGES,
+  COMMENT_REPORT_MESSAGES,
+  COMMENT_REPORT_RESOLVE_MESSAGES,
+  commentDbErrorMessage,
   CORRECT_EXPLANATION_MESSAGES,
   dbErrorMessage,
   giveErrorCode,
   MODERATE_CAMPAIGN_REPORTS_MESSAGES,
   OPEN_MESSAGES,
   OWN_TRANSFER_MESSAGES,
+  rateLimitSeconds,
   REPORT_CAMPAIGN_MESSAGES,
   RETURN_TO_UNMATCHED_MESSAGES,
   REVIEW_MESSAGES,
@@ -320,6 +327,77 @@ describe("campaign reports and moderator queue refusals (DOS/Give#98)", () => {
     )
     expect(dbErrorMessage({ message: "GIVE_SELF_REVIEW" }, MODERATE_CAMPAIGN_REPORTS_MESSAGES)).toContain(
       "một kiểm duyệt viên khác"
+    )
+  })
+})
+
+describe("campaign comments and moderation refusals (DOS/Give#250, #262)", () => {
+  const generic = dbErrorMessage(null)
+
+  const ALL_18_CODES = [
+    "GIVE_NOT_ALLOWED",
+    "GIVE_NOT_ADMIN",
+    "GIVE_SELF_REVIEW",
+    "GIVE_CAMPAIGN_NOT_FOUND",
+    "GIVE_COMMENT_NOT_FOUND",
+    "GIVE_REPORT_NOT_FOUND",
+    "GIVE_COMMENT_BODY_REQUIRED",
+    "GIVE_COMMENT_BODY_TOO_LONG",
+    "GIVE_COMMENT_NESTING_NOT_ALLOWED",
+    "GIVE_COMMENT_HIDDEN",
+    "GIVE_REASON_REQUIRED",
+    "GIVE_REASON_TOO_LONG",
+    "GIVE_MODERATION_INVALID",
+    "GIVE_REPORT_REASON_INVALID",
+    "GIVE_REPORT_DETAILS_REQUIRED",
+    "GIVE_REPORT_DETAILS_TOO_LONG",
+    "GIVE_REPORT_LIMIT",
+    "GIVE_RATE_LIMITED",
+  ] as const
+
+  it("maps every GIVE_* error code in DOS/Give#262 without ever falling back to the generic message", () => {
+    for (const code of ALL_18_CODES) {
+      const msg = dbErrorMessage({ code: "23514", message: `${code}: detail` })
+      expect(msg, code).not.toBe(generic)
+      expect(msg, code).not.toMatch(/GIVE_/)
+    }
+    expect(dbErrorMessage({ code: "PT429", message: "rate limited" })).toContain("quá nhanh")
+  })
+
+  it("parses retry-after seconds from GIVE_RATE_LIMITED: <seconds> in commentDbErrorMessage", () => {
+    expect(rateLimitSeconds({ message: "GIVE_RATE_LIMITED: 42" })).toBe(42)
+    expect(rateLimitSeconds({ message: "GIVE_RATE_LIMITED: 0" })).toBeNull()
+    expect(rateLimitSeconds({ message: "GIVE_RATE_LIMITED" })).toBeNull()
+
+    expect(commentDbErrorMessage({ code: "PT429", message: "GIVE_RATE_LIMITED: 35" }, COMMENT_ACTION_MESSAGES)).toBe(
+      "Bạn thao tác quá nhanh. Hãy thử lại sau 35 giây."
+    )
+    expect(commentDbErrorMessage({ code: "PT429", message: "GIVE_RATE_LIMITED: 121" }, COMMENT_ACTION_MESSAGES)).toBe(
+      "Bạn thao tác quá nhanh. Hãy thử lại sau khoảng 3 phút."
+    )
+    expect(commentDbErrorMessage({ code: "PT429", message: "GIVE_RATE_LIMITED" }, COMMENT_ACTION_MESSAGES)).toContain(
+      "sau ít phút"
+    )
+  })
+
+  it("words context-specific overrides cleanly for author actions, organizer hide, report, and staff moderation", () => {
+    expect(commentDbErrorMessage({ message: "GIVE_NOT_ALLOWED" }, COMMENT_REPORT_MESSAGES)).toBe(
+      "Bạn không thể báo cáo bình luận của chính mình."
+    )
+    expect(commentDbErrorMessage({ message: "GIVE_NOT_ALLOWED" }, COMMENT_ORGANIZER_HIDE_MESSAGES)).toContain(
+      "Chỉ người tổ chức"
+    )
+    expect(commentDbErrorMessage({ message: "GIVE_SELF_REVIEW" }, COMMENT_MODERATION_MESSAGES)).toContain(
+      "một kiểm duyệt viên khác"
+    )
+    expect(commentDbErrorMessage({ message: "GIVE_COMMENT_NOT_FOUND" }, COMMENT_MODERATION_MESSAGES)).toContain(
+      "tác giả có thể đã xóa bình luận này"
+    )
+    expect(commentDbErrorMessage({ message: "GIVE_COMMENT_NOT_FOUND" }, COMMENT_MODERATION_MESSAGES)).not.toContain(
+      "bác bỏ báo cáo"
+    )
+    expect(commentDbErrorMessage({ message: "GIVE_COMMENT_NOT_FOUND" }, COMMENT_REPORT_RESOLVE_MESSAGES)).toContain(
+      "chỉ có thể bác bỏ báo cáo"
     )
   })
 })

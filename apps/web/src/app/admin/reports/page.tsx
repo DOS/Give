@@ -15,6 +15,7 @@ import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { Field } from "@/components/ui/Field"
 import { MachineId } from "@/components/ui/RefCode"
+import { TabNav } from "@/components/ui/Tabs"
 import { requireSession } from "@/lib/auth/session"
 import {
   canStopReportedPaymentRequests,
@@ -94,6 +95,14 @@ export default async function AdminReportsPage({
         </p>
       }
     >
+      <TabNav
+        label="Loại báo cáo"
+        items={[
+          { href: "/admin/reports", label: "Báo cáo chiến dịch", current: true },
+          { href: "/admin/reports/comments", label: "Báo cáo bình luận", current: false },
+        ]}
+      />
+
       <AdminSection id="unresolved" title="Chờ xử lý" count={totalUnresolvedCampaigns}>
         {unresolved.length === 0 ? (
           <EmptyState title="Không có báo cáo chiến dịch nào chờ xử lý.">

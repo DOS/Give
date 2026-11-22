@@ -155,3 +155,9 @@ export const ImageIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="m21 16-5-5-9 8" />
   </Icon>
 )
+
+export const MessageIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2Z" />
+  </Icon>
+)

@@ -50,6 +50,14 @@ vi.mock("@/lib/supabase", () => ({
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
 }))
 vi.mock("./actions", () => ({ reportCampaign: vi.fn(async () => null) }))
+vi.mock("./comment-actions", () => ({
+  createComment: vi.fn(async () => null),
+  editComment: vi.fn(async () => null),
+  deleteComment: vi.fn(async () => null),
+  hideCommentAsOrganizer: vi.fn(async () => null),
+  reportComment: vi.fn(async () => null),
+  moderateCommentFromCampaign: vi.fn(async () => null),
+}))
 vi.mock("@/app/(public)/donations/actions", () => ({ donate: vi.fn(async () => null) }))
 vi.mock("./monthly-actions", () => ({ startMonthlyPlan: vi.fn(async () => null) }))
 
@@ -1138,6 +1146,273 @@ describe("CampaignPage analytics view beacon (DOS/Give#252)", () => {
       } else {
         Reflect.deleteProperty(navigator, "sendBeacon")
       }
+    }
+  })
+})
+
+describe("CampaignPage comments section (DOS/Give#250)", () => {
+  const ROOT_OTHER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+  const REPLY_ORG = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+  const ROOT_OWN = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+  const ROOT_HIDDEN = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+
+  const COMMENTS_FIXTURE = [
+    {
+      id: ROOT_OTHER,
+      campaign_id: CAMPAIGN,
+      parent_id: null,
+      body: "Ủng hộ chiến dịch! Xem https://evil.example <script>alert(1)</script>",
+      status: "visible",
+      author_display_name: "Lan Anh",
+      author_avatar_url: null,
+      is_organizer: false,
+      is_author: false,
+      created_at: "2026-11-20T08:00:00.000Z",
+      edited_at: "2026-11-20T08:05:00.000Z",
+      hidden_role: null,
+      hidden_reason: null,
+      hidden_at: null,
+      hidden_by_display_name: null,
+      total_top_level_count: 2,
+    },
+    {
+      id: REPLY_ORG,
+      campaign_id: CAMPAIGN,
+      parent_id: ROOT_OTHER,
+      body: "Cảm ơn bạn đã đồng hành cùng điểm trường!",
+      status: "visible",
+      author_display_name: "Quỹ Bản Mây",
+      author_avatar_url: null,
+      is_organizer: true,
+      is_author: false,
+      created_at: "2026-11-20T09:00:00.000Z",
+      edited_at: null,
+      hidden_role: null,
+      hidden_reason: null,
+      hidden_at: null,
+      hidden_by_display_name: null,
+      total_top_level_count: 2,
+    },
+    {
+      id: ROOT_OWN,
+      campaign_id: CAMPAIGN,
+      parent_id: null,
+      body: "Bình luận của chính mình",
+      status: "visible",
+      author_display_name: null,
+      author_avatar_url: null,
+      is_organizer: false,
+      is_author: true,
+      created_at: "2026-11-20T07:00:00.000Z",
+      edited_at: null,
+      hidden_role: null,
+      hidden_reason: null,
+      hidden_at: null,
+      hidden_by_display_name: null,
+      total_top_level_count: 2,
+    },
+  ]
+
+  it("renders comments for guests with plain-text XSS safety, organizer badge, edited indicator, and sign-in prompt", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:list_campaign_comments") return { data: COMMENTS_FIXTURE }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    const doc = parseDoc(html)
+
+    // Tab links to #binh-luan with top-level count.
+    const tab = doc.querySelector('a[href="#binh-luan"]')
+    expect(tab?.textContent).toContain("Bình luận")
+    expect(tab?.textContent).toContain("(2)")
+
+    const section = doc.querySelector("section#binh-luan")!
+    expect(section).not.toBeNull()
+    expect(section.querySelector('textarea[name="body"]')).toBeNull()
+    expect(section.querySelector('a[href^="/auth/login"]')?.textContent).toContain("Đăng nhập để bình luận")
+
+    // XSS & plain-text rules: no executable script tag, no clickable link inside comment body.
+    expect(section.querySelector("script")).toBeNull()
+    expect(section.querySelector('a[href="https://evil.example"]')).toBeNull()
+    expect(section.textContent).toContain("Ủng hộ chiến dịch! Xem https://evil.example <script>alert(1)</script>")
+    expect(section.textContent).toContain("(đã chỉnh sửa)")
+    expect(section.textContent).toContain("Người tổ chức")
+    expect(section.textContent).toContain("Người dùng đã xóa tài khoản")
+  })
+
+  it("enforces 1-level replies, author edit/delete without self-report, and report form with unique IDs for signed-in users", async () => {
+    state.session = {
+      user: { id: VIEWER, email: "viewer@dos.me", name: "Người xem" },
+      accessToken: "viewer-token",
+    }
+    const baseUser = state.userHandler
+    state.userHandler = (call) => {
+      if (call.target === "rpc:list_campaign_comments") return { data: COMMENTS_FIXTURE }
+      return baseUser(call)
+    }
+
+    const doc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const section = doc.querySelector("section#binh-luan")!
+
+    // New top-level composer exists.
+    expect(section.querySelector("textarea#comment-new-body")).not.toBeNull()
+
+    // Reply form exists on top-level comments ONLY, never on replies (1-level reply rule).
+    expect(section.querySelector(`textarea#comment-reply-${ROOT_OTHER}`)).not.toBeNull()
+    expect(section.querySelector(`textarea#comment-reply-${ROOT_OWN}`)).not.toBeNull()
+    expect(section.querySelector(`textarea#comment-reply-${REPLY_ORG}`)).toBeNull()
+
+    // Own comment has edit + delete and NO report form (self-report blocked).
+    expect(section.querySelector(`textarea#comment-edit-${ROOT_OWN}`)).not.toBeNull()
+    expect(section.querySelector(`select#comment-report-reason-${ROOT_OWN}`)).toBeNull()
+
+    // Other user's comment has report form and NO edit form.
+    expect(section.querySelector(`textarea#comment-edit-${ROOT_OTHER}`)).toBeNull()
+    expect(section.querySelector(`select#comment-report-reason-${ROOT_OTHER}`)).not.toBeNull()
+    expect(section.querySelector(`select#comment-report-reason-${REPLY_ORG}`)).not.toBeNull()
+  })
+
+  it("shows organizer hide control on own campaign and moderator hidden-comments toggle with self-review guard", async () => {
+    // 1. Organizer view.
+    state.session = {
+      user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
+      accessToken: "org-token",
+    }
+    state.userHandler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: { organizer_id: VIEWER } }
+      if (call.target === "rpc:list_campaign_comments") return { data: COMMENTS_FIXTURE }
+      return undefined
+    }
+    const orgDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const orgSection = orgDoc.querySelector("section#binh-luan")!
+    expect(orgSection.querySelector(`textarea#comment-hide-reason-${ROOT_OTHER}`)).not.toBeNull()
+    expect(orgSection.querySelector(`textarea#comment-mod-reason-${ROOT_OTHER}`)).toBeNull()
+    expect(orgSection.textContent).not.toContain("Hiện bình luận đã ẩn")
+
+    // 2. Moderator view with ?show_hidden=1.
+    state.userHandler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: { organizer_id: OTHER } }
+      if (call.target === "rpc:is_admin") return { data: true }
+      if (call.target === "rpc:list_campaign_comments") {
+        return {
+          data: [
+            ...COMMENTS_FIXTURE,
+            {
+              id: ROOT_HIDDEN,
+              campaign_id: CAMPAIGN,
+              parent_id: null,
+              body: "Bình luận đã bị ẩn",
+              status: "hidden",
+              author_display_name: "Tài khoản vi phạm",
+              author_avatar_url: null,
+              is_organizer: false,
+              is_author: false,
+              created_at: "2026-11-20T06:00:00.000Z",
+              edited_at: null,
+              hidden_role: "organizer",
+              hidden_reason: "Quảng cáo ngoài lề",
+              hidden_at: "2026-11-20T06:30:00.000Z",
+              hidden_by_display_name: "Quỹ Bản Mây",
+              total_top_level_count: 3,
+            },
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const modDoc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ show_hidden: "1" }),
+        })
+      )
+    )
+    const modSection = modDoc.querySelector("section#binh-luan")!
+    expect(modSection.textContent).toContain("Chỉ hiện bình luận công khai")
+    expect(modSection.textContent).toContain("Bình luận đã bị ẩn")
+    expect(modSection.textContent).toContain("Quảng cáo ngoài lề")
+    // Moderator can unhide other user's hidden comment, and cannot staff-moderate own comment (self-review guard).
+    expect(modSection.querySelector(`textarea#comment-mod-reason-${ROOT_HIDDEN}`)).not.toBeNull()
+    expect(modSection.querySelector(`textarea#comment-mod-reason-${ROOT_OWN}`)).toBeNull()
+  })
+
+  it("falls back to anonymous comments read on expired JWT and hides comments on non-public previews", async () => {
+    state.session = {
+      user: { id: VIEWER, email: "viewer@dos.me", name: "Viewer" },
+      accessToken: "expired-jwt",
+    }
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:list_campaign_comments") return { data: COMMENTS_FIXTURE }
+      return baseAnon(call)
+    }
+    state.userHandler = (call) => {
+      if (call.target === "rpc:list_campaign_comments") return { error: { code: "PGRST301", message: "JWT expired" } }
+      return undefined
+    }
+
+    const fallbackDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(fallbackDoc.querySelector("section#binh-luan")?.textContent).toContain("Cảm ơn bạn đã đồng hành")
+
+    // Preview hides comments section and never calls list_campaign_comments.
+    state.anonCalls.length = 0
+    state.userCalls.length = 0
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("in_review") }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media"
+      ) {
+        return { data: [] }
+      }
+      return undefined
+    }
+
+    const previewDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(previewDoc.querySelector("section#binh-luan")).toBeNull()
+    expect(previewDoc.querySelector('a[href="#binh-luan"]')).toBeNull()
+    expect(state.userCalls.some((c) => c.target === "rpc:list_campaign_comments")).toBe(false)
+  })
+
+  it("shows back-to-page-1 notice when an out-of-range ?comments_page= returns 0 rows, and omits #binh-luan tab when comments lookup fails", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:list_campaign_comments") return { data: [] }
+      return baseAnon(call)
+    }
+    const outOfRangeDoc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ comments_page: "9" }),
+        })
+      )
+    )
+    const section = outOfRangeDoc.querySelector("section#binh-luan")!
+    expect(section.textContent).toContain("Trang này không có bình luận.")
+    expect(section.querySelector(`a[href="/campaigns/${SLUG}#binh-luan"]`)?.textContent).toContain(
+      "Về trang bình luận đầu tiên"
+    )
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      state.anonHandler = (call) => {
+        if (call.target === "rpc:list_campaign_comments") {
+          return { data: null, error: { code: "57014", message: "timeout" } }
+        }
+        return baseAnon(call)
+      }
+      const failedDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+      expect(failedDoc.querySelector("section#binh-luan")).toBeNull()
+      expect(failedDoc.querySelector('a[href="#binh-luan"]')).toBeNull()
+    } finally {
+      errorSpy.mockRestore()
     }
   })
 })
