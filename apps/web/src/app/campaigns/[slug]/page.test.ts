@@ -255,8 +255,8 @@ describe("CampaignPage report flow (DOS/Give#98)", () => {
   })
 })
 
-describe("generateMetadata (/campaigns/[slug], DOS/Give#232)", () => {
-  it("emits canonical URL and complete OpenGraph card with cover image for a public live campaign", async () => {
+describe("generateMetadata (/campaigns/[slug], DOS/Give#232, DOS/Give#313)", () => {
+  it("emits canonical URL and OpenGraph metadata without overriding the dynamic opengraph-image route", async () => {
     state.anonHandler = (call) => {
       if (call.target === "campaigns") {
         return {
@@ -282,7 +282,6 @@ describe("generateMetadata (/campaigns/[slug], DOS/Give#232)", () => {
         title: "Xây trường Bản Mây",
         description: "Cùng dựng lớp học mới.",
         url: `/campaigns/${SLUG}`,
-        images: ["/media/public/campaigns/3333/cover.jpg"],
       },
     })
   })
@@ -1515,5 +1514,50 @@ describe("CampaignPage comments section (DOS/Give#250)", () => {
     }
     const soloDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
     expect(soloDoc.querySelector("section#doi-ngu")).toBeNull()
+  })
+})
+
+describe("CampaignPage downloadable QR poster (DOS/Give#313)", () => {
+  it("renders 'Tải poster QR' on public campaigns without leaking raw account numbers or holder names", async () => {
+    state.serviceHandler = (call) =>
+      call.target === "rpc:payment_account"
+        ? {
+            data: {
+              channel: "statement_import",
+              bank_bin: "970436",
+              account_number: "0011012345678",
+              account_name: "NGUYEN VAN SECRET",
+            },
+          }
+        : undefined
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    const doc = parseDoc(html)
+    const posterBtn = [...doc.querySelectorAll("button")].find((b) => b.textContent?.includes("Tải poster QR"))
+    expect(posterBtn).toBeDefined()
+    expect(posterBtn?.className).toContain("btn-secondary")
+    expect(html).not.toContain("0011012345678")
+    expect(html).not.toContain("NGUYEN VAN SECRET")
+  })
+
+  it("hides 'Tải poster QR' on non-public preview pages", async () => {
+    state.session = {
+      user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
+      accessToken: "org-token",
+    }
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("draft") }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media"
+      )
+        return { data: [] }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(html).not.toContain("Tải poster QR")
   })
 })

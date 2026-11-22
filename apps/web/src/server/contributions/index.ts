@@ -34,6 +34,13 @@ import { isDonationCode } from "@/server/vietqr"
 const PAYMENT_COLUMNS =
   "id, campaign_id, intended_amount, received_amount, reference_code, status, created_at, plan_id, plan_period"
 
+/**
+ * Signed-in donors viewing their own contribution under RLS may also read
+ * their chosen public display name and anonymity flag for the thank-you card
+ * (DOS/Give#313). Guest tracking lookups never read these columns.
+ */
+const OWN_PAYMENT_COLUMNS = `${PAYMENT_COLUMNS}, public_name, is_anonymous`
+
 export interface PaymentContribution {
   id: string
   campaign_id: string
@@ -46,6 +53,10 @@ export interface PaymentContribution {
   plan_id: string | null
   /** The first day of the plan month this donation is for (YYYY-MM-DD), with plan_id. */
   plan_period: string | null
+  /** Populated only for signed-in ownContribution reads (never guest tracking lookups). */
+  public_name?: string | null
+  /** Populated only for signed-in ownContribution reads (never guest tracking lookups). */
+  is_anonymous?: boolean
 }
 
 /** The hex form of sha256(token bytes), as give.create_donation stores it in status_token_hash. */
@@ -300,7 +311,7 @@ export async function guestContribution(
 export async function ownContribution(db: Db, userId: string, code: string): Promise<PaymentContribution | null> {
   const { data, error } = await db
     .from("contributions")
-    .select(PAYMENT_COLUMNS)
+    .select(OWN_PAYMENT_COLUMNS)
     .eq("reference_code", code)
     .eq("kind", "donation")
     .eq("contributor_user_id", userId)

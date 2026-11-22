@@ -106,7 +106,7 @@ function donation(overrides: Record<string, unknown> = {}) {
     created_at: "2026-11-05T01:00:00.000Z",
     plan_id: PLAN,
     plan_period: "2026-11-01",
-    campaign: { slug: campaign.slug, title: campaign.title },
+    campaign: { slug: campaign.slug, title: campaign.title, status: campaign.status },
     ...overrides,
   }
 }
@@ -313,5 +313,95 @@ describe("MyContributionsPage monthly plans (DOS/Give#276)", () => {
     })
     expect(JSON.stringify(logged)).not.toContain("donor@example.com")
     expect(JSON.stringify(logged)).not.toContain(USER)
+  })
+})
+
+describe("MyContributionsPage 'Tôi đã chung tay' thank-you card (DOS/Give#313)", () => {
+  it("shows the thank-you card action only for received donations and paid pledges on public campaigns, including string bigint amounts", async () => {
+    serve(
+      [],
+      [
+        donation({
+          id: "d-received",
+          reference_code: "GVRECV01",
+          status: "received",
+          // PostgREST may serialize bigint columns as strings.
+          received_amount: "250000" as unknown as number,
+          public_name: "Nguyễn Minh",
+          plan_id: null,
+          plan_period: null,
+        }),
+        donation({
+          id: "d-awaiting",
+          reference_code: "GVAWAIT1",
+          status: "awaiting_transfer",
+          received_amount: 0,
+          plan_id: null,
+          plan_period: null,
+        }),
+        donation({
+          id: "p-paid",
+          kind: "pledge",
+          reference_code: "GVPAID01",
+          status: "paid",
+          intended_amount: 500000,
+          received_amount: 500000,
+          plan_id: null,
+          plan_period: null,
+        }),
+        donation({
+          id: "d-private",
+          reference_code: "GVPRIV01",
+          status: "received",
+          received_amount: 100000,
+          campaign: null,
+          plan_id: null,
+          plan_period: null,
+        }),
+        donation({
+          id: "d-suspended",
+          reference_code: "GVSUSP01",
+          status: "received",
+          received_amount: 150000,
+          // Staff/organizer RLS still returns the embedded row for a suspended campaign.
+          campaign: { slug: campaign.slug, title: campaign.title, status: "suspended" },
+          plan_id: null,
+          plan_period: null,
+        }),
+      ]
+    )
+    const baseService = state.service
+    state.service = (call) => {
+      if (call.target === "rpc:pledge_balances") {
+        return {
+          data: [
+            {
+              contribution_id: "p-paid",
+              intended_amount: 500000,
+              received_amount: 500000,
+              refunded_amount: 0,
+              payments_stopped_at: null,
+            },
+          ],
+        }
+      }
+      return baseService(call)
+    }
+
+    const { doc } = await render()
+    const items = [...doc.querySelectorAll("ul.card > li")]
+    expect(items).toHaveLength(5)
+
+    // Received donation on public campaign (string bigint amount) -> shows thank-you card button
+    expect(items[0].textContent).toContain("Thẻ “Tôi đã chung tay”")
+    // Awaiting donation -> no thank-you card button
+    expect(items[1].textContent).not.toContain("Thẻ “Tôi đã chung tay”")
+    // Paid pledge on public campaign -> shows thank-you card button alongside "Xem cam kết"
+    expect(items[2].textContent).toContain("Thẻ “Tôi đã chung tay”")
+    expect(items[2].textContent).toContain("Xem cam kết")
+    // Received donation on null campaign -> no thank-you card button
+    expect(items[3].textContent).not.toContain("Thẻ “Tôi đã chung tay”")
+    // Received donation on suspended campaign (staff/organizer RLS visibility) -> no thank-you card button
+    expect(items[4].textContent).not.toContain("Thẻ “Tôi đã chung tay”")
   })
 })

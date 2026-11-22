@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode, type SVGProps } from "react"
 
+import { ThankYouCardButton } from "@/components/ThankYouCardButton"
 import { buttonClass } from "@/components/ui/Button"
 import { ClockIcon } from "@/components/ui/icons"
 import { donationStatusLabel, POLL_INTERVAL_MS, POLL_WINDOW_MS, type ContributionStatus } from "@/lib/contributions"
 import { formatVnd } from "@/lib/format"
+import type { ThankYouCardInput } from "@/lib/viral-sharing"
 
 function CheckIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -42,6 +44,7 @@ export function DonationStatus({
   qrExpired: qrExpiredAtRender,
   qrMsLeft,
   expiredNote,
+  thankYou,
   children,
 }: {
   code: string
@@ -51,6 +54,8 @@ export function DonationStatus({
   /** Milliseconds the QR had left when the server rendered the page. */
   qrMsLeft: number
   expiredNote: ReactNode
+  /** Public campaign + non-PII card details shown once the donation is received (DOS/Give#313). */
+  thankYou?: Omit<ThankYouCardInput, "referenceCode" | "amount"> | null
   children: ReactNode
 }) {
   const [status, setStatus] = useState(initial)
@@ -115,6 +120,17 @@ export function DonationStatus({
         </span>
         <p className="mt-4 text-h2 text-fg">Đã nhận {formatVnd(status.received_amount)}. Cảm ơn bạn!</p>
         <p className="mt-2 max-w-[68ch] text-fg">Khoản ủng hộ đã vào tài khoản nhận của chiến dịch.</p>
+        {thankYou && status.received_amount > 0 && (
+          <div className="mt-6">
+            <ThankYouCardButton
+              card={{
+                ...thankYou,
+                referenceCode: code,
+                amount: status.received_amount,
+              }}
+            />
+          </div>
+        )}
       </div>
     )
   }

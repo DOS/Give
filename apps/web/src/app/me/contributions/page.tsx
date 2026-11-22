@@ -2,6 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { Suspense } from "react"
 
+import { ThankYouCardButton } from "@/components/ThankYouCardButton"
 import { Badge } from "@/components/ui/Badge"
 import { ButtonLink } from "@/components/ui/Button"
 import { EmptyState } from "@/components/ui/EmptyState"
@@ -9,12 +10,15 @@ import { HeartIcon, SparkIcon } from "@/components/ui/icons"
 import { PageHeader } from "@/components/ui/PageHeader"
 import { PledgeStatusBadge } from "@/components/ui/PledgeStatusBadge"
 import { SkeletonList } from "@/components/ui/Skeleton"
+import { siteOrigin } from "@/lib/auth/origin"
 import { requireSession, type Session } from "@/lib/auth/session"
+import { isPublicStatus, type CampaignStatus } from "@/lib/campaigns"
 import { donationStatusLabel } from "@/lib/contributions"
 import { formatDate, formatVnd } from "@/lib/format"
 import { periodLabel, planDonationPayable, vnMonthStart } from "@/lib/plans"
 import { fulfillmentLabel, offersPayment, pledgeListSummary, withoutReplacedPledges } from "@/lib/pledges"
 import { dbAs, dbService } from "@/lib/supabase"
+import { isThankYouCardEligible } from "@/lib/viral-sharing"
 import { paymentAccounts } from "@/server/contributions"
 import { pledgeBalances, type PledgeBalance } from "@/server/pledges"
 
@@ -34,6 +38,7 @@ interface MyContribution {
   intended_amount: number
   received_amount: number
   status: string
+  public_name?: string | null
   is_anonymous: boolean
   payment_due_at: string | null
   fulfillment_status: string | null
@@ -42,7 +47,7 @@ interface MyContribution {
   /** Set on a monthly plan's donation (DOS/Give#276). */
   plan_id: string | null
   plan_period: string | null
-  campaign: { slug: string; title: string } | null
+  campaign: { slug: string; title: string; status: CampaignStatus } | null
 }
 
 export default async function MyContributionsPage() {
@@ -117,8 +122,8 @@ async function ContributionList({ session }: { session: Session }) {
     db
       .from("contributions")
       .select(
-        "id, kind, campaign_id, reference_code, intended_amount, received_amount, status, is_anonymous, payment_due_at, " +
-          "fulfillment_status, reward_tier_id, created_at, plan_id, plan_period, campaign:campaigns(slug, title)"
+        "id, kind, campaign_id, reference_code, intended_amount, received_amount, status, public_name, is_anonymous, payment_due_at, " +
+          "fulfillment_status, reward_tier_id, created_at, plan_id, plan_period, campaign:campaigns(slug, title, status)"
       )
       .eq("contributor_user_id", session.user.id)
       .order("created_at", { ascending: false })
@@ -161,6 +166,8 @@ async function ContributionList({ session }: { session: Session }) {
     )
   }
 
+  const origin = siteOrigin()
+
   return (
     <div className="space-y-10">
       {plans.length > 0 && <PlanList plans={plans} donations={planDonations} now={now} />}
@@ -170,10 +177,20 @@ async function ContributionList({ session }: { session: Session }) {
             <h2 id="all-contributions-title" className="text-h2">
               Tất cả lượt ủng hộ
             </h2>
-            <MyContributionItems contributions={contributions} balances={balances} />
+            <MyContributionItems
+              contributions={contributions}
+              balances={balances}
+              donorFallbackName={session.user.name}
+              origin={origin}
+            />
           </section>
         ) : (
-          <MyContributionItems contributions={contributions} balances={balances} />
+          <MyContributionItems
+            contributions={contributions}
+            balances={balances}
+            donorFallbackName={session.user.name}
+            origin={origin}
+          />
         ))}
     </div>
   )
@@ -182,15 +199,47 @@ async function ContributionList({ session }: { session: Session }) {
 function MyContributionItems({
   contributions,
   balances,
+  donorFallbackName,
+  origin,
 }: {
   contributions: MyContribution[]
   balances: Map<string, PledgeBalance>
+  donorFallbackName: string | null
+  origin?: string
 }) {
   return (
     <ul className="divide-y divide-border card">
       {contributions.map((c) => {
         const pledge = c.kind === "pledge"
         const Icon = pledge ? SparkIcon : HeartIcon
+        const balance = balances.get(c.id) ?? null
+        const receivedAmount = Number(c.received_amount)
+        const cardAmount =
+          pledge && balance
+            ? Math.max(0, Number(balance.received_amount) - Number(balance.refunded_amount))
+            : receivedAmount
+        const hasPublicCampaign = c.campaign !== null && isPublicStatus(c.campaign.status)
+        const canShareThankYou = isThankYouCardEligible({
+          kind: c.kind,
+          status: c.status,
+          receivedAmount: cardAmount,
+          hasPublicCampaign,
+        })
+        const thankYouCard =
+          canShareThankYou && c.campaign
+            ? {
+                kind: c.kind,
+                referenceCode: c.reference_code,
+                amount: cardAmount,
+                campaignTitle: c.campaign.title,
+                campaignSlug: c.campaign.slug,
+                campaignType: pledge ? ("back" as const) : ("give" as const),
+                donorName: c.is_anonymous ? null : c.public_name?.trim() || donorFallbackName,
+                isAnonymous: c.is_anonymous,
+                createdAt: c.created_at,
+                origin,
+              }
+            : null
         return (
           <li key={c.id} className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:p-6">
             <div className="flex min-w-0 flex-1 gap-4">
@@ -228,7 +277,7 @@ function MyContributionItems({
                 )}
                 <p className="mt-1 break-words text-fg">
                   {pledge
-                    ? pledgeListSummary(c, balances.get(c.id) ?? null)
+                    ? pledgeListSummary(c, balance)
                     : c.status === "received"
                       ? `Đã nhận ${formatVnd(c.received_amount)}`
                       : `Dự định ${formatVnd(c.intended_amount)}`}
@@ -239,13 +288,20 @@ function MyContributionItems({
               </div>
             </div>
             {pledge ? (
-              <ButtonLink
-                href={`/me/pledges/${c.reference_code}`}
-                variant={offersPayment(c, balances.get(c.id) ?? null) ? "primary" : "secondary"}
-                className="shrink-0"
-              >
-                {offersPayment(c, balances.get(c.id) ?? null) ? "Thanh toán" : "Xem cam kết"}
-              </ButtonLink>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {thankYouCard && (
+                  <ThankYouCardButton card={thankYouCard} label="Thẻ “Tôi đã chung tay”" className="shrink-0" />
+                )}
+                <ButtonLink
+                  href={`/me/pledges/${c.reference_code}`}
+                  variant={offersPayment(c, balance) ? "primary" : "secondary"}
+                  className="shrink-0"
+                >
+                  {offersPayment(c, balance) ? "Thanh toán" : "Xem cam kết"}
+                </ButtonLink>
+              </div>
+            ) : thankYouCard ? (
+              <ThankYouCardButton card={thankYouCard} label="Thẻ “Tôi đã chung tay”" className="shrink-0" />
             ) : (
               c.status !== "received" && (
                 <ButtonLink href={`/donations/${c.reference_code}`} variant="secondary" className="shrink-0">
