@@ -6,13 +6,15 @@ import { Suspense } from "react"
 
 import { StatusBadge, TypeBadge } from "@/components/badges"
 import { ContactText } from "@/components/ContactText"
+import { ActionForm, SubmitButton } from "@/components/forms"
 import { Badge } from "@/components/ui/Badge"
-import { ButtonLink } from "@/components/ui/Button"
+import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { PageHeader } from "@/components/ui/PageHeader"
 import { SkeletonList } from "@/components/ui/Skeleton"
 import { requireSession, type Session } from "@/lib/auth/session"
+import { canDuplicateCampaign } from "@/lib/campaign-faqs"
 import { listMyWorkspaceCampaigns } from "@/lib/campaign-members"
 import { isPublicCampaignVisible } from "@/lib/campaigns"
 import { privateCoverUrl } from "@/lib/cover-urls"
@@ -21,6 +23,8 @@ import { dbAs } from "@/lib/supabase"
 import { isSessionRejected } from "@/server/contributions"
 
 import { MePage } from "../_components/MePage"
+
+import { duplicateCampaignDraft } from "./actions"
 
 export const metadata: Metadata = { title: "Chiến dịch của tôi", robots: { index: false } }
 
@@ -104,11 +108,18 @@ async function CampaignList({ session }: { session: Session }) {
                 )}
               </div>
             </div>
-            <div className="flex flex-wrap gap-3 sm:shrink-0">
+            <div className="flex flex-wrap items-start gap-3 sm:shrink-0">
               {isPublicCampaignVisible(campaign) && (
                 <ButtonLink href={`/campaigns/${campaign.slug}`} variant="secondary">
                   Xem trang<span className="sr-only">{`: ${campaign.title}`}</span>
                 </ButtonLink>
+              )}
+              {canDuplicateCampaign(campaign.role, campaign.status) && (
+                <ActionForm action={duplicateCampaignDraft.bind(null, campaign.id)}>
+                  <SubmitButton className={buttonClass({ variant: "secondary" })}>
+                    Tạo bản sao chiến dịch<span className="sr-only">{`: ${campaign.title}`}</span>
+                  </SubmitButton>
+                </ActionForm>
               )}
               <ButtonLink href={`/me/campaigns/${campaign.id}`} variant="secondary">
                 {campaign.role === "editor" ? "Chỉnh sửa" : "Quản lý"}

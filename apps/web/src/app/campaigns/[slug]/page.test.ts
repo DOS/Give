@@ -1777,3 +1777,97 @@ describe("CampaignPage pre-launch 'Sắp ra mắt' teaser & FollowButton (DOS/Gi
     expect(html).not.toContain("Bản xem trước")
   })
 })
+
+describe("CampaignPage FAQ accordion (DOS/Give#316)", () => {
+  const FAQS = [
+    {
+      id: "faq-1",
+      campaign_id: CAMPAIGN,
+      question: "Tiền ủng hộ có công khai sao kê không?",
+      answer: "Có, toàn bộ giao dịch được công khai tại mục Sao kê.",
+      position: 0,
+      created_at: "2026-11-22T00:00:00Z",
+      updated_at: "2026-11-22T00:00:00Z",
+    },
+  ]
+
+  it("renders FAQ accordion and 'Hỏi đáp' tab on public live campaigns, public pre-launch teasers (#315), and previews", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_faqs") return { data: FAQS }
+      return baseAnon(call)
+    }
+
+    const publicDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(publicDoc.querySelector('a[href="#hoi-dap"]')?.textContent).toContain("Hỏi đáp")
+    expect(publicDoc.querySelector("section#hoi-dap h2")?.textContent).toBe("Câu hỏi thường gặp")
+    expect(publicDoc.querySelector("section#hoi-dap summary")?.textContent).toContain(
+      "Tiền ủng hộ có công khai sao kê không?"
+    )
+
+    // Public pre-launch teaser (approved + prelaunch_public + future starts_at) renders FAQs for anon without money leaks.
+    const prelaunchRow = {
+      ...campaignFixture("approved"),
+      prelaunch_public: true,
+      starts_at: "2099-12-01T00:00:00Z",
+      ends_at: "2099-12-31T00:00:00Z",
+    }
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: prelaunchRow }
+      if (call.target === "campaign_faqs") return { data: FAQS }
+      if (call.target === "rpc:public_organizer") return { data: [] }
+      if (call.target === "rpc:campaign_follower_count") return { data: 5 }
+      if (call.target === "rpc:campaign_public_team") return { data: [] }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media"
+      )
+        return { data: [] }
+      return undefined
+    }
+
+    const prelaunchDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(prelaunchDoc.querySelector('a[href="#hoi-dap"]')?.textContent).toContain("Hỏi đáp")
+    expect(prelaunchDoc.querySelector("section#hoi-dap summary")?.textContent).toContain(
+      "Tiền ủng hộ có công khai sao kê không?"
+    )
+    expect(prelaunchDoc.querySelector(`a[href="/campaigns/${SLUG}/statement"]`)).toBeNull()
+
+    // Organizer preview also renders FAQs.
+    state.session = {
+      user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
+      accessToken: "org-token",
+    }
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("approved") }
+      if (call.target === "campaign_faqs") return { data: FAQS }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media"
+      )
+        return { data: [] }
+      return undefined
+    }
+
+    const previewDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(previewDoc.querySelector('a[href="#hoi-dap"]')?.textContent).toContain("Hỏi đáp")
+    expect(previewDoc.querySelector("section#hoi-dap summary")?.textContent).toContain(
+      "Tiền ủng hộ có công khai sao kê không?"
+    )
+  })
+
+  it("omits FAQ section and 'Hỏi đáp' tab when no FAQs exist or when the FAQ query fails", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_faqs") return { data: null, error: { code: "57014", message: "timeout" } }
+      return baseAnon(call)
+    }
+
+    const doc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(doc.querySelector("section#hoi-dap")).toBeNull()
+    expect(doc.querySelector('a[href="#hoi-dap"]')).toBeNull()
+  })
+})

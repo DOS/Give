@@ -848,3 +848,36 @@ export async function setCampaignPrelaunchPublic(
       : "Đã tắt chế độ Sắp ra mắt."
   )
 }
+
+/**
+ * Clones safe content fields (title with "(Bản sao)", type, summary, story,
+ * category, goal, milestones, active reward tiers, FAQs) into a brand-new draft
+ * campaign via give.duplicate_campaign_draft and redirects to its editor
+ * (DOS/Give#316). Strictly owner-only; co-organizer editors and suspended
+ * campaigns are refused.
+ */
+export async function duplicateCampaignDraft(
+  campaignId: string,
+  _state: ActionResult,
+  _form: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  const { campaign, error: loadError } = await ownedCampaign(session, campaignId)
+  if (!campaign) return fail(loadError)
+  if (campaign.status === "suspended") return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_SUSPENDED" }))
+
+  const { data, error } = await dbAs(session.accessToken).rpc("duplicate_campaign_draft", {
+    p_source_campaign_id: campaign.id,
+  })
+  if (error) return fail(dbErrorMessage(error))
+
+  const rows = Array.isArray(data) ? data : data ? [data] : []
+  const created = rows[0] as { id?: string } | undefined
+  if (!created || !isUuid(created.id)) {
+    return fail("Chưa tạo được bản sao chiến dịch. Hãy thử lại.")
+  }
+
+  revalidatePath("/me/campaigns")
+  redirect(`/me/campaigns/${created.id}`)
+}
