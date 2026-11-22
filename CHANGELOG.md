@@ -25,7 +25,7 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   `recoveryAdvice`) so moderators can see and recover approved campaigns past
   `ends_at` with usable accounts and campaigns suspended before `starts_at`
   (never live, no contributions), with unit and RSC Vitest coverage, backed by
-  `DOS/DOS.Me#1872` (#77).
+  `DOS/DOS.Me#1872` (#77 / #306).
 - Co-organizers (campaign editors), single-use invites, workspace guards and
   public team block: `/me/campaigns/[id]?tab=team` (`TeamTab`,
   `CreateInviteForm`, `member-actions.ts`) lets the owning organizer create
@@ -445,6 +445,26 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Back campaigns (M3)
 
+- Finance-approved receiving-account swap for `back` campaigns and
+  `payment_due` pledge notifications: extends `canAskSwap`, `approvalBlock`,
+  `loadEditorAccounts`, `checkSubmitAccount`, `requestAccountSwap`,
+  `/me/campaigns/[id]` (`ReceivingAccountSection` / `AccountSwapBlock`),
+  `/admin/account-swaps`, `/admin` `recoveryAdvice` and `lib/errors.ts` to
+  support finance-approved receiving-account swaps on `back` campaigns in
+  `live`, `suspended`, `changes_requested` (with recorded transactions;
+  zero-transaction bindings still direct to early release) and `succeeded`
+  when pledges still have payments due (`campaignHasPaymentsDue` /
+  `campaignsWithPaymentsDue`), while strictly preserving `#264` owner-only
+  money boundaries so co-organizers never view or submit swap requests. Adds
+  the `payment_account_changed` in-app notice (`lib/notices.ts`, wired into
+  `asksForPayment` so `stoppedNoticeCampaigns` suppresses payment CTAs while
+  payment requests are stopped) and the `pledge_account_swapped` transactional
+  email template (`server/email/templates.ts`, `lib/email-outbox.ts` 14-day
+  max age, live net amount due, deadline, `/me/pledges/[code]` CTA, no
+  unsubscribe/stop links), sharing strict anti-leak masking helpers
+  (`maskedAccountLast4`, `swappedNewAccountLine`, `swappedOldAccountTarget`)
+  so raw account numbers never leak, backed by `DOS/DOS.Me#1873` with Vitest
+  suites (#92 / #310).
 - Pledge flow, payment page, reminders and lapse (#31 / #88).
 - Editor: reward tiers and fulfillment updates (#83 / #87); account section
   and submit guard (#85 / #90).
@@ -459,6 +479,38 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Money (M1)
 
+- Monthly donations (plan A) follow-ups from `#290`: adds the deduplicated,
+  bounded-concurrency `paymentAccounts()` helper (max 5 in flight,
+  per-campaign error isolation) in `apps/web/src/server/contributions/index.ts`,
+  skips `give.payment_account` RPCs on `/me/contributions` for ended plans or
+  plans without a potentially payable current-month donation (sharing
+  `currentPlanDonation()` with `PlanList` and `vnMonthStart` in
+  `lib/plans.ts`), runs usable-account and pledge-balance lookups in parallel
+  with one consistent clock, and fixes the misplaced `ContributionList` JSDoc
+  block. Hardens `apps/web/src/server/plans/jobs.ts`,
+  `GET /api/cron/issue-plan-donations` and `GET /api/cron/plan-notices` to
+  isolate Step 1 and Step 2 within the shared 45 s budget (still returning
+  HTTP 500 on step failure), drain multi-batch `expire_plan_donations`
+  (500 rows/batch) with per-batch error isolation and budget-guarded
+  stalled-batch detection (`expire_stalled: true`, `done: false`), and emit
+  structured zero-PII JSON error logs (`plan_cron.failed_outcomes`,
+  `plan_job.plan_failed`, `plan_job.expire_batch_stalled`,
+  `plan_job.expire_batch_failed`, `plan_cron.step_failed`) on `'failed'`
+  outcomes or step/batch errors, with Vitest coverage (#308 / #309).
+- Monthly plan donor notifications on receiving-account swap: adds the
+  `plan_account_swapped` email template (`apps/web/src/server/email/templates.ts`)
+  and admin outbox metadata (`apps/web/src/lib/email-outbox.ts`:
+  `OUTBOX_KIND_LABELS.plan_account_swapped`, `OUTBOX_SKIP_LABELS.plan_not_active`,
+  `OUTBOX_SKIP_LABELS.account_superseded`, and 14-day `outboxMaxAgeDays`).
+  Notifies active monthly plan donors when a campaign's receiving account is
+  replaced, showing Vietnam-time swap date, new account holder name, bank
+  short name or crypto chain, and strictly validated masked last 4 digits only
+  (`•••• XXXX`, never raw account numbers), warning donors to delete saved
+  bank transfer templates for the old account, requiring both a signed
+  one-click plan stop link (`/plans/stop?t=...` and RFC 8058
+  `List-Unsubscribe`) and notification unsubscribe link
+  (`/email/unsubscribe?t=...`), and generalizing non-summary unsubscribe copy,
+  backed by `DOS/DOS.Me#1871` with Vitest suites (#291 / #307).
 - Monthly donations, plan A (D9): a signed-in donor signs up on a give
   campaign that allows it (amount, day 1–28, reminder consent, the
   anonymity warning that a transparent account's statement shows the name
@@ -628,6 +680,27 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Platform
 
+- Email outbox follow-ups: `apps/web/src/server/email/outbox.ts` lengthens
+  `CLAIM_TIMEOUT_MS` from `10_000` ms to `15_000` ms (above PostgREST's 8 s
+  `statement_timeout` plus pooler/network jitter while remaining under
+  `RUN_BUDGET_MS` = 30 s) and inspects both `claimSignal.aborted` and
+  `isAbortError(error)` (excluding Postgres server-side rollback `57014`) to
+  emit an explicit warning that an aborted `claim_outbox` call may still have
+  committed and leased rows for 5 minutes. `apps/web/src/server/email/provider.ts`
+  hardens `usesProductionDatabase(env)` to inspect the JWT `ref` claim of
+  `SUPABASE_SERVICE_ROLE_KEY` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in addition
+  to `PRODUCTION_SUPABASE_HOSTS` / `PRODUCTION_SUPABASE_REF` (cleanly ignoring
+  opaque `sb_secret_*` keys and malformed tokens), backed by `DOS/DOS.Me#1870`
+  with Vitest coverage (#273 / #305).
+- PO configuration update (`docs/product-owner-config.md`): sets
+  `promotion_po: any` so both Antigravity PO and Claude Code PO hold equal
+  Production promotion authority (requiring JOY's popup approval on concrete
+  steps and rollback plan with zero competing open `main` promotion PRs),
+  records JOY's 2026-11-22 Antigravity PO takeover across `line:campaigns`,
+  `line:money` and `line:platform` while Claude PO is quota-limited (preserving
+  `po:agy` / `po:claude` mutual exclusion), and documents the 2026-11-21 local
+  DB ban (`Give#294` / `DOS/DOS.Me#1855`, running Give pgTAP and migration
+  replay in GitHub CI on `DOS/DOS.Me`) (#303 / #304).
 - Parallel PO configuration (CC-PO v2.18.0): `docs/product-owner-config.md`
   assigns Antigravity `Campaigns Product Owner` (`acc0`) to `line:campaigns`
   (replacing paused Qwen Code sessions), enforces `po:agy` / `po:claude`
@@ -692,6 +765,52 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Database (DOS.Me)
 
+- Back-campaign receiving-account swap and `payment_due` pledge notices:
+  extends `give.request_account_swap`, `give.decide_account_swap`,
+  `give.account_has_swapped_history` and `give.record_bank_transaction`
+  post-swap outflow cutoff to `back` campaigns (`live`, `suspended`,
+  `changes_requested` with recorded transactions, and `succeeded` when
+  `give.campaign_has_payments_due(id)` is true), preserving `#264` owner-only
+  money boundaries, `#82` / `#119` lock order and self-review guards; adds
+  in-app notice kind `payment_account_changed` and transactional outbox kind
+  `pledge_account_swapped` (14-day max age, masked account details only,
+  `give.claim_outbox` `account_superseded` / 90-day `payment_requests_stopped`
+  hold / `not_due` / live `pledge_notice_payload` refresh), with 66 pgTAP
+  assertions (#92 / DOS/DOS.Me#1873, on Beta). Migration
+  `20261130140000_give_back_campaign_account_swap`.
+- Monthly plan donor swap notifications: adds notification outbox kind
+  `plan_account_swapped` (14-day max age, subject to `give.email_suppressions`),
+  `give.outbox_on_account_swap` trigger enqueueing one masked, zero-PII row
+  per active `give.donation_plans` donor on approved account swaps
+  (`idempotency_key = 'plan_account_swapped:<swap_request_id>:<plan_id>'`),
+  and `give.claim_outbox` send-time re-checks (`plan_not_active`,
+  `account_superseded`, `unsubscribed`, `no_recipient`, `expired`) minting a
+  fresh 60-day one-use stop token in `give.plan_stop_tokens`, with 53 pgTAP
+  assertions (#291 / DOS/DOS.Me#1871, on Beta). Migration
+  `20261130130000_give_plan_account_swap_notice`.
+- Atomic expected-status guard and pre-launch recovery queue: adds
+  backwards-compatible `p_expected_status text DEFAULT NULL` to
+  `give.transition_campaign` (raising `GIVE_CAMPAIGN_STATUS_CHANGED`, SQLSTATE
+  `40001`, checked after authorization and before idempotent replay while
+  preserving `#82` / `#120` staff-role lock order), allows non-owner
+  `moderator`/`admin` `suspended -> changes_requested` recovery for never-live
+  campaigns with `starts_at > now()` and zero contributions (preserving `#55`
+  money-history immutability and `#264` owner-only boundaries), and adds
+  `give.campaigns_needing_recovery()` (disjoint from
+  `campaigns_waiting_for_account`, listing `approved_past_end` and
+  `suspended_before_start`), with 62 pgTAP assertions (#77 / DOS/DOS.Me#1872,
+  on Beta). Migration `20261130120000_give_campaign_sendback_and_suspended_recovery`.
+- Email outbox follow-ups: adds partial index `give.outbox_purge_settled_idx`,
+  `give.contribution_access_tokens_expires_idx` and `FOR UPDATE SKIP LOCKED`
+  batching in `give.purge_outbox`, restricts `give.claim_outbox`
+  `to_email_hash` writes to `category = 'notification'` while clearing
+  deleted-account and legacy transactional hashes on purge, protects active
+  in-flight sends (`status = 'sending' AND locked_until > now()`) from purge
+  step 1, caps `pledge_payment_due` / `pledge_payment_reminder` holds under
+  `payments_stopped_at` at 90 days (`skipped`/`expired`), and recomputes
+  `pledge_payment_reminder` `payload->'day'` on claim from
+  `outcome_at + payments_stopped_total`, with 31 pgTAP assertions (#273 /
+  DOS/DOS.Me#1870, on Beta). Migration `20261130110000_give_outbox_followups`.
 - Co-organizers and single-use invites: `give.campaign_members` (editors only,
   blocking owner self-membership) and `give.campaign_member_invites` (32-byte
   SHA-256 token hashes only, zero direct table grants), 9 `SECURITY DEFINER`
