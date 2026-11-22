@@ -155,9 +155,12 @@ const GIVE_MESSAGES: Record<string, string> = {
     "Chỉ đánh dấu “không phải giao dịch thật” được cho dòng thuộc lần tải sao kê đã bị đội tài chính bỏ qua.",
   GIVE_ROW_HAS_ACTIVE_DUPLICATE:
     "Một lần tải sao kê khác có dòng đã được bỏ qua vì trùng với dòng này, nên không thể đánh dấu dòng này là không phải giao dịch thật. Hãy kiểm tra lại với sao kê ngân hàng: nếu đây là giao dịch thật, hãy nhập hoặc đánh dấu là giao dịch đã ghi.",
-  // Reward tiers and fulfillment of back campaigns (DOS/Give#30, #83).
+  // Reward tiers and fulfillment of back campaigns (DOS/Give#30, #83, #317).
   GIVE_REWARD_TIERS_BACK_ONLY: "Chỉ dự án có quà tặng mới có các mức phần thưởng.",
   GIVE_REWARD_TIER_INVALID: "Thông tin phần thưởng không hợp lệ.",
+  GIVE_REWARD_TIER_DATES_INVALID:
+    "Thời hạn ưu đãi Early Bird của một mức phần thưởng nằm ngoài lịch gây quỹ hoặc đã qua. Hãy cập nhật lại phần thưởng trước khi gửi duyệt.",
+  GIVE_REWARD_EXPIRED: "Ưu đãi Early Bird của phần quà này đã hết hạn. Hãy chọn phần quà khác.",
   GIVE_REWARD_TIER_LIMIT: "Mỗi dự án có tối đa 50 mức phần thưởng.",
   GIVE_REWARD_TIER_NOT_FOUND: "Không tìm thấy mức phần thưởng này. Hãy tải lại trang.",
   GIVE_REWARD_TIER_IN_USE: "Mức phần thưởng này đã có người chọn nên không xóa được.",

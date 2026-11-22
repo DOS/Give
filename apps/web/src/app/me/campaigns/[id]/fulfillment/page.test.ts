@@ -97,6 +97,8 @@ function makeTier(id: string, title: string, sort_order: number): RewardTier {
     status: "active",
     sort_order,
     retired_at: null,
+    is_early_bird: false,
+    available_until: null,
   }
 }
 

@@ -888,6 +888,8 @@ export default async function EditCampaignPage({
               campaignId={campaign.id}
               status={campaign.status}
               minContribution={campaign.min_contribution}
+              startsAt={campaign.starts_at}
+              endsAt={campaign.ends_at}
               tiers={tiers}
             />
           )}

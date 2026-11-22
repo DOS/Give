@@ -73,6 +73,17 @@ function refresh(campaign: Pick<CampaignWithRefs, "id" | "slug">) {
   revalidatePath(`/campaigns/${campaign.slug}/pledge`)
 }
 
+const EARLY_BIRD_LIMIT_REQUIRED = "Ưu đãi Early Bird cần giới hạn số suất hoặc thời hạn kết thúc (hoặc cả hai)."
+const EARLY_BIRD_DEADLINE_INVALID =
+  "Thời hạn ưu đãi Early Bird phải ở tương lai và nằm trong thời gian gây quỹ của dự án."
+
+function tierSaveError(error: DbErrorLike, belowMinimum: string): string {
+  const message = error.message ?? ""
+  if (message.includes("GIVE_REWARD_TIER_INVALID: early_bird_limit")) return EARLY_BIRD_LIMIT_REQUIRED
+  if (message.includes("GIVE_REWARD_TIER_INVALID: available_until")) return EARLY_BIRD_DEADLINE_INVALID
+  return dbErrorMessage(error, { ...TIER_MESSAGES, GIVE_AMOUNT_BELOW_MINIMUM: belowMinimum })
+}
+
 /** Creates a tier (tierId null, placed last) or updates one, while the campaign is editable. */
 export async function saveRewardTier(
   campaignId: string,
@@ -100,12 +111,27 @@ export async function saveRewardTier(
       "estimated_delivery",
       "requires_shipping",
       "shipping_note",
+      "is_early_bird",
+      "available_until",
     ])
   )
   if (!parsed.success) return fail(firstError(parsed.error))
   const values = parsed.data
   const belowMinimum = `Mức tối thiểu của phần thưởng không được thấp hơn mức góp tối thiểu của dự án (${formatVnd(campaign.min_contribution)}).`
   if (values.min_amount < campaign.min_contribution) return fail(belowMinimum)
+
+  if (values.available_until) {
+    const untilMs = new Date(values.available_until).getTime()
+    if (untilMs <= Date.now()) {
+      return fail("Thời hạn ưu đãi Early Bird phải ở tương lai.")
+    }
+    if (campaign.starts_at && untilMs <= new Date(campaign.starts_at).getTime()) {
+      return fail("Thời hạn ưu đãi Early Bird phải sau thời điểm bắt đầu chiến dịch.")
+    }
+    if (campaign.ends_at && untilMs > new Date(campaign.ends_at).getTime()) {
+      return fail("Thời hạn ưu đãi Early Bird không được sau thời điểm kết thúc chiến dịch.")
+    }
+  }
 
   const { error } = await dbService().rpc("save_reward_tier", {
     p_actor_id: session.user.id,
@@ -121,8 +147,10 @@ export async function saveRewardTier(
     p_shipping_note: values.requires_shipping ? values.shipping_note : null,
     // A new tier goes last; an edit keeps its place.
     p_sort_order: null,
+    p_is_early_bird: values.is_early_bird,
+    p_available_until: values.is_early_bird ? values.available_until : null,
   })
-  if (error) return fail(dbErrorMessage(error, { ...TIER_MESSAGES, GIVE_AMOUNT_BELOW_MINIMUM: belowMinimum }))
+  if (error) return fail(tierSaveError(error, belowMinimum))
   refresh(campaign)
   return done(tierId === null ? "Đã thêm phần thưởng." : "Đã lưu phần thưởng.")
 }

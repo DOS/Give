@@ -25,6 +25,8 @@ const tier = (overrides: Partial<PublicRewardTier> = {}): PublicRewardTier => ({
   requires_shipping: true,
   shipping_note: "Miễn phí giao nội thành",
   sort_order: 0,
+  is_early_bird: false,
+  available_until: null,
   ...overrides,
 })
 
@@ -130,5 +132,53 @@ describe("RewardTiers", () => {
     expect(html).not.toContain(pledgeHref("du-an-sach", openLookingTier.id))
     expect(html).toContain("bg-surface")
     expect(html).toContain(">Bản sách bìa cứng</h3>")
+  })
+
+  it("renders active Early Bird badge/deadline as choosable and disables expired Early Bird tiers cleanly (DOS/Give#317)", () => {
+    const now = new Date("2027-01-10T10:00:00.000Z")
+    const activeEb = tier({
+      id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      title: "Early Bird 48h",
+      is_early_bird: true,
+      available_until: "2027-01-12T10:00:00.000Z", // 17:00 12/01/2027 VN
+      quantity_limit: 20,
+      quantity_claimed: 5,
+      quantity_remaining: 15,
+    })
+    const expiredEb = tier({
+      id: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      title: "Early Bird Đã Đóng",
+      is_early_bird: true,
+      available_until: "2027-01-10T10:00:00.000Z", // exact boundary -> expired
+      quantity_limit: 20,
+      quantity_claimed: 5,
+      quantity_remaining: 15,
+    })
+
+    const html = renderToStaticMarkup(
+      createElement(RewardTiers, {
+        tiers: [activeEb, expiredEb],
+        slug: "du-an-sach",
+        open: true,
+        closedNote: "Dự án không còn nhận cam kết.",
+        now,
+      })
+    )
+
+    const items = html.match(/<li\b[^>]*>[\s\S]*?<\/li>/g) ?? []
+    expect(items).toHaveLength(2)
+
+    expect(items[0]).toContain('data-ring-box="true"')
+    expect(items[0]).toContain(`href="${pledgeHref("du-an-sach", activeEb.id)}"`)
+    expect(items[0]).toContain("Ưu đãi Early Bird")
+    expect(items[0]).toContain("Còn 15/20 suất")
+    expect(items[0]).toContain("Ưu đãi đến")
+
+    expect(items[1]).not.toContain("data-ring-box")
+    expect(items[1]).toContain("bg-surface")
+    expect(items[1]).not.toContain("<a ")
+    expect(items[1]).toContain("Ưu đãi Early Bird")
+    expect(items[1]).toContain("Đã hết hạn ưu đãi")
+    expect(items[1]).toContain("bg-danger-soft text-danger")
   })
 })

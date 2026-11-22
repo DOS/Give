@@ -175,6 +175,7 @@ describe("savePledge", () => {
 
   it.each([
     ["GIVE_REWARD_TIER_SOLD_OUT", "Phần quà này vừa hết suất. Hãy chọn phần quà khác."],
+    ["GIVE_REWARD_EXPIRED", "Ưu đãi Early Bird của phần quà này đã hết hạn. Hãy chọn phần quà khác."],
     ["GIVE_OWN_CAMPAIGN", "Bạn không thể ủng hộ dự án của chính mình."],
     ["GIVE_CAMPAIGN_NOT_ACCEPTING", "Dự án hiện không nhận cam kết (chưa mở hoặc đã kết thúc)."],
     ["GIVE_AMOUNT_BELOW_MINIMUM: 400000", `Số tiền tối thiểu cho lựa chọn này là ${formatVnd(400_000)}.`],
@@ -182,6 +183,21 @@ describe("savePledge", () => {
   ])("words %s for the backer", async (message, expected) => {
     state.serviceHandler = () => ({ error: { code: "23514", message } })
     expect(await savePledge(CAMPAIGN, null, null, form())).toEqual({ ok: false, message: expected })
+  })
+
+  it("refuses an expired Early Bird tier before calling create_pledge (DOS/Give#317)", async () => {
+    state.userHandler = userReads({
+      tier: {
+        ...tierRow(false),
+        is_early_bird: true,
+        available_until: "2020-01-01T00:00:00.000Z",
+      },
+    })
+    expect(await savePledge(CAMPAIGN, null, null, form())).toEqual({
+      ok: false,
+      message: "Ưu đãi Early Bird của phần quà này đã hết hạn. Hãy chọn phần quà khác.",
+    })
+    expect(state.serviceCalls).toHaveLength(0)
   })
 
   it("keeps internals out of an unexpected error", async () => {

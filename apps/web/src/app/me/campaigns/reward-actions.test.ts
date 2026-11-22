@@ -108,6 +108,8 @@ describe("saveRewardTier", () => {
         p_requires_shipping: true,
         p_shipping_note: "Chỉ giao trong Việt Nam",
         p_sort_order: null,
+        p_is_early_bird: false,
+        p_available_until: null,
       },
     ])
     // Ownership was read with the user's token first.
@@ -164,6 +166,81 @@ describe("saveRewardTier", () => {
     expect((await saveRewardTier(CAMPAIGN, null, null, tierForm()))?.message).toContain("bản nháp hoặc cần chỉnh sửa")
     state.serviceHandler = () => ({ error: { message: "GIVE_AMOUNT_BELOW_MINIMUM: 50000" } })
     expect((await saveRewardTier(CAMPAIGN, null, null, tierForm()))?.message).toContain("mức góp tối thiểu")
+    state.serviceHandler = () => ({ error: { message: "GIVE_REWARD_TIER_INVALID: early_bird_limit" } })
+    expect((await saveRewardTier(CAMPAIGN, null, null, tierForm()))?.message).toContain(
+      "Ưu đãi Early Bird cần giới hạn"
+    )
+    state.serviceHandler = () => ({ error: { message: "GIVE_REWARD_TIER_INVALID: available_until" } })
+    expect((await saveRewardTier(CAMPAIGN, null, null, tierForm()))?.message).toContain(
+      "Thời hạn ưu đãi Early Bird phải ở tương lai"
+    )
+  })
+
+  it("saves an Early Bird tier with Vietnam-time deadline and enforces schedule bounds (DOS/Give#317)", async () => {
+    state.userHandler = reads({
+      campaign: campaignIn("draft", {
+        starts_at: "2030-05-01T02:00:00.000Z", // 2030-05-01 09:00 VN
+        ends_at: "2030-05-20T16:59:00.000Z", // 2030-05-20 23:59 VN
+      }),
+    })
+    const okResult = await saveRewardTier(
+      CAMPAIGN,
+      null,
+      null,
+      tierForm({
+        is_early_bird: "on",
+        quantity_limit: "20",
+        available_until: "2030-05-05T20:00", // 2030-05-05 13:00Z
+      })
+    )
+    expect(okResult).toEqual({ ok: true, message: "Đã thêm phần thưởng." })
+    expect(op(state.serviceCalls[0], "args")?.[0]).toMatchObject({
+      p_is_early_bird: true,
+      p_quantity_limit: 20,
+      p_available_until: "2030-05-05T13:00:00.000Z",
+    })
+
+    // Early Bird without slot cap or deadline is refused before RPC.
+    state.serviceCalls.length = 0
+    const noLimit = await saveRewardTier(
+      CAMPAIGN,
+      null,
+      null,
+      tierForm({ is_early_bird: "on", quantity_limit: "", available_until: "" })
+    )
+    expect(noLimit?.ok).toBe(false)
+    expect(noLimit?.message).toContain("Ưu đãi Early Bird cần giới hạn")
+
+    // Past deadline refused.
+    const past = await saveRewardTier(
+      CAMPAIGN,
+      null,
+      null,
+      tierForm({ is_early_bird: "on", available_until: "2020-01-01T10:00" })
+    )
+    expect(past?.ok).toBe(false)
+    expect(past?.message).toContain("phải ở tương lai")
+
+    // Deadline at/before campaign starts_at refused.
+    const beforeStart = await saveRewardTier(
+      CAMPAIGN,
+      null,
+      null,
+      tierForm({ is_early_bird: "on", available_until: "2030-05-01T09:00" })
+    )
+    expect(beforeStart?.ok).toBe(false)
+    expect(beforeStart?.message).toContain("sau thời điểm bắt đầu")
+
+    // Deadline after campaign ends_at refused.
+    const afterEnd = await saveRewardTier(
+      CAMPAIGN,
+      null,
+      null,
+      tierForm({ is_early_bird: "on", available_until: "2030-05-21T00:00" })
+    )
+    expect(afterEnd?.ok).toBe(false)
+    expect(afterEnd?.message).toContain("không được sau thời điểm kết thúc")
+    expect(state.serviceCalls).toHaveLength(0)
   })
 
   it("asks a signed-out user to sign in", async () => {
