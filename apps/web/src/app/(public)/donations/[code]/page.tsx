@@ -10,6 +10,7 @@ import { Money } from "@/components/ui/Money"
 import { RefCode } from "@/components/ui/RefCode"
 import { siteOrigin } from "@/lib/auth/origin"
 import { getSession } from "@/lib/auth/session"
+import { isPublicStatus, type CampaignStatus } from "@/lib/campaigns"
 import { donationTrackingPath, qrExpiresAt } from "@/lib/contributions"
 import { NEW_CODE_EVERY_MONTH, periodEnd, periodLabel, planDonationPayable, planQrUntil } from "@/lib/plans"
 import { dbAs, dbService } from "@/lib/supabase"
@@ -65,13 +66,15 @@ function planQrCaption(until: Date, period: string): string {
  * back; anyone else gets the not-found page, which explains where the page
  * can be opened.
  */
-async function loadDonation(code: string): Promise<{ donation: PaymentContribution; guestToken: string | null }> {
+async function loadDonation(
+  code: string
+): Promise<{ donation: PaymentContribution; guestToken: string | null; donorDisplayName: string | null }> {
   const session = await getSession()
   let sessionRejected = false
   if (session) {
     try {
       const own = await ownContribution(dbAs(session.accessToken), session.user.id, code)
-      if (own) return { donation: own, guestToken: null }
+      if (own) return { donation: own, guestToken: null, donorDisplayName: session.user.name ?? null }
     } catch (error) {
       if (!isSessionRejected(error)) throw error
       sessionRejected = true
@@ -79,7 +82,7 @@ async function loadDonation(code: string): Promise<{ donation: PaymentContributi
   }
   const token = donationCookieToken(await cookies(), code, hostnameFrom((await headers()).get("host")))
   const guest = token ? await guestContribution(dbService(), code, token) : null
-  if (guest && token) return { donation: guest, guestToken: token }
+  if (guest && token) return { donation: guest, guestToken: token, donorDisplayName: null }
   if (sessionRejected) redirect(`/auth/login?return_path=${encodeURIComponent(`/donations/${code}`)}`)
   notFound()
 }
@@ -87,7 +90,7 @@ async function loadDonation(code: string): Promise<{ donation: PaymentContributi
 export default async function DonationPage({ params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
   if (!isDonationCode(code)) notFound()
-  const { donation, guestToken } = await loadDonation(code)
+  const { donation, guestToken, donorDisplayName } = await loadDonation(code)
 
   const service = dbService()
   const campaign = await paymentCampaign(service, donation.campaign_id)
@@ -180,6 +183,21 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
     instructions = closedNote
   }
 
+  const origin = siteOrigin()
+  const thankYou = isPublicStatus(campaign.status as CampaignStatus)
+    ? {
+        kind: "donation" as const,
+        campaignTitle: campaign.title,
+        campaignSlug: campaign.slug,
+        campaignType: campaign.type,
+        // Guest tracking views never expose donor PII; signed-in owners respect anonymity.
+        donorName: guestToken ? null : donation.is_anonymous ? null : donation.public_name?.trim() || donorDisplayName,
+        isAnonymous: guestToken ? false : donation.is_anonymous === true,
+        createdAt: donation.created_at,
+        origin,
+      }
+    : null
+
   return (
     <div className="container-page pt-6 pb-16 sm:pt-8 lg:pb-24">
       <header className="min-w-0">
@@ -227,10 +245,7 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
                 Lưu đường dẫn theo dõi để xem trạng thái khoản ủng hộ này trên thiết bị khác trong 7 ngày. Đường dẫn
                 không chứa thông tin cá nhân.
               </p>
-              <TrackingLinkButton
-                path={donationTrackingPath(donation.reference_code, guestToken)}
-                origin={siteOrigin()}
-              />
+              <TrackingLinkButton path={donationTrackingPath(donation.reference_code, guestToken)} origin={origin} />
             </div>
           )}
         </aside>
@@ -241,6 +256,7 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
             qrExpired={qrExpired}
             qrMsLeft={expiresAt ? Math.max(0, expiresAt.getTime() - now.getTime()) : 0}
             expiredNote={expiredNote}
+            thankYou={thankYou}
           >
             {instructions}
           </DonationStatus>

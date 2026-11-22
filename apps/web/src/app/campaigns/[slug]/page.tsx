@@ -16,6 +16,7 @@ import { StatementPreview } from "@/components/campaign/StatementPreview"
 import { StickyAside } from "@/components/campaign/StickyAside"
 import { Markdown } from "@/components/Markdown"
 import { ProgressBar } from "@/components/ProgressBar"
+import { QrPosterButton } from "@/components/QrPosterButton"
 import { RewardTiers } from "@/components/RewardTiers"
 import { ShareButtons } from "@/components/ShareButtons"
 import { Button, ButtonLink, buttonClass } from "@/components/ui/Button"
@@ -58,6 +59,7 @@ import { getMoneyTotals, listStatement, raisedAmount, statementHref } from "@/li
 import { dbAs, dbService } from "@/lib/supabase"
 import { acceptsDonations, paymentAccount } from "@/server/contributions"
 import { listPublicTiers, organizesCampaign } from "@/server/pledges"
+import { buildServerPosterData } from "@/server/viral-sharing"
 
 import { CampaignComments } from "./CampaignComments"
 import { DonateForm } from "./DonateForm"
@@ -114,7 +116,6 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       title: campaign.title,
       ...(description ? { description } : {}),
       url: canonicalPath,
-      ...(campaign.cover?.storage_path ? { images: [publicCoverUrl(campaign.cover.storage_path)] } : {}),
     },
   }
 }
@@ -432,6 +433,7 @@ export default async function CampaignPage({
   ].filter((stat) => stat !== null)
   const origin = siteOrigin()
   const breadcrumbJsonLd = !preview && !halted ? buildBreadcrumbJsonLd(campaign, origin) : null
+  const posterData = !preview ? buildServerPosterData({ campaign, totals, organizer, account, origin }) : null
 
   return (
     <article>
@@ -660,6 +662,7 @@ export default async function CampaignPage({
                       origin={origin}
                       campaignId={campaign.id}
                     />
+                    {posterData && <QrPosterButton data={posterData} />}
                     {!ownCampaign && (
                       <ReportCampaign campaignId={campaign.id} slug={campaign.slug} signedIn={!!session} />
                     )}
