@@ -242,6 +242,10 @@ const GIVE_MESSAGES: Record<string, string> = {
   // Peer-to-peer campaign ambassadors (DOS/Give#319).
   GIVE_AMBASSADOR_NAME_INVALID: "Tên hiển thị phải từ 1 đến 80 ký tự và không chứa ký tự điều khiển.",
   GIVE_AMBASSADOR_IMMUTABLE: "Không thể thay đổi mã liên kết đồng hành sau khi đã tạo.",
+  // Moderated donor wishes wall & heart reactions (DOS/Give#320).
+  GIVE_WISH_NOT_FOUND: "Không tìm thấy lời chúc này, hoặc lời chúc đã bị ẩn.",
+  GIVE_STAFF_HIDE_LOCKED:
+    "Lời chúc này đã bị kiểm duyệt viên ẩn nên chỉ kiểm duyệt viên hoặc quản trị viên mới có thể khôi phục.",
 }
 
 const PG_MESSAGES: Record<string, string> = {
@@ -670,4 +674,59 @@ export function campaignMemberDbErrorMessage(
   overrides: Record<string, string> = {}
 ): string {
   return commentDbErrorMessage(error, { ...CAMPAIGN_MEMBER_MESSAGES, ...overrides })
+}
+
+/**
+ * Refusals of `give.toggle_contribution_heart` worded for the Donor Wishes Wall
+ * (DOS/Give#320).
+ */
+export const WISH_HEART_MESSAGES: Record<string, string> = {
+  GIVE_AUTH_REQUIRED: "Hãy đăng nhập để gửi tim cho lời chúc.",
+  GIVE_ACCOUNT_NOT_ACTIVE: "Tài khoản của bạn hiện không hoạt động nên không thể thả tim.",
+  GIVE_WISH_NOT_FOUND: "Lời chúc này không còn hiển thị công khai.",
+  GIVE_RATE_LIMITED: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
+}
+
+/**
+ * Refusals of `give.report_contribution_message` worded for a signed-in visitor
+ * (DOS/Give#320).
+ */
+export const WISH_REPORT_MESSAGES: Record<string, string> = {
+  GIVE_AUTH_REQUIRED: "Hãy đăng nhập để báo cáo lời chúc.",
+  GIVE_ACCOUNT_NOT_ACTIVE: "Tài khoản của bạn hiện không hoạt động nên không thể gửi báo cáo.",
+  GIVE_NOT_ALLOWED: "Bạn không thể báo cáo lời chúc của chính mình.",
+  GIVE_WISH_NOT_FOUND: "Không tìm thấy lời chúc này, hoặc lời chúc đã bị ẩn.",
+  GIVE_REASON_REQUIRED: "Hãy ghi lý do báo cáo lời chúc.",
+  GIVE_REASON_TOO_LONG: "Lý do báo cáo tối đa 500 ký tự.",
+  GIVE_REPORT_LIMIT: "Bạn đã gửi tối đa 20 báo cáo lời chúc trong 24 giờ qua. Hãy thử lại sau.",
+}
+
+/**
+ * Refusals of `give.moderate_contribution_message` worded for campaign owners,
+ * accepted co-organizer editors, and moderators/admins (DOS/Give#320).
+ */
+export const WISH_MODERATION_MESSAGES: Record<string, string> = {
+  GIVE_AUTH_REQUIRED: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+  GIVE_ACCOUNT_NOT_ACTIVE: "Tài khoản của bạn hiện không hoạt động nên không thể thực hiện thao tác này.",
+  GIVE_NOT_ALLOWED: "Bạn không có quyền kiểm duyệt lời chúc này.",
+  GIVE_NOT_ADMIN: "Chỉ kiểm duyệt viên hoặc quản trị viên mới có thể bác bỏ báo cáo lời chúc.",
+  GIVE_SELF_REVIEW:
+    "Không thể tự kiểm duyệt lời chúc của chính mình hoặc trên chiến dịch bạn tổ chức/biên tập; một kiểm duyệt viên khác cần xử lý.",
+  GIVE_STAFF_HIDE_LOCKED:
+    "Lời chúc này đã bị kiểm duyệt viên ẩn nên chỉ kiểm duyệt viên hoặc quản trị viên mới có thể khôi phục.",
+  GIVE_WISH_NOT_FOUND: "Không tìm thấy lời chúc này. Hãy tải lại trang.",
+  GIVE_REASON_TOO_LONG: "Lý do kiểm duyệt tối đa 500 ký tự.",
+  GIVE_MODERATION_INVALID: "Thao tác kiểm duyệt không hợp lệ.",
+}
+
+/**
+ * Maps database errors from donor-wish RPCs (hearts, reporting, moderation),
+ * preserving retry-after guidance from `GIVE_RATE_LIMITED: <seconds>` without
+ * ever leaking raw Postgres error internals.
+ */
+export function wishDbErrorMessage(
+  error: DbErrorLike | null | undefined,
+  overrides: Record<string, string> = {}
+): string {
+  return commentDbErrorMessage(error, overrides)
 }

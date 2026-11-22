@@ -265,13 +265,20 @@ export function PledgeForm({
             Give sẽ không hiện tên bạn trên Give. Trang sao kê công khai của ngân hàng vẫn có thể hiện tên người chuyển.
           </p>
         </div>
-        <Field htmlFor="pledge-message" label="Lời nhắn (không bắt buộc)">
+        <Field
+          htmlFor="pledge-message"
+          hintId="pledge-message-hint"
+          label="Lời chúc gửi dự án (không bắt buộc)"
+          hint="Hiển thị công khai trên Tường lời chúc sau khi cam kết được thanh toán và khớp sao kê (tối đa 500 ký tự)."
+        >
           <textarea
             id="pledge-message"
+            aria-describedby="pledge-message-hint"
             name="message"
             rows={3}
             maxLength={500}
             defaultValue={defaults.message}
+            placeholder="Ví dụ: Mong dự án sớm thành hiện thực!"
             className="field"
           />
         </Field>

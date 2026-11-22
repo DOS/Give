@@ -56,7 +56,16 @@ import {
   type CampaignCommentsPage,
 } from "@/lib/campaign-comments"
 import { listCampaignFaqs, type CampaignFaq } from "@/lib/campaign-faqs"
-import { listCampaignPublicTeam, type PublicTeamMember } from "@/lib/campaign-members"
+import { getMyCampaignRole, listCampaignPublicTeam, type PublicTeamMember } from "@/lib/campaign-members"
+import {
+  listCampaignWishes,
+  listHiddenCampaignWishes,
+  parseShowHiddenWishes,
+  parseWishesPage,
+  WISHES_PAGE_SIZE,
+  type CampaignWishesPage,
+  type HiddenCampaignWishRow,
+} from "@/lib/donor-wishes"
 import {
   discoveryHref,
   getCampaignBySlug,
@@ -93,6 +102,7 @@ import { buildServerPosterData } from "@/server/viral-sharing"
 import { saveMyCampaignAmbassador } from "./ambassador-actions"
 import { CampaignComments } from "./CampaignComments"
 import { DonateForm } from "./DonateForm"
+import { DonorWishesWall } from "./DonorWishesWall"
 import { toggleCampaignFollow } from "./follow-actions"
 import { MonthlyForm } from "./MonthlyForm"
 import { ReportCampaign } from "./ReportCampaign"
@@ -264,6 +274,35 @@ async function loadPublicComments(
   })
 }
 
+async function loadPublicWishes(
+  campaignId: string,
+  token: string | undefined,
+  page: number
+): Promise<CampaignWishesPage> {
+  const offset = (page - 1) * WISHES_PAGE_SIZE
+  if (token) {
+    try {
+      return await listCampaignWishes(dbAs(token), campaignId, {
+        limit: WISHES_PAGE_SIZE,
+        offset,
+      })
+    } catch (error: unknown) {
+      const code = (error as { code?: string } | null)?.code
+      if (typeof code === "string" && code.startsWith("PGRST30")) {
+        return listCampaignWishes(dbAs(), campaignId, {
+          limit: WISHES_PAGE_SIZE,
+          offset,
+        })
+      }
+      throw error
+    }
+  }
+  return listCampaignWishes(dbAs(), campaignId, {
+    limit: WISHES_PAGE_SIZE,
+    offset,
+  })
+}
+
 /**
  * The campaign page (DESIGN.md 8): breadcrumb, H1 and the organizer line,
  * then an 8/4 grid from 1024px: cover, tabs, story, statement and updates in
@@ -285,6 +324,8 @@ export default async function CampaignPage({
   const queryParams = searchParams ? await searchParams : {}
   const commentsPage = parseCommentsPage(queryParams)
   const requestedShowHidden = parseShowHiddenComments(queryParams)
+  const wishesPage = parseWishesPage(queryParams)
+  const requestedShowHiddenWishes = parseShowHiddenWishes(queryParams)
 
   const isGive = campaign.type === "give"
   const halted = campaign.status === "suspended" || campaign.status === "cancelled"
@@ -299,6 +340,14 @@ export default async function CampaignPage({
   const isModeratorPromise = !isPublicLiveOrEnded
     ? Promise.resolve(false)
     : sessionPromise.then((s) => (s ? isStaff(dbAs(s.accessToken), MODERATION_ROLES).catch(() => false) : false))
+  const ownCampaignPromise = !isPublicLiveOrEnded
+    ? Promise.resolve(false)
+    : sessionPromise.then((s) =>
+        s ? organizesCampaign(dbAs(s.accessToken), campaign.id, s.user.id).catch(() => false) : false
+      )
+  const campaignRolePromise = !isPublicLiveOrEnded
+    ? Promise.resolve(null)
+    : sessionPromise.then((s) => (s ? getMyCampaignRole(dbAs(s.accessToken), campaign.id).catch(() => null) : null))
   const [
     milestones,
     updates,
@@ -308,12 +357,15 @@ export default async function CampaignPage({
     session,
     ownCampaign,
     isModerator,
+    campaignRole,
     totals,
     accountChanges,
     tiers,
     statementRows,
     monthly,
     comments,
+    wishes,
+    hiddenWishes,
     publicTeam,
     transparencySummary,
     impactReport,
@@ -342,12 +394,9 @@ export default async function CampaignPage({
       : Promise.resolve(null),
     sessionPromise,
     // The organizer cannot back or report their own campaign (the database refuses both).
-    !isPublicLiveOrEnded
-      ? Promise.resolve(false)
-      : sessionPromise.then((s) =>
-          s ? organizesCampaign(dbAs(s.accessToken), campaign.id, s.user.id).catch(() => false) : false
-        ),
+    ownCampaignPromise,
     isModeratorPromise,
+    campaignRolePromise,
     // Public views only: a preview or pre-launch teaser has no public money totals yet.
     !isPublicLiveOrEnded ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
     // A failed read hides the notice rather than the page; the statement shows it too.
@@ -388,6 +437,29 @@ export default async function CampaignPage({
             console.error("campaign page: comments lookup failed", error)
             return null
           }),
+    // Public Donor Wishes Wall (DOS/Give#320): strictly isPublicLiveOrEnded (never pre-launch or preview).
+    !isPublicLiveOrEnded
+      ? Promise.resolve<CampaignWishesPage | null>(null)
+      : sessionPromise
+          .then((s) => loadPublicWishes(campaign.id, s?.accessToken, wishesPage))
+          .catch((error: unknown) => {
+            console.error("campaign page: donor wishes lookup failed", error)
+            return null
+          }),
+    // Hidden donor wishes drawer (DOS/Give#320): authorized owner/editor/staff only when toggled on live/ended campaign.
+    !isPublicLiveOrEnded || !requestedShowHiddenWishes
+      ? Promise.resolve<HiddenCampaignWishRow[]>([])
+      : Promise.all([sessionPromise, ownCampaignPromise, campaignRolePromise, isModeratorPromise]).then(
+          ([s, isOwner, role, mod]) => {
+            if (!s || !(isOwner || role === "owner" || role === "editor" || mod)) {
+              return [] as HiddenCampaignWishRow[]
+            }
+            return listHiddenCampaignWishes(dbAs(s.accessToken), campaign.id).catch((error: unknown) => {
+              console.error("campaign page: hidden wishes lookup failed", error)
+              return [] as HiddenCampaignWishRow[]
+            })
+          }
+        ),
     // Public team block (DOS/Give#253, #315): public campaigns and opted-in pre-launch teasers.
     preview
       ? Promise.resolve([] as PublicTeamMember[])
@@ -442,6 +514,11 @@ export default async function CampaignPage({
         ),
   ])
   const showHiddenComments = isModerator && requestedShowHidden
+  const isCampaignOwnerOrEditor = ownCampaign || campaignRole === "owner" || campaignRole === "editor"
+  const canViewHiddenWishes = Boolean(session) && (isCampaignOwnerOrEditor || isModerator)
+  // Staff cannot moderate their own/editor campaign (GIVE_SELF_REVIEW); owners/editors who are not staff can hide.
+  const canHideWishes = Boolean(session) && (isModerator ? !isCampaignOwnerOrEditor : isCampaignOwnerOrEditor)
+  const showHiddenWishes = canViewHiddenWishes && requestedShowHiddenWishes
   const pitchVideo =
     youtubeMedia.find((m): m is YoutubeMediaRow & { youtube_id: string } => isValidYoutubeId(m.youtube_id)) ?? null
   const canDonate = donationsOpen && account !== null
@@ -493,6 +570,16 @@ export default async function CampaignPage({
     ...(!isPublicLiveOrEnded
       ? []
       : [
+          ...(wishes
+            ? [
+                {
+                  href: "#tuong-loi-chuc",
+                  label: "Lời chúc",
+                  current: false,
+                  count: wishes.totalCount > 0 ? wishes.totalCount : undefined,
+                },
+              ]
+            : []),
           ...(comments
             ? [
                 {
@@ -1020,6 +1107,21 @@ export default async function CampaignPage({
                 <p className="mt-6 text-muted">Chưa có cập nhật nào.</p>
               )}
             </section>
+
+            {isPublicLiveOrEnded && wishes && (
+              <DonorWishesWall
+                slug={campaign.slug}
+                wishes={wishes.wishes}
+                totalCount={wishes.totalCount}
+                page={wishesPage}
+                signedIn={!!session}
+                loginHref={loginHref}
+                canHideWishes={canHideWishes}
+                canViewHiddenWishes={canViewHiddenWishes}
+                showHidden={showHiddenWishes}
+                hiddenWishes={hiddenWishes}
+              />
+            )}
 
             {!preview && comments && (
               <CampaignComments
