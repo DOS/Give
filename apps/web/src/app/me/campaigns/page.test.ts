@@ -5,12 +5,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import type { CampaignStatus, CampaignType, CampaignWithRefs } from "@/lib/campaigns"
 import { privateCoverUrl } from "@/lib/cover-urls"
-import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
+import { fakeDb, type Call, type Handler } from "@/test/fake-db"
 
 const USER = "11111111-1111-4111-8111-111111111111"
 const CAMPAIGN_A = "22222222-2222-4222-8222-222222222222"
 const CAMPAIGN_B = "33333333-3333-4333-8333-333333333333"
 const CAMPAIGN_C = "44444444-4444-4444-8444-444444444444"
+const CAMPAIGN_D = "55555555-5555-4555-8555-555555555555"
 
 const state = vi.hoisted(() => ({
   handler: (() => undefined) as Handler,
@@ -19,6 +20,12 @@ const state = vi.hoisted(() => ({
   serviceUsed: false,
 }))
 
+const redirectMock = vi.hoisted(() =>
+  vi.fn((url: string): never => {
+    throw new Error(`NEXT_REDIRECT:${url}`)
+  })
+)
+
 const requireSessionMock = vi.hoisted(() =>
   vi.fn(async () => ({
     user: { id: USER, email: "organizer@example.vn", name: "Lan" },
@@ -26,6 +33,9 @@ const requireSessionMock = vi.hoisted(() =>
   }))
 )
 
+vi.mock("next/navigation", () => ({
+  redirect: redirectMock,
+}))
 vi.mock("@/lib/auth/session", () => ({
   requireSession: requireSessionMock,
 }))
@@ -49,21 +59,26 @@ const { default: MyCampaignsPage } = await import("./page")
 function renderAsync(node: ReactNode): Promise<string> {
   return new Promise((resolve, reject) => {
     let html = ""
+    let failed = false
     const sink = new Writable({
       write(chunk, _encoding, callback) {
         html += chunk.toString()
         callback()
       },
     })
-    const { pipe } = renderToPipeableStream(node, {
+    const { pipe, abort } = renderToPipeableStream(node, {
       onAllReady() {
-        pipe(sink)
+        if (!failed) pipe(sink)
       },
       onError(error) {
+        failed = true
+        abort()
         reject(error)
       },
     })
-    sink.on("finish", () => resolve(html.replace(/\u00a0/g, " ")))
+    sink.on("finish", () => {
+      if (!failed) resolve(html.replace(/\u00a0/g, " "))
+    })
     sink.on("error", reject)
   })
 }
@@ -102,15 +117,17 @@ function makeCampaign(
 }
 
 beforeEach(() => {
+  redirectMock.mockClear()
   requireSessionMock.mockClear()
   state.calls.length = 0
   state.tokens.length = 0
   state.serviceUsed = false
 })
 
-describe("MyCampaignsPage (DOS/Give#217)", () => {
-  it("requires /me/campaigns session, queries managed_campaigns via dbAs(accessToken), and renders level-2 EmptyState with PageHeader as sole CTA", async () => {
+describe("MyCampaignsPage (DOS/Give#217, DOS/Give#260, DOS/Give#253)", () => {
+  it("requires /me/campaigns session, queries my_campaign_roles via dbAs(accessToken), and renders level-2 EmptyState with PageHeader as sole CTA", async () => {
     state.handler = (call) => {
+      if (call.target === "rpc:my_campaign_roles") return { data: [] }
       if (call.target === "rpc:managed_campaigns") return { data: [] }
       return undefined
     }
@@ -122,9 +139,8 @@ describe("MyCampaignsPage (DOS/Give#217)", () => {
     expect(state.tokens).toEqual(["organizer-jwt"])
     expect(state.serviceUsed).toBe(false)
 
-    const call = state.calls.find((c) => c.target === "rpc:managed_campaigns")
-    expect(call).toBeDefined()
-    expect(op(call, "eq")).toEqual(["organizer_id", USER])
+    const rolesCall = state.calls.find((c) => c.target === "rpc:my_campaign_roles")
+    expect(rolesCall).toBeDefined()
 
     expect(html).toContain('data-section="campaigns"')
     expect(html).toMatch(/<h1[^>]*>Chiến dịch của tôi<\/h1>/)
@@ -134,9 +150,46 @@ describe("MyCampaignsPage (DOS/Give#217)", () => {
     expect(html).not.toContain("<ul")
   })
 
-  it("renders badges, private cover vs placeholder, public link gating, always-on manage link, and changes_requested review note", async () => {
+  it.each(["PGRST301", "PGRST303"])(
+    "redirects to /auth/login?return_path=%2Fme%2Fcampaigns when listMyWorkspaceCampaigns rejects an expired JWT (%s)",
+    async (code) => {
+      state.handler = (call) => {
+        if (call.target === "rpc:my_campaign_roles") {
+          return { error: { code, message: "JWT expired" } }
+        }
+        return undefined
+      }
+
+      const expectedLogin = "/auth/login?return_path=%2Fme%2Fcampaigns"
+      await expect(renderAsync(await MyCampaignsPage())).rejects.toThrow(`NEXT_REDIRECT:${expectedLogin}`)
+      expect(redirectMock).toHaveBeenCalledWith(expectedLogin)
+    }
+  )
+
+  it("rethrows non-JWT database errors instead of redirecting to login", async () => {
+    const dbError = { code: "XX000", message: "database unavailable" }
+    state.handler = (call) => {
+      if (call.target === "rpc:my_campaign_roles") return { error: dbError }
+      return undefined
+    }
+
+    await expect(renderAsync(await MyCampaignsPage())).rejects.toBe(dbError)
+    expect(redirectMock).not.toHaveBeenCalled()
+  })
+
+  it("renders h2 titles, sr-only row link disambiguators, private cover vs placeholder, and changes_requested & suspended review notes", async () => {
     const coverPath = "campaigns/22222222-2222-4222-8222-222222222222/cover.webp"
     state.handler = (call) => {
+      if (call.target === "rpc:my_campaign_roles") {
+        return {
+          data: [
+            { campaign_id: CAMPAIGN_A, role: "owner" },
+            { campaign_id: CAMPAIGN_B, role: "owner" },
+            { campaign_id: CAMPAIGN_C, role: "owner" },
+            { campaign_id: CAMPAIGN_D, role: "owner" },
+          ],
+        }
+      }
       if (call.target === "rpc:managed_campaigns") {
         return {
           data: [
@@ -147,6 +200,7 @@ describe("MyCampaignsPage (DOS/Give#217)", () => {
               type: "give",
               status: "live",
               goal_amount: 25_000_000,
+              created_at: "2026-11-14T03:00:00Z",
               review_note: "Ghi chú cũ không hiện khi đang gây quỹ",
               cover: { storage_path: coverPath, alt: "Ảnh bìa" },
             }),
@@ -156,7 +210,8 @@ describe("MyCampaignsPage (DOS/Give#217)", () => {
               title: "Sách ảnh thiếu nhi",
               type: "back",
               status: "changes_requested",
-              review_note: "Bổ sung dự toán in ấn, cần hỏi viết cho hi@give.vn",
+              created_at: "2026-11-13T03:00:00Z",
+              review_note: "Bổ sung dự toán in ấn,\ncần hỏi viết cho hi@give.vn",
               cover: null,
             }),
             makeCampaign({
@@ -165,8 +220,19 @@ describe("MyCampaignsPage (DOS/Give#217)", () => {
               title: "Album nhạc indie",
               type: "back",
               status: "changes_requested",
-              review_note: null,
+              created_at: "2026-11-12T03:00:00Z",
+              review_note: "   ",
               cover: { storage_path: null, alt: null },
+            }),
+            makeCampaign({
+              id: CAMPAIGN_D,
+              slug: "lop-hoc-vung-bien",
+              title: "Lớp học vùng biên",
+              type: "give",
+              status: "suspended",
+              created_at: "2026-11-11T03:00:00Z",
+              review_note: "Đang xác minh chứng từ chi đợt 1.\nLiên hệ hi@give.vn để bổ sung.",
+              cover: null,
             }),
           ],
         }
@@ -178,39 +244,61 @@ describe("MyCampaignsPage (DOS/Give#217)", () => {
     expect(state.serviceUsed).toBe(false)
 
     const items = [...html.matchAll(/<li[\s\S]*?<\/li>/g)].map((m) => m[0])
-    expect(items).toHaveLength(3)
+    expect(items).toHaveLength(4)
 
-    // Row 0: public give campaign with private cover thumbnail; stale review_note stays hidden.
+    // Row 0: public give campaign with h2 title, private cover thumbnail, and sr-only link names; stale review_note stays hidden.
     expect(items[0]).toContain(">Từ thiện<")
     expect(items[0]).toContain(">Đang gây quỹ<")
+    expect(items[0]).toMatch(
+      new RegExp(`<h2[^>]*><a[^>]*href="/me/campaigns/${CAMPAIGN_A}"[^>]*>Bếp ấm vùng cao</a></h2>`)
+    )
     expect(items[0]).toContain("<img")
     expect(items[0]).toContain(`src="${privateCoverUrl(coverPath)}"`)
     expect(items[0]).toContain("25.000.000 ₫")
     expect(items[0]).toContain('href="/campaigns/bep-am-vung-cao"')
-    expect(items[0]).toContain(">Xem trang<")
+    expect(items[0]).toContain('Xem trang<span class="sr-only">: Bếp ấm vùng cao</span>')
     expect(items[0]).toContain(`href="/me/campaigns/${CAMPAIGN_A}"`)
-    expect(items[0]).toContain(">Quản lý<")
+    expect(items[0]).toContain('Quản lý<span class="sr-only">: Bếp ấm vùng cao</span>')
     expect(items[0]).not.toContain("Cần sửa:")
+    expect(items[0]).not.toContain("Lý do tạm dừng:")
 
-    // Row 1: non-public back campaign with CoverPlaceholder fallback and changes_requested review_note.
+    // Row 1: non-public back campaign with CoverPlaceholder fallback and multiline changes_requested review_note.
     expect(items[1]).toContain(">Dự án sáng tạo<")
     expect(items[1]).toContain(">Cần chỉnh sửa<")
+    expect(items[1]).toMatch(
+      new RegExp(`<h2[^>]*><a[^>]*href="/me/campaigns/${CAMPAIGN_B}"[^>]*>Sách ảnh thiếu nhi</a></h2>`)
+    )
     expect(items[1]).not.toContain("<img")
     expect(items[1]).toContain("<svg")
+    expect(items[1]).toContain("max-w-[68ch]")
+    expect(items[1]).toContain("whitespace-pre-line")
+    expect(items[1]).toContain("text-warning")
     expect(items[1]).toContain("Cần sửa:")
-    expect(items[1]).toContain("Bổ sung dự toán in ấn")
+    expect(items[1]).toContain("Bổ sung dự toán in ấn,\ncần hỏi viết cho ")
     expect(items[1]).toContain('href="mailto:hi@give.vn"')
-    expect(items[1]).not.toContain(">Xem trang<")
-    expect(items[1]).toContain(`href="/me/campaigns/${CAMPAIGN_B}"`)
-    expect(items[1]).toContain(">Quản lý<")
+    expect(items[1]).not.toContain(">Xem trang")
+    expect(items[1]).toContain('Quản lý<span class="sr-only">: Sách ảnh thiếu nhi</span>')
 
-    // Row 2: changes_requested without review_note omits "Cần sửa:" and falls back when storage_path is null.
+    // Row 2: changes_requested with blank review_note omits "Cần sửa:" and falls back when storage_path is null.
     expect(items[2]).not.toContain("<img")
     expect(items[2]).toContain("<svg")
     expect(items[2]).not.toContain("Cần sửa:")
-    expect(items[2]).not.toContain(">Xem trang<")
-    expect(items[2]).toContain(`href="/me/campaigns/${CAMPAIGN_C}"`)
-    expect(items[2]).toContain(">Quản lý<")
+    expect(items[2]).not.toContain(">Xem trang")
+    expect(items[2]).toContain('Quản lý<span class="sr-only">: Album nhạc indie</span>')
+
+    // Row 3: suspended campaign shows moderator review_note with danger tone, max-w-[68ch], and whitespace-pre-line.
+    expect(items[3]).toContain(">Tạm dừng<")
+    expect(items[3]).toMatch(
+      new RegExp(`<h2[^>]*><a[^>]*href="/me/campaigns/${CAMPAIGN_D}"[^>]*>Lớp học vùng biên</a></h2>`)
+    )
+    expect(items[3]).toContain("max-w-[68ch]")
+    expect(items[3]).toContain("whitespace-pre-line")
+    expect(items[3]).toContain("text-danger")
+    expect(items[3]).toContain("Lý do tạm dừng:")
+    expect(items[3]).toContain("Đang xác minh chứng từ chi đợt 1.\nLiên hệ ")
+    expect(items[3]).toContain('href="mailto:hi@give.vn"')
+    expect(items[3]).not.toContain(">Xem trang")
+    expect(items[3]).toContain('Quản lý<span class="sr-only">: Lớp học vùng biên</span>')
   })
 
   it("shows 'Xem trang' strictly for public statuses and hides it for every non-public status", async () => {
@@ -228,6 +316,14 @@ describe("MyCampaignsPage (DOS/Give#217)", () => {
       "cancelled",
     ]
     state.handler = (call) => {
+      if (call.target === "rpc:my_campaign_roles") {
+        return {
+          data: statuses.map((_, i) => ({
+            campaign_id: `00000000-0000-4000-8000-${String(i + 1).padStart(12, "0")}`,
+            role: "owner",
+          })),
+        }
+      }
       if (call.target === "rpc:managed_campaigns") {
         return {
           data: statuses.map((status, i) =>
@@ -236,6 +332,7 @@ describe("MyCampaignsPage (DOS/Give#217)", () => {
               slug: `camp-${status}`,
               type: "back",
               status,
+              created_at: `2026-11-${String(20 - i).padStart(2, "0")}T00:00:00Z`,
             })
           ),
         }
@@ -249,12 +346,78 @@ describe("MyCampaignsPage (DOS/Give#217)", () => {
 
     const publicSet = new Set<CampaignStatus>(["live", "settling", "succeeded", "failed", "closed"])
     statuses.forEach((status, index) => {
+      const title = `Chiến dịch camp-${status}`
+      expect(items[index]).toContain(`Quản lý<span class="sr-only">: ${title}</span>`)
       if (publicSet.has(status)) {
         expect(items[index]).toContain(`href="/campaigns/camp-${status}"`)
-        expect(items[index]).toContain(">Xem trang<")
+        expect(items[index]).toContain(`Xem trang<span class="sr-only">: ${title}</span>`)
       } else {
-        expect(items[index]).not.toContain(">Xem trang<")
+        expect(items[index]).not.toContain(">Xem trang")
       }
     })
+  })
+
+  it("shows accepted co-organizer campaigns badged as 'Đồng tổ chức' with 'Chỉnh sửa' CTA and excludes staff-only rows", async () => {
+    const OTHER_OWNER = "99999999-9999-4999-8999-999999999999"
+    state.handler = (call) => {
+      if (call.target === "rpc:my_campaign_roles") {
+        return {
+          data: [
+            { campaign_id: CAMPAIGN_A, role: "owner" },
+            { campaign_id: CAMPAIGN_B, role: "editor" },
+          ],
+        }
+      }
+      if (call.target === "rpc:managed_campaigns") {
+        return {
+          data: [
+            makeCampaign({
+              id: CAMPAIGN_A,
+              slug: "owner-camp",
+              title: "Chiến dịch của tôi",
+              type: "give",
+              status: "draft",
+              organizer_id: USER,
+              created_at: "2026-11-12T00:00:00Z",
+            }),
+            makeCampaign({
+              id: CAMPAIGN_B,
+              slug: "editor-camp",
+              title: "Chiến dịch đồng tổ chức",
+              type: "give",
+              status: "live",
+              organizer_id: OTHER_OWNER,
+              created_at: "2026-11-15T00:00:00Z",
+            }),
+            makeCampaign({
+              id: CAMPAIGN_C,
+              slug: "staff-only-camp",
+              title: "Chiến dịch của người khác",
+              type: "give",
+              status: "live",
+              organizer_id: OTHER_OWNER,
+              created_at: "2026-11-18T00:00:00Z",
+            }),
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const html = await renderAsync(await MyCampaignsPage())
+    const items = [...html.matchAll(/<li[\s\S]*?<\/li>/g)].map((m) => m[0])
+    expect(items).toHaveLength(2)
+    expect(html).not.toContain("Chiến dịch của người khác")
+
+    // First row (newest): co-organizer campaign.
+    expect(items[0]).toContain("Chiến dịch đồng tổ chức")
+    expect(items[0]).toContain(">Đồng tổ chức<")
+    expect(items[0]).toContain('Chỉnh sửa<span class="sr-only">: Chiến dịch đồng tổ chức</span>')
+
+    // Second row: owned campaign.
+    expect(items[1]).toContain("Chiến dịch của tôi")
+    expect(items[1]).not.toContain(">Đồng tổ chức<")
+    expect(items[1]).toContain('Quản lý<span class="sr-only">: Chiến dịch của tôi</span>')
+    expect(state.serviceUsed).toBe(false)
   })
 })

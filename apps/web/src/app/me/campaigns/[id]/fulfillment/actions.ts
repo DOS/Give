@@ -66,6 +66,7 @@ export async function setFulfillment(campaignId: string, _state: ActionResult, f
 
   revalidatePath(`/me/campaigns/${campaign.id}/fulfillment`)
   revalidatePath("/me/contributions")
+  revalidatePath("/me/pledges/[code]", "page")
   const n = typeof data === "number" ? data : ids.length
   return done(`Đã cập nhật ${n} lượt ủng hộ: ${FULFILLMENT_LABELS[status]}.`)
 }

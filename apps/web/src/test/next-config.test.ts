@@ -43,4 +43,19 @@ describe("response headers", () => {
       ])
     )
   })
+
+  it("strips Referer, disables caching, and sets noindex on /invites/* after the site-wide defaults (DOS/Give#253)", async () => {
+    const rules = (await nextConfig.headers?.()) ?? []
+    const globalIdx = rules.findIndex((r) => r.source === "/:path*")
+    const invitesIdx = rules.findIndex((r) => r.source === "/invites/:path*")
+    expect(globalIdx).toBeGreaterThanOrEqual(0)
+    expect(invitesIdx).toBeGreaterThan(globalIdx)
+    expect(rules[invitesIdx]?.headers).toEqual(
+      expect.arrayContaining([
+        { key: "Referrer-Policy", value: "no-referrer" },
+        { key: "Cache-Control", value: "private, no-store" },
+        { key: "X-Robots-Tag", value: "noindex, nofollow" },
+      ])
+    )
+  })
 })

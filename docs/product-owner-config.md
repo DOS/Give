@@ -54,23 +54,30 @@ Lines follow risk and ownership, not campaign type: give (charity) and back
 (rewards) share most screens and code, while money handling needs its own
 stricter review and legal track.
 
-Two POs work this repository (JOY, 2026-11-14). JOY's Qwen Code sessions run
-Campaigns; the Claude Code PO session `Give Product Owner` runs Money and
-Platform, which hold every Production and DOS.Me migration step, so the
-owner still approves Production in one chat. Each PO dispatches only issues
-of its own lines and runs the acceptance gate of its own PRs. Before taking
-an issue, a PO checks its latest protocol comment for another session's
-claim. Neither PO merges, accepts or posts an acceptance on the other's PR.
-A Production or DOS.Me migration step is Platform's, even when a Campaigns PR
-needs it: only the Give Product Owner runs it, with JOY's approval. In the
-table, "none" means no PO session in this desktop app: Campaigns is owned by
-the Qwen Code PO, and Platform by the Give Product Owner.
+Two parallel POs work this repository (split 2026-11-14, updated by JOY on
+2026-11-21). The Antigravity PO session `Campaigns Product Owner` (profile
+`acc0`, replacing paused Qwen Code sessions) runs Campaigns; the Claude Code
+PO session `Give Product Owner` keeps Money, Platform, and exclusive
+Production (`main` / `give.vn`) ownership (`promotion_po: claude`), so the
+owner still approves Production in one chat. Parallel POs enforce mutual
+exclusion via `po_labels` (`claude: po:claude, antigravity: po:agy`): each
+PO dispatches only issues of its own lines that carry its own runtime label
+or none of these labels, adds its own label on dispatch, checks the latest
+protocol comment for another session's claim before taking an issue, and runs
+the acceptance gate only on its own PRs. Neither PO merges, accepts or posts
+an acceptance on the other's PR. Production promotions (`DOS/Give` `main` /
+`give.vn` and `DOS/DOS.Me` `main`) and all other `DOS/DOS.Me` migration steps
+remain Platform's and strictly exclusive to `Give Product Owner` (Claude Code)
+with JOY's approval; as one explicit exception authorized by JOY (2026-11-21),
+Antigravity PO is authorized to pick up unclaimed `DOS/DOS.Me` DB
+prerequisites `#261`–`#264` for `DOS/DOS.Me` `dev` migrations/PRs only to
+unblock `#250`–`#253` (never `DOS/DOS.Me` `main` / Production promotions).
 
-| Line                                                   | Label            | Product Line option id | PO session                                                |
-| ------------------------------------------------------ | ---------------- | ---------------------- | --------------------------------------------------------- |
-| Campaigns                                              | `line:campaigns` | `ef952ffb`             | none (JOY's Qwen Code sessions; outside this desktop app) |
-| Money                                                  | `line:money`     | `2640fb7c`             | `Give Product Owner`                                      |
-| Platform (CI, release, auth, infra, DOS.Me migrations) | `line:platform`  | `9a434f49`             | none (covered by `Give Product Owner`)                    |
+| Line                                                   | Label            | Product Line option id | PO session                                                                          |
+| ------------------------------------------------------ | ---------------- | ---------------------- | ----------------------------------------------------------------------------------- |
+| Campaigns                                              | `line:campaigns` | `ef952ffb`             | `Campaigns Product Owner` (Antigravity `acc0`, replacing paused Qwen Code sessions) |
+| Money                                                  | `line:money`     | `2640fb7c`             | `Give Product Owner`                                                                |
+| Platform (CI, release, auth, infra, DOS.Me migrations) | `line:platform`  | `9a434f49`             | none (covered by `Give Product Owner`)                                              |
 
 - Campaigns: organizer onboarding, campaign editor and review, discovery,
   campaign pages, updates, milestones, reward tiers and fulfillment status,
@@ -93,7 +100,9 @@ the Qwen Code PO, and Platform by the Give Product Owner.
 
 ## Rule documents
 
-- agent_instructions: none
+- agent_instructions: `AGENTS.md` (`QWEN.md` and `GEMINI.md` point to it). No
+  local Docker or local Supabase for Give work (JOY, 2026-11-21); pgTAP tests
+  and migration replay run in GitHub CI on the DOS/DOS.Me PR.
 - task_scope: none
 - tracking_doc: none
 - review_rules: none
@@ -137,12 +146,23 @@ the Qwen Code PO, and Platform by the Give Product Owner.
 - local_reviews: a fresh-context subagent review; Money changes also get a
   second independent review before merge.
 - agent_effort: high
+- agent_model: sonnet (Antigravity: inherit on Gemini 4 Neon or Orchestrator (Neon))
+
+## Claim lock and parallel POs
+
+- po_labels: claude: po:claude, antigravity: po:agy
+- promotion_po: claude
 
 ## Sessions
 
 - sub_sessions_normal: 3
 - sub_sessions_max: 5
 - check_in_minutes: 30
+- gatekeeper_model: haiku
+- gatekeeper_cron_minutes: 10 (Antigravity sidecar; 30 on Claude Desktop)
+- gatekeeper_heartbeat_active_minutes: 180
+- gatekeeper_heartbeat_idle_minutes: 720
+- po_context_compact_tokens: 120000
 - executors: Codex, "Claude Code", Antigravity, Cursor
 
 ## Owner instructions
@@ -164,10 +184,22 @@ the Qwen Code PO, and Platform by the Give Product Owner.
   project đi. Việc của ai người đó nghiệm thu."; and, on the PO's proposal
   to split by line (Qwen: Campaigns; Claude Code: Money and Platform):
   "Chia như vậy". A `PO acceptance:` comment counts only from the PO that
-  owns the PR's line.
+  owns the PR's line. (Campaigns runtime superseded 2026-11-21, below.)
 - JOY (2026-11-16), on empty-site discovery links: "Giữ nguyeyen" — with no
   live campaign, keep the header, "Hai cách" and footer "Khám phá" links to
   `/campaigns` (its empty state) as they are.
+- JOY (2026-11-21), on Antigravity PO setup: "Mày làm PO của Give nhé. Dùng
+  CC-PO plugin bản mới nhất để setup. Lưu ý là bên Claude cũng có PO nên hạn
+  chế làm trùng task nhé".
+- JOY (2026-11-21), via PO setup choice: Antigravity
+  (`Campaigns Product Owner`, profile `acc0`) takes over `line:campaigns`
+  (replacing paused Qwen Code sessions), enables `po:agy` / `po:claude`
+  anti-duplication labels (`promotion_po: claude` retains exclusive Production
+  `main` / `give.vn` ownership for Claude Code `Give Product Owner`), and
+  picks up unclaimed `DOS/DOS.Me` DB prerequisites `#261`–`#264` for
+  `DOS/DOS.Me` `dev` migrations/PRs only to unblock `#250`–`#253`
+  (`DOS/DOS.Me` `main` / Production promotions remain strictly exclusive to
+  `Give Product Owner` (Claude Code) with JOY's approval).
 
 Screenshot branches (`assets/pr-<n>-screenshots`): every commit on them adds
 `apps/web/vercel.json` with `{"git":{"deploymentEnabled":false}}`, so Vercel

@@ -296,6 +296,7 @@ describe("listPublicCampaigns", () => {
               display_name: "Quỹ Ánh Sáng",
               kind: "organization",
               verification_status: "verified",
+              handle: "quy-anh-sang",
               // Anything else the RPC might return must not reach the page.
               legal_name: "Pháp nhân",
               phone: "0900000001",
@@ -314,7 +315,12 @@ describe("listPublicCampaigns", () => {
       {
         id: A,
         title: "A",
-        organizer: { display_name: "Quỹ Ánh Sáng", kind: "organization", verification_status: "verified" },
+        organizer: {
+          display_name: "Quỹ Ánh Sáng",
+          kind: "organization",
+          verification_status: "verified",
+          handle: "quy-anh-sang",
+        },
       },
     ])
   })

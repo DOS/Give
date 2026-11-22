@@ -12,6 +12,7 @@ import {
   donationCookieToken,
   guestContribution,
   guestContributionAccess,
+  ownContribution,
   paymentAccount,
   statusTokenHash,
 } from "."
@@ -147,6 +148,8 @@ describe("guestContribution", () => {
       reference_code: "GVABCDEFG",
       status: "awaiting_transfer",
       created_at: "2026-10-31T23:00:00.000Z",
+      plan_id: null,
+      plan_period: null,
     })
     const call = calls[0]
     expect(call.target).toBe("contributions")
@@ -171,6 +174,47 @@ describe("guestContribution", () => {
     const calls: Call[] = []
     expect(await guestContribution(fakeDb(() => undefined, calls) as never, "GVABCDEFG", "nope")).toBeNull()
     expect(calls).toHaveLength(0)
+  })
+
+  describe("with a tracking token from the receipt email (DOS/Give#254)", () => {
+    const other = { status_token_hash: `\\x${"0".repeat(64)}` }
+    const db = (token: { expires_at: string } | null, calls: Call[]) =>
+      fakeDb(
+        (call) =>
+          call.target === "contributions"
+            ? { data: row(other) }
+            : { data: call.target === "contribution_access_tokens" ? token : null },
+        calls
+      )
+
+    it("accepts an unexpired token of this donation, looked up by its hash", async () => {
+      const calls: Call[] = []
+      const access = await guestContributionAccess(
+        db({ expires_at: "2026-11-05T00:00:00.000Z" }, calls) as never,
+        "GVABCDEFG",
+        TOKEN,
+        now
+      )
+      expect(access?.donation.reference_code).toBe("GVABCDEFG")
+      expect(access?.expiresAt).toEqual(new Date("2026-11-05T00:00:00.000Z"))
+      expect(calls[1].target).toBe("contribution_access_tokens")
+      expect(calls[1].ops).toContainEqual(["eq", "token_hash", `\\x${TOKEN_SHA256}`])
+      expect(calls[1].ops).toContainEqual(["eq", "contribution_id", "33333333-3333-4333-8333-333333333333"])
+      expect(calls[1].ops).toContainEqual(["gt", "expires_at", now.toISOString()])
+    })
+
+    it("refuses an unknown or expired one", async () => {
+      expect(await guestContributionAccess(db(null, []) as never, "GVABCDEFG", TOKEN, now)).toBeNull()
+      expect(
+        await guestContributionAccess(db({ expires_at: now.toISOString() }, []) as never, "GVABCDEFG", TOKEN, now)
+      ).toBeNull()
+    })
+
+    it("does not look one up when the status token matches", async () => {
+      const calls: Call[] = []
+      await guestContributionAccess(fakeDb(() => ({ data: row() }), calls) as never, "GVABCDEFG", TOKEN, now)
+      expect(calls.map((c) => c.target)).toEqual(["contributions"])
+    })
   })
 
   it("does not query for a malformed reference code", async () => {
@@ -206,6 +250,8 @@ describe("guestContribution", () => {
         reference_code: "GVABCDEFG",
         status: "awaiting_transfer",
         created_at: "2026-10-31T23:00:00.000Z",
+        plan_id: null,
+        plan_period: null,
       },
       expiresAt: new Date("2026-11-07T23:00:00.000Z"),
     })
@@ -272,5 +318,29 @@ describe("acceptsDonations", () => {
     expect(acceptsDonations({ ...live, status: "closed" }, now)).toBe(false)
     expect(acceptsDonations({ ...live, ends_at: "2026-11-10T00:00:00Z" }, now)).toBe(false)
     expect(acceptsDonations({ ...live, starts_at: "2026-11-11T00:00:00Z" }, now)).toBe(false)
+  })
+})
+
+describe("ownContribution (monthly plans, DOS/Give#276)", () => {
+  it("reads the donor's own donation with its plan month, matching the user", async () => {
+    const calls: Call[] = []
+    const row = {
+      id: "33333333-3333-4333-8333-333333333333",
+      campaign_id: CAMPAIGN,
+      intended_amount: 200000,
+      received_amount: 0,
+      reference_code: "GVABCDEFG",
+      status: "awaiting_transfer",
+      created_at: "2026-11-05T01:00:00.000Z",
+      plan_id: "44444444-4444-4444-8444-444444444444",
+      plan_period: "2026-11-01",
+    }
+    const db = fakeDb(() => ({ data: row }), calls)
+    expect(await ownContribution(db as never, "11111111-1111-4111-8111-111111111111", "GVABCDEFG")).toEqual(row)
+    const selected = String(op(calls[0], "select")?.[0])
+    expect(selected).toContain("plan_id")
+    expect(selected).toContain("plan_period")
+    expect(selected).not.toContain("*")
+    expect(calls[0].ops).toContainEqual(["eq", "contributor_user_id", "11111111-1111-4111-8111-111111111111"])
   })
 })

@@ -6,5 +6,5 @@ import { dbAs, dbService, MEDIA_BUCKET } from "@/lib/supabase"
 export async function GET(_request: Request, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params
   const session = await getSession()
-  return coverResponse(path, session ? dbAs(session.accessToken) : null, dbService(), MEDIA_BUCKET, PRIVATE_COVER_CACHE)
+  return coverResponse(path, session ? dbAs(session.accessToken) : null, dbService, MEDIA_BUCKET, PRIVATE_COVER_CACHE)
 }

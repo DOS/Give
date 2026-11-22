@@ -58,10 +58,14 @@ export async function approveCampaign(
     message = live.error
       ? `Đã duyệt, nhưng chưa mở được: ${dbErrorMessage(live.error, OPEN_MESSAGES)}`
       : "Đã duyệt và mở chiến dịch công khai."
-    if (!live.error) revalidatePath(`/campaigns/${campaign.slug}`)
   }
   revalidatePath("/admin")
+  revalidatePath(`/me/campaigns/${campaignId}`)
+  revalidatePath("/me/campaigns")
+  revalidatePath("/me/notices")
+  revalidatePath(`/campaigns/${campaign.slug}`)
   revalidatePath("/campaigns")
+  revalidatePath("/u/[handle]", "page")
   revalidatePath("/")
   return done(message)
 }
@@ -84,9 +88,13 @@ export async function requestChanges(campaignId: string, _state: ActionResult, f
   if (fromStatus !== "in_review" && fromStatus !== "approved") return fail(STATUS_CHANGED)
   const db = dbAs(session.accessToken)
 
-  const { data, error: readError } = await db.from("campaigns").select("status").eq("id", campaignId).maybeSingle()
+  const { data, error: readError } = await db
+    .from("campaigns")
+    .select("status, slug")
+    .eq("id", campaignId)
+    .maybeSingle()
   if (readError) return fail(dbErrorMessage(readError))
-  const current = data as { status: string } | null
+  const current = data as { status: string; slug?: string | null } | null
   if (!current) return fail(dbErrorMessage({ message: "GIVE_CAMPAIGN_NOT_FOUND" }))
   if (current.status !== fromStatus) return fail(STATUS_CHANGED)
 
@@ -97,6 +105,14 @@ export async function requestChanges(campaignId: string, _state: ActionResult, f
   })
   if (error) return fail(dbErrorMessage(error, fromStatus === "approved" ? SEND_BACK_MESSAGES : undefined))
   revalidatePath("/admin")
+  revalidatePath(`/me/campaigns/${campaignId}`)
+  revalidatePath("/me/campaigns")
+  revalidatePath("/me/notices")
+  if (current.slug) {
+    revalidatePath(`/campaigns/${current.slug}`)
+  } else {
+    revalidatePath("/campaigns/[slug]", "page")
+  }
   return done("Đã gửi yêu cầu chỉnh sửa cho người tổ chức.")
 }
 
@@ -125,5 +141,15 @@ export async function setVerification(userId: string, _state: ActionResult, form
   })
   if (error) return fail(dbErrorMessage(error))
   revalidatePath("/admin")
+  revalidatePath("/admin/reports")
+  revalidatePath("/start")
+  revalidatePath("/me")
+  revalidatePath("/me/campaigns/[id]", "page")
+  revalidatePath("/me/accounts")
+  revalidatePath("/me/notices")
+  revalidatePath("/campaigns/[slug]", "page")
+  revalidatePath("/u/[handle]", "page")
+  revalidatePath("/campaigns")
+  revalidatePath("/")
   return done(status === "verified" ? "Đã xác minh người tổ chức." : "Đã từ chối xác minh.")
 }

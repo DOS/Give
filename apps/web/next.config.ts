@@ -38,6 +38,16 @@ const nextConfig: NextConfig = {
           { key: "Cache-Control", value: "private, no-store" },
         ],
       },
+      {
+        // Co-organizer invite URLs carry single-use secret tokens: never send a
+        // Referer from them, never cache them, and keep crawlers out (DOS/Give#253).
+        source: "/invites/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "no-referrer" },
+          { key: "Cache-Control", value: "private, no-store" },
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+        ],
+      },
     ]
   },
 }

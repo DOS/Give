@@ -50,7 +50,16 @@ vi.mock("@/lib/supabase", () => ({
   dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
 }))
 vi.mock("./actions", () => ({ reportCampaign: vi.fn(async () => null) }))
+vi.mock("./comment-actions", () => ({
+  createComment: vi.fn(async () => null),
+  editComment: vi.fn(async () => null),
+  deleteComment: vi.fn(async () => null),
+  hideCommentAsOrganizer: vi.fn(async () => null),
+  reportComment: vi.fn(async () => null),
+  moderateCommentFromCampaign: vi.fn(async () => null),
+}))
 vi.mock("@/app/(public)/donations/actions", () => ({ donate: vi.fn(async () => null) }))
+vi.mock("./monthly-actions", () => ({ startMonthlyPlan: vi.fn(async () => null) }))
 
 const { default: CampaignPage, generateMetadata } = await import("./page")
 
@@ -99,7 +108,13 @@ beforeEach(() => {
   state.session = null
   state.anonHandler = (call) => {
     if (call.target === "campaigns") return { data: campaignFixture("live") }
-    if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+    if (
+      call.target === "campaign_milestones" ||
+      call.target === "campaign_updates" ||
+      call.target === "campaign_media"
+    ) {
+      return { data: [] }
+    }
     if (call.target === "rpc:public_organizer")
       return { data: [{ display_name: "Quỹ Bản Mây", kind: "organization", verification_status: "verified" }] }
     if (call.target === "public_campaigns")
@@ -224,7 +239,12 @@ describe("CampaignPage report flow (DOS/Give#98)", () => {
     state.anonHandler = () => ({ data: null })
     state.userHandler = (call) => {
       if (call.target === "campaigns") return { data: campaignFixture("in_review") }
-      if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media"
+      )
+        return { data: [] }
       return undefined
     }
 
@@ -428,7 +448,12 @@ describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/
 
       state.userHandler = (call) => {
         if (call.target === "campaigns") return { data: campaignFixture(status) }
-        if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+        if (
+          call.target === "campaign_milestones" ||
+          call.target === "campaign_updates" ||
+          call.target === "campaign_media"
+        )
+          return { data: [] }
         return undefined
       }
       const giveHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
@@ -440,7 +465,12 @@ describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/
         if (call.target === "campaigns") {
           return { data: { ...campaignFixture(status), type: "back", funding_model: "all_or_nothing" } }
         }
-        if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+        if (
+          call.target === "campaign_milestones" ||
+          call.target === "campaign_updates" ||
+          call.target === "campaign_media"
+        )
+          return { data: [] }
         if (call.target === "reward_tiers") return { data: [TIER_FIXTURE] }
         return undefined
       }
@@ -474,7 +504,12 @@ describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/
     ]) {
       state.userHandler = (call) => {
         if (call.target === "campaigns") return { data: campaignFixture(status) }
-        if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+        if (
+          call.target === "campaign_milestones" ||
+          call.target === "campaign_updates" ||
+          call.target === "campaign_media"
+        )
+          return { data: [] }
         return undefined
       }
       const giveHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
@@ -491,7 +526,12 @@ describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/
         if (call.target === "campaigns") {
           return { data: { ...campaignFixture(status), type: "back", funding_model: "all_or_nothing" } }
         }
-        if (call.target === "campaign_milestones" || call.target === "campaign_updates") return { data: [] }
+        if (
+          call.target === "campaign_milestones" ||
+          call.target === "campaign_updates" ||
+          call.target === "campaign_media"
+        )
+          return { data: [] }
         if (call.target === "reward_tiers") return { data: [TIER_FIXTURE] }
         return undefined
       }
@@ -507,6 +547,49 @@ describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/
       expect(backHtml).not.toContain("người ủng hộ chọn được mức khi dự án mở gây quỹ")
       expect(backHtml).not.toContain("Give sắp mở nhận")
     }
+  })
+
+  it("links the organizer display name to /u/<handle> when handle is present and keeps plain text otherwise", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:public_organizer") {
+        return {
+          data: [
+            {
+              display_name: "Quỹ Bản Mây",
+              kind: "organization",
+              verification_status: "verified",
+              handle: "quy-ban-may",
+            },
+          ],
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const linkedDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const profileLink = linkedDoc.querySelector('header a[href="/u/quy-ban-may"]')
+    expect(profileLink?.textContent).toBe("Quỹ Bản Mây")
+
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:public_organizer") {
+        return {
+          data: [
+            {
+              display_name: "Quỹ Bản Mây",
+              kind: "organization",
+              verification_status: "verified",
+              handle: null,
+            },
+          ],
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const plainDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(plainDoc.querySelector('header a[href^="/u/"]')).toBeNull()
+    expect(plainDoc.querySelector("header")?.textContent).toContain("Quỹ Bản Mây")
   })
 
   it("omits the organizer block instead of crashing when getPublicOrganizer fails", async () => {
@@ -611,5 +694,826 @@ describe("CampaignPage halted states, organizer resilience, and stats grid (DOS/
     }
     const zeroDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
     expect(zeroDoc.querySelector('section[aria-label="Ủng hộ chiến dịch"] dl')).toBeNull()
+  })
+})
+
+describe("CampaignPage pitch video & milestones (DOS/Give#268)", () => {
+  const VIDEO_ID = "dQw4w9WgXcQ"
+  const MILESTONES = [
+    {
+      id: "ms-1",
+      campaign_id: CAMPAIGN,
+      title: "Đổ móng phòng học",
+      description: "Hoàn thành nền móng bê tông.",
+      target_amount: 30_000_000,
+      unlock_note: "Công bố biên bản nghiệm thu móng\nKèm ảnh công trường tuần 1.",
+      sort_order: 1,
+    },
+    {
+      id: "ms-2",
+      campaign_id: CAMPAIGN,
+      title: "Lợp mái tôn chống nóng",
+      description: "Lắp khung kèo thép và mái tôn.",
+      target_amount: 60_000_000,
+      unlock_note: "Mở đăng ký tình nguyện viên sơn tường.",
+      sort_order: 2,
+    },
+  ]
+
+  it("queries campaign_media for youtube pitch video and renders CampaignVideo poster + MilestoneList reached state on public campaigns", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_media") {
+        return {
+          data: [{ id: "media-1", youtube_id: VIDEO_ID, alt: "Phóng sự Điểm trường Bản Mây", sort_order: 0 }],
+        }
+      }
+      if (call.target === "campaign_milestones") return { data: MILESTONES }
+      if (call.target === "public_campaigns") {
+        return {
+          data: {
+            campaign_id: CAMPAIGN,
+            paid_amount: 45_000_000,
+            other_in_amount: 5_000_000,
+            disbursed_amount: 0,
+            refunded_amount: 0,
+            unexplained_out_amount: 0,
+            unexplained_out_count: 0,
+            supporters_count: 12,
+            pledged_amount: 0,
+            refund_owed_amount: 0,
+            backers_count: 0,
+            payments_stopped_at: null,
+            payments_stopped_note: null,
+            own_transfer_amount: 0,
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    const doc = parseDoc(html)
+
+    // Exact query shape on campaign_media.
+    const mediaCall = state.anonCalls.find((c) => c.target === "campaign_media")
+    expect(mediaCall?.ops).toEqual([
+      ["select", "id, youtube_id, alt, sort_order"],
+      ["eq", "campaign_id", CAMPAIGN],
+      ["eq", "kind", "youtube"],
+      ["order", "sort_order", { ascending: true }],
+      ["order", "created_at", { ascending: true }],
+      ["limit", 1],
+    ])
+
+    // Story section renders CampaignVideo poster with zero iframe requests.
+    const storySection = doc.querySelector('section[aria-labelledby="story-heading"]')!
+    expect(storySection.querySelector("iframe")).toBeNull()
+    const posterImg = storySection.querySelector("img")
+    expect(posterImg?.getAttribute("src")).toContain(
+      `/_next/image?url=${encodeURIComponent(`https://i.ytimg.com/vi/${VIDEO_ID}/hqdefault.jpg`)}`
+    )
+    const playBtn = storySection.querySelector('button[aria-label="Phát video: Phóng sự Điểm trường Bản Mây"]')
+    expect(playBtn).not.toBeNull()
+    expect(playBtn?.className).toContain("min-h-11")
+    expect(storySection.textContent).toContain("Bấm để phát video từ YouTube")
+    const watchLink = storySection.querySelector(`a[href="https://www.youtube.com/watch?v=${VIDEO_ID}"]`)
+    expect(watchLink?.textContent).toBe("Mở trên YouTube")
+
+    // Raised = paid_amount (45M) - other_in_amount (5M) = 40M: ms-1 (30M) reached, ms-2 (60M) unreached.
+    const msItems = [...doc.querySelectorAll('section[aria-labelledby="milestones-heading"] ol > li')]
+    expect(msItems).toHaveLength(2)
+    expect(msItems[0].textContent).toContain("Đã đạt mốc")
+    expect(msItems[0].textContent).toContain("Công bố biên bản nghiệm thu móng")
+    expect(msItems[1].textContent).not.toContain("Đã đạt mốc")
+    expect(msItems[1].textContent).not.toContain("Mở đăng ký tình nguyện viên sơn tường.")
+  })
+
+  it("uses pledged_amount on public back campaigns and switches MilestoneList to preview mode on unpublished previews", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return { data: { ...campaignFixture("live"), type: "back", funding_model: "all_or_nothing" } }
+      }
+      if (call.target === "campaign_milestones") return { data: MILESTONES }
+      if (call.target === "public_campaigns") {
+        return {
+          data: {
+            campaign_id: CAMPAIGN,
+            paid_amount: 0,
+            other_in_amount: 0,
+            disbursed_amount: 0,
+            refunded_amount: 0,
+            unexplained_out_amount: 0,
+            unexplained_out_count: 0,
+            supporters_count: 0,
+            pledged_amount: 60_000_000,
+            refund_owed_amount: 0,
+            backers_count: 20,
+            payments_stopped_at: null,
+            payments_stopped_note: null,
+            own_transfer_amount: 0,
+          },
+        }
+      }
+      if (call.target === "reward_tiers") return { data: [] }
+      return baseAnon(call)
+    }
+
+    const backDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const backItems = [...backDoc.querySelectorAll('section[aria-labelledby="milestones-heading"] ol > li')]
+    expect(backItems[0].textContent).toContain("Đã đạt mốc")
+    expect(backItems[1].textContent).toContain("Đã đạt mốc")
+    expect(backItems[1].textContent).toContain("Mở đăng ký tình nguyện viên sơn tường.")
+
+    // Preview mode: raisedAmount is null -> no 'Đã đạt mốc', unlock_note prefixed with 'Khi đạt mốc:', and pitch video still previews.
+    state.session = {
+      user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
+      accessToken: "org-token",
+    }
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("in_review") }
+      if (call.target === "campaign_media") {
+        return { data: [{ id: "media-1", youtube_id: VIDEO_ID, alt: null, sort_order: 0 }] }
+      }
+      if (call.target === "campaign_milestones") return { data: MILESTONES }
+      if (call.target === "campaign_updates") return { data: [] }
+      return undefined
+    }
+
+    const previewHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    const previewDoc = parseDoc(previewHtml)
+    expect(previewDoc.body.textContent).not.toContain("Đã đạt mốc")
+    expect(previewDoc.body.textContent).toContain("Khi đạt mốc: Công bố biên bản nghiệm thu móng")
+    expect(previewDoc.body.textContent).toContain("Khi đạt mốc: Mở đăng ký tình nguyện viên sơn tường.")
+    expect(previewDoc.querySelector('button[aria-label="Phát video: Xây trường Bản Mây"]')).not.toBeNull()
+  })
+
+  it("keeps rendering the campaign page cleanly when campaign_media fails, throws, or returns an invalid youtube_id", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_media") {
+        return { data: null, error: { code: "57014", message: "statement timeout" } }
+      }
+      return baseAnon(call)
+    }
+
+    const failedHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(failedHtml).toContain("Xây trường Bản Mây")
+    expect(failedHtml).not.toContain("Bấm để phát video từ YouTube")
+    expect(failedHtml).not.toContain("Mở trên YouTube")
+
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_media") {
+        throw new Error("network reset")
+      }
+      return baseAnon(call)
+    }
+
+    const thrownHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(thrownHtml).toContain("Xây trường Bản Mây")
+    expect(thrownHtml).not.toContain("Bấm để phát video từ YouTube")
+    expect(thrownHtml).not.toContain("Mở trên YouTube")
+
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_media") {
+        return { data: [{ id: "media-bad", youtube_id: "not-valid!!", alt: "Bad", sort_order: 0 }] }
+      }
+      return baseAnon(call)
+    }
+
+    const invalidHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(invalidHtml).toContain("Xây trường Bản Mây")
+    expect(invalidHtml).not.toContain("Bấm để phát video từ YouTube")
+    expect(invalidHtml).not.toContain("Mở trên YouTube")
+  })
+})
+
+describe("CampaignPage BreadcrumbList JSON-LD (DOS/Give#283)", () => {
+  it("emits absolute schema.org BreadcrumbList JSON-LD with category when siteOrigin() is configured", async () => {
+    const prevSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
+    process.env.NEXT_PUBLIC_SITE_URL = "https://give.vn/ignored-path"
+
+    try {
+      const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+      const doc = parseDoc(html)
+      const scripts = doc.querySelectorAll('script[type="application/ld+json"]')
+      expect(scripts).toHaveLength(1)
+
+      expect(JSON.parse(scripts[0].textContent ?? "")).toStrictEqual({
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Trang chủ", item: "https://give.vn/" },
+          { "@type": "ListItem", position: 2, name: "Khám phá", item: "https://give.vn/campaigns" },
+          { "@type": "ListItem", position: 3, name: "Từ thiện", item: "https://give.vn/campaigns?type=give" },
+          {
+            "@type": "ListItem",
+            position: 4,
+            name: "Giáo dục",
+            item: "https://give.vn/campaigns?type=give&category=giao-duc",
+          },
+          { "@type": "ListItem", position: 5, name: "Xây trường Bản Mây" },
+        ],
+      })
+    } finally {
+      if (prevSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
+      else process.env.NEXT_PUBLIC_SITE_URL = prevSiteUrl
+    }
+  })
+
+  it("omits the category crumb with contiguous positions when category is null and falls back to relative URLs when siteOrigin() is unset", async () => {
+    const prevSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
+    delete process.env.NEXT_PUBLIC_SITE_URL
+
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("succeeded"),
+            type: "back",
+            funding_model: "all_or_nothing",
+            category_id: null,
+            category: null,
+          },
+        }
+      }
+      if (call.target === "reward_tiers") return { data: [] }
+      return baseAnon(call)
+    }
+
+    try {
+      const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+      const doc = parseDoc(html)
+      const scripts = doc.querySelectorAll('script[type="application/ld+json"]')
+      expect(scripts).toHaveLength(1)
+
+      expect(JSON.parse(scripts[0].textContent ?? "")).toStrictEqual({
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { "@type": "ListItem", position: 1, name: "Trang chủ", item: "/" },
+          { "@type": "ListItem", position: 2, name: "Khám phá", item: "/campaigns" },
+          { "@type": "ListItem", position: 3, name: "Dự án sáng tạo", item: "/campaigns?type=back" },
+          { "@type": "ListItem", position: 4, name: "Xây trường Bản Mây" },
+        ],
+      })
+    } finally {
+      if (prevSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
+      else process.env.NEXT_PUBLIC_SITE_URL = prevSiteUrl
+    }
+  })
+
+  it("escapes < as \\u003c so </script> or <!-- in campaign title or category cannot break out of application/ld+json", async () => {
+    const xssTitle = 'Xây trường </script><script>alert("xss")</script> <!-- Bản Mây'
+    const xssCategoryName = "Giáo dục </script><!--"
+
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        const base = campaignFixture("live")
+        return {
+          data: {
+            ...base,
+            title: xssTitle,
+            category: { ...base.category!, name: xssCategoryName },
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(html).not.toContain('</script><script>alert("xss")</script>')
+    expect(html).toContain('\\u003c/script>\\u003cscript>alert(\\"xss\\")\\u003c/script> \\u003c!-- Bản Mây')
+    expect(html).toContain("Giáo dục \\u003c/script>\\u003c!--")
+
+    const doc = parseDoc(html)
+    const allScripts = doc.querySelectorAll("script")
+    expect(allScripts).toHaveLength(1)
+    expect(allScripts[0].getAttribute("type")).toBe("application/ld+json")
+
+    const parsed = JSON.parse(allScripts[0].textContent ?? "")
+    expect(parsed.itemListElement[3].name).toBe(xssCategoryName)
+    expect(parsed.itemListElement[4].name).toBe(xssTitle)
+  })
+
+  it.each(["draft", "in_review", "changes_requested", "approved", "suspended", "cancelled"] as const)(
+    "omits BreadcrumbList JSON-LD on non-public and halted status %s",
+    async (status) => {
+      const prevSiteUrl = process.env.NEXT_PUBLIC_SITE_URL
+      process.env.NEXT_PUBLIC_SITE_URL = "https://give.vn"
+
+      state.session = {
+        user: { id: VIEWER, email: "mod@dos.me", name: "Kiểm duyệt viên" },
+        accessToken: "mod-token",
+      }
+      state.anonHandler = () => ({ data: null })
+      state.userHandler = (call) => {
+        if (call.target === "campaigns") return { data: campaignFixture(status) }
+        if (
+          call.target === "campaign_milestones" ||
+          call.target === "campaign_updates" ||
+          call.target === "campaign_media"
+        )
+          return { data: [] }
+        return undefined
+      }
+
+      try {
+        const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+        const doc = parseDoc(html)
+        expect(doc.querySelector('script[type="application/ld+json"]')).toBeNull()
+        expect(html).not.toContain("application/ld+json")
+        expect(html).not.toContain("BreadcrumbList")
+      } finally {
+        if (prevSiteUrl === undefined) delete process.env.NEXT_PUBLIC_SITE_URL
+        else process.env.NEXT_PUBLIC_SITE_URL = prevSiteUrl
+      }
+    }
+  )
+})
+
+describe("CampaignPage monthly giving (DOS/Give#276)", () => {
+  const ACCOUNT = { channel: "statement_import", bank_bin: "970436", account_number: "0123456789", account_name: "QUY" }
+
+  function withMonthly(row: { allow_monthly: boolean; monthly_supporters: number } | null, fail = false) {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "public_campaign_monthly") {
+        return fail ? { error: { code: "42P01", message: "missing" } } : { data: row }
+      }
+      return baseAnon(call)
+    }
+    state.serviceHandler = (call) => (call.target === "rpc:payment_account" ? { data: ACCOUNT } : undefined)
+  }
+
+  async function render() {
+    return parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+  }
+
+  it("shows the monthly supporters count and a sign-in link to a signed-out visitor", async () => {
+    withMonthly({ allow_monthly: true, monthly_supporters: 7 })
+    const doc = await render()
+
+    expect(doc.body.textContent).toContain("7 người ủng hộ hằng tháng")
+    const monthlyCall = state.anonCalls.find((c) => c.target === "public_campaign_monthly")
+    expect(monthlyCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+    const section = doc.querySelector("#hang-thang")!
+    expect(section).not.toBeNull()
+    expect(section.textContent).toContain("Give không tự trừ tiền")
+    expect(section.querySelector("form")).toBeNull()
+    const login = section.querySelector('a[href^="/auth/login"]')
+    expect(login?.getAttribute("href")).toBe(`/auth/login?return_path=${encodeURIComponent(`/campaigns/${SLUG}`)}`)
+    expect(login?.textContent).toBe("Đăng nhập để ủng hộ hằng tháng")
+    expect(doc.querySelector('a[href="#hang-thang"]')?.textContent).toBe("Hoặc ủng hộ hằng tháng")
+    // The one-off form stays.
+    expect(doc.querySelector("#ung-ho")).not.toBeNull()
+  })
+
+  it("renders the monthly form with day 1-28, the anonymity warning and a required consent for a signed-in donor", async () => {
+    state.session = { user: { id: VIEWER, email: "lan@dos.me", name: "Lan" }, accessToken: "viewer-token" }
+    withMonthly({ allow_monthly: true, monthly_supporters: 0 })
+    const doc = await render()
+
+    expect(doc.body.textContent).not.toContain("người ủng hộ hằng tháng")
+    const form = doc.querySelector("#hang-thang form")!
+    expect(form).not.toBeNull()
+    expect(form.querySelector('input[name="amount"]')).not.toBeNull()
+    const days = [...form.querySelectorAll('select[name="day_of_month"] option')].map((o) => o.getAttribute("value"))
+    expect(days).toEqual(Array.from({ length: 28 }, (_, i) => String(i + 1)))
+    expect(form.querySelector('input[name="public_name"]')?.getAttribute("value")).toBe("Lan")
+    expect(form.querySelector("#monthly-anonymous-hint")?.textContent).toContain("mỗi tháng một lần")
+    const consent = form.querySelector('input[name="consent"]')!
+    expect(consent.hasAttribute("required")).toBe(true)
+    expect(consent.closest("label")?.textContent).toContain(
+      "Tôi đồng ý nhận lời nhắc và mã ủng hộ mỗi tháng qua email và thông báo trên Give; tôi dừng được bất cứ lúc nào."
+    )
+    expect(form.querySelector('textarea[name="message"]')).not.toBeNull()
+    expect(form.querySelector('button[type="submit"]')?.textContent).toBe("Đăng ký ủng hộ hằng tháng")
+  })
+
+  it.each([
+    ["the campaign does not allow it", { allow_monthly: false, monthly_supporters: 3 }, false],
+    ["the lookup fails", null, true],
+  ])("hides the monthly form when %s", async (_name, row, fail) => {
+    state.session = { user: { id: VIEWER, email: null, name: null }, accessToken: "viewer-token" }
+    withMonthly(row, fail)
+    const log = vi.spyOn(console, "error").mockImplementation(() => {})
+    const doc = await render()
+    log.mockRestore()
+
+    expect(doc.querySelector("#hang-thang")).toBeNull()
+    expect(doc.querySelector('a[href="#hang-thang"]')).toBeNull()
+    expect(doc.querySelector("#ung-ho")).not.toBeNull()
+    // Existing supporters still count while the campaign takes no new plans.
+    expect(doc.body.textContent?.includes("3 người ủng hộ hằng tháng")).toBe(!fail)
+  })
+
+  it("hides the monthly form when the campaign takes no donations, and the count when backer counts are hidden", async () => {
+    state.session = { user: { id: VIEWER, email: null, name: null }, accessToken: "viewer-token" }
+    withMonthly({ allow_monthly: true, monthly_supporters: 4 })
+    state.serviceHandler = () => ({ data: null })
+    let doc = await render()
+    expect(doc.querySelector("#hang-thang")).toBeNull()
+    expect(doc.body.textContent).toContain("4 người ủng hộ hằng tháng")
+
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) =>
+      call.target === "campaigns"
+        ? { data: { ...campaignFixture("live"), display_options: { backers_count: false } } }
+        : baseAnon(call)
+    doc = await render()
+    expect(doc.body.textContent).not.toContain("người ủng hộ hằng tháng")
+  })
+
+  it("does not look monthly giving up for back campaigns or previews", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) =>
+      call.target === "campaigns" ? { data: { ...campaignFixture("live"), type: "back" } } : baseAnon(call)
+    await render()
+    expect(state.anonCalls.some((c) => c.target === "public_campaign_monthly")).toBe(false)
+  })
+})
+
+describe("CampaignPage analytics view beacon (DOS/Give#252)", () => {
+  it("fires a view beacon on public campaigns and omits it on non-public previews", async () => {
+    const { act } = await import("react")
+    const { createRoot } = await import("react-dom/client")
+    const { resetViewedMemoryCache } = await import("@/lib/analytics-client")
+
+    ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    resetViewedMemoryCache()
+    window.localStorage.clear()
+
+    const sendBeacon = vi.fn(() => true)
+    const originalBeacon = Object.getOwnPropertyDescriptor(navigator, "sendBeacon")
+    Object.defineProperty(navigator, "sendBeacon", { value: sendBeacon, configurable: true, writable: true })
+
+    const container = document.createElement("div")
+    document.body.append(container)
+    const root = createRoot(container)
+
+    try {
+      // Public live campaign fires a single view beacon.
+      const livePage = await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })
+      await act(async () => {
+        root.render(livePage)
+      })
+      expect(sendBeacon).toHaveBeenCalledTimes(1)
+      expect(sendBeacon).toHaveBeenCalledWith("/api/analytics/event", expect.any(Blob))
+
+      // Non-public preview campaign (draft viewed by organizer) does NOT fire a view beacon.
+      sendBeacon.mockClear()
+      resetViewedMemoryCache()
+      window.localStorage.clear()
+      state.session = { user: { id: VIEWER, email: null, name: null }, accessToken: "organizer-token" }
+      state.anonHandler = (call) => (call.target === "campaigns" ? { data: null } : undefined)
+      state.userHandler = (call) => {
+        if (call.target === "campaigns") return { data: campaignFixture("draft") }
+        return { data: [] }
+      }
+
+      const previewPage = await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })
+      await act(async () => {
+        root.render(previewPage)
+      })
+      expect(sendBeacon).not.toHaveBeenCalled()
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+      if (originalBeacon) {
+        Object.defineProperty(navigator, "sendBeacon", originalBeacon)
+      } else {
+        Reflect.deleteProperty(navigator, "sendBeacon")
+      }
+    }
+  })
+})
+
+describe("CampaignPage comments section (DOS/Give#250)", () => {
+  const ROOT_OTHER = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+  const REPLY_ORG = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+  const ROOT_OWN = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+  const ROOT_HIDDEN = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+
+  const COMMENTS_FIXTURE = [
+    {
+      id: ROOT_OTHER,
+      campaign_id: CAMPAIGN,
+      parent_id: null,
+      body: "Ủng hộ chiến dịch! Xem https://evil.example <script>alert(1)</script>",
+      status: "visible",
+      author_display_name: "Lan Anh",
+      author_avatar_url: null,
+      is_organizer: false,
+      is_author: false,
+      created_at: "2026-11-20T08:00:00.000Z",
+      edited_at: "2026-11-20T08:05:00.000Z",
+      hidden_role: null,
+      hidden_reason: null,
+      hidden_at: null,
+      hidden_by_display_name: null,
+      total_top_level_count: 2,
+    },
+    {
+      id: REPLY_ORG,
+      campaign_id: CAMPAIGN,
+      parent_id: ROOT_OTHER,
+      body: "Cảm ơn bạn đã đồng hành cùng điểm trường!",
+      status: "visible",
+      author_display_name: "Quỹ Bản Mây",
+      author_avatar_url: null,
+      is_organizer: true,
+      is_author: false,
+      created_at: "2026-11-20T09:00:00.000Z",
+      edited_at: null,
+      hidden_role: null,
+      hidden_reason: null,
+      hidden_at: null,
+      hidden_by_display_name: null,
+      total_top_level_count: 2,
+    },
+    {
+      id: ROOT_OWN,
+      campaign_id: CAMPAIGN,
+      parent_id: null,
+      body: "Bình luận của chính mình",
+      status: "visible",
+      author_display_name: null,
+      author_avatar_url: null,
+      is_organizer: false,
+      is_author: true,
+      created_at: "2026-11-20T07:00:00.000Z",
+      edited_at: null,
+      hidden_role: null,
+      hidden_reason: null,
+      hidden_at: null,
+      hidden_by_display_name: null,
+      total_top_level_count: 2,
+    },
+  ]
+
+  it("renders comments for guests with plain-text XSS safety, organizer badge, edited indicator, and sign-in prompt", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:list_campaign_comments") return { data: COMMENTS_FIXTURE }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    const doc = parseDoc(html)
+
+    // Tab links to #binh-luan with top-level count.
+    const tab = doc.querySelector('a[href="#binh-luan"]')
+    expect(tab?.textContent).toContain("Bình luận")
+    expect(tab?.textContent).toContain("(2)")
+
+    const section = doc.querySelector("section#binh-luan")!
+    expect(section).not.toBeNull()
+    expect(section.querySelector('textarea[name="body"]')).toBeNull()
+    expect(section.querySelector('a[href^="/auth/login"]')?.textContent).toContain("Đăng nhập để bình luận")
+
+    // XSS & plain-text rules: no executable script tag, no clickable link inside comment body.
+    expect(section.querySelector("script")).toBeNull()
+    expect(section.querySelector('a[href="https://evil.example"]')).toBeNull()
+    expect(section.textContent).toContain("Ủng hộ chiến dịch! Xem https://evil.example <script>alert(1)</script>")
+    expect(section.textContent).toContain("(đã chỉnh sửa)")
+    expect(section.textContent).toContain("Người tổ chức")
+    expect(section.textContent).toContain("Người dùng đã xóa tài khoản")
+  })
+
+  it("enforces 1-level replies, author edit/delete without self-report, and report form with unique IDs for signed-in users", async () => {
+    state.session = {
+      user: { id: VIEWER, email: "viewer@dos.me", name: "Người xem" },
+      accessToken: "viewer-token",
+    }
+    const baseUser = state.userHandler
+    state.userHandler = (call) => {
+      if (call.target === "rpc:list_campaign_comments") return { data: COMMENTS_FIXTURE }
+      return baseUser(call)
+    }
+
+    const doc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const section = doc.querySelector("section#binh-luan")!
+
+    // New top-level composer exists.
+    expect(section.querySelector("textarea#comment-new-body")).not.toBeNull()
+
+    // Reply form exists on top-level comments ONLY, never on replies (1-level reply rule).
+    expect(section.querySelector(`textarea#comment-reply-${ROOT_OTHER}`)).not.toBeNull()
+    expect(section.querySelector(`textarea#comment-reply-${ROOT_OWN}`)).not.toBeNull()
+    expect(section.querySelector(`textarea#comment-reply-${REPLY_ORG}`)).toBeNull()
+
+    // Own comment has edit + delete and NO report form (self-report blocked).
+    expect(section.querySelector(`textarea#comment-edit-${ROOT_OWN}`)).not.toBeNull()
+    expect(section.querySelector(`select#comment-report-reason-${ROOT_OWN}`)).toBeNull()
+
+    // Other user's comment has report form and NO edit form.
+    expect(section.querySelector(`textarea#comment-edit-${ROOT_OTHER}`)).toBeNull()
+    expect(section.querySelector(`select#comment-report-reason-${ROOT_OTHER}`)).not.toBeNull()
+    expect(section.querySelector(`select#comment-report-reason-${REPLY_ORG}`)).not.toBeNull()
+  })
+
+  it("shows organizer hide control on own campaign and moderator hidden-comments toggle with self-review guard", async () => {
+    // 1. Organizer view.
+    state.session = {
+      user: { id: VIEWER, email: "org@dos.me", name: "Người tổ chức" },
+      accessToken: "org-token",
+    }
+    state.userHandler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: { organizer_id: VIEWER } }
+      if (call.target === "rpc:list_campaign_comments") return { data: COMMENTS_FIXTURE }
+      return undefined
+    }
+    const orgDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const orgSection = orgDoc.querySelector("section#binh-luan")!
+    expect(orgSection.querySelector(`textarea#comment-hide-reason-${ROOT_OTHER}`)).not.toBeNull()
+    expect(orgSection.querySelector(`textarea#comment-mod-reason-${ROOT_OTHER}`)).toBeNull()
+    expect(orgSection.textContent).not.toContain("Hiện bình luận đã ẩn")
+
+    // 2. Moderator view with ?show_hidden=1.
+    state.userHandler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: { organizer_id: OTHER } }
+      if (call.target === "rpc:is_admin") return { data: true }
+      if (call.target === "rpc:list_campaign_comments") {
+        return {
+          data: [
+            ...COMMENTS_FIXTURE,
+            {
+              id: ROOT_HIDDEN,
+              campaign_id: CAMPAIGN,
+              parent_id: null,
+              body: "Bình luận đã bị ẩn",
+              status: "hidden",
+              author_display_name: "Tài khoản vi phạm",
+              author_avatar_url: null,
+              is_organizer: false,
+              is_author: false,
+              created_at: "2026-11-20T06:00:00.000Z",
+              edited_at: null,
+              hidden_role: "organizer",
+              hidden_reason: "Quảng cáo ngoài lề",
+              hidden_at: "2026-11-20T06:30:00.000Z",
+              hidden_by_display_name: "Quỹ Bản Mây",
+              total_top_level_count: 3,
+            },
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const modDoc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ show_hidden: "1" }),
+        })
+      )
+    )
+    const modSection = modDoc.querySelector("section#binh-luan")!
+    expect(modSection.textContent).toContain("Chỉ hiện bình luận công khai")
+    expect(modSection.textContent).toContain("Bình luận đã bị ẩn")
+    expect(modSection.textContent).toContain("Quảng cáo ngoài lề")
+    // Moderator can unhide other user's hidden comment, and cannot staff-moderate own comment (self-review guard).
+    expect(modSection.querySelector(`textarea#comment-mod-reason-${ROOT_HIDDEN}`)).not.toBeNull()
+    expect(modSection.querySelector(`textarea#comment-mod-reason-${ROOT_OWN}`)).toBeNull()
+  })
+
+  it("falls back to anonymous comments read on expired JWT and hides comments on non-public previews", async () => {
+    state.session = {
+      user: { id: VIEWER, email: "viewer@dos.me", name: "Viewer" },
+      accessToken: "expired-jwt",
+    }
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:list_campaign_comments") return { data: COMMENTS_FIXTURE }
+      return baseAnon(call)
+    }
+    state.userHandler = (call) => {
+      if (call.target === "rpc:list_campaign_comments") return { error: { code: "PGRST301", message: "JWT expired" } }
+      return undefined
+    }
+
+    const fallbackDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(fallbackDoc.querySelector("section#binh-luan")?.textContent).toContain("Cảm ơn bạn đã đồng hành")
+
+    // Preview hides comments section and never calls list_campaign_comments.
+    state.anonCalls.length = 0
+    state.userCalls.length = 0
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("in_review") }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media"
+      ) {
+        return { data: [] }
+      }
+      return undefined
+    }
+
+    const previewDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(previewDoc.querySelector("section#binh-luan")).toBeNull()
+    expect(previewDoc.querySelector('a[href="#binh-luan"]')).toBeNull()
+    expect(state.userCalls.some((c) => c.target === "rpc:list_campaign_comments")).toBe(false)
+  })
+
+  it("shows back-to-page-1 notice when an out-of-range ?comments_page= returns 0 rows, and omits #binh-luan tab when comments lookup fails", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:list_campaign_comments") return { data: [] }
+      return baseAnon(call)
+    }
+    const outOfRangeDoc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ comments_page: "9" }),
+        })
+      )
+    )
+    const section = outOfRangeDoc.querySelector("section#binh-luan")!
+    expect(section.textContent).toContain("Trang này không có bình luận.")
+    expect(section.querySelector(`a[href="/campaigns/${SLUG}#binh-luan"]`)?.textContent).toContain(
+      "Về trang bình luận đầu tiên"
+    )
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      state.anonHandler = (call) => {
+        if (call.target === "rpc:list_campaign_comments") {
+          return { data: null, error: { code: "57014", message: "timeout" } }
+        }
+        return baseAnon(call)
+      }
+      const failedDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+      expect(failedDoc.querySelector("section#binh-luan")).toBeNull()
+      expect(failedDoc.querySelector('a[href="#binh-luan"]')).toBeNull()
+    } finally {
+      errorSpy.mockRestore()
+    }
+  })
+
+  it("renders public CampaignTeam block when campaign_public_team returns accepted co-organizers and omits it for solo owner (DOS/Give#253)", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:campaign_public_team") {
+        return {
+          data: [
+            {
+              member_role: "owner",
+              display_name: "Quỹ Bản Mây",
+              avatar_url: null,
+              kind: "organization",
+              verification_status: "verified",
+              joined_at: "2026-11-01T00:00:00Z",
+            },
+            {
+              member_role: "editor",
+              display_name: "Minh Anh",
+              avatar_url: "https://cdn.example.vn/minh.jpg",
+              kind: null,
+              verification_status: null,
+              joined_at: "2026-11-10T00:00:00Z",
+            },
+          ],
+        }
+      }
+      return baseAnon(call)
+    }
+
+    const withTeam = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const teamSection = withTeam.querySelector("section#doi-ngu")
+    expect(teamSection).not.toBeNull()
+    expect(teamSection?.textContent).toContain("Đội ngũ tổ chức")
+    expect(teamSection?.textContent).toContain("Quỹ Bản Mây")
+    expect(teamSection?.textContent).toContain("Minh Anh")
+    expect(teamSection?.textContent).toContain("Đồng tổ chức")
+
+    // Solo owner only -> team section stays omitted.
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:campaign_public_team") {
+        return {
+          data: [
+            {
+              member_role: "owner",
+              display_name: "Quỹ Bản Mây",
+              avatar_url: null,
+              kind: "organization",
+              verification_status: "verified",
+              joined_at: "2026-11-01T00:00:00Z",
+            },
+          ],
+        }
+      }
+      return baseAnon(call)
+    }
+    const soloDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(soloDoc.querySelector("section#doi-ngu")).toBeNull()
   })
 })

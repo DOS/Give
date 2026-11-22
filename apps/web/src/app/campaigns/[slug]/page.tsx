@@ -7,6 +7,10 @@ import { cache, type ReactNode } from "react"
 
 import { AccountChanges } from "@/components/AccountChanges"
 import { StatusBadge, TypeBadge } from "@/components/badges"
+import { CampaignTeam } from "@/components/campaign/CampaignTeam"
+import { CampaignVideo, isValidYoutubeId } from "@/components/campaign/CampaignVideo"
+import { CampaignViewBeacon } from "@/components/campaign/CampaignViewBeacon"
+import { MilestoneList } from "@/components/campaign/MilestoneList"
 import { RecentSupporters } from "@/components/campaign/RecentSupporters"
 import { StatementPreview } from "@/components/campaign/StatementPreview"
 import { StickyAside } from "@/components/campaign/StickyAside"
@@ -14,7 +18,7 @@ import { Markdown } from "@/components/Markdown"
 import { ProgressBar } from "@/components/ProgressBar"
 import { RewardTiers } from "@/components/RewardTiers"
 import { ShareButtons } from "@/components/ShareButtons"
-import { Button, ButtonLink } from "@/components/ui/Button"
+import { Button, ButtonLink, buttonClass } from "@/components/ui/Button"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { CheckIcon, ShieldIcon } from "@/components/ui/icons"
@@ -24,17 +28,28 @@ import { listPublicAccountChanges } from "@/lib/account-swaps"
 import { siteOrigin } from "@/lib/auth/origin"
 import { getSession } from "@/lib/auth/session"
 import {
+  COMMENTS_PAGE_SIZE,
+  listCampaignComments,
+  parseCommentsPage,
+  parseShowHiddenComments,
+  type CampaignCommentsPage,
+} from "@/lib/campaign-comments"
+import { listCampaignPublicTeam, type PublicTeamMember } from "@/lib/campaign-members"
+import {
   discoveryHref,
   getCampaignBySlug,
   getPublicOrganizer,
   isPublicStatus,
+  isStaff,
   listMilestones,
   listPublishedUpdates,
   VERIFICATION_LABELS,
   type PublicCampaign,
   type Db,
 } from "@/lib/campaigns"
+import { MODERATION_ROLES } from "@/lib/evidence-moderation"
 import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
+import { isNavigableOrganizerHandle, organizerProfileHref } from "@/lib/organizer-handle"
 import { acceptsPledges } from "@/lib/pledges"
 import { listCampaignTiers, previewTiers } from "@/lib/reward-tiers"
 import { SLUG_PATTERN } from "@/lib/slug"
@@ -44,7 +59,9 @@ import { dbAs, dbService } from "@/lib/supabase"
 import { acceptsDonations, paymentAccount } from "@/server/contributions"
 import { listPublicTiers, organizesCampaign } from "@/server/pledges"
 
+import { CampaignComments } from "./CampaignComments"
 import { DonateForm } from "./DonateForm"
+import { MonthlyForm } from "./MonthlyForm"
 import { ReportCampaign } from "./ReportCampaign"
 
 /**
@@ -102,8 +119,117 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   }
 }
 
+interface PublicMonthly {
+  allow_monthly: boolean
+  monthly_supporters: number
+}
+
+/**
+ * Whether a public give campaign takes monthly plans and how many donors
+ * have an active one (give.public_campaign_monthly, DOS/Give#276). Pledged
+ * monthly amounts are intentions, never summed or shown.
+ */
+async function publicMonthly(db: Db, campaignId: string): Promise<PublicMonthly | null> {
+  const { data, error } = await db
+    .from("public_campaign_monthly")
+    .select("allow_monthly, monthly_supporters")
+    .eq("campaign_id", campaignId)
+    .maybeSingle()
+  if (error) throw error
+  const row = data as { allow_monthly: boolean | null; monthly_supporters: number | string | null } | null
+  return row
+    ? { allow_monthly: row.allow_monthly === true, monthly_supporters: Number(row.monthly_supporters) || 0 }
+    : null
+}
+
 /** "Từ thiện" for give, "Dự án sáng tạo" for back, as discovery names them. */
 const TYPE_NAMES = { give: "Từ thiện", back: "Dự án sáng tạo" } as const
+
+interface BreadcrumbCrumb {
+  name: string
+  href?: string
+}
+
+function buildBreadcrumbJsonLd(campaign: PublicCampaign, origin: string | undefined) {
+  const toUrl = (path: string) => (origin ? new URL(path, origin).toString() : path)
+  const crumbs: BreadcrumbCrumb[] = [
+    { name: "Trang chủ", href: "/" },
+    { name: "Khám phá", href: "/campaigns" },
+    { name: TYPE_NAMES[campaign.type], href: discoveryHref({ type: campaign.type }) },
+    ...(campaign.category
+      ? [
+          {
+            name: campaign.category.name,
+            href: discoveryHref({ type: campaign.type, category: campaign.category.slug }),
+          },
+        ]
+      : []),
+    { name: campaign.title },
+  ]
+  return {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    itemListElement: crumbs.map((crumb, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: crumb.name,
+      ...(crumb.href ? { item: toUrl(crumb.href) } : {}),
+    })),
+  }
+}
+
+interface YoutubeMediaRow {
+  id: string
+  youtube_id: string | null
+  alt: string | null
+  sort_order: number
+}
+
+async function listYoutubeMedia(db: Db, campaignId: string): Promise<YoutubeMediaRow[]> {
+  const { data, error } = await db
+    .from("campaign_media")
+    .select("id, youtube_id, alt, sort_order")
+    .eq("campaign_id", campaignId)
+    .eq("kind", "youtube")
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(1)
+  if (error) throw error
+  return (data ?? []) as YoutubeMediaRow[]
+}
+
+async function loadPublicComments(
+  campaignId: string,
+  token: string | undefined,
+  page: number,
+  includeHidden: boolean
+): Promise<CampaignCommentsPage> {
+  const offset = (page - 1) * COMMENTS_PAGE_SIZE
+  if (token) {
+    try {
+      return await listCampaignComments(dbAs(token), campaignId, {
+        limit: COMMENTS_PAGE_SIZE,
+        offset,
+        includeHidden,
+      })
+    } catch (error: unknown) {
+      const code = (error as { code?: string } | null)?.code
+      if (typeof code === "string" && code.startsWith("PGRST30")) {
+        return listCampaignComments(dbAs(), campaignId, {
+          limit: COMMENTS_PAGE_SIZE,
+          offset,
+          includeHidden: false,
+        })
+      }
+      throw error
+    }
+  }
+  return listCampaignComments(dbAs(), campaignId, {
+    limit: COMMENTS_PAGE_SIZE,
+    offset,
+    includeHidden: false,
+  })
+}
 
 /**
  * The campaign page (DESIGN.md 8): breadcrumb, H1 and the organizer line,
@@ -113,10 +239,19 @@ const TYPE_NAMES = { give: "Từ thiện", back: "Dự án sáng tạo" } as con
  * box follows the title, and a bar at the bottom of the screen keeps the
  * main action in reach.
  */
-export default async function CampaignPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function CampaignPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
   const loaded = await loadCampaign((await params).slug)
   if (!loaded) notFound()
   const { campaign, db, preview } = loaded
+  const queryParams = searchParams ? await searchParams : {}
+  const commentsPage = parseCommentsPage(queryParams)
+  const requestedShowHidden = parseShowHiddenComments(queryParams)
 
   const isGive = campaign.type === "give"
   const halted = campaign.status === "suspended" || campaign.status === "cancelled"
@@ -124,59 +259,108 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
   const donationsOpen = !preview && acceptsDonations(campaign)
   const pledgesOpen = !preview && acceptsPledges(campaign)
   const sessionPromise = getSession()
-  const [milestones, updates, organizer, account, session, ownCampaign, totals, accountChanges, tiers, statementRows] =
-    await Promise.all([
-      listMilestones(db, campaign.id),
-      listPublishedUpdates(db, campaign.id),
-      preview
-        ? Promise.resolve(null)
-        : getPublicOrganizer(db, campaign.id).catch((error: unknown) => {
-            console.error("campaign page: public organizer lookup failed", error)
-            return null
-          }),
-      donationsOpen
-        ? paymentAccount(dbService(), campaign.id).catch((error: unknown) => {
-            // The page still renders, without the donate form.
-            console.error("campaign page: payment account lookup failed", error)
-            return null
-          })
-        : Promise.resolve(null),
-      sessionPromise,
-      // The organizer cannot back or report their own campaign (the database refuses both).
-      preview
-        ? Promise.resolve(false)
-        : sessionPromise.then((s) =>
-            s ? organizesCampaign(dbAs(s.accessToken), campaign.id, s.user.id).catch(() => false) : false
-          ),
-      // Public views only: a preview has no public totals yet.
-      preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
-      // A failed read hides the notice rather than the page; the statement shows it too.
-      preview ? Promise.resolve([]) : listPublicAccountChanges(dbAs(), campaign.id).catch(() => []),
-      // Reward tiers (DOS/Give#83): the public view, or the organizer's own active tiers in a preview.
-      // A failed read hides the tiers rather than the page.
-      isGive
-        ? Promise.resolve([])
-        : (preview
-            ? listCampaignTiers(db, campaign.id).then(previewTiers)
-            : listPublicTiers(dbAs(), campaign.id)
-          ).catch((error: unknown) => {
+  const isModeratorPromise = preview
+    ? Promise.resolve(false)
+    : sessionPromise.then((s) => (s ? isStaff(dbAs(s.accessToken), MODERATION_ROLES).catch(() => false) : false))
+  const [
+    milestones,
+    updates,
+    youtubeMedia,
+    organizer,
+    account,
+    session,
+    ownCampaign,
+    isModerator,
+    totals,
+    accountChanges,
+    tiers,
+    statementRows,
+    monthly,
+    comments,
+    publicTeam,
+  ] = await Promise.all([
+    listMilestones(db, campaign.id),
+    listPublishedUpdates(db, campaign.id),
+    listYoutubeMedia(db, campaign.id).catch(() => [] as YoutubeMediaRow[]),
+    preview
+      ? Promise.resolve(null)
+      : getPublicOrganizer(db, campaign.id).catch((error: unknown) => {
+          console.error("campaign page: public organizer lookup failed", error)
+          return null
+        }),
+    donationsOpen
+      ? paymentAccount(dbService(), campaign.id).catch((error: unknown) => {
+          // The page still renders, without the donate form.
+          console.error("campaign page: payment account lookup failed", error)
+          return null
+        })
+      : Promise.resolve(null),
+    sessionPromise,
+    // The organizer cannot back or report their own campaign (the database refuses both).
+    preview
+      ? Promise.resolve(false)
+      : sessionPromise.then((s) =>
+          s ? organizesCampaign(dbAs(s.accessToken), campaign.id, s.user.id).catch(() => false) : false
+        ),
+    isModeratorPromise,
+    // Public views only: a preview has no public totals yet.
+    preview ? Promise.resolve(null) : getMoneyTotals(dbAs(), campaign.id),
+    // A failed read hides the notice rather than the page; the statement shows it too.
+    preview ? Promise.resolve([]) : listPublicAccountChanges(dbAs(), campaign.id).catch(() => []),
+    // Reward tiers (DOS/Give#83): the public view, or the organizer's own active tiers in a preview.
+    // A failed read hides the tiers rather than the page.
+    isGive
+      ? Promise.resolve([])
+      : (preview ? listCampaignTiers(db, campaign.id).then(previewTiers) : listPublicTiers(dbAs(), campaign.id)).catch(
+          (error: unknown) => {
             console.error("campaign page: reward tiers lookup failed", error)
             return []
+          }
+        ),
+    // The newest rows of the public statement, for its preview and the recent supporters.
+    // A failed read leaves them out; the statement page has them all.
+    preview
+      ? Promise.resolve(null)
+      : listStatement(dbAs(), campaign.id, "all", 1)
+          .then(({ rows }) => rows)
+          .catch((error: unknown) => {
+            console.error("campaign page: statement lookup failed", error)
+            return null
           }),
-      // The newest rows of the public statement, for its preview and the recent supporters.
-      // A failed read leaves them out; the statement page has them all.
-      preview
-        ? Promise.resolve(null)
-        : listStatement(dbAs(), campaign.id, "all", 1)
-            .then(({ rows }) => rows)
-            .catch((error: unknown) => {
-              console.error("campaign page: statement lookup failed", error)
-              return null
-            }),
-    ])
+    // Monthly giving (DOS/Give#276): public give campaigns only. A failed read hides it.
+    isGive && !preview
+      ? publicMonthly(dbAs(), campaign.id).catch((error: unknown) => {
+          console.error("campaign page: monthly giving lookup failed", error)
+          return null
+        })
+      : Promise.resolve(null),
+    // Public comments (DOS/Give#250): public campaigns only. A failed read degrades cleanly.
+    preview
+      ? Promise.resolve(null)
+      : Promise.all([sessionPromise, requestedShowHidden ? isModeratorPromise : Promise.resolve(false)])
+          .then(([s, includeHidden]) => loadPublicComments(campaign.id, s?.accessToken, commentsPage, includeHidden))
+          .catch((error: unknown) => {
+            console.error("campaign page: comments lookup failed", error)
+            return null
+          }),
+    // Public team block (DOS/Give#253): public campaigns only. A failed read degrades cleanly.
+    preview
+      ? Promise.resolve([] as PublicTeamMember[])
+      : listCampaignPublicTeam(dbAs(), campaign.id).catch((error: unknown) => {
+          console.error("campaign page: public team lookup failed", error)
+          return [] as PublicTeamMember[]
+        }),
+  ])
+  const showHiddenComments = isModerator && requestedShowHidden
+  const pitchVideo =
+    youtubeMedia.find((m): m is YoutubeMediaRow & { youtube_id: string } => isValidYoutubeId(m.youtube_id)) ?? null
   const canDonate = donationsOpen && account !== null
   const ownProject = pledgesOpen && ownCampaign
   const canPledge = pledgesOpen && !ownProject
+  // create_donation_plan also needs an end date and the usable account canDonate checked.
+  const monthlyOpen = canDonate && monthly?.allow_monthly === true && campaign.ends_at !== null
+  const monthlySupporters = monthly?.monthly_supporters ?? 0
+  const loginHref = `/auth/login?return_path=${encodeURIComponent(`/campaigns/${campaign.slug}`)}`
   const closedNote =
     campaign.status === "suspended"
       ? isGive
@@ -212,6 +396,16 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
     ...(preview
       ? []
       : [
+          ...(comments
+            ? [
+                {
+                  href: "#binh-luan",
+                  label: "Bình luận",
+                  current: false,
+                  count: comments.totalTopLevel,
+                },
+              ]
+            : []),
           {
             href: statementHref(campaign.slug, "in"),
             label: isGive ? "Người ủng hộ" : "Người đồng hành",
@@ -236,9 +430,18 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
       : null,
     options.progress_bar !== false ? { value: `${percent}%`, label: "mục tiêu" } : null,
   ].filter((stat) => stat !== null)
+  const origin = siteOrigin()
+  const breadcrumbJsonLd = !preview && !halted ? buildBreadcrumbJsonLd(campaign, origin) : null
 
   return (
     <article>
+      {!preview && <CampaignViewBeacon campaignId={campaign.id} />}
+      {breadcrumbJsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd).replace(/</g, "\\u003c") }}
+        />
+      )}
       {preview && (
         <div className="bg-warning-soft py-3">
           <p className="container-page">
@@ -314,8 +517,17 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 <div className="min-w-0">
                   {organizer && (
                     <>
-                      <p className="flex items-center gap-1 font-semibold break-words">
-                        {organizer.display_name}
+                      <p className="flex items-center gap-2 font-semibold break-words">
+                        {isNavigableOrganizerHandle(organizer.handle) ? (
+                          <Link
+                            href={organizerProfileHref(organizer.handle)}
+                            className="min-w-0 rounded text-fg underline-offset-4 hover:text-primary hover:underline"
+                          >
+                            {organizer.display_name}
+                          </Link>
+                        ) : (
+                          organizer.display_name
+                        )}
                         {organizer.verification_status === "verified" && (
                           <CheckIcon
                             width={16}
@@ -392,6 +604,11 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                   ))}
                 </dl>
               )}
+              {options.backers_count !== false && monthlySupporters > 0 && (
+                <p className="mt-3 text-sm text-fg">
+                  <span className="font-semibold tabular-nums">{monthlySupporters}</span> người ủng hộ hằng tháng
+                </p>
+              )}
               {(campaign.ends_at || campaign.stretch_goal_amount) && (
                 <p className="mt-3 text-sm text-muted">
                   {[
@@ -405,9 +622,19 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
 
               <div className="mt-6 space-y-3">
                 {canDonate ? (
-                  <ButtonLink href="#ung-ho" size="lg" full>
-                    {ctaLabel}
-                  </ButtonLink>
+                  <>
+                    <ButtonLink href="#ung-ho" size="lg" full>
+                      {ctaLabel}
+                    </ButtonLink>
+                    {monthlyOpen && (
+                      <Link
+                        href="#hang-thang"
+                        className="flex min-h-11 items-center justify-center text-sm font-semibold text-primary hover:underline"
+                      >
+                        Hoặc ủng hộ hằng tháng
+                      </Link>
+                    )}
+                  </>
                 ) : canPledge ? (
                   <>
                     <ButtonLink href={pledgePath} size="lg" full>
@@ -427,7 +654,12 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 )}
                 {!preview && (
                   <>
-                    <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={siteOrigin()} />
+                    <ShareButtons
+                      path={`/campaigns/${campaign.slug}`}
+                      title={campaign.title}
+                      origin={origin}
+                      campaignId={campaign.id}
+                    />
                     {!ownCampaign && (
                       <ReportCampaign campaignId={campaign.id} slug={campaign.slug} signedIn={!!session} />
                     )}
@@ -480,14 +712,21 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               <h2 id="story-heading" className="sr-only">
                 Câu chuyện
               </h2>
-              {campaign.story || campaign.summary ? (
-                <div className="max-w-[68ch] space-y-4">
-                  {campaign.summary && <p className="text-lg font-medium">{campaign.summary}</p>}
-                  {campaign.story && <Markdown>{campaign.story}</Markdown>}
-                </div>
-              ) : (
-                <EmptyState title="Chưa có câu chuyện">Người tổ chức chưa viết nội dung cho chiến dịch này.</EmptyState>
-              )}
+              <div className="space-y-6">
+                {pitchVideo && (
+                  <CampaignVideo youtubeId={pitchVideo.youtube_id} title={campaign.title} alt={pitchVideo.alt} />
+                )}
+                {campaign.story || campaign.summary ? (
+                  <div className="max-w-[68ch] space-y-4">
+                    {campaign.summary && <p className="text-lg font-medium">{campaign.summary}</p>}
+                    {campaign.story && <Markdown>{campaign.story}</Markdown>}
+                  </div>
+                ) : (
+                  <EmptyState title="Chưa có câu chuyện">
+                    Người tổ chức chưa viết nội dung cho chiến dịch này.
+                  </EmptyState>
+                )}
+              </div>
             </section>
 
             {canDonate && (
@@ -504,22 +743,41 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
               </section>
             )}
 
+            {monthlyOpen && (
+              <section id="hang-thang" aria-labelledby="monthly-heading" className="max-w-[640px] scroll-mt-24">
+                <h2 id="monthly-heading" className="text-h2">
+                  Ủng hộ hằng tháng
+                </h2>
+                <p className="mt-2 max-w-[68ch] text-sm text-muted">
+                  Chọn số tiền và một ngày trong tháng. Mỗi tháng vào ngày đó, Give nhắc bạn kèm mã ủng hộ và mã QR mới
+                  để bạn tự chuyển khoản. Give không tự trừ tiền: tháng nào bạn không chuyển cũng không sao, và bạn dừng
+                  được bất cứ lúc nào. Lời nhắc tự dừng khi chiến dịch kết thúc ({formatDate(campaign.ends_at)}).
+                </p>
+                <div className="mt-6 card p-4 sm:p-6">
+                  {session ? (
+                    <MonthlyForm campaignId={campaign.id} defaultName={session.user.name ?? ""} />
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-fg">Cần đăng nhập để Give gửi lời nhắc và mã ủng hộ cho bạn mỗi tháng.</p>
+                      <a href={loginHref} className={buttonClass({ variant: "secondary", size: "lg", full: true })}>
+                        Đăng nhập để ủng hộ hằng tháng
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </section>
+            )}
+
             {milestones.length > 0 && (
               <section aria-labelledby="milestones-heading">
                 <h2 id="milestones-heading" className="text-h2">
                   Các mốc mục tiêu
                 </h2>
-                <ol className="mt-6">
-                  {milestones.map((milestone) => (
-                    <li key={milestone.id} className="border-b border-border py-3">
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
-                        <h3 className="font-semibold">{milestone.title}</h3>
-                        <span className="font-semibold tabular-nums">{formatVnd(milestone.target_amount)}</span>
-                      </div>
-                      {milestone.description && <p className="mt-1 text-muted">{milestone.description}</p>}
-                    </li>
-                  ))}
-                </ol>
+                <MilestoneList
+                  milestones={milestones}
+                  raisedAmount={preview || !totals ? null : raised}
+                  preview={preview}
+                />
               </section>
             )}
           </div>
@@ -527,6 +785,7 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
           <div className="min-w-0 space-y-12 max-lg:order-6 lg:col-span-8 lg:row-start-4 lg:pt-6">
             {totals && <StatementPreview slug={campaign.slug} totals={totals} rows={statementRows} />}
             <AccountChanges changes={accountChanges} />
+            {!preview && <CampaignTeam members={publicTeam} />}
 
             <section id="cap-nhat" aria-labelledby="updates-heading" className="scroll-mt-24">
               <h2 id="updates-heading" className="text-h2">
@@ -548,13 +807,33 @@ export default async function CampaignPage({ params }: { params: Promise<{ slug:
                 <p className="mt-6 text-muted">Chưa có cập nhật nào.</p>
               )}
             </section>
+
+            {!preview && comments && (
+              <CampaignComments
+                campaignId={campaign.id}
+                slug={campaign.slug}
+                threads={comments.threads}
+                totalTopLevel={comments.totalTopLevel}
+                page={commentsPage}
+                signedIn={!!session}
+                ownCampaign={ownCampaign}
+                isModerator={isModerator}
+                showHidden={showHiddenComments}
+              />
+            )}
           </div>
         </div>
       </div>
 
       {(canDonate || canPledge) && (
         <MobileActionBar>
-          <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={siteOrigin()} compact />
+          <ShareButtons
+            path={`/campaigns/${campaign.slug}`}
+            title={campaign.title}
+            origin={origin}
+            campaignId={campaign.id}
+            compact
+          />
           <ButtonLink href={canDonate ? "#ung-ho" : pledgePath} size="lg" className="min-w-0 flex-1">
             {ctaLabel}
           </ButtonLink>

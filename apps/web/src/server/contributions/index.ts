@@ -26,8 +26,13 @@ import { isDonationCode } from "@/server/vietqr"
  *   for a contribution the caller has already proven is theirs.
  */
 
-/** Columns of a contribution the payment page needs. */
-const PAYMENT_COLUMNS = "id, campaign_id, intended_amount, received_amount, reference_code, status, created_at"
+/**
+ * Columns of a contribution the payment page needs. plan_id and plan_period
+ * mark a monthly plan's donation (DOS/Give#276), whose QR follows its month
+ * instead of the 24 hours of a one-off donation.
+ */
+const PAYMENT_COLUMNS =
+  "id, campaign_id, intended_amount, received_amount, reference_code, status, created_at, plan_id, plan_period"
 
 export interface PaymentContribution {
   id: string
@@ -37,6 +42,10 @@ export interface PaymentContribution {
   reference_code: string
   status: string
   created_at: string
+  /** The monthly plan that issued this donation, if any. */
+  plan_id: string | null
+  /** The first day of the plan month this donation is for (YYYY-MM-DD), with plan_id. */
+  plan_period: string | null
 }
 
 /** The hex form of sha256(token bytes), as give.create_donation stores it in status_token_hash. */
@@ -205,6 +214,21 @@ interface GuestRow extends PaymentContribution {
 // PostgREST returns bytea as a backslash, "x" and the hex digits.
 const BYTEA_SHA256 = /^\\x([0-9a-f]{64})$/
 
+/** Expiry of an unexpired receipt tracking token of this contribution, by its hash. */
+async function receiptTokenExpiry(service: Db, contributionId: string, hash: string, now: Date): Promise<Date | null> {
+  const { data, error } = await service
+    .from("contribution_access_tokens")
+    .select("expires_at")
+    .eq("token_hash", `\\x${hash}`)
+    .eq("contribution_id", contributionId)
+    .gt("expires_at", now.toISOString())
+    .maybeSingle()
+  if (error) throw error
+  const expiresAt = (data as { expires_at?: string } | null)?.expires_at
+  const date = expiresAt ? new Date(expiresAt) : null
+  return date && !Number.isNaN(date.getTime()) && date > now ? date : null
+}
+
 export interface GuestContributionAccess {
   donation: PaymentContribution
   expiresAt: Date
@@ -232,10 +256,20 @@ export async function guestContributionAccess(
     .maybeSingle()
   if (error) throw error
   const row = data as GuestRow | null
-  const stored = BYTEA_SHA256.exec(row?.status_token_hash ?? "")?.[1]
-  const expiresAt = row?.status_token_expires_at ? new Date(row.status_token_expires_at) : null
-  if (!row || !stored || !expiresAt || Number.isNaN(expiresAt.getTime()) || expiresAt <= now) return null
-  if (!timingSafeEqual(Buffer.from(stored, "hex"), Buffer.from(statusTokenHash(token), "hex"))) return null
+  if (!row) return null
+  const hash = statusTokenHash(token)
+  const stored = BYTEA_SHA256.exec(row.status_token_hash ?? "")?.[1]
+  const statusExpiry = row.status_token_expires_at ? new Date(row.status_token_expires_at) : null
+  const statusTokenValid =
+    !!stored &&
+    !!statusExpiry &&
+    !Number.isNaN(statusExpiry.getTime()) &&
+    statusExpiry > now &&
+    timingSafeEqual(Buffer.from(stored, "hex"), Buffer.from(hash, "hex"))
+  // Otherwise a tracking token from the guest's receipt email (DOS/Give#254):
+  // the outbox stores only its hash, looked up exactly by that hash.
+  const expiresAt = statusTokenValid ? statusExpiry : await receiptTokenExpiry(service, row.id, hash, now)
+  if (!expiresAt) return null
   return {
     donation: {
       id: row.id,
@@ -245,6 +279,8 @@ export async function guestContributionAccess(
       reference_code: row.reference_code,
       status: row.status,
       created_at: row.created_at,
+      plan_id: row.plan_id ?? null,
+      plan_period: row.plan_period ?? null,
     },
     expiresAt,
   }

@@ -106,6 +106,9 @@ export function SiteHeader({ session, unread }: { session: Session | null; unrea
               }
               panelClassName="absolute right-0 mt-2 w-60 card p-2 shadow-float"
             >
+              <Link href="/me" className={menuLink}>
+                Hồ sơ người tổ chức
+              </Link>
               <Link href="/me/campaigns" className={menuLink}>
                 Chiến dịch của tôi
               </Link>
@@ -162,6 +165,11 @@ export function SiteHeader({ session, unread }: { session: Session | null; unrea
                 </li>
                 {session && (
                   <>
+                    <li>
+                      <Link href="/me" className={menuLink}>
+                        Hồ sơ người tổ chức
+                      </Link>
+                    </li>
                     <li>
                       <Link href="/me/campaigns" className={menuLink}>
                         Chiến dịch của tôi

@@ -1,4 +1,5 @@
 import { VIA_CONTACT_EMAIL } from "./contact"
+import { ORGANIZER_HANDLE_INVALID_MESSAGE, ORGANIZER_HANDLE_RESERVED_MESSAGE } from "./organizer-handle"
 
 /**
  * Turns database errors into messages for people. The give schema raises
@@ -178,12 +179,44 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_USER_AMBIGUOUS: "Có nhiều tài khoản dùng email này. Hãy nhập mã người dùng thay cho email.",
   GIVE_ADMIN_NOT_FOUND: "Người này không còn quyền nào để thu.",
   GIVE_LAST_ADMIN: "Không thể thu hoặc hạ quyền quản trị viên cuối cùng. Hãy cấp quyền quản trị cho người khác trước.",
+  // Organizer campaign analytics (DOS/Give#252).
+  GIVE_ANALYTICS_EVENT_INVALID: "Loại sự kiện thống kê không hợp lệ.",
+  GIVE_ANALYTICS_DAYS_INVALID: "Khoảng thời gian thống kê không hợp lệ.",
+  GIVE_SIGN_IN_REQUIRED: "Hãy đăng nhập để tiếp tục.",
+  // Campaign comments, replies, reports and moderation (DOS/Give#250, #262).
+  GIVE_COMMENT_NOT_FOUND: "Không tìm thấy bình luận này, hoặc bình luận đã bị xóa hay đã ẩn.",
+  GIVE_REPORT_NOT_FOUND: "Không tìm thấy báo cáo bình luận này. Hãy tải lại trang.",
+  GIVE_COMMENT_BODY_REQUIRED: "Hãy nhập nội dung bình luận.",
+  GIVE_COMMENT_BODY_TOO_LONG: "Nội dung bình luận tối đa 2000 ký tự.",
+  GIVE_COMMENT_NESTING_NOT_ALLOWED: "Chỉ hỗ trợ trả lời một cấp (không thể trả lời một phản hồi khác).",
+  GIVE_COMMENT_HIDDEN: "Bình luận này đã bị ẩn (hoặc có phản hồi đã bị ẩn) nên bạn không thể sửa hoặc xóa.",
+  // Organizer public profile handle (DOS/Give#251, #261).
+  GIVE_HANDLE_INVALID: ORGANIZER_HANDLE_INVALID_MESSAGE,
+  GIVE_HANDLE_RESERVED: ORGANIZER_HANDLE_RESERVED_MESSAGE,
+  // Co-organizers / campaign editors (DOS/Give#253, #264).
+  GIVE_AUTH_REQUIRED: "Hãy đăng nhập để tiếp tục.",
+  GIVE_CAMPAIGN_OWNER_ONLY: "Chỉ người tổ chức chính của chiến dịch mới thực hiện được thao tác này.",
+  GIVE_CAMPAIGN_NOT_INVITABLE: "Không thể mời đồng tổ chức khi chiến dịch đã hủy hoặc đang tạm dừng.",
+  GIVE_INVITE_EXPIRY_INVALID: "Thời hạn lời mời phải từ 1 đến 720 giờ (tối đa 30 ngày).",
+  GIVE_INVITE_NOTE_TOO_LONG: "Ghi chú lời mời tối đa 120 ký tự.",
+  GIVE_CAMPAIGN_MEMBER_LIMIT: "Chiến dịch đã đạt giới hạn tối đa 20 đồng tổ chức.",
+  GIVE_CAMPAIGN_INVITE_LIMIT: "Chiến dịch đã đạt giới hạn tối đa 20 lời mời đang chờ.",
+  GIVE_INVITE_INVALID: "Liên kết lời mời không hợp lệ hoặc không tồn tại.",
+  GIVE_INVITE_REVOKED: "Lời mời này đã bị người tổ chức thu hồi.",
+  GIVE_INVITE_ALREADY_USED: "Liên kết lời mời này đã được sử dụng (mỗi liên kết chỉ dùng một lần).",
+  GIVE_INVITE_ALREADY_ACCEPTED:
+    "Lời mời này đã được chấp nhận nên không thể thu hồi. Hãy gỡ thành viên trong danh sách đội ngũ.",
+  GIVE_INVITE_EXPIRED: "Lời mời này đã hết hạn. Hãy nhờ người tổ chức tạo liên kết mời mới.",
+  GIVE_ALREADY_CAMPAIGN_OWNER: "Bạn đã là người tổ chức chính của chiến dịch này.",
+  GIVE_ALREADY_CAMPAIGN_MEMBER: "Bạn đã là đồng tổ chức của chiến dịch này rồi.",
+  GIVE_CAMPAIGN_MEMBER_NOT_FOUND: "Không tìm thấy đồng tổ chức này trong chiến dịch.",
 }
 
 const PG_MESSAGES: Record<string, string> = {
   "23505": "Dữ liệu bị trùng. Hãy thử lại.",
   "23514": "Dữ liệu không hợp lệ.",
   "42501": "Bạn không có quyền thực hiện thao tác này.",
+  PT429: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
   // PostgREST rejected the access token (invalid or expired).
   PGRST301: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
   PGRST303: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
@@ -437,4 +470,166 @@ export function fail(message: string): ActionResult {
 
 export function done(message: string): ActionResult {
   return { ok: true, message }
+}
+
+/**
+ * Every refusal of the monthly plan RPCs (DOS/Give#276, DOS-Me
+ * 20261125120000_give_donation_plans.sql: create_donation_plan,
+ * update_donation_plan, cancel_donation_plan), worded for a signed-in donor.
+ */
+export const PLAN_MESSAGES: Record<string, string> = {
+  GIVE_SIGN_IN_REQUIRED: "Hãy đăng nhập để đăng ký ủng hộ hằng tháng.",
+  GIVE_PLAN_CONSENT_REQUIRED: "Hãy đồng ý nhận lời nhắc hằng tháng để Give gửi mã ủng hộ mỗi tháng.",
+  GIVE_PLAN_DAY_INVALID: "Chọn một ngày từ 1 đến 28.",
+  GIVE_AMOUNT_BELOW_MINIMUM: "Số tiền mỗi tháng tối thiểu 10.000 ₫.",
+  GIVE_MONTHLY_NOT_ALLOWED: "Chiến dịch này không nhận ủng hộ hằng tháng.",
+  GIVE_CAMPAIGN_NOT_ACCEPTING: "Chiến dịch này hiện không nhận ủng hộ hằng tháng.",
+  GIVE_PLAN_EXISTS: "Bạn đã có kế hoạch ủng hộ hằng tháng cho chiến dịch này. Xem và sửa ở mục Ủng hộ của tôi.",
+  GIVE_PLAN_NOT_FOUND: "Không tìm thấy kế hoạch ủng hộ hằng tháng này.",
+  GIVE_PLAN_ENDED: "Kế hoạch này đã dừng nên không sửa được. Bạn có thể đăng ký lại ở trang chiến dịch.",
+  GIVE_CAMPAIGN_NO_RECEIVING_ACCOUNT: "Chiến dịch tạm thời không nhận ủng hộ. Hãy thử lại sau.",
+  GIVE_RATE_LIMITED: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
+}
+
+/**
+ * Refusals of give.set_campaign_monthly, worded for the organizer turning
+ * monthly giving on or off.
+ */
+export const CAMPAIGN_MONTHLY_MESSAGES: Record<string, string> = {
+  GIVE_MONTHLY_NEEDS_END_DATE: "Ủng hộ hằng tháng chỉ bật được cho chiến dịch có ngày kết thúc.",
+  GIVE_CAMPAIGN_ALREADY_ENDED: "Chiến dịch đã quá ngày kết thúc.",
+  GIVE_CAMPAIGN_NOT_ACCEPTING: "Chiến dịch đã kết thúc hoặc đã hủy nên không bật được ủng hộ hằng tháng.",
+  GIVE_CONTRIBUTION_TYPE_MISMATCH: "Chỉ chiến dịch từ thiện mới có ủng hộ hằng tháng.",
+}
+
+/**
+ * Extracts retry-after seconds from a `GIVE_RATE_LIMITED: <seconds>` error
+ * message raised by campaign comment write RPCs (DOS/Give#250, #262).
+ */
+export function rateLimitSeconds(error: DbErrorLike | null | undefined): number | null {
+  const match = /^GIVE_RATE_LIMITED:\s*(\d+)\b/.exec(error?.message ?? "")
+  if (!match) return null
+  const seconds = Number(match[1])
+  return Number.isSafeInteger(seconds) && seconds > 0 ? seconds : null
+}
+
+/**
+ * Maps database errors from campaign comment RPCs, preserving retry-after
+ * guidance from `GIVE_RATE_LIMITED: <seconds>` when present.
+ */
+export function commentDbErrorMessage(
+  error: DbErrorLike | null | undefined,
+  overrides: Record<string, string> = {}
+): string {
+  if (giveErrorCode(error) === "GIVE_RATE_LIMITED") {
+    const seconds = rateLimitSeconds(error)
+    if (seconds !== null) {
+      if (seconds >= 60) {
+        return `Bạn thao tác quá nhanh. Hãy thử lại sau khoảng ${Math.ceil(seconds / 60)} phút.`
+      }
+      return `Bạn thao tác quá nhanh. Hãy thử lại sau ${seconds} giây.`
+    }
+    return overrides.GIVE_RATE_LIMITED ?? "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút."
+  }
+  return dbErrorMessage(error, overrides)
+}
+
+/**
+ * Refusals of author comment actions (`create_campaign_comment`,
+ * `edit_campaign_comment`, `delete_campaign_comment`; DOS/Give#250, #262).
+ */
+export const COMMENT_ACTION_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Bạn không có quyền thực hiện thao tác này trên bình luận.",
+  GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch công khai này.",
+  GIVE_COMMENT_NOT_FOUND: "Không tìm thấy bình luận này, hoặc bình luận đã bị xóa hay đã ẩn.",
+  GIVE_COMMENT_BODY_REQUIRED: "Hãy nhập nội dung bình luận.",
+  GIVE_COMMENT_BODY_TOO_LONG: "Nội dung bình luận tối đa 2000 ký tự.",
+  GIVE_COMMENT_NESTING_NOT_ALLOWED: "Chỉ hỗ trợ trả lời một cấp (không thể trả lời một phản hồi khác).",
+  GIVE_COMMENT_HIDDEN: "Bình luận này đã bị ẩn (hoặc có phản hồi đã bị ẩn) nên bạn không thể sửa hoặc xóa.",
+  GIVE_RATE_LIMITED: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
+}
+
+/**
+ * Refusals of `give.hide_campaign_comment` worded for the campaign organizer.
+ */
+export const COMMENT_ORGANIZER_HIDE_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Chỉ người tổ chức của chiến dịch mới ẩn được bình luận tại đây.",
+  GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch công khai này.",
+  GIVE_COMMENT_NOT_FOUND: "Không tìm thấy bình luận này, hoặc bình luận đã bị xóa.",
+  GIVE_REASON_TOO_LONG: "Lý do tối đa 500 ký tự.",
+  GIVE_RATE_LIMITED: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
+}
+
+/**
+ * Refusals of `give.report_campaign_comment` worded for a signed-in visitor.
+ */
+export const COMMENT_REPORT_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Bạn không thể báo cáo bình luận của chính mình.",
+  GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch công khai này.",
+  GIVE_COMMENT_NOT_FOUND: "Không tìm thấy bình luận này, hoặc bình luận đã bị xóa hay đã ẩn.",
+  GIVE_REPORT_REASON_INVALID: "Chọn lý do báo cáo.",
+  GIVE_REPORT_DETAILS_REQUIRED: "Ghi chi tiết khi chọn lý do “Lý do khác”.",
+  GIVE_REPORT_DETAILS_TOO_LONG: "Chi tiết báo cáo tối đa 1000 ký tự.",
+  GIVE_REPORT_LIMIT: "Bạn đã gửi tối đa 20 báo cáo bình luận trong 24 giờ qua. Hãy thử lại sau.",
+}
+
+/**
+ * Refusals of direct staff comment moderation (`moderate_campaign_comment`;
+ * DOS/Give#250, #262).
+ */
+export const COMMENT_MODERATION_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Bạn không có quyền kiểm duyệt bình luận.",
+  GIVE_NOT_ADMIN: "Chỉ kiểm duyệt viên hoặc quản trị viên được kiểm duyệt bình luận.",
+  GIVE_SELF_REVIEW:
+    "Không thể tự kiểm duyệt bình luận của chính mình hoặc trên chiến dịch do chính bạn tổ chức; một kiểm duyệt viên khác cần xử lý.",
+  GIVE_COMMENT_NOT_FOUND: "Không tìm thấy bình luận (tác giả có thể đã xóa bình luận này). Hãy tải lại trang.",
+  GIVE_REPORT_NOT_FOUND: "Không tìm thấy báo cáo bình luận này. Hãy tải lại trang.",
+  GIVE_REASON_REQUIRED: "Cần ghi lý do xử lý để lưu vào nhật ký kiểm toán.",
+  GIVE_REASON_TOO_LONG: "Lý do tối đa 500 ký tự.",
+  GIVE_MODERATION_INVALID: "Thao tác kiểm duyệt không hợp lệ.",
+}
+
+/**
+ * Refusals of `give.resolve_comment_report` (DOS/Give#250, #262), where
+ * hiding a deleted comment fails with `GIVE_COMMENT_NOT_FOUND` and staff can
+ * still dismiss the report.
+ */
+export const COMMENT_REPORT_RESOLVE_MESSAGES: Record<string, string> = {
+  ...COMMENT_MODERATION_MESSAGES,
+  GIVE_COMMENT_NOT_FOUND:
+    "Không tìm thấy bình luận (tác giả có thể đã xóa bình luận này). Bạn chỉ có thể bác bỏ báo cáo.",
+}
+
+/**
+ * Refusals of co-organizer invite and member RPCs (DOS/Give#253, #264).
+ */
+export const CAMPAIGN_MEMBER_MESSAGES: Record<string, string> = {
+  GIVE_AUTH_REQUIRED: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
+  GIVE_CAMPAIGN_OWNER_ONLY: "Chỉ người tổ chức chính của chiến dịch mới thực hiện được thao tác này.",
+  GIVE_CAMPAIGN_NOT_INVITABLE: "Không thể mời đồng tổ chức khi chiến dịch đã hủy hoặc đang tạm dừng.",
+  GIVE_INVITE_EXPIRY_INVALID: "Thời hạn lời mời phải từ 1 đến 720 giờ (tối đa 30 ngày).",
+  GIVE_INVITE_NOTE_TOO_LONG: "Ghi chú lời mời tối đa 120 ký tự.",
+  GIVE_CAMPAIGN_MEMBER_LIMIT: "Chiến dịch đã đạt giới hạn tối đa 20 đồng tổ chức.",
+  GIVE_CAMPAIGN_INVITE_LIMIT: "Chiến dịch đã đạt giới hạn tối đa 20 lời mời đang chờ.",
+  GIVE_RATE_LIMITED: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
+  GIVE_INVITE_INVALID: "Liên kết lời mời không hợp lệ hoặc không tồn tại.",
+  GIVE_INVITE_REVOKED: "Lời mời này đã bị người tổ chức thu hồi.",
+  GIVE_INVITE_ALREADY_USED: "Liên kết lời mời này đã được sử dụng (mỗi liên kết chỉ dùng một lần).",
+  GIVE_INVITE_ALREADY_ACCEPTED:
+    "Lời mời này đã được chấp nhận nên không thể thu hồi. Hãy gỡ thành viên trong danh sách đội ngũ.",
+  GIVE_INVITE_EXPIRED: "Lời mời này đã hết hạn. Hãy nhờ người tổ chức tạo liên kết mời mới.",
+  GIVE_ALREADY_CAMPAIGN_OWNER: "Bạn đã là người tổ chức chính của chiến dịch này.",
+  GIVE_ALREADY_CAMPAIGN_MEMBER: "Bạn đã là đồng tổ chức của chiến dịch này rồi.",
+  GIVE_CAMPAIGN_MEMBER_NOT_FOUND: "Không tìm thấy đồng tổ chức này trong chiến dịch.",
+}
+
+/**
+ * Maps database errors from co-organizer RPCs, preserving retry-after guidance
+ * from `GIVE_RATE_LIMITED: <seconds>` when present.
+ */
+export function campaignMemberDbErrorMessage(
+  error: DbErrorLike | null | undefined,
+  overrides: Record<string, string> = {}
+): string {
+  return commentDbErrorMessage(error, { ...CAMPAIGN_MEMBER_MESSAGES, ...overrides })
 }

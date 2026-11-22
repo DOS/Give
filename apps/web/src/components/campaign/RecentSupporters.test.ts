@@ -106,4 +106,47 @@ describe("RecentSupporters", () => {
     expect(html).not.toContain("LE THI TAI KHOAN NGAN HANG")
     expect(html).toContain("Xem tất cả lượt ủng hộ")
   })
+
+  it("defensively excludes own-transfer and bank-returned rows even if matched is true", () => {
+    const onlyNonDonations: StatementRow[] = [
+      row({
+        id: "own-in",
+        matched: true,
+        own_transfer_id: "pair-1",
+        own_transfer_label: "Chuyển sang tài khoản mới",
+      }),
+      row({
+        id: "return-in",
+        matched: true,
+        return_of: "out-1",
+      }),
+    ]
+    expect(RecentSupporters({ slug: "be-an", rows: onlyNonDonations, count: 4 })).toBeNull()
+
+    const mixed = renderToStaticMarkup(
+      createElement(RecentSupporters, {
+        slug: "be-an",
+        rows: [...onlyNonDonations, row({ id: "real-in", donor_name: "Anh Khoa" })],
+        count: 4,
+      })
+    )
+    expect(mixed.match(/<li\b/g)).toHaveLength(1)
+    expect(mixed).toContain("Anh Khoa")
+    expect(mixed).not.toContain("Chuyển sang tài khoản mới")
+    expect(mixed).not.toContain("Ngân hàng trả lại tiền chuyển đi")
+  })
+
+  it("omits the numeric total from the 'see all' link when count is null or omitted", () => {
+    const donorRow = [row({ id: "in-1", donor_name: "Chị Mai" })]
+
+    const withNullCount = renderToStaticMarkup(
+      createElement(RecentSupporters, { slug: "be-an", rows: donorRow, count: null })
+    )
+    expect(withNullCount).toContain(">Xem tất cả lượt ủng hộ<")
+    expect(withNullCount).not.toContain("người ủng hộ<")
+
+    const withOmittedCount = renderToStaticMarkup(createElement(RecentSupporters, { slug: "be-an", rows: donorRow }))
+    expect(withOmittedCount).toContain(">Xem tất cả lượt ủng hộ<")
+    expect(withOmittedCount).not.toContain("người ủng hộ<")
+  })
 })

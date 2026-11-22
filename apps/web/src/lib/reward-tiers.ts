@@ -96,7 +96,7 @@ export function moveTier(ids: readonly string[], id: string, direction: "up" | "
 
 /** Slots left, or null for an unlimited tier. */
 export function remainingSlots(tier: Pick<RewardTier, "quantity_limit" | "quantity_claimed">): number | null {
-  return tier.quantity_limit === null ? null : Math.max(tier.quantity_limit - tier.quantity_claimed, 0)
+  return tier.quantity_limit === null ? null : Math.max(0, tier.quantity_limit - tier.quantity_claimed)
 }
 
 /** "Còn 3/10 suất", "Hết suất" or "Không giới hạn số suất". */
@@ -118,7 +118,7 @@ export function minAmountLabel(amount: number): string {
 
 /** The pledge flow (DOS/Give#31) with this tier chosen. */
 export function pledgeHref(slug: string, tierId: string): string {
-  return `/campaigns/${slug}/pledge?tier=${encodeURIComponent(tierId)}`
+  return `/campaigns/${encodeURIComponent(slug)}/pledge?tier=${encodeURIComponent(tierId)}`
 }
 
 // ---------------------------------------------------------------------------

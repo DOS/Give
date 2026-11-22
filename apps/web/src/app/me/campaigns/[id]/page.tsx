@@ -5,15 +5,40 @@ import { notFound } from "next/navigation"
 import type { ReactNode } from "react"
 
 import { AccountStatusBadge, StatusBadge, TypeBadge } from "@/components/badges"
+import {
+  listStatusEventsByCampaign,
+  StatusHistory,
+  type CampaignStatusEvent,
+} from "@/components/campaign/StatusHistory"
 import { ContactEmailLink, ContactText } from "@/components/ContactText"
 import { ActionForm, SubmitButton } from "@/components/forms"
+import { Badge } from "@/components/ui/Badge"
 import { buttonClass, ButtonLink } from "@/components/ui/Button"
 import { Callout, type CalloutTone } from "@/components/ui/Callout"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { EmptyState } from "@/components/ui/EmptyState"
-import { BankIcon } from "@/components/ui/icons"
+import { Field } from "@/components/ui/Field"
+import { BankIcon, ChevronDownIcon } from "@/components/ui/icons"
 import { PageHeader } from "@/components/ui/PageHeader"
+import { TabNav } from "@/components/ui/Tabs"
+import {
+  analyticsTabHref,
+  getCampaignAnalytics,
+  parseAnalyticsDays,
+  parseCampaignManageTab,
+  type CampaignAnalytics,
+} from "@/lib/analytics"
+import { siteOrigin } from "@/lib/auth/origin"
 import { requireSession } from "@/lib/auth/session"
+import {
+  getMyCampaignRole,
+  listCampaignMemberInvites,
+  listCampaignMembers,
+  teamTabHref,
+  type CampaignMemberInviteRow,
+  type CampaignMemberRow,
+} from "@/lib/campaign-members"
+import { campaignMemberDbErrorMessage, dbErrorMessage, giveErrorCode, type DbErrorLike } from "@/lib/errors"
 import { bankLabel } from "@/lib/banks"
 import { canAskSwap, lastDecidedSwap, pendingSwap, SWAP_REASON_MAX, type AccountSwapRequest } from "@/lib/account-swaps"
 import {
@@ -27,13 +52,16 @@ import {
   canPostUpdate,
   type CampaignStatus,
   type CampaignType,
+  type CampaignUpdate,
   categoriesFor,
+  type Db,
   getCampaignById,
   isEditableStatus,
   isPublicStatus,
   listAllUpdates,
   listCategories,
   listMilestones,
+  type Milestone,
   organizerCanCancel,
 } from "@/lib/campaigns"
 import { VIA_CONTACT_EMAIL } from "@/lib/contact"
@@ -51,68 +79,91 @@ import { checkInputClass, checkLabelClass, fileInputClass, Panel } from "../../_
 import { bindAccount, releaseAccount } from "../../accounts/actions"
 import { cancelAccountSwap, requestAccountSwap } from "../swap-actions"
 
+import { AnalyticsTab } from "./AnalyticsTab"
+import {
+  campaignAllowsMonthly,
+  loadPlanSupporters,
+  MonthlySection,
+  showMonthlySection,
+  type PlanSupporter,
+} from "./MonthlySection"
 import { FulfillmentLink, RewardTiersSection } from "./RewardTiersSection"
+import { TeamTab } from "./TeamTab"
 
 import {
   addMilestone,
   cancelCampaign,
   deleteDraft,
+  deleteDraftUpdate,
   deleteMilestone,
   postUpdate,
+  publishDraftUpdate,
+  removeYoutubeVideo,
   saveContent,
+  saveYoutubeVideo,
   submitForReview,
+  updateDraftUpdate,
+  updateMilestone,
   uploadCover,
 } from "../actions"
 
 export const metadata: Metadata = { title: "Quản lý chiến dịch", robots: { index: false } }
 
-export default async function EditCampaignPage({ params }: { params: Promise<{ id: string }> }) {
+interface YoutubeMedia {
+  id: string
+  youtube_id: string
+  alt: string | null
+}
+
+async function loadYoutubeVideo(db: Db, campaignId: string): Promise<{ video: YoutubeMedia | null }> {
+  const { data, error } = await db
+    .from("campaign_media")
+    .select("id, youtube_id, alt")
+    .eq("campaign_id", campaignId)
+    .eq("kind", "youtube")
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(1)
+  if (error) throw error
+  const row = ((data ?? []) as { id: string; youtube_id: string | null; alt: string | null }[])[0]
+  if (!row?.youtube_id || !/^[A-Za-z0-9_-]{11}$/.test(row.youtube_id)) return { video: null }
+  return { video: { id: row.id, youtube_id: row.youtube_id, alt: row.alt ?? null } }
+}
+
+export default async function EditCampaignPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
   const { id } = await params
-  const session = await requireSession(`/me/campaigns/${id}`)
+  const resolvedSearch = searchParams ? await searchParams : {}
+  const tab = parseCampaignManageTab(resolvedSearch.tab)
+  const days = parseAnalyticsDays(resolvedSearch.days)
+  const returnPath =
+    tab === "analytics" ? analyticsTabHref(id, days) : tab === "team" ? teamTabHref(id) : `/me/campaigns/${id}`
+  const session = await requireSession(returnPath)
   if (!isUuid(id)) notFound()
   const db = dbAs(session.accessToken)
   const campaign = await getCampaignById(db, id)
-  if (!campaign || campaign.organizer_id !== session.user.id) notFound()
+  if (!campaign) notFound()
+  const isOwner = campaign.organizer_id === session.user.id
+  const role = isOwner ? "owner" : await getMyCampaignRole(db, campaign.id)
+  const isEditor = !isOwner && role === "editor"
+  if (!isOwner && !isEditor) notFound()
+  // Analytics and team management are strictly owner-only (DOS/Give#253, #264).
+  if (!isOwner && (tab === "analytics" || tab === "team")) notFound()
 
-  const isGive = campaign.type === "give"
-  const [categories, milestones, updates, totals, accounts, tiers] = await Promise.all([
-    listCategories(db),
-    listMilestones(db, campaign.id),
-    listAllUpdates(db, campaign.id),
-    isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
-    // Both types need a usable account before review (DOS/Give#85). A failed
-    // account read shows a notice in its section instead of failing the whole
-    // editor; submitForReview still checks the account on the server.
-    loadEditorAccounts(db, session.user.id, campaign.id, campaign.status, campaign.type).catch(() => null),
-    // Reward tiers of a back campaign (DOS/Give#83); a failed read degrades its section only.
-    isGive ? Promise.resolve(null) : listCampaignTiers(db, campaign.id).catch(() => null),
-  ])
-  const editable = isEditableStatus(campaign.status)
-  const submitBlocked = accounts?.submitBlocked ?? null
-  const showUpdates = canPostUpdate(campaign.status) && !editable && campaign.status !== "in_review"
-
-  const showMoney = Boolean(totals) || !editable
-  const showFulfillment = !isGive && canUpdateFulfillment(campaign)
-  const toc = [
-    showFulfillment && { id: "fulfillment", label: "Giao quà" },
-    showMoney && { id: "money", label: "Sao kê và giải trình chi" },
-    { id: "content", label: "Nội dung" },
-    { id: "cover-image", label: "Ảnh bìa" },
-    { id: "milestones", label: "Các mốc mục tiêu" },
-    !isGive && { id: "reward-tiers", label: "Phần thưởng" },
-    showUpdates && { id: "updates", label: "Cập nhật" },
-    { id: "receiving-account", label: "Tài khoản nhận tiền" },
-    { id: "status", label: "Trạng thái" },
-  ].filter((item): item is { id: string; label: string } => Boolean(item))
-
-  return (
-    <MeDetail>
+  const headerAndTabs = (
+    <div className="space-y-6">
       <PageHeader
         back={{ href: "/me/campaigns", label: "Chiến dịch của tôi" }}
         eyebrow={
           <>
             <TypeBadge type={campaign.type} />
             <StatusBadge status={campaign.status} />
+            {isEditor && <Badge tone="info">Đồng tổ chức</Badge>}
           </>
         }
         title={campaign.title}
@@ -122,16 +173,156 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
           </ButtonLink>
         }
       />
+      {isOwner && (
+        <TabNav
+          label="Mục chiến dịch"
+          items={[
+            { href: `/me/campaigns/${campaign.id}`, label: "Quản lý", current: tab === "manage" },
+            { href: analyticsTabHref(campaign.id), label: "Thống kê", current: tab === "analytics" },
+            { href: teamTabHref(campaign.id), label: "Đội ngũ", current: tab === "team" },
+          ]}
+        />
+      )}
+    </div>
+  )
+
+  if (tab === "team") {
+    const [membersState, invitesState] = await Promise.all([
+      listCampaignMembers(db, campaign.id)
+        .then((rows) => ({ rows, error: null as string | null }))
+        .catch((error: unknown) => ({
+          rows: [] as CampaignMemberRow[],
+          error: campaignMemberDbErrorMessage(error as DbErrorLike | null),
+        })),
+      listCampaignMemberInvites(db, campaign.id)
+        .then((rows) => ({ rows, error: null as string | null }))
+        .catch((error: unknown) => ({
+          rows: [] as CampaignMemberInviteRow[],
+          error: campaignMemberDbErrorMessage(error as DbErrorLike | null),
+        })),
+    ])
+
+    return (
+      <MeDetail>
+        {headerAndTabs}
+        <TeamTab
+          campaignId={campaign.id}
+          campaignSlug={campaign.slug}
+          campaignStatus={campaign.status}
+          members={membersState.rows}
+          invites={invitesState.rows}
+          membersError={membersState.error}
+          invitesError={invitesState.error}
+          origin={siteOrigin()}
+        />
+      </MeDetail>
+    )
+  }
+
+  if (tab === "analytics") {
+    let analytics: CampaignAnalytics | null = null
+    let analyticsError: string | null = null
+    try {
+      analytics = await getCampaignAnalytics(db, campaign.id, days)
+    } catch (error) {
+      const dbError = error as DbErrorLike | null
+      if (giveErrorCode(dbError) === "GIVE_CAMPAIGN_NOT_FOUND" || dbError?.code === "P0002") {
+        notFound()
+      }
+      analyticsError = dbErrorMessage(dbError)
+    }
+
+    return (
+      <MeDetail>
+        {headerAndTabs}
+        <AnalyticsTab
+          campaignId={campaign.id}
+          campaignType={campaign.type}
+          campaignStatus={campaign.status}
+          days={days}
+          analytics={analytics}
+          error={analyticsError}
+        />
+      </MeDetail>
+    )
+  }
+
+  const isGive = campaign.type === "give"
+  const showMonthly = isOwner && showMonthlySection(campaign.type, campaign.status)
+  const allowMonthly = campaignAllowsMonthly(campaign)
+  const [
+    categories,
+    milestones,
+    updates,
+    totals,
+    accounts,
+    tiers,
+    youtubeState,
+    statusEventsByCampaign,
+    planSupporters,
+  ] = await Promise.all([
+    listCategories(db),
+    listMilestones(db, campaign.id),
+    listAllUpdates(db, campaign.id),
+    isOwner && isPublicStatus(campaign.status) ? getMoneyTotals(db, campaign.id) : Promise.resolve(null),
+    // Both types need a usable account before review (DOS/Give#85). Strictly owner-only.
+    isOwner
+      ? loadEditorAccounts(db, session.user.id, campaign.id, campaign.status, campaign.type).catch(() => null)
+      : Promise.resolve(null),
+    // Reward tiers of a back campaign (DOS/Give#83); a failed read degrades its section only.
+    isGive ? Promise.resolve(null) : listCampaignTiers(db, campaign.id).catch(() => null),
+    loadYoutubeVideo(db, campaign.id).catch(() => null),
+    listStatusEventsByCampaign(db, [campaign.id]).catch(() => new Map<string, CampaignStatusEvent[]>()),
+    // Monthly supporters (DOS/Give#276): strictly owner-only — never run for co-organizers.
+    isOwner && showMonthly && allowMonthly
+      ? loadPlanSupporters(campaign.id, session.user.id).catch(() => null)
+      : Promise.resolve<PlanSupporter[] | null>([]),
+  ])
+  const youtubeVideo = youtubeState?.video ?? null
+  const statusEvents = statusEventsByCampaign.get(campaign.id) ?? []
+  const editable = isEditableStatus(campaign.status)
+  const submitBlocked = accounts?.submitBlocked ?? null
+  const canUpdate = canPostUpdate(campaign.status)
+  const canPublish = canUpdate && !editable && campaign.status !== "in_review"
+  const showUpdates = canUpdate || updates.length > 0
+
+  const showMoney = isOwner && (Boolean(totals) || !editable)
+  const showFulfillment = isOwner && !isGive && canUpdateFulfillment(campaign)
+  const toc = [
+    showFulfillment && { id: "fulfillment", label: "Giao quà" },
+    showMoney && { id: "money", label: "Sao kê và giải trình chi" },
+    { id: "content", label: "Nội dung" },
+    { id: "cover-image", label: "Ảnh bìa" },
+    { id: "pitch-video", label: "Video giới thiệu" },
+    { id: "milestones", label: "Các mốc mục tiêu" },
+    !isGive && { id: "reward-tiers", label: "Phần thưởng" },
+    showMonthly && { id: "monthly", label: "Ủng hộ hằng tháng" },
+    showUpdates && { id: "updates", label: "Cập nhật" },
+    isOwner && { id: "receiving-account", label: "Tài khoản nhận tiền" },
+    { id: "status", label: "Trạng thái" },
+  ].filter((item): item is { id: string; label: string } => Boolean(item))
+
+  return (
+    <MeDetail>
+      {headerAndTabs}
 
       <div className="space-y-4">
+        {isEditor && (
+          <Callout tone="info" title="Quyền đồng tổ chức (biên tập viên)">
+            Bạn có thể sửa nội dung, ảnh bìa, video giới thiệu, các mốc mục tiêu, phần thưởng và đăng cập nhật theo
+            trạng thái chiến dịch. Tài khoản nhận tiền, sao kê, giải trình khoản chi, giao quà, gửi duyệt, hủy chiến
+            dịch và quản lý đội ngũ thuộc quyền riêng của người tổ chức chính.
+          </Callout>
+        )}
         <StatusNotice
           status={campaign.status}
           reviewNote={campaign.review_note}
-          accountBlock={openingBlock(accounts)}
+          accountBlock={isOwner ? openingBlock(accounts) : null}
           ended={campaign.ends_at !== null && new Date(campaign.ends_at) <= new Date()}
-          paymentsStopped={Boolean(totals?.payments_stopped_at)}
+          paymentsStopped={isOwner && Boolean(totals?.payments_stopped_at)}
+          isEditor={isEditor}
         />
-        {totals?.payments_stopped_at && (
+        {isOwner && totals?.payments_stopped_at && (
           <Callout
             tone="warning"
             className="break-words"
@@ -505,6 +696,84 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
           </Panel>
 
           <Panel
+            id="pitch-video"
+            title="Video giới thiệu"
+            description="Video YouTube hiện trên trang chiến dịch và chỉ tải từ YouTube khi người xem bấm phát."
+          >
+            {!youtubeState ? (
+              <Callout tone="danger">Không tải được video giới thiệu. Hãy tải lại trang.</Callout>
+            ) : (
+              <div className="max-w-160 space-y-6">
+                {youtubeVideo ? (
+                  <div className="space-y-1">
+                    <p className="text-fg">
+                      Video hiện tại:{" "}
+                      <a
+                        href={`https://www.youtube.com/watch?v=${youtubeVideo.youtube_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="link break-all"
+                      >
+                        https://www.youtube.com/watch?v={youtubeVideo.youtube_id}
+                      </a>
+                    </p>
+                    {youtubeVideo.alt && <p className="text-sm break-words text-muted">Mô tả: {youtubeVideo.alt}</p>}
+                  </div>
+                ) : (
+                  !editable && <p className="text-muted">Chiến dịch không có video giới thiệu.</p>
+                )}
+
+                {editable && (
+                  <ActionForm action={saveYoutubeVideo.bind(null, campaign.id)} className="space-y-6">
+                    <div
+                      key={youtubeVideo ? `${youtubeVideo.youtube_id}:${youtubeVideo.alt ?? ""}` : "empty"}
+                      className="space-y-6"
+                    >
+                      <Field
+                        htmlFor="youtube_id"
+                        label="Liên kết hoặc mã video YouTube"
+                        hintId="youtube_id_hint"
+                        hint="Dán liên kết YouTube (youtu.be, youtube.com/watch, shorts, embed) hoặc mã video 11 ký tự."
+                      >
+                        <input
+                          id="youtube_id"
+                          name="youtube_id"
+                          className="field"
+                          required
+                          aria-describedby="youtube_id_hint"
+                          placeholder="https://www.youtube.com/watch?v=..."
+                          defaultValue={
+                            youtubeVideo ? `https://www.youtube.com/watch?v=${youtubeVideo.youtube_id}` : ""
+                          }
+                        />
+                      </Field>
+                      <Field htmlFor="youtube_alt" label="Mô tả video (không bắt buộc)">
+                        <input
+                          id="youtube_alt"
+                          name="alt"
+                          className="field"
+                          maxLength={200}
+                          defaultValue={youtubeVideo?.alt ?? ""}
+                        />
+                      </Field>
+                    </div>
+                    <SubmitButton className={buttonClass({ variant: "secondary" })}>Lưu video</SubmitButton>
+                  </ActionForm>
+                )}
+
+                {editable && youtubeVideo && (
+                  <ActionForm
+                    action={removeYoutubeVideo.bind(null, campaign.id)}
+                    confirm="Gỡ video giới thiệu khỏi chiến dịch?"
+                  >
+                    <SubmitButton className={buttonClass({ variant: "danger" })}>Gỡ video</SubmitButton>
+                  </ActionForm>
+                )}
+              </div>
+            )}
+          </Panel>
+
+          <Panel
             id="milestones"
             title="Các mốc mục tiêu"
             description={milestones.length === 0 ? undefined : "Mốc giúp người ủng hộ thấy tiền sẽ làm được gì."}
@@ -512,24 +781,52 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             {milestones.length > 0 ? (
               <ol className="divide-y divide-border rounded-md border border-border">
                 {milestones.map((milestone) => (
-                  <li key={milestone.id} className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 p-4">
-                    <div className="min-w-0 flex-1 basis-56">
-                      <p className="font-semibold break-words text-fg">{milestone.title}</p>
-                      {milestone.description && <p className="mt-1 break-words text-fg">{milestone.description}</p>}
+                  <li key={milestone.id} className="min-w-0 space-y-3 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                      <div className="min-w-0 flex-1 basis-56">
+                        <p className="font-semibold break-words text-fg">{milestone.title}</p>
+                        {milestone.description && (
+                          <p className="mt-1 max-w-[68ch] break-words whitespace-pre-line text-fg">
+                            {milestone.description}
+                          </p>
+                        )}
+                        {milestone.unlock_note && (
+                          <p className="mt-1 max-w-[68ch] text-sm break-words whitespace-pre-line text-muted">
+                            <span className="font-medium text-fg">Khi đạt mốc:</span> {milestone.unlock_note}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="figure">{formatVnd(milestone.target_amount)}</span>
+                        {editable && (
+                          <ActionForm
+                            action={deleteMilestone.bind(null, campaign.id, milestone.id)}
+                            confirm={`Xóa mốc “${milestone.title}”?`}
+                          >
+                            <SubmitButton className={buttonClass({ variant: "danger", size: "sm" })}>
+                              Xóa<span className="sr-only"> mốc {milestone.title}</span>
+                            </SubmitButton>
+                          </ActionForm>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <span className="figure">{formatVnd(milestone.target_amount)}</span>
-                      {editable && (
+                    {editable && (
+                      <details className="group">
+                        <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 link [&::-webkit-details-marker]:hidden">
+                          Sửa mốc<span className="sr-only">: {milestone.title}</span>
+                          <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
+                        </summary>
                         <ActionForm
-                          action={deleteMilestone.bind(null, campaign.id, milestone.id)}
-                          confirm={`Xóa mốc “${milestone.title}”?`}
+                          action={updateMilestone.bind(null, campaign.id, milestone.id)}
+                          className="mt-3 max-w-160 space-y-6"
                         >
-                          <SubmitButton className={buttonClass({ variant: "danger", size: "sm" })}>
-                            Xóa<span className="sr-only"> mốc {milestone.title}</span>
+                          <MilestoneFields prefix={`milestone_${milestone.id}`} milestone={milestone} />
+                          <SubmitButton className={buttonClass({ variant: "secondary" })}>
+                            Lưu mốc<span className="sr-only">: {milestone.title}</span>
                           </SubmitButton>
                         </ActionForm>
-                      )}
-                    </div>
+                      </details>
+                    )}
                   </li>
                 ))}
               </ol>
@@ -540,36 +837,11 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
               <ActionForm
                 action={addMilestone.bind(null, campaign.id)}
                 resetOnSuccess
-                className="mt-6 grid max-w-160 gap-6 border-t border-border pt-6 sm:grid-cols-2 [&>*]:min-w-0"
+                className="mt-6 max-w-160 space-y-6 border-t border-border pt-6"
               >
-                <h3 className="text-h3 sm:col-span-2">Thêm mốc</h3>
-                <div>
-                  <label htmlFor="milestone_title" className="label">
-                    Tên mốc
-                  </label>
-                  <input id="milestone_title" name="title" className="field" required minLength={2} maxLength={120} />
-                </div>
-                <div>
-                  <label htmlFor="milestone_target" className="label">
-                    Số tiền (₫)
-                  </label>
-                  <input
-                    id="milestone_target"
-                    name="target_amount"
-                    className="field tabular-nums"
-                    inputMode="numeric"
-                    required
-                  />
-                </div>
-                <div className="sm:col-span-2">
-                  <label htmlFor="milestone_description" className="label">
-                    Mô tả (không bắt buộc)
-                  </label>
-                  <input id="milestone_description" name="description" className="field" maxLength={2000} />
-                </div>
-                <div>
-                  <SubmitButton className={buttonClass({ variant: "secondary" })}>Thêm mốc</SubmitButton>
-                </div>
+                <h3 className="text-h3">Thêm mốc</h3>
+                <MilestoneFields prefix="milestone" milestone={null} />
+                <SubmitButton className={buttonClass({ variant: "secondary" })}>Thêm mốc</SubmitButton>
               </ActionForm>
             )}
           </Panel>
@@ -583,51 +855,128 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             />
           )}
 
+          {showMonthly && (
+            <MonthlySection
+              campaignId={campaign.id}
+              status={campaign.status}
+              endsAt={campaign.ends_at}
+              allowMonthly={allowMonthly}
+              supporters={planSupporters}
+            />
+          )}
+
           {showUpdates && (
             <Panel
               id="updates"
               title="Cập nhật cho người ủng hộ"
-              description="Cập nhật hiện công khai trên trang chiến dịch ngay khi đăng và không sửa được."
+              description={
+                !canUpdate
+                  ? "Chiến dịch không còn nhận cập nhật mới."
+                  : canPublish
+                    ? "Lưu bản nháp để kiểm tra và sửa lại trước khi đăng. Cập nhật đã đăng công khai trên trang chiến dịch là hồ sơ vĩnh viễn, không thể sửa hay xóa."
+                    : "Bạn có thể soạn sẵn bản nháp cập nhật; cập nhật chỉ đăng công khai được sau khi chiến dịch được duyệt và một khi đã đăng sẽ không thể sửa hay xóa."
+              }
             >
-              <ActionForm
-                action={postUpdate.bind(null, campaign.id)}
-                resetOnSuccess
-                className="max-w-160 space-y-6"
-                confirm="Cập nhật sẽ công khai ngay và không sửa được. Đăng?"
-              >
-                <div>
-                  <label htmlFor="update_title" className="label">
-                    Tiêu đề
-                  </label>
-                  <input id="update_title" name="title" className="field" required minLength={2} maxLength={200} />
-                </div>
-                <div>
-                  <label htmlFor="update_body" className="label">
-                    Nội dung
-                  </label>
-                  <textarea id="update_body" name="body" className="field" rows={5} required maxLength={50000} />
-                </div>
-                <SubmitButton className={buttonClass()}>Đăng cập nhật</SubmitButton>
-              </ActionForm>
+              {canUpdate && (
+                <ActionForm action={postUpdate.bind(null, campaign.id)} resetOnSuccess className="max-w-160 space-y-6">
+                  <UpdateFields
+                    prefix="update"
+                    update={null}
+                    bodyHint={
+                      canPublish
+                        ? "Bản nháp chỉ mình bạn thấy và có thể sửa hoặc xóa bất cứ lúc nào. Cập nhật đã đăng công khai không thể sửa hay xóa."
+                        : "Bản nháp chỉ mình bạn thấy; sau khi chiến dịch được duyệt, bạn có thể đăng công khai."
+                    }
+                  />
+                  <div className="flex flex-wrap gap-3">
+                    <SubmitButton name="intent" value="draft" className={buttonClass({ variant: "secondary" })}>
+                      Lưu bản nháp
+                    </SubmitButton>
+                    {canPublish && (
+                      <SubmitButton name="intent" value="publish" className={buttonClass()}>
+                        Đăng công khai
+                      </SubmitButton>
+                    )}
+                  </div>
+                </ActionForm>
+              )}
+
               {updates.length > 0 && (
-                <div className="mt-6 border-t border-border pt-6">
-                  <h3 className="text-h3">Đã đăng ({updates.length})</h3>
-                  <ul className="mt-3 space-y-2">
-                    {updates.map((update) => (
-                      <li key={update.id} className="flex flex-wrap gap-x-3">
-                        <span className="text-muted tabular-nums">
-                          {formatDate(update.published_at ?? update.created_at)}
-                        </span>
-                        <span className="min-w-0 break-words text-fg">{update.title}</span>
-                      </li>
-                    ))}
-                  </ul>
+                <div className={canUpdate ? "mt-6 border-t border-border pt-6" : undefined}>
+                  <h3 className="text-h3">Các cập nhật ({updates.length})</h3>
+                  <ol className="mt-3 divide-y divide-border rounded-md border border-border">
+                    {updates.map((update) => {
+                      const isDraft = update.published_at === null
+                      return (
+                        <li key={update.id} className="min-w-0 space-y-3 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+                            <div className="min-w-0 flex-1 basis-56">
+                              <div className="flex flex-wrap items-center gap-2">
+                                {isDraft ? (
+                                  <Badge>Bản nháp</Badge>
+                                ) : (
+                                  <span className="text-sm text-muted tabular-nums">
+                                    Đã đăng {formatDate(update.published_at)}
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-1 font-semibold break-words text-fg">{update.title}</p>
+                              <p className="mt-1 max-w-[68ch] break-words whitespace-pre-line text-fg">{update.body}</p>
+                            </div>
+                            {isDraft && canUpdate && (
+                              <div className="flex flex-wrap items-center gap-2">
+                                {canPublish && (
+                                  <ActionForm
+                                    action={publishDraftUpdate.bind(null, campaign.id, update.id)}
+                                    confirm={`Đăng công khai bản nháp “${update.title}”? Cập nhật đã đăng sẽ hiện công khai và không thể sửa hay xóa.`}
+                                  >
+                                    <SubmitButton className={buttonClass({ variant: "secondary", size: "sm" })}>
+                                      Đăng công khai<span className="sr-only">: {update.title}</span>
+                                    </SubmitButton>
+                                  </ActionForm>
+                                )}
+                                <ActionForm
+                                  action={deleteDraftUpdate.bind(null, campaign.id, update.id)}
+                                  confirm={`Xóa bản nháp “${update.title}”?`}
+                                >
+                                  <SubmitButton className={buttonClass({ variant: "danger", size: "sm" })}>
+                                    Xóa bản nháp<span className="sr-only">: {update.title}</span>
+                                  </SubmitButton>
+                                </ActionForm>
+                              </div>
+                            )}
+                          </div>
+                          {isDraft && canUpdate && (
+                            <details className="group">
+                              <summary className="inline-flex min-h-11 cursor-pointer list-none items-center gap-1 link [&::-webkit-details-marker]:hidden">
+                                Sửa bản nháp<span className="sr-only">: {update.title}</span>
+                                <ChevronDownIcon width={20} height={20} className="group-open:rotate-180" />
+                              </summary>
+                              <ActionForm
+                                action={updateDraftUpdate.bind(null, campaign.id, update.id)}
+                                className="mt-3 max-w-160 space-y-6"
+                              >
+                                <UpdateFields prefix={`update_${update.id}`} update={update} />
+                                <SubmitButton
+                                  name="intent"
+                                  value="draft"
+                                  className={buttonClass({ variant: "secondary" })}
+                                >
+                                  Lưu bản nháp<span className="sr-only">: {update.title}</span>
+                                </SubmitButton>
+                              </ActionForm>
+                            </details>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ol>
                 </div>
               )}
             </Panel>
           )}
 
-          {!accounts && (
+          {isOwner && !accounts && (
             <Panel id="receiving-account" title="Tài khoản nhận tiền">
               <Callout tone="danger">
                 Không tải được tài khoản nhận tiền của chiến dịch. Hãy tải lại trang, hoặc xem tại trang{" "}
@@ -639,7 +988,7 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
             </Panel>
           )}
 
-          {accounts && (
+          {isOwner && accounts && (
             <ReceivingAccountSection
               campaignId={campaign.id}
               status={campaign.status}
@@ -650,82 +999,104 @@ export default async function EditCampaignPage({ params }: { params: Promise<{ i
 
           <Panel id="status" title="Trạng thái">
             <div className="space-y-6">
-              {editable && (
-                <ActionForm action={submitForReview.bind(null, campaign.id)} className="max-w-160 space-y-4">
-                  <p className="text-fg">
-                    Khi gửi duyệt, bạn không sửa được nội dung cho tới khi kiểm duyệt viên trả lời. Cần có danh mục, tóm
-                    tắt, câu chuyện ít nhất 100 ký tự, ngày kết thúc
-                    {isGive ? " và người thụ hưởng" : ""}.
-                  </p>
-                  {submitBlocked && (
-                    <Callout tone="warning" role="alert">
-                      Chưa gửi duyệt được: chiến dịch cần gắn một tài khoản nhận tiền đã xác minh, đứng tên bạn.{" "}
-                      {accounts?.bound &&
-                      accounts.boundHasTransactions &&
-                      !canAskSwap(campaign.status, campaign.type, accounts.boundHasTransactions) ? (
-                        <>
-                          Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: hãy liên hệ
-                          đội ngũ Give qua email <ContactEmailLink /> để được hỗ trợ.
-                        </>
-                      ) : (
-                        <>
-                          {accounts?.bound
-                            ? accounts.boundHasTransactions
-                              ? "Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: gửi yêu cầu đổi tài khoản trong mục "
-                              : "Tài khoản đang gắn không còn dùng được: nhả nó trong mục "
-                            : "Chiến dịch này chưa gắn tài khoản: chọn tài khoản trong mục "}
-                          <a href="#receiving-account" className="font-medium underline">
-                            Tài khoản nhận tiền
-                          </a>{" "}
-                          {accounts?.bound
-                            ? accounts.boundHasTransactions
-                              ? "ở trên để bộ phận tài chính duyệt"
-                              : "ở trên rồi gắn tài khoản khác"
-                            : "ở trên"}
-                          , hoặc khai báo và xác minh tài khoản tại trang{" "}
-                          <Link href="/me/accounts" className="font-medium underline">
-                            Tài khoản nhận tiền
-                          </Link>
-                          .
-                        </>
+              {statusEvents.length > 0 && (
+                <div className="max-w-160">
+                  <StatusHistory events={statusEvents} campaignTitle={campaign.title} />
+                </div>
+              )}
+              {isOwner ? (
+                <>
+                  {editable && (
+                    <ActionForm
+                      action={submitForReview.bind(null, campaign.id)}
+                      className={
+                        statusEvents.length > 0
+                          ? "max-w-160 space-y-4 border-t border-border pt-6"
+                          : "max-w-160 space-y-4"
+                      }
+                    >
+                      <p className="text-fg">
+                        Khi gửi duyệt, bạn không sửa được nội dung cho tới khi kiểm duyệt viên trả lời. Cần có danh mục,
+                        tóm tắt, câu chuyện ít nhất 100 ký tự, ngày kết thúc
+                        {isGive ? " và người thụ hưởng" : ""}.
+                      </p>
+                      {submitBlocked && (
+                        <Callout tone="warning" role="alert">
+                          Chưa gửi duyệt được: chiến dịch cần gắn một tài khoản nhận tiền đã xác minh, đứng tên bạn.{" "}
+                          {accounts?.bound &&
+                          accounts.boundHasTransactions &&
+                          !canAskSwap(campaign.status, campaign.type, accounts.boundHasTransactions) ? (
+                            <>
+                              Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: hãy liên
+                              hệ đội ngũ Give qua email <ContactEmailLink /> để được hỗ trợ.
+                            </>
+                          ) : (
+                            <>
+                              {accounts?.bound
+                                ? accounts.boundHasTransactions
+                                  ? "Tài khoản đang gắn không còn dùng được và đã nhận giao dịch nên không nhả được: gửi yêu cầu đổi tài khoản trong mục "
+                                  : "Tài khoản đang gắn không còn dùng được: nhả nó trong mục "
+                                : "Chiến dịch này chưa gắn tài khoản: chọn tài khoản trong mục "}
+                              <a href="#receiving-account" className="font-medium underline">
+                                Tài khoản nhận tiền
+                              </a>{" "}
+                              {accounts?.bound
+                                ? accounts.boundHasTransactions
+                                  ? "ở trên để bộ phận tài chính duyệt"
+                                  : "ở trên rồi gắn tài khoản khác"
+                                : "ở trên"}
+                              , hoặc khai báo và xác minh tài khoản tại trang{" "}
+                              <Link href="/me/accounts" className="font-medium underline">
+                                Tài khoản nhận tiền
+                              </Link>
+                              .
+                            </>
+                          )}
+                        </Callout>
                       )}
-                    </Callout>
+                      <SubmitButton className={buttonClass({ size: "lg" })} disabled={Boolean(submitBlocked)}>
+                        Gửi duyệt
+                      </SubmitButton>
+                    </ActionForm>
                   )}
-                  <SubmitButton className={buttonClass({ size: "lg" })} disabled={Boolean(submitBlocked)}>
-                    Gửi duyệt
-                  </SubmitButton>
-                </ActionForm>
-              )}
-              {organizerCanCancel(campaign.status) && (
-                <ActionForm
-                  action={cancelCampaign.bind(null, campaign.id)}
-                  className={editable ? "max-w-160 border-t border-border pt-6" : "max-w-160"}
-                  confirm="Hủy chiến dịch là vĩnh viễn. Tiếp tục?"
-                >
-                  <label htmlFor="cancel_reason" className="label">
-                    Hủy chiến dịch
-                  </label>
-                  <div className="flex flex-col gap-3 sm:flex-row">
-                    <input
-                      id="cancel_reason"
-                      name="reason"
-                      className="field sm:flex-1"
-                      placeholder="Lý do (không bắt buộc)"
-                      maxLength={500}
-                    />
-                    <SubmitButton className={buttonClass({ variant: "danger", className: "shrink-0" })}>
-                      Hủy chiến dịch
-                    </SubmitButton>
-                  </div>
-                </ActionForm>
-              )}
-              {campaign.status === "draft" && (
-                <ActionForm action={deleteDraft.bind(null, campaign.id)} confirm="Xóa hẳn bản nháp này?">
-                  <SubmitButton className={buttonClass({ variant: "danger" })}>Xóa bản nháp</SubmitButton>
-                </ActionForm>
-              )}
-              {!editable && !organizerCanCancel(campaign.status) && (
-                <p className="text-muted">Không có thao tác nào ở trạng thái này.</p>
+                  {organizerCanCancel(campaign.status) && (
+                    <ActionForm
+                      action={cancelCampaign.bind(null, campaign.id)}
+                      className={
+                        editable || statusEvents.length > 0 ? "max-w-160 border-t border-border pt-6" : "max-w-160"
+                      }
+                      confirm="Hủy chiến dịch là vĩnh viễn. Tiếp tục?"
+                    >
+                      <label htmlFor="cancel_reason" className="label">
+                        Hủy chiến dịch
+                      </label>
+                      <div className="flex flex-col gap-3 sm:flex-row">
+                        <input
+                          id="cancel_reason"
+                          name="reason"
+                          className="field sm:flex-1"
+                          placeholder="Lý do (không bắt buộc)"
+                          maxLength={500}
+                        />
+                        <SubmitButton className={buttonClass({ variant: "danger", className: "shrink-0" })}>
+                          Hủy chiến dịch
+                        </SubmitButton>
+                      </div>
+                    </ActionForm>
+                  )}
+                  {campaign.status === "draft" && (
+                    <ActionForm action={deleteDraft.bind(null, campaign.id)} confirm="Xóa hẳn bản nháp này?">
+                      <SubmitButton className={buttonClass({ variant: "danger" })}>Xóa bản nháp</SubmitButton>
+                    </ActionForm>
+                  )}
+                  {!editable && !organizerCanCancel(campaign.status) && statusEvents.length === 0 && (
+                    <p className="text-muted">Không có thao tác nào ở trạng thái này.</p>
+                  )}
+                </>
+              ) : (
+                <p className={statusEvents.length > 0 ? "border-t border-border pt-6 text-muted" : "text-muted"}>
+                  Chỉ người tổ chức chính mới có thể gửi duyệt, hủy chiến dịch hoặc xóa bản nháp.
+                </p>
               )}
             </div>
           </Panel>
@@ -981,12 +1352,112 @@ function AccountSwapBlock({
   )
 }
 
+function MilestoneFields({ prefix, milestone }: { prefix: string; milestone: Milestone | null }) {
+  const unlockHintId = `${prefix}_unlock_note_hint`
+  const fieldKey = milestone
+    ? `${milestone.title}:${milestone.target_amount}:${milestone.description ?? ""}:${milestone.unlock_note ?? ""}`
+    : "new"
+  return (
+    <div key={fieldKey} className="space-y-6">
+      <div className="grid gap-6 sm:grid-cols-2 [&>*]:min-w-0">
+        <Field htmlFor={`${prefix}_title`} label="Tên mốc">
+          <input
+            id={`${prefix}_title`}
+            name="title"
+            className="field"
+            required
+            minLength={2}
+            maxLength={120}
+            defaultValue={milestone?.title ?? ""}
+          />
+        </Field>
+        <Field htmlFor={`${prefix}_target`} label="Số tiền (₫)">
+          <input
+            id={`${prefix}_target`}
+            name="target_amount"
+            className="field tabular-nums"
+            inputMode="numeric"
+            required
+            defaultValue={milestone ? String(milestone.target_amount) : ""}
+          />
+        </Field>
+      </div>
+      <Field htmlFor={`${prefix}_description`} label="Mô tả (không bắt buộc)">
+        <input
+          id={`${prefix}_description`}
+          name="description"
+          className="field"
+          maxLength={2000}
+          defaultValue={milestone?.description ?? ""}
+        />
+      </Field>
+      <Field
+        htmlFor={`${prefix}_unlock_note`}
+        label="Ghi chú khi đạt mốc (không bắt buộc)"
+        hintId={unlockHintId}
+        hint="Tối đa 500 ký tự, hiện công khai trên trang chiến dịch khi đạt mốc này."
+      >
+        <textarea
+          id={`${prefix}_unlock_note`}
+          name="unlock_note"
+          className="field"
+          rows={2}
+          maxLength={500}
+          aria-describedby={unlockHintId}
+          defaultValue={milestone?.unlock_note ?? ""}
+        />
+      </Field>
+    </div>
+  )
+}
+
+function UpdateFields({
+  prefix,
+  update,
+  bodyHint,
+}: {
+  prefix: string
+  update: CampaignUpdate | null
+  bodyHint?: string
+}) {
+  const bodyHintId = bodyHint ? `${prefix}_body_hint` : undefined
+  const fieldKey = update ? `${update.title}:${update.body}` : "new"
+  return (
+    <div key={fieldKey} className="space-y-6">
+      <Field htmlFor={`${prefix}_title`} label="Tiêu đề">
+        <input
+          id={`${prefix}_title`}
+          name="title"
+          className="field"
+          required
+          minLength={2}
+          maxLength={200}
+          defaultValue={update?.title ?? ""}
+        />
+      </Field>
+      <Field htmlFor={`${prefix}_body`} label="Nội dung" hintId={bodyHintId} hint={bodyHint}>
+        <textarea
+          id={`${prefix}_body`}
+          name="body"
+          className="field"
+          rows={5}
+          required
+          maxLength={50000}
+          aria-describedby={bodyHintId}
+          defaultValue={update?.body ?? ""}
+        />
+      </Field>
+    </div>
+  )
+}
+
 function StatusNotice({
   status,
   reviewNote,
   accountBlock,
   ended,
   paymentsStopped,
+  isEditor = false,
 }: {
   status: CampaignStatus
   reviewNote: string | null
@@ -994,6 +1465,7 @@ function StatusNotice({
   accountBlock: "no_account" | "unusable" | null
   ended: boolean
   paymentsStopped?: boolean
+  isEditor?: boolean
 }) {
   const blockedApproval = !accountBlock
     ? null
@@ -1003,11 +1475,18 @@ function StatusNotice({
         ? `Đã duyệt, nhưng chiến dịch chưa mở được vì chưa gắn tài khoản nhận tiền. Gắn một tài khoản đã xác minh ở mục Tài khoản nhận tiền bên dưới; chiến dịch tự mở khi tới ngày bắt đầu. Nếu không gắn được, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
         : `Đã duyệt, nhưng chiến dịch chưa mở được vì tài khoản nhận tiền đang gắn không dùng được. Chiến dịch tự mở nếu tài khoản dùng được trở lại; nếu không, kiểm duyệt viên có thể yêu cầu chỉnh sửa để bạn đổi tài khoản. Cần hỗ trợ, hãy liên hệ đội ngũ Give ${VIA_CONTACT_EMAIL}.`
   const notices: Record<CampaignStatus, { tone: CalloutTone; text: string }> = {
-    draft: { tone: "neutral", text: "Bản nháp: chỉ bạn thấy. Hoàn thiện nội dung rồi gửi duyệt." },
+    draft: {
+      tone: "neutral",
+      text: isEditor
+        ? "Bản nháp: chỉ người tổ chức và đội ngũ thấy. Hoàn thiện nội dung rồi báo người tổ chức chính gửi duyệt."
+        : "Bản nháp: chỉ bạn thấy. Hoàn thiện nội dung rồi gửi duyệt.",
+    },
     in_review: { tone: "warning", text: "Đang chờ kiểm duyệt. Nội dung tạm khóa." },
     changes_requested: {
       tone: "warning",
-      text: `Kiểm duyệt viên yêu cầu chỉnh sửa${reviewNote ? `: ${reviewNote}` : "."} Sửa xong thì gửi duyệt lại.`,
+      text: isEditor
+        ? `Kiểm duyệt viên yêu cầu chỉnh sửa${reviewNote ? `: ${reviewNote}` : "."} Sửa xong thì báo người tổ chức chính gửi duyệt lại.`
+        : `Kiểm duyệt viên yêu cầu chỉnh sửa${reviewNote ? `: ${reviewNote}` : "."} Sửa xong thì gửi duyệt lại.`,
     },
     approved: blockedApproval
       ? { tone: "warning", text: blockedApproval }
@@ -1019,9 +1498,11 @@ function StatusNotice({
     },
     succeeded: {
       tone: "success",
-      text: paymentsStopped
-        ? "Dự án đã gây quỹ thành công. Bạn vẫn đăng cập nhật, giải trình chi và cập nhật giao quà cho người đã thanh toán được."
-        : "Dự án đã gây quỹ thành công. Người ủng hộ đang thanh toán cam kết; bạn vẫn đăng cập nhật, giải trình chi và cập nhật giao quà được.",
+      text: isEditor
+        ? "Dự án đã gây quỹ thành công. Bạn vẫn đăng cập nhật cho người ủng hộ được."
+        : paymentsStopped
+          ? "Dự án đã gây quỹ thành công. Bạn vẫn đăng cập nhật, giải trình chi và cập nhật giao quà cho người đã thanh toán được."
+          : "Dự án đã gây quỹ thành công. Người ủng hộ đang thanh toán cam kết; bạn vẫn đăng cập nhật, giải trình chi và cập nhật giao quà được.",
     },
     failed: {
       tone: "neutral",
@@ -1029,7 +1510,9 @@ function StatusNotice({
     },
     closed: {
       tone: "neutral",
-      text: "Chiến dịch đã kết thúc nhận ủng hộ. Sao kê vẫn công khai; bạn vẫn đăng cập nhật và giải trình chi được.",
+      text: isEditor
+        ? "Chiến dịch đã kết thúc nhận ủng hộ. Bạn vẫn đăng cập nhật cho người ủng hộ được."
+        : "Chiến dịch đã kết thúc nhận ủng hộ. Sao kê vẫn công khai; bạn vẫn đăng cập nhật và giải trình chi được.",
     },
     suspended: {
       tone: "danger",

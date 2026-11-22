@@ -11,6 +11,7 @@ import { RefCode } from "@/components/ui/RefCode"
 import { siteOrigin } from "@/lib/auth/origin"
 import { getSession } from "@/lib/auth/session"
 import { donationTrackingPath, qrExpiresAt } from "@/lib/contributions"
+import { NEW_CODE_EVERY_MONTH, periodEnd, periodLabel, planDonationPayable, planQrUntil } from "@/lib/plans"
 import { dbAs, dbService } from "@/lib/supabase"
 import {
   acceptsDonations,
@@ -37,6 +38,25 @@ const timeFormat = new Intl.DateTimeFormat("vi-VN", {
   year: "numeric",
   timeZone: "Asia/Ho_Chi_Minh",
 })
+
+const dayFormat = new Intl.DateTimeFormat("vi-VN", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  timeZone: "Asia/Ho_Chi_Minh",
+})
+
+/**
+ * "Mã hiển thị tới …" for a plan donation: to the end of its month ("hết ngày
+ * 30/11/2026"), or to the campaign's end when that comes first.
+ */
+function planQrCaption(until: Date, period: string): string {
+  const monthEnd = periodEnd(period)
+  if (monthEnd && until.getTime() === monthEnd.getTime()) {
+    return `Mã hiển thị tới hết ngày ${dayFormat.format(new Date(until.getTime() - 1))}.`
+  }
+  return `Mã hiển thị tới ${timeFormat.format(until)}.`
+}
 
 /**
  * The donation, if the visitor may see it: a signed-in donor's own one, or a
@@ -74,10 +94,15 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
   if (!campaign) notFound()
 
   const now = new Date()
-  const expiresAt = qrExpiresAt(donation.created_at)
+  // A monthly plan's donation (DOS/Give#276) shows its QR for its month, not for 24 hours.
+  const planPeriod = donation.plan_id ? donation.plan_period : null
+  const expiresAt = planPeriod ? planQrUntil(planPeriod, campaign.ends_at) : qrExpiresAt(donation.created_at)
   const open = acceptsDonations(campaign, now)
   const received = donation.status === "received"
-  const qrExpired = donation.status === "expired" || expiresAt <= now
+  const qrExpired = donation.status === "expired" || !expiresAt || expiresAt <= now
+  const payable = planPeriod
+    ? planDonationPayable({ status: donation.status, plan_period: planPeriod, campaign }, now)
+    : true
   // A received donation, or one on a closed campaign, shows no payment details,
   // so its page does not depend on the account lookup.
   const account = !received && open ? await paymentAccount(service, donation.campaign_id) : null
@@ -91,7 +116,19 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
     </Callout>
   )
   const expiredNote =
-    open && account ? (
+    planPeriod && open && account ? (
+      <Callout title={`Tháng ${periodLabel(planPeriod)} đã qua nên Give không còn hiển thị mã QR của khoản này`}>
+        <p>
+          Nếu bạn đã chuyển khoản với nội dung <RefCode>{donation.reference_code}</RefCode>, Give vẫn ghi nhận khi tiền
+          về. Nếu kế hoạch ủng hộ hằng tháng của bạn còn hoạt động, mã của tháng mới có trong mục Ủng hộ của tôi.
+        </p>
+        <p>
+          <Link href="/me/contributions" className="link">
+            Xem ủng hộ hằng tháng
+          </Link>
+        </p>
+      </Callout>
+    ) : open && account ? (
       <Callout title="Mã QR của khoản này đã hết hạn hiển thị">
         <p>
           Nếu bạn đã chuyển khoản với nội dung <RefCode>{donation.reference_code}</RefCode>, Give vẫn ghi nhận khi tiền
@@ -108,8 +145,9 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
     )
 
   let instructions = null
-  // The server decides expiry too, so the QR is never sent once its 24 hours have passed.
-  if (!received && !qrExpired && open && account) {
+  // The server decides expiry too, so the QR is never sent once its 24 hours
+  // (a plan donation: its month) have passed.
+  if (!received && !qrExpired && payable && expiresAt && open && account) {
     const svg = renderVietQrSvg(
       buildDonationPayload({
         bankBin: account.bank_bin,
@@ -122,7 +160,9 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
       <TransferDetails
         svg={svg}
         filename={`give-${donation.reference_code}.png`}
-        qrCaption={`Mã hiển thị tới ${timeFormat.format(expiresAt)}.`}
+        qrCaption={
+          planPeriod ? planQrCaption(expiresAt, planPeriod) : `Mã hiển thị tới ${timeFormat.format(expiresAt)}.`
+        }
         bankBin={account.bank_bin}
         accountNumber={account.account_number}
         accountName={account.account_name}
@@ -143,7 +183,9 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
   return (
     <div className="container-page pt-6 pb-16 sm:pt-8 lg:pb-24">
       <header className="min-w-0">
-        <p className="text-sm text-muted">Ủng hộ chiến dịch</p>
+        <p className="text-sm text-muted">
+          {planPeriod ? `Ủng hộ hằng tháng · tháng ${periodLabel(planPeriod)}` : "Ủng hộ chiến dịch"}
+        </p>
         <h1 className="mt-2 text-h1-phone tracking-tight break-words sm:text-h1">
           <Link href={`/campaigns/${campaign.slug}`} className="underline-offset-4 hover:underline">
             {campaign.title}
@@ -169,6 +211,16 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
               </dd>
             </div>
           </dl>
+          {planPeriod && (
+            <div className="mt-4 space-y-2 text-sm">
+              <p className="max-w-[68ch] text-fg">{NEW_CODE_EVERY_MONTH}</p>
+              <p>
+                <Link href="/me/contributions" className="link">
+                  Sửa hoặc dừng ủng hộ hằng tháng
+                </Link>
+              </p>
+            </div>
+          )}
           {guestToken && (
             <div className="mt-4 space-y-3">
               <p className="max-w-[68ch] text-sm text-fg">
@@ -187,7 +239,7 @@ export default async function DonationPage({ params }: { params: Promise<{ code:
             code={donation.reference_code}
             initial={{ status: donation.status, received_amount: Number(donation.received_amount) }}
             qrExpired={qrExpired}
-            qrMsLeft={Math.max(0, expiresAt.getTime() - now.getTime())}
+            qrMsLeft={expiresAt ? Math.max(0, expiresAt.getTime() - now.getTime()) : 0}
             expiredNote={expiredNote}
           >
             {instructions}

@@ -14,6 +14,175 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Co-organizers (campaign editors), single-use invites, workspace guards and
+  public team block: `/me/campaigns/[id]?tab=team` (`TeamTab`,
+  `CreateInviteForm`, `member-actions.ts`) lets the owning organizer create
+  single-use expiring invite links (raw 64-char hex token shown once on
+  creation, never logged or re-displayed), revoke pending invites and remove
+  accepted editors, while explicitly keeping money, receiving accounts,
+  statements, refunds, fulfillment, monthly plans, analytics, lifecycle
+  transitions and team management owner-only (`notFound()` for editors/staff).
+  `/invites/[token]` sets `Referrer-Policy: no-referrer`,
+  `Cache-Control: private, no-store` and `X-Robots-Tag: noindex, nofollow`,
+  prompts guests to sign in without leaking draft titles or touching
+  `dbService()`, and previews/accepts pending invites via `dbAs(token)` with
+  already-member shortcuts. `/me/campaigns` lists both owned and accepted
+  editor campaigns (badged `"Đồng tổ chức"`), `/me/campaigns/[id]` lets
+  accepted editors manage content, cover, YouTube pitch video, milestones,
+  reward tiers and own updates under strict server guards, and public
+  `/campaigns/[slug]` pages render `CampaignTeam` (`"Đội ngũ tổ chức"`) when
+  a campaign has accepted editors, backed by `DOS/Give#264` (`DOS/DOS.Me#1856`)
+  with Vitest suites (#253 / #298).
+- Public organizer profile page and `/me` handle/bio editor: `/u/[handle]`
+  renders public organizer profiles (`handle`, `bio`, `OrganizerAvatar` with
+  safe `https://` validation and 4px-radius initials fallback, verification
+  badge and public campaigns with ledger totals) strictly through anonymous
+  `dbAs()` calls to `give.public_organizer_profile` and
+  `give.list_organizer_public_campaigns`. `/me` (`PublicProfileForm`,
+  `actions.ts`, wired into `MePage` and `SiteHeader`) lets signed-in organizers
+  edit only `(handle, bio)` with live `give.vn/u/<handle>` URL preview,
+  3–40-char regex and 96-word reserved-handle validation matching
+  `DOS/Give#261` (`DOS/DOS.Me#1851`), Vietnamese error mappings and preserved
+  `verification_status`, while `/campaigns/[slug]` and `CampaignCard` link the
+  organizer name to `/u/<handle>` when set, with Vitest suites (#251 / #297).
+- Campaign comments with one reply level, moderation and comment reports queue:
+  public `/campaigns/[slug]` pages add the `#binh-luan` tab and
+  `CampaignComments` (plain-text comments and 1-level replies with newest roots
+  first and oldest replies first, `"Người tổ chức"` badge, `"(đã chỉnh sửa)"`
+  indicator, deleted-account neutral fallback, `?comments_page=` pagination,
+  authenticated post/reply/edit/delete/report, organizer hide, and staff
+  `?show_hidden=1` inline moderation with self-review guards via `dbAs(token)`).
+  `/admin/reports` gains a `TabNav` (`"Báo cáo chiến dịch"` / `"Báo cáo bình
+luận"`) leading to `/admin/reports/comments` with status/campaign filters,
+  `list_comment_moderation_history` audit disclosure and deleted-comment
+  snapshot handling, backed by `DOS/Give#262` (`DOS/DOS.Me#1853`) with Vitest
+  suites (#250 / #296).
+- Organizer campaign analytics and `Thống kê` tab: `POST /api/analytics/event`
+  (excluded from `proxy.ts` session rotation) validates same-origin /
+  `Sec-Fetch-Site`, enforces JSON/size bounds, silently filters bot User-Agents
+  while allowing Zalo/Facebook in-app browsers and Cốc Cốc, applies ephemeral
+  HMAC-hashed rate limiting, strips referrer paths/queries and normalizes
+  same-origin hosts to `null`, and calls `dbService().rpc("record_campaign_event")`.
+  `CampaignViewBeacon` deduplicates views to once per campaign per Vietnam
+  calendar day per browser (`sendBeacon` with `keepalive` `fetch` fallback,
+  suppressed on previews/prerenders) and `ShareButtons` records `share_click`
+  events. `/me/campaigns/[id]?tab=analytics` (`AnalyticsTab`, `TabNav` and
+  7/30/90-day `SegmentedNav`) reads `give.get_campaign_analytics` via
+  `dbAs(token)` to render KPIs, daily views trend, responsive breakdown and
+  referrer bars, backed by `DOS/Give#263` (`DOS/DOS.Me#1852`) with Vitest
+  suites (#252 / #295).
+- Organizer campaign status and review history: `/me/campaigns/[id]` loads
+  `listStatusEventsByCampaign(db, [campaign.id])` inside `Promise.all` with
+  `.catch(() => new Map())` resilience and renders `<StatusHistory>` inside
+  `#status` (`"Trạng thái"`), replacing `"Không có thao tác nào ở trạng thái
+này."` on non-actionable statuses while sitting cleanly above `"Gửi duyệt"`
+  and `"Hủy chiến dịch"` when status actions are available, with RSC Vitest
+  coverage for rendered transitions and failed `campaign_status_events` reads
+  (#287 / #288).
+- Organizer draft campaign updates workflow: `/me/campaigns/[id]` extends
+  `postUpdate` with `intent = "draft" | "publish"` (preserving immediate
+  publish when `intent` is omitted, inserting `published_at: null` across all
+  `canPostUpdate` statuses, and gating immediate publish to approved and
+  public statuses) and adds `updateDraftUpdate`, `publishDraftUpdate` and
+  `deleteDraftUpdate` strictly scoped to `.is("published_at", null)` with
+  organizer and public route revalidations. `#updates` lets organizers prepare,
+  inline-edit (`<details>` `"Sửa bản nháp"`) and delete drafts before
+  approval, places secondary `"Lưu bản nháp"` ahead of primary `"Đăng công
+khai"` once publishable, badges unpublished rows (`Bản nháp`) separately
+  from permanent published dates (`Đã đăng`), and guards publish and delete
+  actions with `confirm` dialogs, with Vitest suites (#281 / #286).
+- Campaign `BreadcrumbList` JSON-LD structured data: public non-preview,
+  non-halted `/campaigns/[slug]` views emit a `schema.org` `BreadcrumbList`
+  `<script type="application/ld+json">` matching the breadcrumb trail (`Trang
+chủ` -> `Khám phá` -> `Từ thiện` / `Dự án sáng tạo` -> optional
+  `campaign.category` -> `campaign.title`, resolving absolute `item` URLs
+  against `siteOrigin()` when configured and omitting `item` on the final
+  current-page `ListItem`), serialized with `.replace(/</g, "\\u003c")` so
+  `</script>` or `<!--` in campaign text cannot break out of the script tag, and
+  suppressed on `preview`, `suspended` and `cancelled` views, with Vitest
+  coverage (#283 / #285).
+- Admin campaign status and review history disclosure: `StatusHistory` and
+  `listStatusEventsByCampaign` batch-query `give.campaign_status_events` in
+  100-campaign chunks ordered newest-first without selecting `actor_id`,
+  rendering a compact `<details>` timeline (`Lịch sử trạng thái (N)` with
+  `.sr-only` campaign context, `STATUS_LABELS` transitions, Vietnam
+  timestamps and `whitespace-pre-line` review reasons). `/admin` (`#queue`
+  and `#waiting`) and `/admin/reports` (`#unresolved`, with `campaign_id`
+  fallback) load status history with `.catch(() => new Map())` resilience so
+  transient read errors never block moderation queues, with Vitest suites
+  (#282 / #284).
+- Organizer YouTube pitch video editor and inline milestone editing:
+  `/me/campaigns/[id]` adds a `#pitch-video` (`"Video giới thiệu"`) panel
+  (`saveYoutubeVideo` and `removeYoutubeVideo` validating `youtu.be`,
+  `youtube.com` `watch` / `shorts` / `embed`, `youtube-nocookie.com/embed` and
+  11-character IDs, inserting `kind = 'youtube'` in `give.campaign_media` and
+  deleting only older YouTube rows with rollback on cleanup failure while
+  leaving cover images untouched, plus isolated section degradation on read
+  failure) and extends milestones with optional `unlock_note` (`<= 500` chars)
+  and contextual inline `<details>` `"Sửa mốc"` editing (`updateMilestone`)
+  while editable, with Vitest suites (#269 / #274).
+- Public campaign pitch video player and milestone completion states:
+  `/campaigns/[slug]` renders `CampaignVideo` for valid 11-character
+  `kind = 'youtube'` media rows (a zero-tracker click-to-play `16:9` poster
+  card proxying `i.ytimg.com` via `next/image` with a secondary `min-h-11` play
+  button and `"Mở trên YouTube"` fallback that mounts
+  `youtube-nocookie.com/embed` only on click, degrading cleanly on media query
+  errors) and `MilestoneList` (`"Đã đạt mốc"` `brand` badge and `unlock_note`
+  disclosure once ledger-derived `raisedAmount >= target_amount`, or
+  `"Khi đạt mốc:"` preview copy without reached badges on unpublished
+  previews), with Vitest suites (#268 / #272).
+- Campaign share timer and shared component tests: `ShareButtons` tracks its
+  3-second clipboard status timeout in a `useRef`, clearing any pending timer
+  before scheduling a new one on rapid clicks and cleaning up on unmount.
+  Vitest suites cover `ShareButtons` (`navigator.share` success, `AbortError`
+  cancel, non-abort clipboard fallback, rapid-click timer reset, `compact`
+  mode and Facebook sharer URL encoding), `Markdown` (headings, lists,
+  blockquotes, `rel="nofollow ugc noopener noreferrer"` links, raw HTML
+  `<script>` escaping, `javascript:` / `data:` URL stripping and `<img>`
+  disallowance), `CopyButton` and `ProgressBar` (`0%`–`100%` clamping and ARIA
+  attributes) (#270 / #271).
+- Active cover validation, Storage cleanup guards and lifecycle revalidations:
+  `/media/public/...` and `/media/private/...` join `campaigns` on
+  `cover_media_id` so superseded or orphaned draft cover uploads return `404`
+  after launch, opening `dbService` lazily and adding `nosniff` and private
+  `noindex, noimageindex` headers with 3-segment path bounds. `uploadCover`
+  swaps `cover_media_id` via optimistic compare-and-swap (CAS) and best-effort
+  deletes only the exact replaced cover row and Storage object, `deleteDraft`
+  guards post-commit cleanup, `cancelCampaign` normalizes blank reasons and
+  maps `CANCEL_MESSAGES`, `saveOrganizer` recovers from `23505` insert races,
+  and downstream `revalidatePath` coverage and route tests harden
+  `submitForReview`, `cancelCampaign`, `reward-actions`, `fulfillment/actions`
+  and `GET /api/cron/activate` (#258 / #267).
+- Organizer campaign list, `CampaignCard`, statement preview and home ranking:
+  `/me/campaigns` redirects expired or rejected JWTs (`PGRST301` / `PGRST303`)
+  to `/auth/login?return_path=%2Fme%2Fcampaigns`, renders `review_note` on
+  `suspended` as well as `changes_requested` rows, promotes row titles to
+  `<h2>`, and appends `.sr-only` campaign titles to `"Xem trang"` and `"Quản
+lý"`. `CampaignCard` guards null `display_options` and applies `mt-3` only
+  when `ProgressBar` renders; `StatementPreview` and `RecentSupporters` keep
+  own-transfer, returned and explained non-donation inflows out of donation
+  green and supporter lists with `info` refund badges; `homeSections` ranks
+  `trending` by exact progress ratio with raised-amount tie-breaking, and
+  `reward-tiers` encodes `slug` in `pledgeHref` and clamps negative slots
+  (#260 / #266).
+- Moderation route revalidations and report queue hardening: `reportCampaign`,
+  `approveCampaign`, `requestChanges`, `setVerification` and
+  `moderateCampaignReports` (`suspend` and `stop_payment_requests`) revalidate
+  affected `/admin`, `/admin/reports`, `/start`, `/me/*` and public
+  `/campaigns/*` routes. `listCampaignReportQueue` drops campaigns resolved
+  concurrently across queries and clamps `page` / `totalPages` so moderators
+  never land on an empty phantom page, chunks unresolved lookups by 100
+  campaign IDs, breaks resolved-report timestamp ties by `id`, and bounds
+  `parseReportsPage` (#259 / #265).
+- Organizer verification queue and admin moderation UX: `listOrganizersToVerify`
+  loads actionable `pending` and `unverified` profiles oldest-first ahead of
+  `rejected` so rejected rows never starve the `/admin#organizers` queue, and
+  `listWaitingForAccount` chunks `managed_campaigns` lookups by 100 IDs.
+  `/admin` hides the no-op `"Từ chối"` button on already-rejected organizers,
+  confirms rejection, warns on self-verification, keeps `#organizers` buttons
+  secondary (`DESIGN.md` 6), wraps review notes in `Field`, and adds `.sr-only`
+  context and `#note-hint-*` `aria-describedby` wiring across `/admin` and
+  `/admin/reports` (#242 / #248).
 - Discovery and campaign page states and route boundaries: unfiltered
   `/campaigns` with zero live campaigns renders `"Chưa có chiến dịch nào đang
 gây quỹ"` with a `/start` CTA instead of `"Không có chiến dịch nào khớp bộ
@@ -278,6 +447,20 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Money (M1)
 
+- Monthly donations, plan A (D9): a signed-in donor signs up on a give
+  campaign that allows it (amount, day 1–28, reminder consent, the
+  anonymity warning that a transparent account's statement shows the name
+  every month) and Give issues an ordinary donation with its own code and
+  VietQR each month; nothing is charged. The organizer turns it on or off in
+  the workspace (only with an end date; off ends every plan) and sees the
+  monthly supporters' display names. `/me/contributions` lists plans with
+  this month's QR, edit and stop; a plan donation's QR shows while the
+  campaign is live, before its end and inside its month. Reminder emails
+  carry a signed stop link (`/plans/stop` asks first; POST and RFC 8058
+  one-click stop the plan) and `List-Unsubscribe`; end notices name the
+  account to delete from saved templates. Crons `issue-plan-donations`
+  (hourly) and `plan-notices` (every 10 minutes) sweep one plan per call
+  (#276 / this PR, needs DOS/DOS.Me#1824).
 - First bank statement parser: Techcombank Business transaction export,
   CSV or XLSX (`tcb-business`, decision P3 of 2026-11-18). Built
   from Techcombank's public guides with synthetic fixtures; the export's
@@ -433,6 +616,49 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Platform
 
+- Parallel PO configuration (CC-PO v2.18.0): `docs/product-owner-config.md`
+  assigns Antigravity `Campaigns Product Owner` (`acc0`) to `line:campaigns`
+  (replacing paused Qwen Code sessions), enforces `po:agy` / `po:claude`
+  mutual-exclusion `po_labels`, keeps Production (`main` / `give.vn`),
+  `line:money` and `line:platform` exclusively under Claude Code
+  `Give Product Owner` (`promotion_po: claude`), records JOY's authorization
+  for Antigravity PO to pick up unclaimed `DOS/DOS.Me` prerequisites
+  `#261`–`#264`, and adds CC-PO v2.18.0 gatekeeper and context-compaction keys
+  (#292 / #293).
+- Email throttling hold: the SMTP transport stays on AWS SES (host, port,
+  login and key from env). When SES answers 454 "Daily message quota
+  exceeded" (a quota shared with DOS.Me), the email is now held instead of
+  counting an attempt: the run stops, the email waits an hour and never
+  ends dead, and `/admin/emails` lists held emails (`THROTTLE:` errors) with
+  when each will be dropped at its maximum age. SES's per-second 454
+  "Maximum sending rate exceeded" stops the run and is retried after a
+  minute as an ordinary failure. Every other error keeps the normal retry
+  and permanent rules. A run against a database without the hold records an
+  ordinary failure instead. Retrying emails with no recorded error stay
+  listed. The shared DOS Brevo account was considered and not used (design
+  §2.5.1). Needs DOS/DOS.Me `give.complete_outbox(..., p_hold)` first
+  (#254).
+- Email outbox (M4): Give sends email through `give.outbox`, filled in the
+  same transaction as the event: a donation turning `received` (a receipt to
+  the guest's donation email or the donor's account, with a fresh 7-day
+  tracking link for guests), pledge `payment_due`, `payment_reminder` and
+  `pledge_lapsed` notices, and campaign approved, changes requested,
+  suspended and ended (organizer). `/api/cron/send-outbox` (every minute)
+  leases due rows, sends them through AWS SES over SMTP (DOS.Me's provider,
+  `nodemailer` 10.3.1, server-only) from `Give <no-reply@give.vn>`, retries
+  after 1, 5, 15, 60, 180 and 360 minutes and marks a row dead after 7
+  attempts; `/admin/emails` (admins) lists dead and retrying emails and sends
+  a dead one again (audited). The campaign end summary is the only
+  notification email: it carries an unsubscribe link (`/email/unsubscribe`,
+  one-click `List-Unsubscribe`). No images or tracking pixels. Outside
+  Production a log transport mails nobody unless `EMAIL_DELIVERY=smtp`, and
+  then only `EMAIL_ALLOWLIST`; in Production sending waits for the SES
+  credentials, and `EMAIL_DELIVERY=log` is refused there. Delivery is at
+  least once: each event queues exactly one email, but a send whose result
+  was lost, or that timed out (its connection is cut off and it waits an
+  hour before the next attempt), can reach the recipient twice. A daily
+  `/api/cron/purge-outbox` clears old addresses and payloads and expired
+  tracking tokens (#254 / #257).
 - Contact: Give staff are reached at `hi@give.vn` (Give's own domain; it
   replaced the first choice, DOS.Me's `help@dos.me`), kept in one constant
   (`apps/web/src/lib/contact.ts`). The site footer shows
@@ -454,6 +680,77 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Database (DOS.Me)
 
+- Co-organizers and single-use invites: `give.campaign_members` (editors only,
+  blocking owner self-membership) and `give.campaign_member_invites` (32-byte
+  SHA-256 token hashes only, zero direct table grants), 9 `SECURITY DEFINER`
+  RPCs (`create_campaign_member_invite`, `revoke_campaign_member_invite`,
+  `preview_campaign_member_invite`, `accept_campaign_member_invite`,
+  `remove_campaign_member`, `list_campaign_members`,
+  `list_campaign_member_invites`, `my_campaign_roles`, `campaign_public_team`),
+  editor RLS helpers and concurrent-removal lock triggers
+  (`campaigns_check_editor_on_update`, `campaign_children_lock_campaign`,
+  `campaign_children_verify_insert_auth`), while keeping all money, receiving
+  accounts, statements, refunds, fulfillment, monthly plans, draft deletion,
+  `transition_campaign` and team management strictly owner-only, with 172 pgTAP
+  assertions (#264 / DOS/DOS.Me#1856, on Beta). Migration
+  `20261129170000_give_campaign_members`.
+- Organizer public profile handle and bio: adds `handle` (unique, 3–40-char
+  lowercase slug with reserved-word check) and `bio` (`<= 500` chars) to
+  `give.organizers` with authenticated column grants and unchanged
+  `organizers_reset_verification` so editing `handle`/`bio` preserves
+  `verification_status`; extends `give.public_organizer` and
+  `give.public_campaign_organizers` with `handle` and adds
+  `give.public_organizer_profile` (joining active non-deleted DOS ID avatar)
+  and `give.list_organizer_public_campaigns` (public campaigns only), with 57
+  pgTAP assertions (#261 / DOS/DOS.Me#1851, on Beta). Migration
+  `20261129160000_give_organizer_public_profile`.
+- Campaign comments and comment reporting: `give.campaign_comments` (plain-text
+  1–2000 chars, composite FK enforcing one-level replies within the same
+  campaign) and `give.comment_reports` (6 reason codes, 1 open report per
+  reporter/comment, 20/24h limit), privacy-safe RLS omitting raw user IDs and
+  withholding replies under hidden parents from non-moderators, and 10
+  `SECURITY DEFINER` RPCs (`list_campaign_comments`, `create_campaign_comment`,
+  `edit_campaign_comment`, `delete_campaign_comment`, `hide_campaign_comment`,
+  `report_campaign_comment`, `moderate_campaign_comment`,
+  `resolve_comment_report`, `list_comment_reports`,
+  `list_comment_moderation_history`) with rate limiting, self-review guards and
+  `give.audit_log` entries, with 171 pgTAP assertions (#262 / DOS/DOS.Me#1853,
+  on Beta). Migration `20261129150000_give_campaign_comments`.
+- Privacy-safe daily campaign analytics: zero-PII `give.campaign_daily_analytics`
+  counters keyed by `(campaign_id, metric_date, event_type, referrer_bucket)`,
+  `give.normalize_referrer_bucket` (5 fixed buckets with anti-spoofing checks),
+  service-role `give.record_campaign_event` (public campaigns only) and
+  authenticated organizer/staff `give.get_campaign_analytics` (zero-filled
+  daily series, referrer breakdown and ledger-derived conversion/contributions
+  with cross-day split-payment deduplication), with 99 pgTAP assertions
+  (#263 / DOS/DOS.Me#1852, on Beta). Migration
+  `20261129120000_give_campaign_analytics`.
+- Monthly donation plans A: `give.donation_plans`, `give.plan_stop_tokens`,
+  `campaigns.allow_monthly` (needs `ends_at`), plan donations as ordinary
+  contributions (`plan_id`, `plan_period`, one per month), RPCs
+  `set_campaign_monthly`, `create_donation_plan`, `update_donation_plan`,
+  `cancel_donation_plan`, `plan_stop_token_status`,
+  `cancel_donation_plan_by_token`, `issue_plan_donations`,
+  `expire_plan_donations`, `plan_end_notices`, `plan_followups`,
+  `campaign_plan_supporters`; plans end on close, cancel, turn-off, the end
+  date and account deletion; `plan_reminder`, `plan_followup` and
+  `plan_ended` emails through the outbox, re-checked at send time, with
+  `claim_outbox` minting the stop token (#275 / DOS/DOS.Me#1824).
+- Email outbox: `give.outbox` (unique idempotency key, lease, attempts,
+  backoff, dead), `give.email_suppressions`, `give.contribution_access_tokens`;
+  enqueue triggers on `contributions`, `notices` and `campaign_status_events`;
+  `give.claim_outbox` (re-checks each row: a receipt whose donation is no
+  longer received, a payment request no longer due and rows past their
+  kind's maximum age are skipped; payment requests wait while a campaign's
+  requests are stopped; records the address it sends to),
+  `give.complete_outbox` (an outcome-unknown timeout waits at least an hour),
+  `give.release_outbox`, `give.retry_outbox` (admin, audited, not past the
+  maximum age), `give.unsubscribe_email` (suppresses the address the email
+  went to; suppressions are stored as SHA-256), `give.purge_outbox`
+  (retention). Only the triggers enqueue, validating rows instead of
+  catching errors; `recipient_user_id` has no foreign key to `auth.users`.
+  RLS on, service role only (#254 / DOS/DOS.Me#1782). Migration
+  `20261123090000_give_email_outbox`.
 - Finance can read why a bank transaction was refused:
   `give.bank_transaction_refusal_reasons(uuid[])`, finance and admin only,
   returns the `bank_transaction.account_owner_mismatch` and

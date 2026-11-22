@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 
 import { getSession } from "@/lib/auth/session"
+import { getMyCampaignRole } from "@/lib/campaign-members"
 import { getCampaignById, type CampaignWithRefs } from "@/lib/campaigns"
 import { dbErrorMessage, done, fail, type ActionResult, type DbErrorLike } from "@/lib/errors"
 import { formatVnd } from "@/lib/format"
@@ -50,8 +51,16 @@ async function ownTiers(accessToken: string, userId: string, campaignId: string)
   } catch (error) {
     return { campaign: null, tiers: null, error: dbErrorMessage(error as DbErrorLike) }
   }
-  // Staff can read every campaign; tiers are the organizer's alone.
-  if (!campaign || campaign.organizer_id !== userId) return { campaign: null, tiers: null, error: notFound }
+  // Staff can read every campaign; tiers are editable by the owner or an accepted co-organizer.
+  if (!campaign) return { campaign: null, tiers: null, error: notFound }
+  if (campaign.organizer_id !== userId) {
+    try {
+      const role = await getMyCampaignRole(db, campaign.id)
+      if (role !== "editor") return { campaign: null, tiers: null, error: notFound }
+    } catch (error) {
+      return { campaign: null, tiers: null, error: dbErrorMessage(error as DbErrorLike) }
+    }
+  }
   if (campaign.type !== "back") {
     return { campaign: null, tiers: null, error: dbErrorMessage({ message: "GIVE_REWARD_TIERS_BACK_ONLY" }) }
   }
@@ -61,6 +70,7 @@ async function ownTiers(accessToken: string, userId: string, campaignId: string)
 function refresh(campaign: Pick<CampaignWithRefs, "id" | "slug">) {
   revalidatePath(`/me/campaigns/${campaign.id}`)
   revalidatePath(`/campaigns/${campaign.slug}`)
+  revalidatePath(`/campaigns/${campaign.slug}/pledge`)
 }
 
 /** Creates a tier (tierId null, placed last) or updates one, while the campaign is editable. */

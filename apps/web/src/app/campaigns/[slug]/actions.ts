@@ -1,5 +1,7 @@
 "use server"
 
+import { revalidatePath } from "next/cache"
+
 import { getSession } from "@/lib/auth/session"
 import { reportCampaignSchema } from "@/lib/campaign-reports"
 import { isPublicStatus, type CampaignStatus } from "@/lib/campaigns"
@@ -52,5 +54,6 @@ export async function reportCampaign(campaignId: string, _state: ActionResult, f
   })
   if (error) return fail(dbErrorMessage(error, REPORT_CAMPAIGN_MESSAGES))
 
+  revalidatePath("/admin/reports")
   return done("Cảm ơn bạn. Đội kiểm duyệt Give đã nhận báo cáo và sẽ xem xét chiến dịch này.")
 }

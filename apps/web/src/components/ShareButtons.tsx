@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useSyncExternalStore } from "react"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 
 import { buttonClass } from "@/components/ui/Button"
 import { ShareIcon } from "@/components/ui/icons"
+import { trackShareClick } from "@/lib/analytics-client"
 
 const noSubscribe = () => () => {}
 
@@ -17,15 +18,32 @@ export function ShareButtons({
   path,
   title,
   origin: siteOrigin,
+  campaignId,
   compact,
 }: {
   path: string
   title: string
   origin?: string
+  /** Public campaign id for aggregate share-click analytics (DOS/Give#252). */
+  campaignId?: string
   /** One 52px icon button (the phone action bar); the copy status shows above it. */
   compact?: boolean
 }) {
   const [status, setStatus] = useState<string | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const mountedRef = useRef(true)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current)
+        timerRef.current = null
+      }
+    }
+  }, [])
+
   // The canonical origin when the server knows it (so the Facebook link works
   // before hydration), else this page's own origin (previews).
   const origin = useSyncExternalStore(
@@ -36,6 +54,7 @@ export function ShareButtons({
   const url = `${origin}${path}`
 
   const share = async () => {
+    if (campaignId) trackShareClick(campaignId)
     if (navigator.share) {
       try {
         await navigator.share({ title, url })
@@ -45,13 +64,25 @@ export function ShareButtons({
         if (error instanceof DOMException && error.name === "AbortError") return
       }
     }
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
     try {
       await navigator.clipboard.writeText(url)
+      if (!mountedRef.current) return
       setStatus("Đã chép đường dẫn")
     } catch {
+      if (!mountedRef.current) return
       setStatus("Không chép được, hãy chép đường dẫn trên thanh địa chỉ")
     }
-    setTimeout(() => setStatus(null), 3000)
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current)
+    }
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null
+      setStatus(null)
+    }, 3000)
   }
 
   if (compact) {
@@ -91,6 +122,9 @@ export function ShareButtons({
           href={`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`}
           target="_blank"
           rel="noopener noreferrer"
+          onClick={() => {
+            if (campaignId) trackShareClick(campaignId)
+          }}
           className={buttonClass({ variant: "secondary", className: "flex-1" })}
         >
           Facebook

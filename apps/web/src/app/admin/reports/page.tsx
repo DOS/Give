@@ -3,6 +3,11 @@ import { notFound, redirect } from "next/navigation"
 import type { ReactNode } from "react"
 
 import { StatusBadge, TypeBadge, VerificationBadge } from "@/components/badges"
+import {
+  listStatusEventsByCampaign,
+  StatusHistory,
+  type CampaignStatusEvent,
+} from "@/components/campaign/StatusHistory"
 import { ActionForm, SubmitButton } from "@/components/forms"
 import { Badge, type BadgeTone } from "@/components/ui/Badge"
 import { ButtonLink } from "@/components/ui/Button"
@@ -10,6 +15,7 @@ import { Callout } from "@/components/ui/Callout"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { Field } from "@/components/ui/Field"
 import { MachineId } from "@/components/ui/RefCode"
+import { TabNav } from "@/components/ui/Tabs"
 import { requireSession } from "@/lib/auth/session"
 import {
   canStopReportedPaymentRequests,
@@ -69,6 +75,11 @@ export default async function AdminReportsPage({
   )
   if (requestedPage > totalPages) redirect(reportsPageHref(totalPages))
 
+  const statusEventsByCampaign = await listStatusEventsByCampaign(
+    db,
+    unresolved.map((item) => item.campaign_id)
+  ).catch(() => new Map<string, CampaignStatusEvent[]>())
+
   const resolvedTotal = resolved.reduce((sum, item) => sum + item.reports.length, 0)
 
   return (
@@ -84,6 +95,14 @@ export default async function AdminReportsPage({
         </p>
       }
     >
+      <TabNav
+        label="Loại báo cáo"
+        items={[
+          { href: "/admin/reports", label: "Báo cáo chiến dịch", current: true },
+          { href: "/admin/reports/comments", label: "Báo cáo bình luận", current: false },
+        ]}
+      />
+
       <AdminSection id="unresolved" title="Chờ xử lý" count={totalUnresolvedCampaigns}>
         {unresolved.length === 0 ? (
           <EmptyState title="Không có báo cáo chiến dịch nào chờ xử lý.">
@@ -93,7 +112,12 @@ export default async function AdminReportsPage({
           <>
             <ItemList>
               {unresolved.map((item) => (
-                <UnresolvedCampaignCard key={item.campaign_id} item={item} selfId={session.user.id} />
+                <UnresolvedCampaignCard
+                  key={item.campaign_id}
+                  item={item}
+                  selfId={session.user.id}
+                  statusEvents={statusEventsByCampaign.get(item.campaign_id) ?? []}
+                />
               ))}
             </ItemList>
             {totalPages > 1 && (
@@ -177,7 +201,15 @@ function CampaignHeading({
   )
 }
 
-function UnresolvedCampaignCard({ item, selfId }: { item: UnresolvedCampaignItem; selfId: string }) {
+function UnresolvedCampaignCard({
+  item,
+  selfId,
+  statusEvents,
+}: {
+  item: UnresolvedCampaignItem
+  selfId: string
+  statusEvents: readonly CampaignStatusEvent[]
+}) {
   const { campaign, reports, open_count, awaiting_count } = item
   const organizer = campaign?.organizer ?? null
   const own = campaign?.organizer_id === selfId
@@ -299,6 +331,8 @@ function UnresolvedCampaignCard({ item, selfId }: { item: UnresolvedCampaignItem
           ))}
         </ul>
       </div>
+
+      <StatusHistory events={statusEvents} campaignTitle={campaign?.title ?? item.campaign_id} />
 
       {own ? (
         <Callout tone="warning">Đây là chiến dịch của bạn; một kiểm duyệt viên khác cần xử lý các báo cáo này.</Callout>

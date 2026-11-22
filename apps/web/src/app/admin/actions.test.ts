@@ -7,8 +7,9 @@ const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
 const ORGANIZER = "55555555-5555-4555-8555-555555555555"
 
 const state = vi.hoisted(() => ({ handler: (() => undefined) as Handler, calls: [] as Call[] }))
+const revalidatePathMock = vi.hoisted(() => vi.fn())
 
-vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }))
+vi.mock("next/cache", () => ({ revalidatePath: revalidatePathMock }))
 vi.mock("@/lib/auth/session", () => ({
   getSession: vi.fn(async () => ({ user: { id: "staff", email: null, name: null }, accessToken: "token" })),
 }))
@@ -23,10 +24,22 @@ const transitions = () =>
     .map((c) => (op(c, "args")?.[0] as { p_to_status: string }).p_to_status)
 
 beforeEach(() => {
+  revalidatePathMock.mockClear()
   state.calls.length = 0
 })
 
 describe("approveCampaign", () => {
+  const expectedApprovalRevalidations = [
+    ["/admin"],
+    [`/me/campaigns/${CAMPAIGN}`],
+    ["/me/campaigns"],
+    ["/me/notices"],
+    ["/campaigns/a-b"],
+    ["/campaigns"],
+    ["/u/[handle]", "page"],
+    ["/"],
+  ]
+
   it("approves and opens a campaign whose start time has come", async () => {
     state.handler = (call) =>
       op(call, "maybeSingle")
@@ -35,9 +48,10 @@ describe("approveCampaign", () => {
     const result = await approveCampaign(CAMPAIGN, null, new FormData())
     expect(result).toEqual({ ok: true, message: "Đã duyệt và mở chiến dịch công khai." })
     expect(transitions()).toEqual(["approved", "live"])
+    expect(revalidatePathMock.mock.calls).toEqual(expectedApprovalRevalidations)
   })
 
-  it("only approves a campaign scheduled for later", async () => {
+  it("only approves a campaign scheduled for later and still revalidates organizer and campaign routes", async () => {
     state.handler = (call) =>
       op(call, "maybeSingle")
         ? {
@@ -50,6 +64,7 @@ describe("approveCampaign", () => {
         : undefined
     expect((await approveCampaign(CAMPAIGN, null, new FormData()))?.ok).toBe(true)
     expect(transitions()).toEqual(["approved"])
+    expect(revalidatePathMock.mock.calls).toEqual(expectedApprovalRevalidations)
   })
 
   it("refuses a campaign whose end date passed during review", async () => {
@@ -59,6 +74,7 @@ describe("approveCampaign", () => {
         : undefined
     expect((await approveCampaign(CAMPAIGN, null, new FormData()))?.ok).toBe(false)
     expect(transitions()).toEqual([])
+    expect(revalidatePathMock).not.toHaveBeenCalled()
   })
 
   it("surfaces the database's self-review refusal", async () => {
@@ -72,6 +88,7 @@ describe("approveCampaign", () => {
       ok: false,
       message: "Không thể chuyển chiến dịch sang trạng thái này lúc này.",
     })
+    expect(revalidatePathMock).not.toHaveBeenCalled()
   })
 
   it("surfaces a failed campaign read instead of claiming the campaign was not found (DOS/Give#77)", async () => {
@@ -133,20 +150,42 @@ describe("requestChanges", () => {
     return f
   }
   const statusIs =
-    (status: string, rpc?: Handler): Handler =>
+    (status: string, rpc?: Handler, slug?: string | null): Handler =>
     (call) =>
-      op(call, "maybeSingle") ? { data: { status } } : rpc?.(call)
+      op(call, "maybeSingle") ? { data: slug === undefined ? { status } : { status, slug } } : rpc?.(call)
 
-  it("sends a campaign back with the trimmed reason", async () => {
-    state.handler = statusIs("approved")
+  it("sends a campaign back with the trimmed reason and revalidates organizer and slug routes", async () => {
+    state.handler = statusIs("approved", undefined, "a-b")
     const result = await requestChanges(CAMPAIGN, null, form("  Bind another account.  "))
     expect(result).toEqual({ ok: true, message: "Đã gửi yêu cầu chỉnh sửa cho người tổ chức." })
+    const readCall = state.calls.find((c) => c.target === "campaigns")
+    expect(op(readCall, "select")).toEqual(["status, slug"])
     const call = state.calls.find((c) => c.target === "rpc:transition_campaign")
     expect(op(call, "args")?.[0]).toEqual({
       p_campaign_id: CAMPAIGN,
       p_to_status: "changes_requested",
       p_reason: "Bind another account.",
     })
+    expect(revalidatePathMock.mock.calls).toEqual([
+      ["/admin"],
+      [`/me/campaigns/${CAMPAIGN}`],
+      ["/me/campaigns"],
+      ["/me/notices"],
+      ["/campaigns/a-b"],
+    ])
+  })
+
+  it("falls back to page-level /campaigns/[slug] revalidation when slug is absent", async () => {
+    state.handler = statusIs("approved", undefined, null)
+    const result = await requestChanges(CAMPAIGN, null, form("Bind another account."))
+    expect(result?.ok).toBe(true)
+    expect(revalidatePathMock.mock.calls).toEqual([
+      ["/admin"],
+      [`/me/campaigns/${CAMPAIGN}`],
+      ["/me/campaigns"],
+      ["/me/notices"],
+      ["/campaigns/[slug]", "page"],
+    ])
   })
 
   it("does not send back a campaign approved since the review form was shown (DOS/Give#64)", async () => {
@@ -220,7 +259,7 @@ describe("requestChanges", () => {
 })
 
 describe("setVerification", () => {
-  it("passes the names and kind the moderator saw", async () => {
+  it("passes the names and kind the moderator saw and revalidates all organizer, admin, and public routes", async () => {
     state.handler = () => undefined
     const form = new FormData()
     form.set("status", "verified")
@@ -236,12 +275,26 @@ describe("setVerification", () => {
       p_expected_kind: "individual",
       p_reason: null,
     })
+    expect(revalidatePathMock.mock.calls).toEqual([
+      ["/admin"],
+      ["/admin/reports"],
+      ["/start"],
+      ["/me"],
+      ["/me/campaigns/[id]", "page"],
+      ["/me/accounts"],
+      ["/me/notices"],
+      ["/campaigns/[slug]", "page"],
+      ["/u/[handle]", "page"],
+      ["/campaigns"],
+      ["/"],
+    ])
   })
 
-  it("rejects statuses other than verified or rejected", async () => {
+  it("rejects statuses other than verified or rejected without revalidating", async () => {
     const form = new FormData()
     form.set("status", "unverified")
     expect((await setVerification(ORGANIZER, null, form))?.ok).toBe(false)
     expect(state.calls).toHaveLength(0)
+    expect(revalidatePathMock).not.toHaveBeenCalled()
   })
 })

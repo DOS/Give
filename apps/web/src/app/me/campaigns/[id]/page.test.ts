@@ -5,7 +5,9 @@ import { createRoot } from "react-dom/client"
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-import type { CampaignStatus, CampaignType } from "@/lib/campaigns"
+import type { CampaignStatusEvent } from "@/components/campaign/StatusHistory"
+import { STATUS_LABELS, type CampaignStatus, type CampaignType } from "@/lib/campaigns"
+import { formatDateTime } from "@/lib/format"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 const USER = "11111111-1111-4111-8111-111111111111"
@@ -17,7 +19,9 @@ const LINK = '<a href="mailto:hi@give.vn" class="font-medium underline">hi@give.
 
 const state = vi.hoisted(() => ({
   handler: (() => undefined) as Handler,
+  serviceHandler: (() => undefined) as Handler,
   calls: [] as Call[],
+  serviceCalls: [] as Call[],
 }))
 
 vi.mock("next/navigation", () => ({
@@ -35,7 +39,7 @@ vi.mock("@/lib/auth/session", () => ({
 vi.mock("@/lib/supabase", () => ({
   MEDIA_BUCKET: "give-media",
   dbAs: () => fakeDb((call) => state.handler(call), state.calls),
-  dbService: () => fakeDb(() => undefined),
+  dbService: () => fakeDb((call) => state.serviceHandler(call), state.serviceCalls),
 }))
 
 const { default: EditCampaignPage } = await import("./page")
@@ -104,12 +108,15 @@ function setupUnusableWithTransactions(status: CampaignStatus, type: CampaignTyp
     if (call.target === "organizers") return { data: { legal_name: "Nguyễn Thị Đào", verification_status: "verified" } }
     if (call.target === "bank_transactions") return { data: [{ id: "tx-1" }] }
     if (call.target === "account_swap_requests") return { data: [] }
+    if (call.target === "campaign_status_events") return { data: [] }
     return undefined
   }
 }
 
 beforeEach(() => {
   state.calls.length = 0
+  state.serviceCalls.length = 0
+  state.serviceHandler = () => undefined
 })
 
 describe("EditCampaignPage unusable bound account with recorded transactions (DOS/Give#77)", () => {
@@ -332,16 +339,21 @@ describe("EditCampaignPage stopped payments, post-live StatusNotice, and form/mi
       const milestoneButtons = [
         ...container.querySelectorAll<HTMLButtonElement>('#milestones ol button[type="submit"]'),
       ]
-      expect(milestoneButtons).toHaveLength(2)
-      expect(milestoneButtons[0].textContent).toBe("Xóa mốc Mua vật liệu")
-      expect(milestoneButtons[0].querySelector(".sr-only")?.textContent).toBe(" mốc Mua vật liệu")
-      expect(milestoneButtons[1].textContent).toBe("Xóa mốc Lắp đặt tại điểm trường")
+      const deleteButtons = milestoneButtons.filter((button) => button.textContent?.startsWith("Xóa"))
+      const saveButtons = milestoneButtons.filter((button) => button.textContent?.startsWith("Lưu mốc"))
+      expect(deleteButtons).toHaveLength(2)
+      expect(deleteButtons[0].textContent).toBe("Xóa mốc Mua vật liệu")
+      expect(deleteButtons[0].querySelector(".sr-only")?.textContent).toBe(" mốc Mua vật liệu")
+      expect(deleteButtons[1].textContent).toBe("Xóa mốc Lắp đặt tại điểm trường")
+      expect(saveButtons).toHaveLength(2)
+      expect(saveButtons[0].textContent).toBe("Lưu mốc: Mua vật liệu")
+      expect(saveButtons[1].textContent).toBe("Lưu mốc: Lắp đặt tại điểm trường")
 
       // Declining confirmation prevents deleteMilestone from executing.
       state.calls.length = 0
       confirmMock.mockReturnValueOnce(false)
       await act(async () => {
-        milestoneButtons[0].click()
+        deleteButtons[0].click()
       })
       expect(confirmMock).toHaveBeenCalledWith("Xóa mốc “Mua vật liệu”?")
       expect(state.calls).toHaveLength(0)
@@ -349,7 +361,7 @@ describe("EditCampaignPage stopped payments, post-live StatusNotice, and form/mi
       // Accepting confirmation submits deleteMilestone for MILESTONE_1.
       confirmMock.mockReturnValueOnce(true)
       await act(async () => {
-        milestoneButtons[0].click()
+        deleteButtons[0].click()
       })
       expect(state.calls.some((c) => c.target === "campaign_milestones" && Boolean(op(c, "delete")))).toBe(true)
     } finally {
@@ -357,5 +369,1084 @@ describe("EditCampaignPage stopped payments, post-live StatusNotice, and form/mi
       act(() => root.unmount())
       container.remove()
     }
+  })
+})
+
+describe("EditCampaignPage YouTube pitch video and inline milestone editing (DOS/Give#269)", () => {
+  it("renders editable #pitch-video form without remove button when no video exists, and read-only states when locked", async () => {
+    setupUnusableWithTransactions("draft", "give")
+    const emptyDraftDoc = new Window().document
+    emptyDraftDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+
+    expect(emptyDraftDoc.querySelector('nav a[href="#pitch-video"]')?.textContent).toBe("Video giới thiệu")
+    const ytInput = emptyDraftDoc.querySelector('#pitch-video input#youtube_id[name="youtube_id"]')
+    expect(ytInput).not.toBeNull()
+    expect(ytInput?.getAttribute("aria-describedby")).toBe("youtube_id_hint")
+    expect(emptyDraftDoc.querySelector("#youtube_id_hint")?.textContent).toContain("11 ký tự")
+    expect(emptyDraftDoc.querySelector('#pitch-video input#youtube_alt[name="alt"]')?.getAttribute("maxlength")).toBe(
+      "200"
+    )
+    expect(emptyDraftDoc.querySelector("#pitch-video")?.textContent).toContain("Lưu video")
+    expect(emptyDraftDoc.querySelector("#pitch-video")?.textContent).not.toContain("Gỡ video")
+
+    // Locked campaign with a saved YouTube video renders read-only summary link and hides edit/remove forms.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("in_review", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") {
+        return {
+          data: [
+            {
+              id: MILESTONE_1,
+              campaign_id: CAMPAIGN,
+              title: "Mua vật liệu",
+              description: " Xi măng và gạch ",
+              target_amount: 3_000_000,
+              unlock_note: "Đăng ảnh hóa đơn vật liệu",
+              sort_order: 0,
+            },
+          ],
+        }
+      }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_media") {
+        return { data: [{ id: "yt-1", youtube_id: "dQw4w9WgXcQ", alt: "Video khảo sát thực tế" }] }
+      }
+      return undefined
+    }
+
+    const lockedWithVideoDoc = new Window().document
+    lockedWithVideoDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    const link = lockedWithVideoDoc.querySelector("#pitch-video a")
+    expect(link?.getAttribute("href")).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+    expect(lockedWithVideoDoc.querySelector("#pitch-video")?.textContent).toContain("Mô tả: Video khảo sát thực tế")
+    expect(lockedWithVideoDoc.querySelector('#pitch-video input[name="youtube_id"]')).toBeNull()
+    expect(lockedWithVideoDoc.querySelector("#pitch-video")?.textContent).not.toContain("Gỡ video")
+    expect(lockedWithVideoDoc.querySelector("#milestones")?.textContent).toContain(
+      "Khi đạt mốc: Đăng ảnh hóa đơn vật liệu"
+    )
+    expect(lockedWithVideoDoc.querySelector("#milestones details")).toBeNull()
+
+    // Failed campaign_media read degrades only #pitch-video with a danger Callout instead of crashing or lying.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("draft", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_media") return { error: { code: "57014", message: "timeout" } }
+      return undefined
+    }
+    const degradedDoc = new Window().document
+    degradedDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    expect(degradedDoc.querySelector("#pitch-video")?.textContent).toContain(
+      "Không tải được video giới thiệu. Hãy tải lại trang."
+    )
+    expect(degradedDoc.querySelector('#pitch-video input[name="youtube_id"]')).toBeNull()
+  })
+
+  it("guards removeYoutubeVideo with window.confirm and submits inline milestone edits with unlock_note", async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") {
+        return { data: { ...campaignRow("draft", "give"), cover_media_id: null } }
+      }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") {
+        if (op(call, "update")) return { data: [{ id: MILESTONE_1 }] }
+        return {
+          data: [
+            {
+              id: MILESTONE_1,
+              campaign_id: CAMPAIGN,
+              title: "Mua vật liệu",
+              description: "Đợt đầu",
+              target_amount: 3_000_000,
+              unlock_note: "Gửi biên nhận mua hàng",
+              sort_order: 0,
+            },
+          ],
+        }
+      }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_media") {
+        return { data: [{ id: "yt-1", youtube_id: "dQw4w9WgXcQ", alt: "Giới thiệu điểm trường" }] }
+      }
+      return undefined
+    }
+
+    const container = document.createElement("div")
+    document.body.append(container)
+    const root = createRoot(container)
+    const originalConfirm = window.confirm
+    const confirmMock = vi.fn<(message?: string) => boolean>()
+    window.confirm = confirmMock
+
+    try {
+      const pageElement = await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+      await act(async () => {
+        root.render(pageElement)
+      })
+
+      // Add-milestone form includes unlock_note field.
+      const addUnlock = container.querySelector<HTMLTextAreaElement>(
+        '#milestones #milestone_unlock_note[name="unlock_note"]'
+      )
+      expect(addUnlock).not.toBeNull()
+      expect(addUnlock?.getAttribute("maxlength")).toBe("500")
+      expect(addUnlock?.getAttribute("aria-describedby")).toBe("milestone_unlock_note_hint")
+
+      // Inline <details> "Sửa mốc" renders contextualized summary and prefilled fields.
+      const summary = container.querySelector("#milestones ol details summary")
+      expect(summary?.textContent).toBe("Sửa mốc: Mua vật liệu")
+      expect(summary?.querySelector(".sr-only")?.textContent).toBe(": Mua vật liệu")
+
+      const editUnlock = container.querySelector<HTMLTextAreaElement>(
+        `#milestones #milestone_${MILESTONE_1}_unlock_note[name="unlock_note"]`
+      )
+      expect(editUnlock?.value).toBe("Gửi biên nhận mua hàng")
+
+      // Submit inline milestone edit form.
+      const saveMilestoneBtn = [
+        ...container.querySelectorAll<HTMLButtonElement>('#milestones ol details button[type="submit"]'),
+      ][0]
+      state.calls.length = 0
+      await act(async () => {
+        saveMilestoneBtn.click()
+      })
+      const updateCall = state.calls.find((c) => c.target === "campaign_milestones" && Boolean(op(c, "update")))
+      expect(op(updateCall, "update")).toEqual([
+        {
+          title: "Mua vật liệu",
+          target_amount: 3_000_000,
+          description: "Đợt đầu",
+          unlock_note: "Gửi biên nhận mua hàng",
+        },
+      ])
+      expect(updateCall?.ops).toContainEqual(["eq", "id", MILESTONE_1])
+      expect(updateCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+
+      // Guard removeYoutubeVideo with window.confirm.
+      const removeBtn = [...container.querySelectorAll<HTMLButtonElement>('#pitch-video button[type="submit"]')].find(
+        (b) => b.textContent === "Gỡ video"
+      )!
+      expect(removeBtn).toBeDefined()
+
+      state.calls.length = 0
+      state.serviceCalls.length = 0
+      confirmMock.mockReturnValueOnce(false)
+      await act(async () => {
+        removeBtn.click()
+      })
+      expect(confirmMock).toHaveBeenCalledWith("Gỡ video giới thiệu khỏi chiến dịch?")
+      expect(state.serviceCalls).toHaveLength(0)
+
+      confirmMock.mockReturnValueOnce(true)
+      await act(async () => {
+        removeBtn.click()
+      })
+      expect(state.serviceCalls).toHaveLength(1)
+      expect(state.serviceCalls[0].target).toBe("campaign_media")
+      expect(state.serviceCalls[0].ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+      expect(state.serviceCalls[0].ops).toContainEqual(["eq", "kind", "youtube"])
+    } finally {
+      window.confirm = originalConfirm
+      act(() => root.unmount())
+      container.remove()
+    }
+  })
+})
+
+const UPDATE_DRAFT = "55555555-5555-4555-8555-555555555555"
+const UPDATE_PUBLISHED = "66666666-6666-4666-8666-666666666666"
+
+describe("EditCampaignPage draft and published campaign updates (DOS/Give#281)", () => {
+  it("renders draft-only preparation before approval, full draft/publish controls on live campaigns, and read-only history when suspended", async () => {
+    const sampleUpdates = [
+      {
+        id: UPDATE_DRAFT,
+        campaign_id: CAMPAIGN,
+        title: "Chuẩn bị trao đợt 2",
+        body: "Đang chốt danh sách điểm trường xã vùng cao.",
+        visibility: "public" as const,
+        published_at: null,
+        created_at: "2026-11-18T08:00:00.000Z",
+      },
+      {
+        id: UPDATE_PUBLISHED,
+        campaign_id: CAMPAIGN,
+        title: "Đã trao đợt 1",
+        body: "50 phần sách giáo khoa đã tới tay học sinh.",
+        visibility: "public" as const,
+        published_at: "2026-11-16T10:30:00.000Z",
+        created_at: "2026-11-16T10:00:00.000Z",
+      },
+    ]
+
+    // Pre-approval (in_review): #updates allows saving/editing/deleting drafts without offering premature public publish.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("in_review", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: sampleUpdates }
+      if (call.target === "receiving_accounts") return { data: [] }
+      return undefined
+    }
+
+    const reviewDoc = new Window().document
+    reviewDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    expect(reviewDoc.querySelector('nav a[href="#updates"]')?.textContent).toBe("Cập nhật")
+    const reviewButtons = [...reviewDoc.querySelectorAll('#updates button[type="submit"]')].map((b) =>
+      b.textContent?.trim()
+    )
+    expect(reviewButtons).toEqual([
+      "Lưu bản nháp",
+      "Xóa bản nháp: Chuẩn bị trao đợt 2",
+      "Lưu bản nháp: Chuẩn bị trao đợt 2",
+    ])
+    expect(reviewDoc.querySelector("#updates")?.textContent).not.toContain("Đăng công khai")
+
+    // Live campaign: offers "Lưu bản nháp" (secondary, first) and single primary "Đăng công khai",
+    // distinguishes <Badge>Bản nháp</Badge> from published dates, and omits controls on published rows.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: sampleUpdates }
+      if (call.target === "receiving_accounts") return { data: [] }
+      return undefined
+    }
+
+    const liveDoc = new Window().document
+    liveDoc.body.innerHTML = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+    const createBody = liveDoc.querySelector('#updates textarea#update_body[name="body"]')
+    expect(createBody?.getAttribute("aria-describedby")).toBe("update_body_hint")
+    expect(liveDoc.querySelector("#update_body_hint")?.textContent).toContain("không thể sửa hay xóa")
+
+    const primaryButtonsInUpdates = [...liveDoc.querySelectorAll('#updates button[type="submit"]')].filter((b) =>
+      b.className.includes("btn-primary")
+    )
+    expect(primaryButtonsInUpdates).toHaveLength(1)
+    expect(primaryButtonsInUpdates[0].textContent).toBe("Đăng công khai")
+
+    const rows = [...liveDoc.querySelectorAll("#updates ol > li")]
+    expect(rows).toHaveLength(2)
+    expect(rows[0].textContent).toContain("Bản nháp")
+    expect(rows[0].querySelector("details summary")?.textContent).toBe("Sửa bản nháp: Chuẩn bị trao đợt 2")
+    expect(rows[0].querySelector("details summary .sr-only")?.textContent).toBe(": Chuẩn bị trao đợt 2")
+    expect(rows[1].textContent).toContain("Đã đăng 16/11/2026")
+    expect(rows[1].textContent).not.toContain("Bản nháp")
+    expect(rows[1].querySelector("details")).toBeNull()
+    expect(rows[1].querySelector("button")).toBeNull()
+
+    // Suspended campaign: hides #updates when empty, shows read-only list when updates exist.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("suspended", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      return undefined
+    }
+    const suspendedEmptyDoc = new Window().document
+    suspendedEmptyDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    expect(suspendedEmptyDoc.querySelector("#updates")).toBeNull()
+
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("suspended", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: sampleUpdates }
+      if (call.target === "receiving_accounts") return { data: [] }
+      return undefined
+    }
+    const suspendedWithUpdatesDoc = new Window().document
+    suspendedWithUpdatesDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    expect(suspendedWithUpdatesDoc.querySelector("#updates")).not.toBeNull()
+    expect(suspendedWithUpdatesDoc.querySelectorAll('#updates button[type="submit"]')).toHaveLength(0)
+    expect(suspendedWithUpdatesDoc.querySelector("#updates details")).toBeNull()
+  })
+
+  it("saves drafts without confirm, edits drafts inline, and guards publishDraftUpdate and deleteDraftUpdate with window.confirm", async () => {
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") {
+        if (op(call, "insert")) return { data: [{ id: UPDATE_DRAFT }] }
+        if (op(call, "update")) return { data: [{ id: UPDATE_DRAFT }] }
+        if (op(call, "delete")) return { data: [{ id: UPDATE_DRAFT }] }
+        return {
+          data: [
+            {
+              id: UPDATE_DRAFT,
+              campaign_id: CAMPAIGN,
+              title: "Chuẩn bị trao đợt 2",
+              body: "Đang chốt danh sách điểm trường.",
+              visibility: "public",
+              published_at: null,
+              created_at: "2026-11-18T08:00:00.000Z",
+            },
+          ],
+        }
+      }
+      if (call.target === "receiving_accounts") return { data: [] }
+      return undefined
+    }
+
+    const container = document.createElement("div")
+    document.body.append(container)
+    const root = createRoot(container)
+    const originalConfirm = window.confirm
+    const confirmMock = vi.fn<(message?: string) => boolean>()
+    window.confirm = confirmMock
+
+    try {
+      const pageElement = await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+      await act(async () => {
+        root.render(pageElement)
+      })
+
+      const newTitle = container.querySelector<HTMLInputElement>('#updates #update_title[name="title"]')!
+      const newBody = container.querySelector<HTMLTextAreaElement>('#updates #update_body[name="body"]')!
+      newTitle.value = "Cập nhật mới"
+      newBody.value = "Nội dung bản nháp mới."
+
+      const createSaveDraftBtn = [
+        ...container.querySelectorAll<HTMLButtonElement>('#updates > div > form button[type="submit"]'),
+      ].find((b) => b.textContent === "Lưu bản nháp")!
+      const createPublishBtn = [
+        ...container.querySelectorAll<HTMLButtonElement>('#updates > div > form button[type="submit"]'),
+      ].find((b) => b.textContent === "Đăng công khai")!
+      expect(createSaveDraftBtn).toBeDefined()
+      expect(createPublishBtn).toBeDefined()
+
+      // Saving a draft does not prompt window.confirm and inserts published_at: null.
+      state.calls.length = 0
+      await act(async () => {
+        createSaveDraftBtn.click()
+      })
+      expect(confirmMock).not.toHaveBeenCalled()
+      const insertDraftCall = state.calls.find((c) => c.target === "campaign_updates" && Boolean(op(c, "insert")))
+      expect(op(insertDraftCall, "insert")).toEqual([
+        expect.objectContaining({
+          campaign_id: CAMPAIGN,
+          title: "Cập nhật mới",
+          body: "Nội dung bản nháp mới.",
+          published_at: null,
+        }),
+      ])
+
+      // Immediate publish from the create form inserts a non-null published_at timestamp.
+      newTitle.value = "Cập nhật công khai"
+      newBody.value = "Nội dung đăng công khai ngay."
+      state.calls.length = 0
+      await act(async () => {
+        createPublishBtn.click()
+      })
+      const insertPublishCall = state.calls.find((c) => c.target === "campaign_updates" && Boolean(op(c, "insert")))
+      expect(op(insertPublishCall, "insert")).toEqual([
+        expect.objectContaining({
+          campaign_id: CAMPAIGN,
+          title: "Cập nhật công khai",
+          body: "Nội dung đăng công khai ngay.",
+          published_at: expect.any(String),
+        }),
+      ])
+
+      // Inline <details> "Sửa bản nháp" edits title and body without confirm and filters published_at IS NULL.
+      const editTitle = container.querySelector<HTMLInputElement>(
+        `#updates #update_${UPDATE_DRAFT}_title[name="title"]`
+      )!
+      const editBody = container.querySelector<HTMLTextAreaElement>(
+        `#updates #update_${UPDATE_DRAFT}_body[name="body"]`
+      )!
+      expect(editTitle.value).toBe("Chuẩn bị trao đợt 2")
+      expect(editBody.value).toBe("Đang chốt danh sách điểm trường.")
+      editTitle.value = "Chuẩn bị trao đợt 2 (đã chốt)"
+
+      const inlineSaveBtn = container.querySelector<HTMLButtonElement>('#updates ol details button[type="submit"]')!
+      expect(inlineSaveBtn.textContent).toBe("Lưu bản nháp: Chuẩn bị trao đợt 2")
+      state.calls.length = 0
+      await act(async () => {
+        inlineSaveBtn.click()
+      })
+      expect(confirmMock).not.toHaveBeenCalled()
+      const editUpdateCall = state.calls.find((c) => c.target === "campaign_updates" && Boolean(op(c, "update")))
+      expect(op(editUpdateCall, "update")).toEqual([
+        {
+          title: "Chuẩn bị trao đợt 2 (đã chốt)",
+          body: "Đang chốt danh sách điểm trường.",
+        },
+      ])
+      expect(editUpdateCall?.ops).toContainEqual(["eq", "id", UPDATE_DRAFT])
+      expect(editUpdateCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+      expect(editUpdateCall?.ops).toContainEqual(["is", "published_at", null])
+
+      // Publishing a draft row prompts window.confirm reminding that published updates cannot be edited or deleted.
+      const rowButtons = [...container.querySelectorAll<HTMLButtonElement>('#updates ol button[type="submit"]')]
+      const publishDraftBtn = rowButtons.find((b) => b.textContent === "Đăng công khai: Chuẩn bị trao đợt 2")!
+      const deleteDraftBtn = rowButtons.find((b) => b.textContent === "Xóa bản nháp: Chuẩn bị trao đợt 2")!
+      expect(publishDraftBtn).toBeDefined()
+      expect(deleteDraftBtn).toBeDefined()
+
+      state.calls.length = 0
+      confirmMock.mockReturnValueOnce(false)
+      await act(async () => {
+        publishDraftBtn.click()
+      })
+      expect(confirmMock).toHaveBeenCalledWith(
+        "Đăng công khai bản nháp “Chuẩn bị trao đợt 2”? Cập nhật đã đăng sẽ hiện công khai và không thể sửa hay xóa."
+      )
+      expect(state.calls).toHaveLength(0)
+
+      confirmMock.mockReturnValueOnce(true)
+      await act(async () => {
+        publishDraftBtn.click()
+      })
+      const publishCall = state.calls.find((c) => c.target === "campaign_updates" && Boolean(op(c, "update")))
+      expect(op(publishCall, "update")?.[0]).toEqual({ published_at: expect.any(String) })
+      expect(publishCall?.ops).toContainEqual(["eq", "id", UPDATE_DRAFT])
+      expect(publishCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+      expect(publishCall?.ops).toContainEqual(["is", "published_at", null])
+
+      // Deleting a draft row prompts window.confirm before executing deleteDraftUpdate.
+      confirmMock.mockClear()
+      state.calls.length = 0
+      confirmMock.mockReturnValueOnce(false)
+      await act(async () => {
+        deleteDraftBtn.click()
+      })
+      expect(confirmMock).toHaveBeenCalledWith("Xóa bản nháp “Chuẩn bị trao đợt 2”?")
+      expect(state.calls).toHaveLength(0)
+
+      confirmMock.mockReturnValueOnce(true)
+      await act(async () => {
+        deleteDraftBtn.click()
+      })
+      const deleteCall = state.calls.find((c) => c.target === "campaign_updates" && Boolean(op(c, "delete")))
+      expect(deleteCall).toBeDefined()
+      expect(deleteCall?.ops).toContainEqual(["eq", "id", UPDATE_DRAFT])
+      expect(deleteCall?.ops).toContainEqual(["eq", "campaign_id", CAMPAIGN])
+      expect(deleteCall?.ops).toContainEqual(["is", "published_at", null])
+    } finally {
+      window.confirm = originalConfirm
+      act(() => root.unmount())
+      container.remove()
+    }
+  })
+})
+
+describe("EditCampaignPage campaign status and review history in #status (DOS/Give#287)", () => {
+  it("renders <StatusHistory> in #status without actor_id, replacing the empty placeholder on locked statuses and sitting cleanly above #status controls when actionable", async () => {
+    const liveEvents: CampaignStatusEvent[] = [
+      {
+        id: 42,
+        campaign_id: CAMPAIGN,
+        from_status: "in_review",
+        to_status: "live",
+        reason: null,
+        created_at: "2026-11-18T09:00:00.000Z",
+      },
+      {
+        id: 41,
+        campaign_id: CAMPAIGN,
+        from_status: "draft",
+        to_status: "in_review",
+        reason: "Đã đính kèm xác nhận của địa phương.",
+        created_at: "2026-11-17T14:30:00.000Z",
+      },
+    ]
+
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: liveEvents }
+      return undefined
+    }
+
+    const liveDoc = new Window().document
+    liveDoc.body.innerHTML = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+
+    const historyCalls = state.calls.filter((c) => c.target === "campaign_status_events")
+    expect(historyCalls).toHaveLength(1)
+    const selectCols = String(op(historyCalls[0], "select")?.[0] ?? "")
+    expect(selectCols).toBe("id, campaign_id, from_status, to_status, reason, created_at")
+    expect(selectCols).not.toContain("actor_id")
+    expect(op(historyCalls[0], "in")).toEqual(["campaign_id", [CAMPAIGN]])
+    expect(op(historyCalls[0], "order")).toEqual(["id", { ascending: false }])
+
+    const liveStatus = liveDoc.querySelector("#status")!
+    const liveDetails = liveStatus.querySelector("details")!
+    expect(liveDetails).toBeTruthy()
+    expect(liveDetails.querySelector("summary")?.textContent).toContain("Lịch sử trạng thái (2): Chiến dịch thử nghiệm")
+    expect(liveDetails.querySelector("summary .sr-only")?.textContent).toBe(": Chiến dịch thử nghiệm")
+    const liveItems = [...liveDetails.querySelectorAll("ol > li")]
+    expect(liveItems).toHaveLength(2)
+    expect(liveItems[0]?.textContent).toContain(`${STATUS_LABELS.in_review} → ${STATUS_LABELS.live}`)
+    expect(liveItems[0]?.textContent).toContain(formatDateTime("2026-11-18T09:00:00.000Z"))
+    expect(liveItems[1]?.textContent).toContain(`${STATUS_LABELS.draft} → ${STATUS_LABELS.in_review}`)
+    expect(liveItems[1]?.querySelector("p")?.textContent).toBe("Đã đính kèm xác nhận của địa phương.")
+    expect(liveStatus.textContent).not.toContain("Không có thao tác nào ở trạng thái này.")
+
+    // Editable sent-back campaign shows <StatusHistory> alongside "Gửi duyệt" and "Hủy chiến dịch" controls.
+    const reviewEvents: CampaignStatusEvent[] = [
+      {
+        id: 52,
+        campaign_id: CAMPAIGN,
+        from_status: "in_review",
+        to_status: "changes_requested",
+        reason: "Bổ sung dự toán vật tư.\nLàm rõ tiến độ bàn giao.",
+        created_at: "2026-11-18T11:15:00.000Z",
+      },
+      {
+        id: 51,
+        campaign_id: CAMPAIGN,
+        from_status: "draft",
+        to_status: "in_review",
+        reason: null,
+        created_at: "2026-11-17T08:00:00.000Z",
+      },
+    ]
+
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("changes_requested", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: reviewEvents }
+      return undefined
+    }
+
+    const sentBackDoc = new Window().document
+    sentBackDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    const sentBackStatus = sentBackDoc.querySelector("#status")!
+    const sentBackDetails = sentBackStatus.querySelector("details")!
+    expect(sentBackDetails).toBeTruthy()
+    const sentBackReason = sentBackDetails.querySelector("ol > li p")!
+    expect(sentBackReason.className).toContain("whitespace-pre-line")
+    expect(sentBackReason.className).toContain("max-w-[68ch]")
+    expect(sentBackReason.textContent).toBe("Bổ sung dự toán vật tư.\nLàm rõ tiến độ bàn giao.")
+
+    const sentBackForms = [...sentBackStatus.querySelectorAll("form")]
+    expect(sentBackForms).toHaveLength(2)
+    expect(sentBackForms[0]?.className).toContain("border-t")
+    expect(sentBackForms[1]?.className).toContain("border-t")
+    expect([...sentBackStatus.querySelectorAll('button[type="submit"]')].map((b) => b.textContent?.trim())).toEqual([
+      "Gửi duyệt",
+      "Hủy chiến dịch",
+    ])
+    expect(sentBackStatus.textContent).not.toContain("Không có thao tác nào ở trạng thái này.")
+
+    // In-review campaign with history shows <StatusHistory> above "Hủy chiến dịch" with a divider.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("in_review", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: [reviewEvents[1]!] }
+      return undefined
+    }
+
+    const inReviewDoc = new Window().document
+    inReviewDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    const inReviewStatus = inReviewDoc.querySelector("#status")!
+    expect(inReviewStatus.querySelector("details summary")?.textContent).toContain("Lịch sử trạng thái (1)")
+    const cancelForm = inReviewStatus.querySelector("form")!
+    expect(cancelForm.className).toContain("border-t")
+    expect(cancelForm.textContent).toContain("Hủy chiến dịch")
+  })
+
+  it("degrades gracefully when campaign_status_events errors without blocking the page or #status controls", async () => {
+    // Locked status falls back to the empty-actions copy when campaign_status_events fails.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_status_events") {
+        return { error: { code: "57014", message: "statement timeout" } }
+      }
+      return undefined
+    }
+
+    const degradedLiveDoc = new Window().document
+    degradedLiveDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    const degradedLiveStatus = degradedLiveDoc.querySelector("#status")!
+    expect(degradedLiveStatus.querySelector("details")).toBeNull()
+    expect(degradedLiveStatus.textContent).toContain("Không có thao tác nào ở trạng thái này.")
+
+    // Editable status keeps "Gửi duyệt" and "Hủy chiến dịch" intact without an orphan top border on the first form.
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("changes_requested", "give") }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_status_events") {
+        return { error: { code: "57014", message: "statement timeout" } }
+      }
+      return undefined
+    }
+
+    const degradedEditableDoc = new Window().document
+    degradedEditableDoc.body.innerHTML = renderToStaticMarkup(
+      await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })
+    )
+    const degradedEditableStatus = degradedEditableDoc.querySelector("#status")!
+    expect(degradedEditableStatus.querySelector("details")).toBeNull()
+    const forms = [...degradedEditableStatus.querySelectorAll("form")]
+    expect(forms).toHaveLength(2)
+    expect(forms[0]?.className).not.toContain("border-t")
+    expect(forms[1]?.className).toContain("border-t")
+    expect(
+      [...degradedEditableStatus.querySelectorAll('button[type="submit"]')].map((b) => b.textContent?.trim())
+    ).toEqual(["Gửi duyệt", "Hủy chiến dịch"])
+  })
+})
+
+describe("EditCampaignPage monthly giving section (DOS/Give#276)", () => {
+  function setupMonthly(
+    status: CampaignStatus,
+    type: CampaignType,
+    row: Record<string, unknown> = {},
+    organizerId: string = USER
+  ) {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") {
+        return {
+          data: {
+            ...campaignRow(status, type),
+            ends_at: "2099-12-31T00:00:00.000Z",
+            organizer_id: organizerId,
+            ...row,
+          },
+        }
+      }
+      if (call.target === "public_campaigns") return { data: publicTotals() }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "reward_tiers") return { data: [] }
+      if (call.target === "receiving_accounts") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: [] }
+      return undefined
+    }
+  }
+
+  async function renderDoc() {
+    const doc = new Window().document
+    doc.body.innerHTML = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+    return doc
+  }
+
+  const supporterCalls = () => state.serviceCalls.filter((c) => c.target === "rpc:campaign_plan_supporters")
+
+  it("lists the monthly supporters from the service-role RPC, for the organizer proven by their own token", async () => {
+    setupMonthly("live", "give", { allow_monthly: true })
+    state.serviceHandler = (call) =>
+      call.target === "rpc:campaign_plan_supporters"
+        ? {
+            data: [
+              { display_name: "Chị Lan", is_anonymous: false, since: "2026-11-02T03:00:00.000Z" },
+              { display_name: null, is_anonymous: true, since: "2026-11-05T03:00:00.000Z" },
+            ],
+          }
+        : undefined
+    const doc = await renderDoc()
+
+    expect(state.calls[0].target).toBe("rpc:managed_campaigns")
+    expect(supporterCalls()).toHaveLength(1)
+    expect(op(supporterCalls()[0], "args")).toEqual([{ p_campaign_id: CAMPAIGN, p_actor: USER }])
+
+    const section = doc.querySelector("#monthly")!
+    expect(section).toBeTruthy()
+    expect(doc.querySelector('nav a[href="#monthly"]')?.textContent).toBe("Ủng hộ hằng tháng")
+    expect(section.textContent).toContain("Đang bật")
+    expect(section.textContent).toContain("Đang có 2 người ủng hộ hằng tháng.")
+    expect([...section.querySelectorAll("li")].map((li) => li.querySelector("span")?.textContent)).toEqual([
+      "Chị Lan",
+      "Ẩn danh",
+    ])
+    expect(section.querySelector('input[name="enabled"]')?.getAttribute("value")).toBe("false")
+    expect(section.querySelector('button[type="submit"]')?.textContent).toBe("Tắt ủng hộ hằng tháng")
+  })
+
+  it("offers to turn it on without reading supporters while off", async () => {
+    setupMonthly("draft", "give", { allow_monthly: false })
+    const doc = await renderDoc()
+    expect(supporterCalls()).toHaveLength(0)
+    const section = doc.querySelector("#monthly")!
+    expect(section.textContent).toContain("Đang tắt")
+    expect(section.querySelector('input[name="enabled"]')?.getAttribute("value")).toBe("true")
+    const button = section.querySelector('button[type="submit"]')!
+    expect(button.textContent).toBe("Bật ủng hộ hằng tháng")
+    expect(button.hasAttribute("disabled")).toBe(false)
+  })
+
+  it("disables turning on with the reason when the campaign has no end date", async () => {
+    setupMonthly("draft", "give", { ends_at: null })
+    const doc = await renderDoc()
+    const section = doc.querySelector("#monthly")!
+    expect(section.querySelector('button[type="submit"]')?.hasAttribute("disabled")).toBe(true)
+    expect(section.textContent).toContain("Ủng hộ hằng tháng chỉ bật được cho chiến dịch có ngày kết thúc.")
+  })
+
+  it("degrades only the section when the supporters cannot be read", async () => {
+    setupMonthly("live", "give", { allow_monthly: true })
+    state.serviceHandler = () => ({ error: { code: "57014", message: "statement timeout" } })
+    const doc = await renderDoc()
+    const section = doc.querySelector("#monthly")!
+    expect(section.textContent).toContain("Không tải được danh sách người ủng hộ hằng tháng. Hãy tải lại trang.")
+    expect(section.querySelector('button[type="submit"]')?.textContent).toBe("Tắt ủng hộ hằng tháng")
+    expect(doc.querySelector("#status")).toBeTruthy()
+  })
+
+  it.each([
+    ["closed", "give"],
+    ["cancelled", "give"],
+    ["live", "back"],
+  ] as const)("has no monthly section for a %s %s campaign", async (status, type) => {
+    setupMonthly(status, type, { allow_monthly: type === "give" })
+    const doc = await renderDoc()
+    expect(doc.querySelector("#monthly")).toBeNull()
+    expect(doc.querySelector('nav a[href="#monthly"]')).toBeNull()
+    expect(supporterCalls()).toHaveLength(0)
+  })
+
+  it("never reads supporters with the service role for someone else's campaign", async () => {
+    setupMonthly("live", "give", { allow_monthly: true }, "99999999-9999-4999-8999-999999999999")
+    await expect(EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })).rejects.toThrow("NEXT_NOT_FOUND")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+})
+
+describe("EditCampaignPage Thống kê tab (DOS/Give#252)", () => {
+  const analyticsData = {
+    campaign_id: CAMPAIGN,
+    campaign_type: "give" as const,
+    days: 30,
+    start_date: "2026-10-24",
+    end_date: "2026-11-22",
+    totals: {
+      views: 310,
+      share_clicks: 24,
+      contributions_count: 12,
+      contributions_amount: 6_200_000,
+      conversion_rate: 0.03871,
+    },
+    daily: [
+      {
+        date: "2026-11-22",
+        views: 310,
+        share_clicks: 24,
+        contributions_count: 12,
+        contributions_amount: 6_200_000,
+      },
+    ],
+    referrers: [
+      { bucket: "zalo", views: 200 },
+      { bucket: "direct", views: 110 },
+    ],
+  }
+
+  it("shows Quản lý and Thống kê tabs and queries get_campaign_analytics with dbAs when tab=analytics", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "rpc:get_campaign_analytics") return { data: analyticsData }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(
+      await EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "analytics", days: "7" }),
+      })
+    )
+    const doc = new Window().document
+    doc.body.innerHTML = html
+
+    const tabLinks = [...doc.querySelectorAll('nav[aria-label="Mục chiến dịch"] a')]
+    expect(tabLinks.map((a) => a.textContent)).toEqual(["Quản lý", "Thống kê", "Đội ngũ"])
+    expect(tabLinks[1].getAttribute("aria-current")).toBe("page")
+
+    const rpcCall = state.calls.find((c) => c.target === "rpc:get_campaign_analytics")
+    expect(rpcCall?.ops).toEqual([["args", { p_campaign_id: CAMPAIGN, p_days: 7 }]])
+    expect(state.serviceCalls).toHaveLength(0)
+
+    expect(doc.querySelector('[data-metric="views"]')?.textContent).toBe("310")
+    expect(doc.querySelector('[data-metric="share_clicks"]')?.textContent).toBe("24")
+    expect(html).toContain("Zalo")
+  })
+
+  it("blocks another user from reading the analytics tab and never calls get_campaign_analytics", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") {
+        return { data: { ...campaignRow("live", "give"), organizer_id: "99999999-9999-4999-8999-999999999999" } }
+      }
+      return undefined
+    }
+
+    await expect(
+      EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "analytics" }),
+      })
+    ).rejects.toThrow("NEXT_NOT_FOUND")
+
+    expect(state.calls.some((c) => c.target === "rpc:get_campaign_analytics")).toBe(false)
+  })
+
+  it("degrades with an error Callout when get_campaign_analytics fails transiently", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "rpc:get_campaign_analytics") return { error: { code: "57014", message: "timeout" } }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(
+      await EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "analytics" }),
+      })
+    )
+    expect(html).toContain("Không tải được số liệu thống kê")
+  })
+
+  it("returns notFound when get_campaign_analytics raises GIVE_CAMPAIGN_NOT_FOUND", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "rpc:get_campaign_analytics") {
+        return { error: { code: "P0002", message: "GIVE_CAMPAIGN_NOT_FOUND" } }
+      }
+      return undefined
+    }
+
+    await expect(
+      EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "analytics" }),
+      })
+    ).rejects.toThrow("NEXT_NOT_FOUND")
+  })
+
+  it("redirects unauthenticated visitors before any DB query and preserves analytics returnPath", async () => {
+    const { requireSession } = await import("@/lib/auth/session")
+    const requireSessionMock = vi.mocked(requireSession)
+    requireSessionMock.mockRejectedValueOnce(new Error("NEXT_REDIRECT"))
+
+    await expect(
+      EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "analytics", days: "7" }),
+      })
+    ).rejects.toThrow("NEXT_REDIRECT")
+
+    expect(requireSessionMock).toHaveBeenCalledWith(`/me/campaigns/${CAMPAIGN}?tab=analytics&days=7`)
+    expect(state.calls).toHaveLength(0)
+  })
+})
+
+describe("EditCampaignPage co-organizer Team tab and editor workspace guards (DOS/Give#253)", () => {
+  const OWNER = "99999999-9999-4999-8999-999999999999"
+  const EDITOR_MEMBER = "88888888-8888-4888-8888-888888888888"
+
+  it("renders owner Team tab (?tab=team) with members, invites, money notice, and zero dbService calls", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("live", "give") }
+      if (call.target === "rpc:list_campaign_members") {
+        return {
+          data: [
+            {
+              user_id: EDITOR_MEMBER,
+              role: "editor",
+              display_name: "Minh Anh",
+              avatar_url: null,
+              invited_by: USER,
+              accepted_at: "2026-11-20T09:00:00Z",
+              created_at: "2026-11-20T09:00:00Z",
+            },
+          ],
+        }
+      }
+      if (call.target === "rpc:list_campaign_member_invites") {
+        return {
+          data: [
+            {
+              invite_id: "77777777-7777-4777-8777-777777777777",
+              campaign_id: CAMPAIGN,
+              role: "editor",
+              note: "Gửi cho Nam",
+              expires_at: "2026-12-01T00:00:00Z",
+              accepted_at: null,
+              accepted_by: null,
+              accepted_by_display_name: null,
+              revoked_at: null,
+              created_at: "2026-11-21T09:00:00Z",
+              status: "pending",
+            },
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(
+      await EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "team" }),
+      })
+    )
+    const doc = new Window().document
+    doc.body.innerHTML = html
+
+    const tabLinks = [...doc.querySelectorAll('nav[aria-label="Mục chiến dịch"] a')]
+    expect(tabLinks.map((a) => a.textContent)).toEqual(["Quản lý", "Thống kê", "Đội ngũ"])
+    expect(tabLinks[2].getAttribute("aria-current")).toBe("page")
+
+    expect(html).toContain("Tiền và quyền quyết định luôn thuộc về bạn")
+    expect(html).toContain("Minh Anh")
+    expect(html).toContain("Gỡ khỏi đội ngũ")
+    expect(html).toContain("Tạo liên kết mời")
+    expect(html).toContain("Gửi cho Nam")
+    expect(html).toContain("Thu hồi")
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it("hides invite creation on cancelled/suspended campaigns in Team tab", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") return { data: campaignRow("cancelled", "give") }
+      if (call.target === "rpc:list_campaign_members") return { data: [] }
+      if (call.target === "rpc:list_campaign_member_invites") return { data: [] }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(
+      await EditCampaignPage({
+        params: Promise.resolve({ id: CAMPAIGN }),
+        searchParams: Promise.resolve({ tab: "team" }),
+      })
+    )
+    expect(html).toContain("Không thể tạo lời mời mới khi chiến dịch đã hủy hoặc đang tạm dừng.")
+    expect(html).not.toContain("Tạo liên kết mời")
+  })
+
+  it("lets an accepted editor view content/media/milestones/tiers/updates while strictly hiding money, accounts, monthly, fulfillment, team, analytics, and lifecycle controls", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") {
+        return { data: { ...campaignRow("draft", "back"), organizer_id: OWNER } }
+      }
+      if (call.target === "rpc:my_campaign_roles") {
+        return { data: [{ campaign_id: CAMPAIGN, role: "editor" }] }
+      }
+      if (call.target === "categories") return { data: [] }
+      if (call.target === "campaign_milestones") return { data: [] }
+      if (call.target === "campaign_updates") return { data: [] }
+      if (call.target === "reward_tiers") return { data: [] }
+      if (call.target === "campaign_media") return { data: [] }
+      if (call.target === "campaign_status_events") return { data: [] }
+      return undefined
+    }
+
+    const html = renderToStaticMarkup(await EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) }))
+
+    // Allowed editor surfaces
+    expect(html).toContain("Đồng tổ chức")
+    expect(html).toContain("Quyền đồng tổ chức (biên tập viên)")
+    expect(html).toContain('id="content"')
+    expect(html).toContain("Lưu nội dung")
+    expect(html).toContain('id="cover-image"')
+    expect(html).toContain('id="pitch-video"')
+    expect(html).toContain('id="milestones"')
+    expect(html).toContain('id="reward-tiers"')
+    expect(html).toContain('id="updates"')
+    expect(html).toContain("Chỉ người tổ chức chính mới có thể gửi duyệt, hủy chiến dịch hoặc xóa bản nháp.")
+
+    // Strictly hidden owner-only surfaces
+    expect(html).not.toContain('aria-label="Mục chiến dịch"')
+    expect(html).not.toContain(">Thống kê<")
+    expect(html).not.toContain(">Đội ngũ<")
+    expect(html).not.toContain('id="receiving-account"')
+    expect(html).not.toContain('id="money"')
+    expect(html).not.toContain('id="fulfillment"')
+    expect(html).not.toContain('id="monthly"')
+    expect(html).not.toContain(">Gửi duyệt<")
+    expect(html).not.toContain(">Hủy chiến dịch<")
+    expect(html).not.toContain(">Xóa bản nháp<")
+
+    // Never queries owner-only money/account tables or service-role RPCs
+    expect(state.calls.some((c) => c.target === "receiving_accounts")).toBe(false)
+    expect(state.calls.some((c) => c.target === "account_swap_requests")).toBe(false)
+    expect(state.serviceCalls).toHaveLength(0)
+  })
+
+  it.each(["analytics", "team"] as const)(
+    "blocks an accepted editor from owner-only tab '%s' with notFound",
+    async (tab) => {
+      state.handler = (call) => {
+        if (call.target === "rpc:managed_campaigns") {
+          return { data: { ...campaignRow("live", "give"), organizer_id: OWNER } }
+        }
+        if (call.target === "rpc:my_campaign_roles") {
+          return { data: [{ campaign_id: CAMPAIGN, role: "editor" }] }
+        }
+        return undefined
+      }
+
+      await expect(
+        EditCampaignPage({
+          params: Promise.resolve({ id: CAMPAIGN }),
+          searchParams: Promise.resolve({ tab }),
+        })
+      ).rejects.toThrow("NEXT_NOT_FOUND")
+      expect(state.calls.some((c) => c.target === "rpc:get_campaign_analytics")).toBe(false)
+      expect(state.calls.some((c) => c.target === "rpc:list_campaign_members")).toBe(false)
+      expect(state.calls.some((c) => c.target === "rpc:list_campaign_member_invites")).toBe(false)
+    }
+  )
+
+  it("blocks a staff user who is neither owner nor accepted editor with notFound", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:managed_campaigns") {
+        return { data: { ...campaignRow("live", "give"), organizer_id: OWNER } }
+      }
+      if (call.target === "rpc:my_campaign_roles") {
+        return { data: [] }
+      }
+      return undefined
+    }
+
+    await expect(EditCampaignPage({ params: Promise.resolve({ id: CAMPAIGN }) })).rejects.toThrow("NEXT_NOT_FOUND")
   })
 })

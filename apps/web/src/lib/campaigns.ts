@@ -146,6 +146,8 @@ export interface Organizer {
   legal_name: string
   display_name: string
   phone: string | null
+  handle?: string | null
+  bio?: string | null
   verification_status: VerificationStatus
   verified_at: string | null
   created_at: string
@@ -155,6 +157,7 @@ export interface PublicOrganizer {
   display_name: string
   kind: OrganizerKind
   verification_status: VerificationStatus
+  handle?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -463,6 +466,7 @@ async function listCampaignOrganizers(db: Db, campaignIds: readonly string[]): P
           display_name: row.display_name,
           kind: row.kind,
           verification_status: row.verification_status,
+          handle: row.handle ?? null,
         })
       }
     }
@@ -523,15 +527,22 @@ export async function listPublishedUpdates(db: Db, campaignId: string): Promise<
   return (data ?? []) as CampaignUpdate[]
 }
 
-/** Display name, kind and verification of a published campaign's organizer. */
+/** Display name, kind, verification and optional handle of a published campaign's organizer. */
 export async function getPublicOrganizer(db: Db, campaignId: string): Promise<PublicOrganizer | null> {
   const { data, error } = await db.rpc("public_organizer", { p_campaign_id: campaignId })
   if (error) throw error
-  const rows = (data ?? []) as PublicOrganizer[]
-  return rows[0] ?? null
+  const row = ((data ?? []) as PublicOrganizer[])[0]
+  if (!row) return null
+  return {
+    display_name: row.display_name,
+    kind: row.kind,
+    verification_status: row.verification_status,
+    handle: row.handle ?? null,
+  }
 }
 
-const ORGANIZER_COLUMNS = "user_id, kind, legal_name, display_name, phone, verification_status, verified_at, created_at"
+const ORGANIZER_COLUMNS =
+  "user_id, kind, legal_name, display_name, phone, handle, bio, verification_status, verified_at, created_at"
 
 export async function getOrganizer(db: Db, userId: string): Promise<Organizer | null> {
   const { data, error } = await db.from("organizers").select(ORGANIZER_COLUMNS).eq("user_id", userId).maybeSingle()
@@ -546,6 +557,26 @@ export async function listMyCampaigns(db: Db, userId: string): Promise<CampaignW
     .order("created_at", { ascending: false })
   if (error) throw error
   return (data ?? []) as CampaignWithRefs[]
+}
+
+/**
+ * Loads specific campaigns through `give.managed_campaigns()` by id in bounded
+ * chunks, ordered newest first. Used with `give.my_campaign_roles()` so `/me/campaigns`
+ * lists the caller's owned and co-organized campaigns without pulling unrelated
+ * staff-visible campaigns.
+ */
+export async function listManagedCampaignsByIds(db: Db, ids: readonly string[]): Promise<CampaignWithRefs[]> {
+  const unique = [...new Set(ids)]
+  if (unique.length === 0) return []
+  const reads = await Promise.all(
+    chunks(unique, IDS_PER_REQUEST).map((chunk) => managedCampaigns(db).select(CAMPAIGN_WITH_REFS).in("id", chunk))
+  )
+  const rows: CampaignWithRefs[] = []
+  for (const read of reads) {
+    if (read.error) throw read.error
+    for (const row of (read.data ?? []) as CampaignWithRefs[]) rows.push(row)
+  }
+  return rows.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 }
 
 /** Every update of a campaign the caller organizes, drafts included. */

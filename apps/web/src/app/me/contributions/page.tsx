@@ -12,13 +12,17 @@ import { SkeletonList } from "@/components/ui/Skeleton"
 import { requireSession, type Session } from "@/lib/auth/session"
 import { donationStatusLabel } from "@/lib/contributions"
 import { formatDate, formatVnd } from "@/lib/format"
+import { periodLabel } from "@/lib/plans"
 import { fulfillmentLabel, offersPayment, pledgeListSummary, withoutReplacedPledges } from "@/lib/pledges"
 import { dbAs, dbService } from "@/lib/supabase"
+import { paymentAccount } from "@/server/contributions"
 import { pledgeBalances, type PledgeBalance } from "@/server/pledges"
 
 import { MePage } from "../_components/MePage"
 import { DONATION_TONES, toneOf } from "../_components/tones"
 import { RefCode } from "@/components/ui/RefCode"
+
+import { PlanList, type MyPlan } from "./PlanList"
 
 export const metadata: Metadata = { title: "Ủng hộ của tôi", robots: { index: false } }
 
@@ -35,6 +39,9 @@ interface MyContribution {
   fulfillment_status: string | null
   reward_tier_id: string | null
   created_at: string
+  /** Set on a monthly plan's donation (DOS/Give#276). */
+  plan_id: string | null
+  plan_period: string | null
   campaign: { slug: string; title: string } | null
 }
 
@@ -60,18 +67,66 @@ export default async function MyContributionsPage() {
  * Pledge amounts are net of refunds and the stop on payment requests is
  * shown (give.pledge_balances, DOS/Give#89), read as the service role for the
  * user the RLS read above has just proved.
+ *
+ * Monthly plans (DOS/Give#276) come first, also read under RLS; this month's
+ * donation of each is among the newest contributions.
  */
-async function ContributionList({ session }: { session: Session }) {
-  const { data, error } = await dbAs(session.accessToken)
-    .from("contributions")
-    .select(
-      "id, kind, campaign_id, reference_code, intended_amount, received_amount, status, is_anonymous, payment_due_at, " +
-        "fulfillment_status, reward_tier_id, created_at, campaign:campaigns(slug, title)"
+/**
+ * Marks each active plan's live campaign with whether it has a usable
+ * account (give.payment_account, as the service role, for campaigns the
+ * donor's own plans name), so "Chuyển khoản tháng này" is offered only when
+ * the payment page can show a QR, as give.plan_donation_payable decides. A
+ * failed lookup leaves it unknown; the payment page checks again.
+ */
+async function withUsableAccounts(plans: MyPlan[]): Promise<MyPlan[]> {
+  const ids = [
+    ...new Set(plans.filter((p) => p.status === "active" && p.campaign?.status === "live").map((p) => p.campaign_id)),
+  ]
+  if (ids.length === 0) return plans
+  const service = dbService()
+  const usable = new Map(
+    await Promise.all(
+      ids.map(async (id) => {
+        const account = await paymentAccount(service, id).catch((e: unknown) => {
+          console.error("contributions: payment account lookup failed", e)
+          return undefined
+        })
+        return [id, account === undefined ? undefined : account !== null] as const
+      })
     )
-    .eq("contributor_user_id", session.user.id)
-    .order("created_at", { ascending: false })
-    .limit(200)
+  )
+  return plans.map((p) =>
+    p.campaign && usable.get(p.campaign_id) !== undefined
+      ? { ...p, campaign: { ...p.campaign, usable_account: usable.get(p.campaign_id) } }
+      : p
+  )
+}
+
+async function ContributionList({ session }: { session: Session }) {
+  const db = dbAs(session.accessToken)
+  const [{ data, error }, plansRead] = await Promise.all([
+    db
+      .from("contributions")
+      .select(
+        "id, kind, campaign_id, reference_code, intended_amount, received_amount, status, is_anonymous, payment_due_at, " +
+          "fulfillment_status, reward_tier_id, created_at, plan_id, plan_period, campaign:campaigns(slug, title)"
+      )
+      .eq("contributor_user_id", session.user.id)
+      .order("created_at", { ascending: false })
+      .limit(200),
+    db
+      .from("donation_plans")
+      .select(
+        "id, campaign_id, amount, day_of_month, status, ended_reason, next_period, created_at, ended_at, " +
+          "campaign:campaigns(slug, title, status, ends_at)"
+      )
+      .eq("contributor_user_id", session.user.id)
+      .order("created_at", { ascending: false })
+      .limit(50),
+  ])
   if (error) throw error
+  if (plansRead.error) throw plansRead.error
+  const plans = await withUsableAccounts((plansRead.data ?? []) as unknown as MyPlan[])
   const contributions = withoutReplacedPledges((data ?? []) as unknown as MyContribution[])
   const balances: Map<string, PledgeBalance> = contributions.some((c) => c.kind === "pledge")
     ? await pledgeBalances(dbService(), session.user.id).catch((e: unknown) => {
@@ -81,7 +136,7 @@ async function ContributionList({ session }: { session: Session }) {
       })
     : new Map()
 
-  if (contributions.length === 0) {
+  if (contributions.length === 0 && plans.length === 0) {
     return (
       <EmptyState
         level={2}
@@ -93,6 +148,31 @@ async function ContributionList({ session }: { session: Session }) {
     )
   }
 
+  return (
+    <div className="space-y-10">
+      {plans.length > 0 && <PlanList plans={plans} donations={contributions.filter((c) => c.plan_id !== null)} />}
+      {contributions.length > 0 &&
+        (plans.length > 0 ? (
+          <section aria-labelledby="all-contributions-title" className="space-y-4">
+            <h2 id="all-contributions-title" className="text-h2">
+              Tất cả lượt ủng hộ
+            </h2>
+            <MyContributionItems contributions={contributions} balances={balances} />
+          </section>
+        ) : (
+          <MyContributionItems contributions={contributions} balances={balances} />
+        ))}
+    </div>
+  )
+}
+
+function MyContributionItems({
+  contributions,
+  balances,
+}: {
+  contributions: MyContribution[]
+  balances: Map<string, PledgeBalance>
+}) {
   return (
     <ul className="divide-y divide-border card">
       {contributions.map((c) => {
@@ -117,6 +197,9 @@ async function ContributionList({ session }: { session: Session }) {
                   {pledge && <span className="text-sm text-muted">Cam kết dự án</span>}
                   {pledge && c.status === "paid" && c.reward_tier_id && (
                     <span className="text-sm text-fg">Giao quà: {fulfillmentLabel(c.fulfillment_status)}</span>
+                  )}
+                  {c.plan_period && (
+                    <span className="text-sm text-muted">Hằng tháng · tháng {periodLabel(c.plan_period)}</span>
                   )}
                   {c.is_anonymous && <span className="text-sm text-muted">Ẩn danh</span>}
                 </div>

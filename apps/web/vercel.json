@@ -5,6 +5,10 @@
     { "path": "/api/cron/reprocess-inbound", "schedule": "*/5 * * * *" },
     { "path": "/api/cron/remind-unexplained", "schedule": "0 2 * * *" },
     { "path": "/api/cron/lapse-pledges", "schedule": "0 * * * *" },
-    { "path": "/api/cron/remind-pledges", "schedule": "30 * * * *" }
+    { "path": "/api/cron/remind-pledges", "schedule": "30 * * * *" },
+    { "path": "/api/cron/send-outbox", "schedule": "* * * * *" },
+    { "path": "/api/cron/purge-outbox", "schedule": "15 3 * * *" },
+    { "path": "/api/cron/issue-plan-donations", "schedule": "10 * * * *" },
+    { "path": "/api/cron/plan-notices", "schedule": "*/10 * * * *" }
   ]
 }
