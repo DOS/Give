@@ -51,6 +51,12 @@ export function periodLabel(period: string): string {
   return match ? `${match[2]}/${match[1]}` : period
 }
 
+/** The first day of the current month in Vietnam time (UTC+7), as YYYY-MM-DD. */
+export function vnMonthStart(now = new Date()): string {
+  const vn = new Date(now.getTime() + 7 * 60 * 60 * 1000)
+  return `${vn.getUTCFullYear()}-${String(vn.getUTCMonth() + 1).padStart(2, "0")}-01`
+}
+
 /** The first moment after a plan period's month ends, in Vietnam time (UTC+7, no DST). */
 export function periodEnd(period: string): Date | null {
   const match = /^(\d{4})-(\d{2})-01$/.exec(period)

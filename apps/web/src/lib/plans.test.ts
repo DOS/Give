@@ -10,6 +10,7 @@ import {
   planStopOneClickPath,
   planStopPath,
   planUpdateSchema,
+  vnMonthStart,
 } from "./plans"
 
 const live = { status: "live", ends_at: "2026-12-20T00:00:00Z" }
@@ -20,6 +21,8 @@ describe("plan periods", () => {
     expect(periodEnd("2026-11-01")?.toISOString()).toBe("2026-11-30T17:00:00.000Z")
     expect(periodEnd("2026-12-01")?.toISOString()).toBe("2026-12-31T17:00:00.000Z")
     expect(periodEnd("2026-11-05")).toBeNull()
+    expect(vnMonthStart(new Date("2026-11-30T16:59:59Z"))).toBe("2026-11-01")
+    expect(vnMonthStart(new Date("2026-11-30T17:00:00Z"))).toBe("2026-12-01")
   })
 
   it("shows the QR only while awaiting, live, before ends_at and inside the month", () => {

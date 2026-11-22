@@ -5,6 +5,7 @@ import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 const SECRET = "0123456789abcdef0123"
 const PLAN = "10000000-0000-4000-8000-000000000001"
+const PLAN_2 = "20000000-0000-4000-8000-000000000002"
 
 const state = vi.hoisted(() => ({
   handler: (() => undefined) as Handler,
@@ -61,6 +62,60 @@ describe("GET /api/cron/plan-notices", () => {
       done: true,
     })
     expect(await (await GET(request(`Bearer ${SECRET}`))).json()).toEqual({ ended: {}, followups: {}, done: true })
+    expect(state.calls.filter((c) => c.target === "rpc:plan_followups")).toHaveLength(2)
+  })
+
+  it("emits structured zero-PII alerts when either sweep records 'failed' outcomes", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {})
+    state.handler = (call) => {
+      const after = (op(call, "args")?.[0] as { p_after: string | null }).p_after
+      if (call.target === "rpc:plan_end_notices") {
+        if (after === null) return { data: [{ plan_id: PLAN, outcome: "failed" }] }
+        return { data: [] }
+      }
+      if (call.target === "rpc:plan_followups") {
+        if (after === null) return { data: [{ plan_id: PLAN_2, outcome: "failed" }] }
+        return { data: [] }
+      }
+      return { data: [] }
+    }
+    const response = await GET(request(`Bearer ${SECRET}`))
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      ended: { failed: 1 },
+      followups: { failed: 1 },
+      done: true,
+    })
+
+    const parsed = error.mock.calls.map(([arg]) => JSON.parse(String(arg)) as Record<string, unknown>)
+    expect(parsed).toContainEqual({
+      event: "plan_cron.failed_outcomes",
+      route: "plan-notices",
+      job: "plan_end_notices",
+      failed: 1,
+      calls: 2,
+      done: true,
+    })
+    expect(parsed).toContainEqual({
+      event: "plan_cron.failed_outcomes",
+      route: "plan-notices",
+      job: "plan_followups",
+      failed: 1,
+      calls: 2,
+      done: true,
+    })
+  })
+
+  it("isolates step failures: plan_followups still runs within budget if plan_end_notices fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {})
+    state.handler = (call) => {
+      if (call.target === "rpc:plan_end_notices") return { error: { code: "57014", message: "timeout" } }
+      const after = (op(call, "args")?.[0] as { p_after: string | null }).p_after
+      return { data: after === null ? [{ plan_id: PLAN, outcome: "reminded" }] : [] }
+    }
+    const response = await GET(request(`Bearer ${SECRET}`))
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ error: "notices_failed" })
     expect(state.calls.filter((c) => c.target === "rpc:plan_followups")).toHaveLength(2)
   })
 
