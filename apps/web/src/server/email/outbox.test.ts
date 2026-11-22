@@ -4,8 +4,10 @@ import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
 import {
   CLAIM_BATCH,
+  CLAIM_TIMEOUT_MS,
   COMPLETE_TRIES,
   RPC_TIMEOUT_MS,
+  RUN_BUDGET_MS,
   RUN_LIMIT_MS,
   SEND_DEADLINE_MS,
   SEND_TIMEOUT_MS,
@@ -337,6 +339,58 @@ describe("sendDueEmails", () => {
   it("throws when the first claim fails", async () => {
     const db = fakeDb(() => ({ error: { code: "42501", message: "denied" } }), calls)
     await expect(sendDueEmails(db as never, transport, OPTIONS)).rejects.toMatchObject({ code: "42501" })
+  })
+
+  it("uses a 15 s claim timeout above PostgREST's 8 s statement timeout and logs aborted claims (DOS/Give#273)", async () => {
+    expect(CLAIM_TIMEOUT_MS).toBe(15_000)
+    expect(CLAIM_TIMEOUT_MS).toBeLessThan(RUN_BUDGET_MS)
+
+    const errorSpy = vi.mocked(console.error)
+    errorSpy.mockClear()
+    const abortDb = fakeDb(
+      () => ({ error: { code: "", message: "TimeoutError: The operation was aborted due to timeout" } }),
+      calls
+    )
+    await expect(sendDueEmails(abortDb as never, transport, OPTIONS)).rejects.toMatchObject({
+      message: expect.stringMatching(/aborted due to timeout/),
+    })
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/claim_outbox aborted after timeout; DB transaction may still have committed/),
+      "",
+      expect.stringMatching(/TimeoutError/)
+    )
+
+    // Subsequent claim abort logs the committed-lease warning and stops without losing earlier counts.
+    errorSpy.mockClear()
+    let claimCount = 0
+    const secondAbortDb = fakeDb((call) => {
+      if (call.target === "rpc:claim_outbox") {
+        claimCount += 1
+        if (claimCount === 1) return { data: Array.from({ length: CLAIM_BATCH }, (_, i) => row(100 + i)) }
+        return { error: { code: "", message: "AbortError: This operation was aborted" } }
+      }
+      return handler(call)
+    }, calls)
+    const outcome = await sendDueEmails(secondAbortDb as never, transport, OPTIONS)
+    expect(outcome).toMatchObject({ claimed: CLAIM_BATCH, sent: CLAIM_BATCH })
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/claim_outbox aborted after timeout; DB transaction may still have committed/),
+      "",
+      expect.stringMatching(/AbortError/)
+    )
+
+    // Server-side Postgres statement_timeout (57014) rolled back cleanly: log ordinary failure, not abort warning.
+    errorSpy.mockClear()
+    const pgTimeoutDb = fakeDb(
+      () => ({ error: { code: "57014", message: "canceling statement due to statement timeout" } }),
+      calls
+    )
+    await expect(sendDueEmails(pgTimeoutDb as never, transport, OPTIONS)).rejects.toMatchObject({ code: "57014" })
+    expect(errorSpy).toHaveBeenCalledWith(
+      "claim_outbox failed",
+      "57014",
+      "canceling statement due to statement timeout"
+    )
   })
 
   it("skips a malformed row", async () => {
