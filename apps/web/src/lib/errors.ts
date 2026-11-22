@@ -182,12 +182,20 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ANALYTICS_EVENT_INVALID: "Loại sự kiện thống kê không hợp lệ.",
   GIVE_ANALYTICS_DAYS_INVALID: "Khoảng thời gian thống kê không hợp lệ.",
   GIVE_SIGN_IN_REQUIRED: "Hãy đăng nhập để tiếp tục.",
+  // Campaign comments, replies, reports and moderation (DOS/Give#250, #262).
+  GIVE_COMMENT_NOT_FOUND: "Không tìm thấy bình luận này, hoặc bình luận đã bị xóa hay đã ẩn.",
+  GIVE_REPORT_NOT_FOUND: "Không tìm thấy báo cáo bình luận này. Hãy tải lại trang.",
+  GIVE_COMMENT_BODY_REQUIRED: "Hãy nhập nội dung bình luận.",
+  GIVE_COMMENT_BODY_TOO_LONG: "Nội dung bình luận tối đa 2000 ký tự.",
+  GIVE_COMMENT_NESTING_NOT_ALLOWED: "Chỉ hỗ trợ trả lời một cấp (không thể trả lời một phản hồi khác).",
+  GIVE_COMMENT_HIDDEN: "Bình luận này đã bị ẩn (hoặc có phản hồi đã bị ẩn) nên bạn không thể sửa hoặc xóa.",
 }
 
 const PG_MESSAGES: Record<string, string> = {
   "23505": "Dữ liệu bị trùng. Hãy thử lại.",
   "23514": "Dữ liệu không hợp lệ.",
   "42501": "Bạn không có quyền thực hiện thao tác này.",
+  PT429: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
   // PostgREST rejected the access token (invalid or expired).
   PGRST301: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
   PGRST303: "Phiên đăng nhập đã hết. Hãy đăng nhập lại.",
@@ -471,4 +479,102 @@ export const CAMPAIGN_MONTHLY_MESSAGES: Record<string, string> = {
   GIVE_CAMPAIGN_ALREADY_ENDED: "Chiến dịch đã quá ngày kết thúc.",
   GIVE_CAMPAIGN_NOT_ACCEPTING: "Chiến dịch đã kết thúc hoặc đã hủy nên không bật được ủng hộ hằng tháng.",
   GIVE_CONTRIBUTION_TYPE_MISMATCH: "Chỉ chiến dịch từ thiện mới có ủng hộ hằng tháng.",
+}
+
+/**
+ * Extracts retry-after seconds from a `GIVE_RATE_LIMITED: <seconds>` error
+ * message raised by campaign comment write RPCs (DOS/Give#250, #262).
+ */
+export function rateLimitSeconds(error: DbErrorLike | null | undefined): number | null {
+  const match = /^GIVE_RATE_LIMITED:\s*(\d+)\b/.exec(error?.message ?? "")
+  if (!match) return null
+  const seconds = Number(match[1])
+  return Number.isSafeInteger(seconds) && seconds > 0 ? seconds : null
+}
+
+/**
+ * Maps database errors from campaign comment RPCs, preserving retry-after
+ * guidance from `GIVE_RATE_LIMITED: <seconds>` when present.
+ */
+export function commentDbErrorMessage(
+  error: DbErrorLike | null | undefined,
+  overrides: Record<string, string> = {}
+): string {
+  if (giveErrorCode(error) === "GIVE_RATE_LIMITED") {
+    const seconds = rateLimitSeconds(error)
+    if (seconds !== null) {
+      if (seconds >= 60) {
+        return `Bạn thao tác quá nhanh. Hãy thử lại sau khoảng ${Math.ceil(seconds / 60)} phút.`
+      }
+      return `Bạn thao tác quá nhanh. Hãy thử lại sau ${seconds} giây.`
+    }
+    return overrides.GIVE_RATE_LIMITED ?? "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút."
+  }
+  return dbErrorMessage(error, overrides)
+}
+
+/**
+ * Refusals of author comment actions (`create_campaign_comment`,
+ * `edit_campaign_comment`, `delete_campaign_comment`; DOS/Give#250, #262).
+ */
+export const COMMENT_ACTION_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Bạn không có quyền thực hiện thao tác này trên bình luận.",
+  GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch công khai này.",
+  GIVE_COMMENT_NOT_FOUND: "Không tìm thấy bình luận này, hoặc bình luận đã bị xóa hay đã ẩn.",
+  GIVE_COMMENT_BODY_REQUIRED: "Hãy nhập nội dung bình luận.",
+  GIVE_COMMENT_BODY_TOO_LONG: "Nội dung bình luận tối đa 2000 ký tự.",
+  GIVE_COMMENT_NESTING_NOT_ALLOWED: "Chỉ hỗ trợ trả lời một cấp (không thể trả lời một phản hồi khác).",
+  GIVE_COMMENT_HIDDEN: "Bình luận này đã bị ẩn (hoặc có phản hồi đã bị ẩn) nên bạn không thể sửa hoặc xóa.",
+  GIVE_RATE_LIMITED: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
+}
+
+/**
+ * Refusals of `give.hide_campaign_comment` worded for the campaign organizer.
+ */
+export const COMMENT_ORGANIZER_HIDE_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Chỉ người tổ chức của chiến dịch mới ẩn được bình luận tại đây.",
+  GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch công khai này.",
+  GIVE_COMMENT_NOT_FOUND: "Không tìm thấy bình luận này, hoặc bình luận đã bị xóa.",
+  GIVE_REASON_TOO_LONG: "Lý do tối đa 500 ký tự.",
+  GIVE_RATE_LIMITED: "Bạn thao tác quá nhanh. Hãy thử lại sau ít phút.",
+}
+
+/**
+ * Refusals of `give.report_campaign_comment` worded for a signed-in visitor.
+ */
+export const COMMENT_REPORT_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Bạn không thể báo cáo bình luận của chính mình.",
+  GIVE_CAMPAIGN_NOT_FOUND: "Không tìm thấy chiến dịch công khai này.",
+  GIVE_COMMENT_NOT_FOUND: "Không tìm thấy bình luận này, hoặc bình luận đã bị xóa hay đã ẩn.",
+  GIVE_REPORT_REASON_INVALID: "Chọn lý do báo cáo.",
+  GIVE_REPORT_DETAILS_REQUIRED: "Ghi chi tiết khi chọn lý do “Lý do khác”.",
+  GIVE_REPORT_DETAILS_TOO_LONG: "Chi tiết báo cáo tối đa 1000 ký tự.",
+  GIVE_REPORT_LIMIT: "Bạn đã gửi tối đa 20 báo cáo bình luận trong 24 giờ qua. Hãy thử lại sau.",
+}
+
+/**
+ * Refusals of direct staff comment moderation (`moderate_campaign_comment`;
+ * DOS/Give#250, #262).
+ */
+export const COMMENT_MODERATION_MESSAGES: Record<string, string> = {
+  GIVE_NOT_ALLOWED: "Bạn không có quyền kiểm duyệt bình luận.",
+  GIVE_NOT_ADMIN: "Chỉ kiểm duyệt viên hoặc quản trị viên được kiểm duyệt bình luận.",
+  GIVE_SELF_REVIEW:
+    "Không thể tự kiểm duyệt bình luận của chính mình hoặc trên chiến dịch do chính bạn tổ chức; một kiểm duyệt viên khác cần xử lý.",
+  GIVE_COMMENT_NOT_FOUND: "Không tìm thấy bình luận (tác giả có thể đã xóa bình luận này). Hãy tải lại trang.",
+  GIVE_REPORT_NOT_FOUND: "Không tìm thấy báo cáo bình luận này. Hãy tải lại trang.",
+  GIVE_REASON_REQUIRED: "Cần ghi lý do xử lý để lưu vào nhật ký kiểm toán.",
+  GIVE_REASON_TOO_LONG: "Lý do tối đa 500 ký tự.",
+  GIVE_MODERATION_INVALID: "Thao tác kiểm duyệt không hợp lệ.",
+}
+
+/**
+ * Refusals of `give.resolve_comment_report` (DOS/Give#250, #262), where
+ * hiding a deleted comment fails with `GIVE_COMMENT_NOT_FOUND` and staff can
+ * still dismiss the report.
+ */
+export const COMMENT_REPORT_RESOLVE_MESSAGES: Record<string, string> = {
+  ...COMMENT_MODERATION_MESSAGES,
+  GIVE_COMMENT_NOT_FOUND:
+    "Không tìm thấy bình luận (tác giả có thể đã xóa bình luận này). Bạn chỉ có thể bác bỏ báo cáo.",
 }
