@@ -1,6 +1,7 @@
+import { bankByBin } from "@/lib/banks"
 import { donationTrackingPath } from "@/lib/contributions"
 import { GIVE_CONTACT_EMAIL } from "@/lib/contact"
-import { formatVnd } from "@/lib/format"
+import { formatDate, formatVnd } from "@/lib/format"
 import { isUuid } from "@/lib/ids"
 import { describeNotice, planCampaign, planEndedParagraphs } from "@/lib/notices"
 import { NEW_CODE_EVERY_MONTH, periodLabel, planStopOneClickPath, planStopPath } from "@/lib/plans"
@@ -36,6 +37,7 @@ export const EMAIL_KINDS = [
   "plan_reminder",
   "plan_followup",
   "plan_ended",
+  "plan_account_swapped",
 ] as const
 export type EmailKind = (typeof EMAIL_KINDS)[number]
 
@@ -55,12 +57,12 @@ export interface OutboxEmail {
   unsubscribe_token: string | null
   reference_code: string | null
   tracking_token: string | null
-  /** The plan's stop token (64 hex), minted by claim_outbox for plan_reminder and plan_followup only. */
+  /** The plan's stop token (64 hex), minted by claim_outbox for plan reminders and swap notices. */
   stop_token: string | null
 }
 
 /** Kinds whose email carries the plan's stop link and must not go out without it. */
-export const STOP_LINK_KINDS: readonly EmailKind[] = ["plan_reminder", "plan_followup"]
+export const STOP_LINK_KINDS: readonly EmailKind[] = ["plan_reminder", "plan_followup", "plan_account_swapped"]
 
 export function carriesStopLink(kind: string): boolean {
   return (STOP_LINK_KINDS as readonly string[]).includes(kind)
@@ -317,6 +319,87 @@ function planEnded(email: OutboxEmail): Content {
   }
 }
 
+const LAST4_PATTERN = /^[0-9A-Za-z]{1,4}$/
+const MASKED_LAST4_PATTERN = /^\*{4}([0-9A-Za-z]{1,4})$/
+const CHAIN_PATTERN = /^[a-z0-9-]{2,32}$/
+const ISO_DATE_PATTERN = /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/
+
+/**
+ * Formats strictly the last 1-4 characters as "•••• XXXX". Rejects longer
+ * values so a malformed payload can never leak a raw account number or wallet
+ * address into an email.
+ */
+function maskedLast4(last4: string | null, masked: string | null): string | null {
+  if (last4 && LAST4_PATTERN.test(last4)) return `•••• ${last4}`
+  const match = masked ? MASKED_LAST4_PATTERN.exec(masked) : null
+  return match ? `•••• ${match[1]}` : null
+}
+
+function swapDateLabel(payload: OutboxEmail["payload"]): string | null {
+  const changedDate = text(payload, "changed_date")
+  const match = changedDate ? ISO_DATE_PATTERN.exec(changedDate) : null
+  if (match) return `${match[3]}/${match[2]}/${match[1]}`
+  const changedAt = text(payload, "changed_at")
+  if (changedAt && !Number.isNaN(Date.parse(changedAt))) return formatDate(changedAt)
+  return null
+}
+
+/** Receiving-account swap notice for active monthly plan donors (DOS/Give#291). */
+function planAccountSwapped(email: OutboxEmail): Content {
+  const p = email.payload
+  const campaign = planCampaign(p)
+  const path = campaignPath(p)
+  const date = swapDateLabel(p)
+  const channel = text(p, "new_channel")
+  const newMasked = maskedLast4(text(p, "new_account_last4"), text(p, "new_account_masked"))
+
+  let newAccountLine: string
+  if (channel === "crypto") {
+    const rawChain = text(p, "new_chain")
+    const chain = rawChain && CHAIN_PATTERN.test(rawChain) ? rawChain : null
+    if (chain && newMasked) newAccountLine = `Ví nhận mới trên mạng ${chain}: ${newMasked}.`
+    else if (newMasked) newAccountLine = `Ví nhận mới: ${newMasked}.`
+    else newAccountLine = "Bạn có thể xem thông tin tài khoản nhận mới trên trang chiến dịch."
+  } else {
+    const holder = text(p, "new_account_name")
+    const bank = bankByBin(text(p, "new_bank_bin"))?.shortName ?? null
+    const parts: string[] = []
+    if (holder) parts.push(`chủ tài khoản ${holder}`)
+    if (bank) parts.push(`ngân hàng ${bank}`)
+    if (newMasked) parts.push(`số tài khoản ${newMasked}`)
+    newAccountLine =
+      parts.length > 0
+        ? `Tài khoản nhận mới: ${parts.join(", ")}.`
+        : "Bạn có thể xem thông tin tài khoản nhận mới trên trang chiến dịch."
+  }
+
+  const oldBank = bankByBin(text(p, "old_bank_bin"))?.shortName ?? null
+  const oldMasked = maskedLast4(text(p, "old_account_last4"), text(p, "old_account_masked"))
+  const oldTarget = oldMasked
+    ? oldBank
+      ? `tài khoản cũ ${oldBank} ${oldMasked}`
+      : `tài khoản cũ ${oldMasked}`
+    : "tài khoản cũ của chiến dịch"
+
+  return {
+    subject: `Tài khoản nhận của ${campaign} đã thay đổi`,
+    heading: "Tài khoản nhận của chiến dịch đã thay đổi",
+    paragraphs: [
+      date
+        ? `Ngày ${date}, Give đã duyệt thay đổi tài khoản nhận cho ${campaign}.`
+        : `Give đã duyệt thay đổi tài khoản nhận cho ${campaign}.`,
+      newAccountLine,
+      "Email này chỉ để thông báo thay đổi tài khoản và không yêu cầu bạn chuyển tiền. Các lời nhắc ủng hộ hằng tháng tiếp theo của bạn sẽ tự động hiển thị mã QR cho tài khoản mới.",
+      `Nếu bạn đã lưu mẫu chuyển tiền tới ${oldTarget} trong app ngân hàng, hãy xóa mẫu đó: tiền chuyển vào tài khoản cũ sau ngày đổi sẽ không còn được ghi nhận cho chiến dịch này.`,
+      "Tiền đi thẳng vào tài khoản của người tổ chức; Give không giữ tiền và không tự trừ tiền của bạn.",
+    ],
+    link: path
+      ? { href: path, label: "Xem trang chiến dịch" }
+      : { href: "/me/contributions", label: "Xem các khoản ủng hộ của bạn" },
+    footer: PLAN_FOOTER,
+  }
+}
+
 function content(email: OutboxEmail): Content {
   const p = email.payload
   switch (email.kind) {
@@ -369,6 +452,8 @@ function content(email: OutboxEmail): Content {
       return planReminder(email)
     case "plan_ended":
       return planEnded(email)
+    case "plan_account_swapped":
+      return planAccountSwapped(email)
     default:
       throw new EmailRenderError(`unknown_kind:${String(email.kind).slice(0, 40)}`)
   }
@@ -433,11 +518,16 @@ export function renderEmail(email: OutboxEmail, origin: string, options: RenderO
       : "Email giao dịch gửi tự động từ Give.")
   const help = `Cần hỗ trợ: ${GIVE_CONTACT_EMAIL}.`
 
+  const unsubscribePrompt =
+    email.kind === "campaign_ended"
+      ? "Không muốn nhận email tổng kết như thế này?"
+      : "Không muốn nhận các email thông báo như thế này?"
+
   const textParts = [c.heading, "", ...c.paragraphs.flatMap((p) => [p, ""])]
   if (link) textParts.push(`${link.label}: ${link.href}`, "")
   if (c.note) textParts.push(c.note, "")
   textParts.push("--", `${footer} ${help}`)
-  if (unsubscribeUrl) textParts.push(`Không muốn nhận email tổng kết như thế này? Hủy đăng ký: ${unsubscribeUrl}`)
+  if (unsubscribeUrl) textParts.push(`${unsubscribePrompt} Hủy đăng ký: ${unsubscribeUrl}`)
   if (stopUrl) textParts.push(`Không muốn nhận lời nhắc nữa? Dừng ủng hộ hằng tháng: ${stopUrl}`)
 
   const p = (body: string, style = "margin:0 0 16px;font-size:16px;line-height:24px;color:#1f2937") =>
@@ -463,7 +553,7 @@ export function renderEmail(email: OutboxEmail, origin: string, options: RenderO
     p(`${escapeHtml(footer)} ${escapeHtml(help)}`, "margin:16px 0 0;font-size:13px;line-height:20px;color:#57534e"),
     unsubscribeUrl
       ? p(
-          `Không muốn nhận email tổng kết như thế này? <a href="${escapeHtml(unsubscribeUrl)}" style="color:#57534e">Hủy đăng ký</a>.`,
+          `${escapeHtml(unsubscribePrompt)} <a href="${escapeHtml(unsubscribeUrl)}" style="color:#57534e">Hủy đăng ký</a>.`,
           "margin:8px 0 0;font-size:13px;line-height:20px;color:#57534e"
         )
       : "",

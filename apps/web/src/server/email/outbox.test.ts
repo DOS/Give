@@ -177,6 +177,69 @@ describe("sendDueEmails", () => {
       expect(sent).toHaveLength(1)
       expect(sent[0].headers["List-Unsubscribe"]).toBeUndefined()
     })
+
+    it("signs stop_token and includes unsubscribe link for plan_account_swapped (DOS/Give#291)", async () => {
+      claims = [
+        [
+          row(24, {
+            kind: "plan_account_swapped",
+            category: "notification",
+            unsubscribe_token: UNSUB,
+            stop_token: STOP,
+            payload: {
+              campaign_slug: "nuoc-sach",
+              campaign_title: "Nước sạch",
+              changed_date: "2026-11-22",
+              new_channel: "statement_import",
+              new_bank_bin: "970422",
+              new_account_name: "NGUYEN MINH TAM",
+              new_account_last4: "0002",
+              new_account_masked: "****0002",
+              old_bank_bin: "970436",
+              old_account_last4: "0001",
+              old_account_masked: "****0001",
+            },
+          }),
+        ],
+      ]
+      await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
+      const signed = signStopToken(STOP, SECRET)!
+      expect(sent).toHaveLength(1)
+      expect(sent[0].headers["List-Unsubscribe"]).toBe(
+        `<https://give.vn/api/plans/stop?t=${encodeURIComponent(signed)}>`
+      )
+      expect(sent[0].headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click")
+      expect(sent[0].text).toContain(`https://give.vn/plans/stop?t=${encodeURIComponent(signed)}`)
+      expect(sent[0].text).toContain(`https://give.vn/email/unsubscribe?t=${UNSUB}`)
+    })
+
+    it("marks plan_account_swapped dead when stop_token or unsubscribe_token is missing", async () => {
+      claims = [
+        [
+          row(25, {
+            kind: "plan_account_swapped",
+            category: "notification",
+            unsubscribe_token: UNSUB,
+            stop_token: null,
+            payload: { campaign_title: "Nước sạch" },
+          }),
+          row(26, {
+            kind: "plan_account_swapped",
+            category: "notification",
+            unsubscribe_token: null,
+            stop_token: STOP,
+            payload: { campaign_title: "Nước sạch" },
+          }),
+        ],
+      ]
+      completeStatus = "dead"
+      await sendDueEmails(fakeDb(handler, calls) as never, transport, OPTIONS)
+      expect(sent).toHaveLength(0)
+      expect(completes()).toMatchObject([
+        { p_id: row(25).id, p_permanent: true, p_error: "render: stop_token_missing" },
+        { p_id: row(26).id, p_permanent: true, p_error: "render: unsubscribe_token_missing" },
+      ])
+    })
   })
 
   it("reports a failure without the recipient's address, as permanent only when the provider says so", async () => {
