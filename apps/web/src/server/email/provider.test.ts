@@ -162,4 +162,56 @@ describe("a deployment outside Production on the Production database", () => {
       missing: ["NON_PRODUCTION_DEPLOYMENT_ON_PRODUCTION_DATABASE"],
     })
   })
+
+  it("catches the Production database via JWT ref even behind an unlisted custom domain (DOS/Give#273)", () => {
+    const fakeJwt = (payload: unknown) =>
+      `eyJhbGciOiJIUzI1NiJ9.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.sig`
+    const prodServiceJwt = fakeJwt({ iss: "supabase", ref: "gulptwduchsjcsbndmua", role: "service_role" })
+    const prodAnonJwt = fakeJwt({ iss: "supabase", ref: "GULPTWDUCHSJCSBNDMUA", role: "anon" })
+    const betaServiceJwt = fakeJwt({ iss: "supabase", ref: "oyajkbadsykigtfrpdpg", role: "service_role" })
+
+    expect(
+      usesProductionDatabase({
+        NEXT_PUBLIC_SUPABASE_URL: "https://db.custom-dos.example",
+        SUPABASE_SERVICE_ROLE_KEY: prodServiceJwt,
+      })
+    ).toBe(true)
+    expect(
+      usesProductionDatabase({
+        NEXT_PUBLIC_SUPABASE_URL: "https://db.custom-dos.example",
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: prodAnonJwt,
+      })
+    ).toBe(true)
+    expect(usesProductionDatabase({ SUPABASE_SERVICE_ROLE_KEY: prodServiceJwt })).toBe(true)
+    expect(
+      emailSettingsFromEnv({
+        ...BETA,
+        NEXT_PUBLIC_SUPABASE_URL: "https://db.custom-dos.example",
+        SUPABASE_SERVICE_ROLE_KEY: prodServiceJwt,
+      })
+    ).toMatchObject({
+      ok: false,
+      missing: ["NON_PRODUCTION_DEPLOYMENT_ON_PRODUCTION_DATABASE"],
+    })
+
+    // Non-production JWT and opaque sb_secret_ keys do not trigger false positives.
+    expect(
+      usesProductionDatabase({
+        NEXT_PUBLIC_SUPABASE_URL: "https://db.custom-beta.example",
+        SUPABASE_SERVICE_ROLE_KEY: betaServiceJwt,
+      })
+    ).toBe(false)
+    expect(
+      usesProductionDatabase({
+        NEXT_PUBLIC_SUPABASE_URL: "https://db.custom-beta.example",
+        SUPABASE_SERVICE_ROLE_KEY: "sb_secret_not_a_jwt",
+      })
+    ).toBe(false)
+    expect(
+      usesProductionDatabase({
+        NEXT_PUBLIC_SUPABASE_URL: "https://db.custom-beta.example",
+        SUPABASE_SERVICE_ROLE_KEY: "a.not-valid-json.c",
+      })
+    ).toBe(false)
+  })
 })

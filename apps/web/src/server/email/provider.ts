@@ -71,15 +71,44 @@ export function emailLinkOrigin(env: Env = process.env): string | null {
   return production ? PRODUCTION_ORIGIN : null
 }
 
+/**
+ * Extracts the Supabase project ref from a legacy JWT key (`header.payload.sig`),
+ * or null for opaque keys (`sb_secret_*` / `sb_publishable_*`) and invalid strings.
+ */
+function jwtProjectRef(token: string | undefined): string | null {
+  if (!token) return null
+  const parts = token.trim().split(".")
+  if (parts.length !== 3 || !parts[1]) return null
+  try {
+    const payload: unknown = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"))
+    if (!payload || typeof payload !== "object") return null
+    const ref = (payload as { ref?: unknown }).ref
+    return typeof ref === "string" ? ref.trim().toLowerCase() : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Whether env points at the Production DOS Supabase project (DOS/Give#273 item 6).
+ * Checks both the URL host (project host + vanity domains in PRODUCTION_SUPABASE_HOSTS)
+ * and the JWT `ref` claim of the Supabase keys so a newly added custom domain is
+ * still caught when JWT keys are used. We intentionally do not query the DB for an
+ * environment tag: Production, Beta, and Preview branches replay the same committed
+ * DOS.Me migrations, so an in-DB marker would be inherited by Preview/Beta.
+ */
 export function usesProductionDatabase(env: Env = process.env): boolean {
-  let host: string
   try {
     // A trailing dot (fully qualified name) reaches the same host.
-    host = new URL(env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname.toLowerCase().replace(/\.+$/, "")
+    const host = new URL(env.NEXT_PUBLIC_SUPABASE_URL ?? "").hostname.toLowerCase().replace(/\.+$/, "")
+    if (PRODUCTION_SUPABASE_HOSTS.includes(host) || host.split(".")[0] === PRODUCTION_SUPABASE_REF) return true
   } catch {
-    return false
+    // Missing or malformed URL; still check JWT keys below.
   }
-  return PRODUCTION_SUPABASE_HOSTS.includes(host) || host.split(".")[0] === PRODUCTION_SUPABASE_REF
+  return (
+    jwtProjectRef(env.SUPABASE_SERVICE_ROLE_KEY) === PRODUCTION_SUPABASE_REF ||
+    jwtProjectRef(env.NEXT_PUBLIC_SUPABASE_ANON_KEY) === PRODUCTION_SUPABASE_REF
+  )
 }
 
 export function emailDelivery(env: Env = process.env): EmailDelivery {
