@@ -73,6 +73,7 @@ import { canAskRelease, isBindableStatus, type ReceivingAccount } from "@/lib/re
 import { listCampaignTiers } from "@/lib/reward-tiers"
 import { getMoneyTotals } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
+import { canEditImpactReport, getCampaignImpactReport, type CampaignImpactReport } from "@/lib/transparency"
 
 import { MeDetail } from "../../_components/MePage"
 import { checkInputClass, checkLabelClass, fileInputClass, Panel } from "../../_components/Panel"
@@ -80,6 +81,8 @@ import { bindAccount, releaseAccount } from "../../accounts/actions"
 import { cancelAccountSwap, requestAccountSwap } from "../swap-actions"
 
 import { AnalyticsTab } from "./AnalyticsTab"
+import { saveImpactReport } from "./impact-report-actions"
+import { ImpactReportSection } from "./ImpactReportSection"
 import {
   campaignAllowsMonthly,
   loadPlanSupporters,
@@ -260,6 +263,7 @@ export default async function EditCampaignPage({
     youtubeState,
     statusEventsByCampaign,
     planSupporters,
+    impactReport,
   ] = await Promise.all([
     listCategories(db),
     listMilestones(db, campaign.id),
@@ -284,6 +288,13 @@ export default async function EditCampaignPage({
     isOwner && showMonthly && allowMonthly
       ? loadPlanSupporters(campaign.id, session.user.id).catch(() => null)
       : Promise.resolve<PlanSupporter[] | null>([]),
+    // Closing impact report (DOS/Give#314): narrative scope allows owner + accepted editor.
+    canEditImpactReport(campaign.status) ||
+    campaign.status === "failed" ||
+    campaign.status === "suspended" ||
+    campaign.status === "cancelled"
+      ? getCampaignImpactReport(db, campaign.id).catch(() => null)
+      : Promise.resolve<CampaignImpactReport | null>(null),
   ])
   const youtubeVideo = youtubeState?.video ?? null
   const statusEvents = statusEventsByCampaign.get(campaign.id) ?? []
@@ -295,6 +306,7 @@ export default async function EditCampaignPage({
 
   const showMoney = isOwner && (Boolean(totals) || !editable)
   const showFulfillment = isOwner && !isGive && canUpdateFulfillment(campaign)
+  const showImpactReport = canEditImpactReport(campaign.status) || impactReport !== null
   const toc = [
     showFulfillment && { id: "fulfillment", label: "Giao quà" },
     showMoney && { id: "money", label: "Sao kê và giải trình chi" },
@@ -305,6 +317,7 @@ export default async function EditCampaignPage({
     !isGive && { id: "reward-tiers", label: "Phần thưởng" },
     showMonthly && { id: "monthly", label: "Ủng hộ hằng tháng" },
     showUpdates && { id: "updates", label: "Cập nhật" },
+    showImpactReport && { id: "impact-report", label: "Báo cáo tổng kết" },
     isOwner && { id: "receiving-account", label: "Tài khoản nhận tiền" },
     { id: "status", label: "Trạng thái" },
   ].filter((item): item is { id: string; label: string } => Boolean(item))
@@ -316,9 +329,9 @@ export default async function EditCampaignPage({
       <div className="space-y-4">
         {isEditor && (
           <Callout tone="info" title="Quyền đồng tổ chức (biên tập viên)">
-            Bạn có thể sửa nội dung, ảnh bìa, video giới thiệu, các mốc mục tiêu, phần thưởng và đăng cập nhật theo
-            trạng thái chiến dịch. Tài khoản nhận tiền, sao kê, giải trình khoản chi, giao quà, gửi duyệt, hủy chiến
-            dịch và quản lý đội ngũ thuộc quyền riêng của người tổ chức chính.
+            Bạn có thể sửa nội dung, ảnh bìa, video giới thiệu, các mốc mục tiêu, phần thưởng, đăng cập nhật và viết báo
+            cáo tổng kết theo trạng thái chiến dịch. Tài khoản nhận tiền, sao kê, giải trình khoản chi, giao quà, gửi
+            duyệt, hủy chiến dịch và quản lý đội ngũ thuộc quyền riêng của người tổ chức chính.
           </Callout>
         )}
         <StatusNotice
@@ -980,6 +993,20 @@ export default async function EditCampaignPage({
                   </ol>
                 </div>
               )}
+            </Panel>
+          )}
+
+          {showImpactReport && (
+            <Panel
+              id="impact-report"
+              title="Báo cáo tổng kết tác động"
+              description="Tổng kết kết quả thực hiện sau khi chiến dịch kết thúc để hiển thị công khai trên trang chiến dịch và hồ sơ người tổ chức."
+            >
+              <ImpactReportSection
+                campaignStatus={campaign.status}
+                report={impactReport}
+                action={saveImpactReport.bind(null, campaign.id)}
+              />
             </Panel>
           )}
 

@@ -16,6 +16,8 @@ import {
   getRefundable,
   isEvidenceKind,
   MAX_EVIDENCE_PER_TRANSACTION,
+  setDisbursementMilestoneSchema,
+  type Disbursement,
   type OutgoingTransaction,
 } from "@/lib/statement"
 import { dbAs, dbService } from "@/lib/supabase"
@@ -43,6 +45,7 @@ const REFUND_MESSAGES: Record<string, string> = { GIVE_SELF_REVIEW: OWN_CONTRIBU
 type Loaded = {
   campaign: CampaignWithRefs
   tx: OutgoingTransaction
+  disbursement: Disbursement | null
   explained: boolean
   /** Finance linked money the bank returned to this transfer (give.returned_transfers). */
   returned: boolean
@@ -73,7 +76,7 @@ async function load(session: Session, campaignId: string, transactionId: string)
       evidence.map((e) => e.id)
     )
     const evidenceCount = evidence.filter((e) => !states.get(e.id)?.hidden).length
-    return { campaign, tx: rest, explained: disbursement !== null, returned, evidenceCount }
+    return { campaign, tx: rest, disbursement, explained: disbursement !== null, returned, evidenceCount }
   } catch (error) {
     return dbErrorMessage(error as DbErrorLike)
   }
@@ -96,7 +99,7 @@ export async function explainDisbursement(
   const session = await getSession()
   if (!session) return fail(SIGNED_OUT)
   const parsed = explainSchema.safeParse(
-    formFields(form, ["purpose", "category", "recipient", "refund_contribution_id", "evidence_kind"])
+    formFields(form, ["purpose", "category", "recipient", "refund_contribution_id", "milestone_id", "evidence_kind"])
   )
   if (!parsed.success) return fail(firstError(parsed.error))
   const input = parsed.data
@@ -148,6 +151,7 @@ export async function explainDisbursement(
       p_is_refund: input.is_refund,
       p_refund_contribution_id: input.refund_contribution_id,
       p_evidence: stored.evidence,
+      ...(input.milestone_id ? { p_milestone_id: input.milestone_id } : {}),
     })
     .single()
   if (error) {
@@ -211,4 +215,44 @@ export async function addEvidence(
 
   refresh(campaign)
   return done(`Đã thêm ${images.length} ảnh chứng từ.`)
+}
+
+/**
+ * Links or unlinks a same-campaign milestone on an already-explained non-refund
+ * disbursement (DOS/Give#314). Strictly owner-only (#264 money boundary).
+ */
+export async function linkDisbursementMilestone(
+  campaignId: string,
+  transactionId: string,
+  _state: ActionResult,
+  form: FormData
+): Promise<ActionResult> {
+  const session = await getSession()
+  if (!session) return fail(SIGNED_OUT)
+  const parsed = setDisbursementMilestoneSchema.safeParse(formFields(form, ["milestone_id"]))
+  if (!parsed.success) return fail(firstError(parsed.error))
+  const milestoneId = parsed.data.milestone_id
+
+  const loaded = await load(session, campaignId, transactionId)
+  if (typeof loaded === "string") return fail(loaded)
+  const { campaign, tx, disbursement } = loaded
+  if (!disbursement) return fail(dbErrorMessage({ message: "GIVE_DISBURSEMENT_NOT_FOUND" }))
+  if (disbursement.is_refund) {
+    return fail(dbErrorMessage({ message: "GIVE_DISBURSEMENT_MILESTONE_NOT_ALLOWED" }))
+  }
+
+  const { data, error } = await dbService()
+    .rpc("set_disbursement_milestone", {
+      p_bank_transaction_id: tx.id,
+      p_actor_id: session.user.id,
+      p_milestone_id: milestoneId,
+    })
+    .single()
+  if (error) return fail(dbErrorMessage(error))
+
+  refresh(campaign)
+  if ((data as { replayed?: boolean } | null)?.replayed === true) {
+    return done("Mốc mục tiêu của khoản chi không thay đổi.")
+  }
+  return done(milestoneId ? "Đã gắn khoản chi vào mốc mục tiêu." : "Đã bỏ gắn mốc mục tiêu khỏi khoản chi.")
 }

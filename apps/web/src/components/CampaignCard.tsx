@@ -3,6 +3,7 @@ import Link from "next/link"
 
 import { TypeBadge } from "@/components/badges"
 import { ProgressBar } from "@/components/ProgressBar"
+import { Badge } from "@/components/ui/Badge"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { CheckIcon } from "@/components/ui/icons"
 import { STATUS_LABELS, type DisplayOptions, type ListedCampaign } from "@/lib/campaigns"
@@ -28,6 +29,7 @@ export function CampaignCard({
   people,
   priority,
   headingLevel = 3,
+  hasImpactReport = false,
 }: {
   campaign: ListedCampaign
   raised?: number
@@ -36,6 +38,8 @@ export function CampaignCard({
   /** Loads the cover eagerly (above the fold). */
   priority?: boolean
   headingLevel?: 2 | 3
+  /** Shows a trust badge when the campaign has a published closing impact report (DOS/Give#314). */
+  hasImpactReport?: boolean
 }) {
   const percent = progressPercent(raised, campaign.goal_amount)
   const days = daysLeft(campaign.ends_at)
@@ -77,7 +81,10 @@ export function CampaignCard({
         )}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <TypeBadge type={campaign.type} className="self-start" />
+        <div className="flex flex-wrap items-center gap-2">
+          <TypeBadge type={campaign.type} />
+          {hasImpactReport && <Badge tone="brand">Có báo cáo tổng kết</Badge>}
+        </div>
         <Heading className="line-clamp-2 text-h3 break-words">
           <Link
             href={`/campaigns/${campaign.slug}`}

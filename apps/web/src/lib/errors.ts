@@ -211,6 +211,17 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_ALREADY_CAMPAIGN_OWNER: "Bạn đã là người tổ chức chính của chiến dịch này.",
   GIVE_ALREADY_CAMPAIGN_MEMBER: "Bạn đã là đồng tổ chức của chiến dịch này rồi.",
   GIVE_CAMPAIGN_MEMBER_NOT_FOUND: "Không tìm thấy đồng tổ chức này trong chiến dịch.",
+  // Trust moat: milestone-linked disbursements & closing impact reports (DOS/Give#314).
+  GIVE_DISBURSEMENT_MILESTONE_MISMATCH: "Mốc mục tiêu đã chọn không thuộc chiến dịch này.",
+  GIVE_DISBURSEMENT_MILESTONE_NOT_ALLOWED: "Khoản hoàn tiền không thể gắn vào mốc mục tiêu.",
+  GIVE_MILESTONE_CAMPAIGN_IMMUTABLE: "Không thể chuyển mốc mục tiêu sang chiến dịch khác.",
+  GIVE_IMPACT_REPORT_STATUS_NOT_ALLOWED:
+    "Chỉ viết hoặc công bố báo cáo tổng kết khi chiến dịch đã kết thúc, đạt mục tiêu hoặc đang đối soát.",
+  GIVE_IMPACT_REPORT_SUMMARY_INVALID: "Nội dung báo cáo tổng kết không được để trống và tối đa 20.000 ký tự.",
+  GIVE_IMPACT_REPORT_HIGHLIGHTS_INVALID:
+    "Các chỉ số nổi bật tối đa 10 mục, mỗi mục cần có đủ tiêu đề và giá trị (tối đa 120 ký tự).",
+  GIVE_IMPACT_REPORT_ALREADY_PUBLISHED:
+    "Báo cáo tổng kết đã công khai nên không thể chuyển về bản nháp. Bạn vẫn có thể cập nhật nội dung công khai.",
 }
 
 const PG_MESSAGES: Record<string, string> = {

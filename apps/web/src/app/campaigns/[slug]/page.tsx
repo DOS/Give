@@ -10,10 +10,12 @@ import { StatusBadge, TypeBadge } from "@/components/badges"
 import { CampaignTeam } from "@/components/campaign/CampaignTeam"
 import { CampaignVideo, isValidYoutubeId } from "@/components/campaign/CampaignVideo"
 import { CampaignViewBeacon } from "@/components/campaign/CampaignViewBeacon"
+import { ClosingImpactReport } from "@/components/campaign/ClosingImpactReport"
 import { MilestoneList } from "@/components/campaign/MilestoneList"
 import { RecentSupporters } from "@/components/campaign/RecentSupporters"
 import { StatementPreview } from "@/components/campaign/StatementPreview"
 import { StickyAside } from "@/components/campaign/StickyAside"
+import { TransparencySummaryBox } from "@/components/campaign/TransparencySummaryBox"
 import { Markdown } from "@/components/Markdown"
 import { ProgressBar } from "@/components/ProgressBar"
 import { QrPosterButton } from "@/components/QrPosterButton"
@@ -57,6 +59,12 @@ import { SLUG_PATTERN } from "@/lib/slug"
 import { privateCoverUrl, publicCoverUrl } from "@/lib/cover-urls"
 import { getMoneyTotals, listStatement, raisedAmount, statementHref } from "@/lib/statement"
 import { dbAs, dbService } from "@/lib/supabase"
+import {
+  getCampaignImpactReport,
+  getCampaignTransparencySummary,
+  type CampaignImpactReport,
+  type CampaignTransparencySummary,
+} from "@/lib/transparency"
 import { acceptsDonations, paymentAccount } from "@/server/contributions"
 import { listPublicTiers, organizesCampaign } from "@/server/pledges"
 import { buildServerPosterData } from "@/server/viral-sharing"
@@ -279,6 +287,8 @@ export default async function CampaignPage({
     monthly,
     comments,
     publicTeam,
+    transparencySummary,
+    impactReport,
   ] = await Promise.all([
     listMilestones(db, campaign.id),
     listPublishedUpdates(db, campaign.id),
@@ -351,6 +361,20 @@ export default async function CampaignPage({
           console.error("campaign page: public team lookup failed", error)
           return [] as PublicTeamMember[]
         }),
+    // 3-second transparency summary & milestone rollups (DOS/Give#314): public campaigns only.
+    preview
+      ? Promise.resolve<CampaignTransparencySummary | null>(null)
+      : getCampaignTransparencySummary(dbAs(), campaign.id).catch((error: unknown) => {
+          console.error("campaign page: transparency summary lookup failed", error)
+          return null
+        }),
+    // Published closing impact report (DOS/Give#314): public campaigns only via anon RLS.
+    preview
+      ? Promise.resolve<CampaignImpactReport | null>(null)
+      : getCampaignImpactReport(dbAs(), campaign.id).catch((error: unknown) => {
+          console.error("campaign page: impact report lookup failed", error)
+          return null
+        }),
   ])
   const showHiddenComments = isModerator && requestedShowHidden
   const pitchVideo =
@@ -389,10 +413,12 @@ export default async function CampaignPage({
   const pledgePath = `/campaigns/${campaign.slug}/pledge`
   const ctaLabel = isGive ? "Ủng hộ" : "Ủng hộ dự án"
 
+  const publishedImpactReport = !preview && impactReport?.published_at ? impactReport : null
   const tabs: TabItem[] = [
     { href: `/campaigns/${campaign.slug}`, label: "Câu chuyện", current: true },
     // The statement only exists for public campaigns.
     ...(preview ? [] : [{ href: statementHref(campaign.slug, "all"), label: "Sao kê", current: false }]),
+    ...(publishedImpactReport ? [{ href: "#bao-cao-tong-ket", label: "Báo cáo tổng kết", current: false }] : []),
     ...(updates.length > 0 ? [{ href: "#cap-nhat", label: "Cập nhật", current: false, count: updates.length }] : []),
     ...(preview
       ? []
@@ -709,6 +735,13 @@ export default async function CampaignPage({
           </StickyAside>
 
           <div className="min-w-0 space-y-8 max-lg:order-4 lg:col-span-8 lg:row-start-3 lg:pt-2">
+            {!preview && transparencySummary && (
+              <TransparencySummaryBox
+                slug={campaign.slug}
+                summary={transparencySummary}
+                showImpactReportLink={Boolean(publishedImpactReport)}
+              />
+            )}
             <TabNav label="Nội dung chiến dịch" items={tabs} />
 
             <section aria-labelledby="story-heading">
@@ -780,12 +813,15 @@ export default async function CampaignPage({
                   milestones={milestones}
                   raisedAmount={preview || !totals ? null : raised}
                   preview={preview}
+                  rollups={!preview ? transparencySummary?.milestone_rollups : undefined}
+                  statementUrl={!preview ? statementHref(campaign.slug, "out") : undefined}
                 />
               </section>
             )}
           </div>
 
           <div className="min-w-0 space-y-12 max-lg:order-6 lg:col-span-8 lg:row-start-4 lg:pt-6">
+            {publishedImpactReport && <ClosingImpactReport report={publishedImpactReport} />}
             {totals && <StatementPreview slug={campaign.slug} totals={totals} rows={statementRows} />}
             <AccountChanges changes={accountChanges} />
             {!preview && <CampaignTeam members={publicTeam} />}
