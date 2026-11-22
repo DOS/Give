@@ -79,6 +79,7 @@ export async function moderateCampaignReports(
     revalidatePath("/campaigns/[slug]/pledge", "page")
     revalidatePath("/campaigns/[slug]/statement", "page")
     revalidatePath("/me/pledges/[code]", "page")
+    revalidatePath("/u/[handle]", "page")
     revalidatePath("/campaigns")
     revalidatePath("/")
   } else if (parsed.data.action === "stop_payment_requests") {

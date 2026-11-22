@@ -17,7 +17,13 @@ const notFoundMock = vi.hoisted(() =>
   })
 )
 
-vi.mock("next/navigation", () => ({ notFound: notFoundMock }))
+const permanentRedirectMock = vi.hoisted(() =>
+  vi.fn((url: string): never => {
+    throw new Error(`NEXT_PERMANENT_REDIRECT:${url}`)
+  })
+)
+
+vi.mock("next/navigation", () => ({ notFound: notFoundMock, permanentRedirect: permanentRedirectMock }))
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: unknown }) =>
     createElement("a", { href, ...rest }, children as never),
@@ -237,14 +243,21 @@ describe("OrganizerProfilePage (/u/[handle], DOS/Give#251)", () => {
     expect(doc.querySelector('a[href="/campaigns"]')).not.toBeNull()
   })
 
-  it.each(["ab", "bad--slug", "admin", "campaigns", "khong-ton-tai"])(
-    "calls notFound() for invalid, reserved, or unknown handle: %s",
+  it.each(["ab", "bad--slug", "admin", "campaigns", "khong-ton-tai", " quy-ban-may "])(
+    "calls notFound() for invalid, reserved, whitespace, or unknown handle: %s",
     async (handle) => {
       state.handler = () => ({ data: [] })
       await expect(OrganizerProfilePage({ params: Promise.resolve({ handle }) })).rejects.toThrow("NEXT_NOT_FOUND")
       expect(notFoundMock).toHaveBeenCalledTimes(1)
     }
   )
+
+  it("permanently redirects non-canonical uppercase handles to their canonical lowercase URL", async () => {
+    await expect(OrganizerProfilePage({ params: Promise.resolve({ handle: "Quy-Ban-May" }) })).rejects.toThrow(
+      "NEXT_PERMANENT_REDIRECT:/u/quy-ban-may"
+    )
+    expect(permanentRedirectMock).toHaveBeenCalledWith("/u/quy-ban-may")
+  })
 
   it("builds canonical Open Graph metadata for existing organizers and noindex metadata when not found", async () => {
     const foundMeta = await generateMetadata({ params: Promise.resolve({ handle: "quy-ban-may" }) })

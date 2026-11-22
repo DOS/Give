@@ -89,6 +89,16 @@ describe("updateOrganizerPublicProfile (DOS/Give#251)", () => {
     expect(dbAs).not.toHaveBeenCalled()
   })
 
+  it("normalizes CRLF line endings in multiline bios before enforcing the 500-char limit", async () => {
+    // 5 lines x 99 chars + 4 CRLF breaks = 499 normalized chars (503 raw CRLF chars).
+    const lines = Array.from({ length: 5 }, () => "a".repeat(99))
+    const crlfBio = lines.join("\r\n")
+    expect(crlfBio.length).toBe(503)
+    const result = await updateOrganizerPublicProfile(null, form({ handle: "quy-ban-may", bio: crlfBio }))
+    expect(result).toEqual({ ok: true, message: "Đã lưu hồ sơ công khai." })
+    expect(op(state.calls[1], "update")).toEqual([{ handle: "quy-ban-may", bio: lines.join("\n") }])
+  })
+
   it("refuses updates when the user has not created an organizer profile yet", async () => {
     state.handler = (call) => (op(call, "maybeSingle") ? { data: null } : undefined)
     expect(await updateOrganizerPublicProfile(null, form({ handle: "quy-moi", bio: "Xin chào" }))).toEqual({

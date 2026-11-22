@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { notFound } from "next/navigation"
+import { notFound, permanentRedirect } from "next/navigation"
 import { cache } from "react"
 
 import { VerificationBadge } from "@/components/badges"
@@ -20,9 +20,11 @@ import {
 import { listMoneyTotals, raisedAmount, type MoneyTotals } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
-const loadOrganizerProfile = cache(async (rawHandle: string): Promise<PublicOrganizerProfile | null> =>
-  getPublicOrganizerProfile(dbAs(), rawHandle)
-)
+const loadOrganizerProfile = cache(async (rawHandle: string): Promise<PublicOrganizerProfile | null> => {
+  // Reject URLs containing leading/trailing or internal whitespace (e.g., %20).
+  if (rawHandle !== rawHandle.trim() || /\s/.test(rawHandle)) return null
+  return getPublicOrganizerProfile(dbAs(), rawHandle)
+})
 
 function metaDescription(profile: PublicOrganizerProfile): string {
   const bio = profile.bio?.trim().replace(/\s+/g, " ")
@@ -103,8 +105,10 @@ function CampaignGrid({
  * phone, email, user_id, or receiving accounts.
  */
 export default async function OrganizerProfilePage({ params }: { params: Promise<{ handle: string }> }) {
-  const profile = await loadOrganizerProfile((await params).handle)
+  const rawHandle = (await params).handle
+  const profile = await loadOrganizerProfile(rawHandle)
   if (!profile) notFound()
+  if (rawHandle !== profile.handle) permanentRedirect(organizerProfileHref(profile.handle))
 
   const db = dbAs()
   const campaigns = await listOrganizerPublicCampaigns(db, profile.handle)

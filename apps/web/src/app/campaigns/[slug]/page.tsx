@@ -507,11 +507,11 @@ export default async function CampaignPage({
                 <div className="min-w-0">
                   {organizer && (
                     <>
-                      <p className="flex items-center gap-1 font-semibold break-words">
+                      <p className="flex items-center gap-2 font-semibold break-words">
                         {isNavigableOrganizerHandle(organizer.handle) ? (
                           <Link
                             href={organizerProfileHref(organizer.handle)}
-                            className="text-fg underline-offset-4 hover:text-primary hover:underline"
+                            className="min-w-0 rounded text-fg underline-offset-4 hover:text-primary hover:underline"
                           >
                             {organizer.display_name}
                           </Link>

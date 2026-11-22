@@ -68,8 +68,8 @@ export const organizerPublicProfileSchema = z.object({
   }),
   bio: z
     .string()
-    .trim()
-    .max(ORGANIZER_BIO_MAX, ORGANIZER_BIO_TOO_LONG_MESSAGE)
+    .transform((v) => v.replace(/\r\n?/g, "\n").trim())
+    .pipe(z.string().max(ORGANIZER_BIO_MAX, ORGANIZER_BIO_TOO_LONG_MESSAGE))
     .transform((v) => (v === "" ? null : v)),
 })
 

@@ -178,18 +178,19 @@ export function organizerInitial(displayName: string): string {
   return Array.from(displayName.trim())[0]?.toUpperCase() ?? ""
 }
 
-const PRIVATE_IPV4 = /^(?:127\.|10\.|0\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)/
+const IPV4_LITERAL = /^\d+(?:\.\d+){3}$/
 
 function isBlockedAvatarHost(hostname: string): boolean {
-  const host = hostname.toLowerCase()
+  const host = hostname.toLowerCase().replace(/\.+$/, "")
   if (
     !host ||
+    !host.includes(".") ||
     host === "localhost" ||
     host.endsWith(".localhost") ||
     host.endsWith(".local") ||
     host.endsWith(".internal") ||
     host.startsWith("[") ||
-    PRIVATE_IPV4.test(host)
+    IPV4_LITERAL.test(host)
   ) {
     return true
   }

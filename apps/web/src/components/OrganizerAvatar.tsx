@@ -24,12 +24,12 @@ export function OrganizerAvatar({
   avatarUrl: string | null | undefined
   size?: keyof typeof SIZE_CLASSES
 }) {
-  const [failed, setFailed] = useState(false)
+  const [failedUrl, setFailedUrl] = useState<string | null>(null)
   const safeUrl = safeAvatarUrl(avatarUrl)
   const { px, box } = SIZE_CLASSES[size]
   const initial = organizerInitial(displayName)
 
-  if (safeUrl && !failed) {
+  if (safeUrl && failedUrl !== safeUrl) {
     return (
       <Image
         src={safeUrl}
@@ -38,7 +38,7 @@ export function OrganizerAvatar({
         height={px}
         unoptimized
         referrerPolicy="no-referrer"
-        onError={() => setFailed(true)}
+        onError={() => setFailedUrl(safeUrl)}
         className={`${box} shrink-0 rounded border border-border bg-surface object-cover`}
       />
     )

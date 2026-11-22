@@ -84,16 +84,16 @@ export default async function MyProfilePage() {
         </h2>
         <dl className="mt-6 divide-y divide-border card">
           <div className="flex flex-col gap-1 p-4 sm:flex-row sm:justify-between sm:gap-6 sm:px-6">
-            <dt className="text-sm text-muted">Tên hiển thị</dt>
-            <dd className="font-semibold break-words text-fg">{organizer.display_name}</dd>
+            <dt className="shrink-0 text-sm text-muted">Tên hiển thị</dt>
+            <dd className="min-w-0 font-semibold break-words text-fg sm:text-right">{organizer.display_name}</dd>
           </div>
           <div className="flex flex-col gap-1 p-4 sm:flex-row sm:justify-between sm:gap-6 sm:px-6">
-            <dt className="text-sm text-muted">Tư cách gây quỹ</dt>
-            <dd className="text-fg">{ORGANIZER_KIND_LABELS[organizer.kind]}</dd>
+            <dt className="shrink-0 text-sm text-muted">Tư cách gây quỹ</dt>
+            <dd className="min-w-0 text-fg sm:text-right">{ORGANIZER_KIND_LABELS[organizer.kind]}</dd>
           </div>
           <div className="flex flex-col gap-1 p-4 sm:flex-row sm:justify-between sm:gap-6 sm:px-6">
-            <dt className="text-sm text-muted">Trạng thái xác minh</dt>
-            <dd className="text-fg">{VERIFICATION_LABELS[organizer.verification_status]}</dd>
+            <dt className="shrink-0 text-sm text-muted">Trạng thái xác minh</dt>
+            <dd className="min-w-0 text-fg sm:text-right">{VERIFICATION_LABELS[organizer.verification_status]}</dd>
           </div>
         </dl>
         <p className="mt-4 text-sm text-muted">

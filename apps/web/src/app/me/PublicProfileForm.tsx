@@ -35,10 +35,21 @@ export function PublicProfileForm({
   const [state, formAction, pending] = useActionState(action, null)
   const [handleInput, setHandleInput] = useState(initialHandle ?? "")
   const [bioInput, setBioInput] = useState(initialBio ?? "")
+  const [syncedHandle, setSyncedHandle] = useState(initialHandle)
+  const [syncedBio, setSyncedBio] = useState(initialBio)
+
+  if (syncedHandle !== initialHandle) {
+    setSyncedHandle(initialHandle)
+    setHandleInput(initialHandle ?? "")
+  }
+  if (syncedBio !== initialBio) {
+    setSyncedBio(initialBio)
+    setBioInput(initialBio ?? "")
+  }
 
   const normalizedHandle = normalizeOrganizerHandle(handleInput)
   const handleCheck = validateOrganizerHandle(handleInput)
-  const bioLength = bioInput.trim().length
+  const bioLength = bioInput.replace(/\r\n?/g, "\n").trim().length
   const savedHref = isNavigableOrganizerHandle(initialHandle) ? organizerProfileHref(initialHandle) : null
 
   return (
@@ -101,7 +112,7 @@ export function PublicProfileForm({
           <label htmlFor="bio" className="label">
             Giới thiệu ngắn
           </label>
-          <span className="text-sm text-muted tabular-nums" aria-live="polite">
+          <span className="text-sm text-muted tabular-nums">
             {bioLength}/{ORGANIZER_BIO_MAX}
           </span>
         </div>
@@ -110,7 +121,7 @@ export function PublicProfileForm({
           name="bio"
           rows={4}
           maxLength={ORGANIZER_BIO_MAX}
-          className="field min-h-28 resize-y"
+          className="field resize-y"
           value={bioInput}
           onChange={(event) => setBioInput(event.target.value)}
           placeholder="Chia sẻ ngắn gọn về bạn hoặc tổ chức và mục đích gây quỹ…"
