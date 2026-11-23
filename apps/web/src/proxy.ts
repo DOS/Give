@@ -48,9 +48,9 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Public covers, statement CSV exports, and anonymous analytics ignore the
-  // session, so they must never trigger token refresh or carry rotated session cookies.
+  // Public covers, statement CSV exports, crawlers, and anonymous analytics ignore
+  // the session, so they must never trigger token refresh or carry rotated session cookies.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/cron|api/analytics/|auth/|media/public/|campaigns/[^/]+/statement/export(?:/|\\?|$)).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots\\.txt(?:\\?|$)|sitemap\\.xml(?:\\?|$)|api/cron|api/analytics/|auth/|media/public/|campaigns/[^/]+/statement/export(?:/|\\?|$)).*)",
   ],
 }

@@ -7,6 +7,7 @@ import { FeaturedReceipt } from "@/components/home/FeaturedReceipt"
 import { ButtonLink } from "@/components/ui/Button"
 import { EmptyState } from "@/components/ui/EmptyState"
 import { EyeIcon, HeartIcon, LedgerIcon, ShieldIcon, SparkIcon } from "@/components/ui/icons"
+import { siteOrigin } from "@/lib/auth/origin"
 import {
   DEFAULT_DISCOVERY,
   discoveryHref,
@@ -16,6 +17,7 @@ import {
   type ListedCampaign,
 } from "@/lib/campaigns"
 import { homeSections } from "@/lib/home"
+import { buildWebsiteJsonLd, safeJsonLd } from "@/lib/jsonld"
 import { listMoneyTotals, raisedAmount, type MoneyTotals } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
@@ -75,9 +77,14 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const { featured, trending, newest } = homeSections(campaigns, totals)
   // Closest to their goal first, topped up with the newest so the row is full.
   const interesting = [...trending, ...newest].slice(0, INTERESTING)
+  const origin = siteOrigin()
+  const websiteJsonLd = origin ? buildWebsiteJsonLd(origin) : null
 
   return (
     <>
+      {websiteJsonLd && (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(websiteJsonLd) }} />
+      )}
       {loginError && (
         <div role="alert" className="bg-danger-soft py-3 text-danger">
           <p className="container-page">

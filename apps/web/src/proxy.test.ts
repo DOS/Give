@@ -196,7 +196,7 @@ describe("proxy session refresh", () => {
 })
 
 describe("proxy matcher exclusions", () => {
-  it("excludes public statement CSV exports while still matching statement pages and campaign routes", async () => {
+  it("excludes public statement CSV exports, robots.txt, and sitemap.xml while still matching app routes", async () => {
     ;(globalThis as { AsyncLocalStorage?: typeof AsyncLocalStorage }).AsyncLocalStorage ??= AsyncLocalStorage
     const { unstable_doesMiddlewareMatch } = await import("next/experimental/testing/server")
 
@@ -216,6 +216,18 @@ describe("proxy matcher exclusions", () => {
       unstable_doesMiddlewareMatch({
         config,
         url: "https://give.example/campaigns/xay-truong-ban-may/statement/export/",
+      })
+    ).toBe(false)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/robots.txt",
+      })
+    ).toBe(false)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/sitemap.xml",
       })
     ).toBe(false)
 
@@ -247,6 +259,24 @@ describe("proxy matcher exclusions", () => {
       unstable_doesMiddlewareMatch({
         config,
         url: "https://give.example/campaigns",
+      })
+    ).toBe(true)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/robotsxtxt",
+      })
+    ).toBe(true)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/sitemapxxml",
+      })
+    ).toBe(true)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/admin",
       })
     ).toBe(true)
   })

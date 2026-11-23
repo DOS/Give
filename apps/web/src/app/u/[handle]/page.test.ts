@@ -1,7 +1,7 @@
 import { Window } from "happy-dom"
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
 
@@ -165,6 +165,10 @@ beforeEach(() => {
   state.handler = defaultHandler
 })
 
+afterEach(() => {
+  vi.unstubAllEnvs()
+})
+
 describe("OrganizerProfilePage (/u/[handle], DOS/Give#251)", () => {
   it("renders profile header, safe avatar, escaped bio, live + past campaign sections with ledger totals, and zero PII", async () => {
     const html = renderToStaticMarkup(
@@ -184,8 +188,9 @@ describe("OrganizerProfilePage (/u/[handle], DOS/Give#251)", () => {
     expect(html).toContain("Tham gia từ 01/10/2026")
     expect(doc.querySelector("header img")?.getAttribute("src")).toBe("https://cdn.dos.me/avatars/ban-may.webp")
 
-    // XSS safety: script tag in bio is escaped, never rendered as an element.
-    expect(doc.querySelector("script")).toBeNull()
+    // XSS safety: script tag in bio is escaped, never rendered as an executable element.
+    expect(doc.querySelector('script:not([type="application/ld+json"])')).toBeNull()
+    expect(doc.querySelector("header script")).toBeNull()
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;")
 
     // Zero PII leaks.
@@ -346,5 +351,44 @@ describe("OrganizerProfilePage (/u/[handle], DOS/Give#251)", () => {
         "in"
       )
     ).toEqual(["campaign_id", [LIVE_ID, PAST_ID]])
+  })
+
+  it("emits safe ProfilePage JSON-LD when siteOrigin() is configured and omits it when unset", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://give.vn/ignored")
+    const htmlWithOrigin = renderToStaticMarkup(
+      await OrganizerProfilePage({ params: Promise.resolve({ handle: "quy-ban-may" }) })
+    )
+    expect(htmlWithOrigin).not.toContain("<script>alert(1)</script>")
+
+    const doc = new Window().document
+    doc.body.innerHTML = htmlWithOrigin
+    const scripts = doc.querySelectorAll('script[type="application/ld+json"]')
+    expect(scripts).toHaveLength(1)
+    expect(JSON.parse(scripts[0].textContent ?? "")).toStrictEqual({
+      "@context": "https://schema.org",
+      "@type": "ProfilePage",
+      url: "https://give.vn/u/quy-ban-may",
+      dateCreated: "2026-10-01T00:00:00Z",
+      mainEntity: {
+        "@type": "Organization",
+        name: "Quỹ Bản Mây",
+        alternateName: "@quy-ban-may",
+        url: "https://give.vn/u/quy-ban-may",
+        description: "Xây trường cho trẻ em vùng cao.\n<script>alert(1)</script>",
+        image: "https://cdn.dos.me/avatars/ban-may.webp",
+      },
+    })
+    // Zero PII in JSON-LD.
+    expect(scripts[0].textContent).not.toContain("Công ty TNHH Pháp Lý Bí Mật")
+    expect(scripts[0].textContent).not.toContain("0909999888")
+    expect(scripts[0].textContent).not.toContain("private@example.vn")
+
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "")
+    const htmlWithoutOrigin = renderToStaticMarkup(
+      await OrganizerProfilePage({ params: Promise.resolve({ handle: "quy-ban-may" }) })
+    )
+    const noOriginDoc = new Window().document
+    noOriginDoc.body.innerHTML = htmlWithoutOrigin
+    expect(noOriginDoc.querySelector('script[type="application/ld+json"]')).toBeNull()
   })
 })
