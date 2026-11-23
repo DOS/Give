@@ -193,6 +193,32 @@ describe("proxy session refresh", () => {
     })
     expect(loggedText()).not.toContain("rt-1")
   })
+
+  it("skips cookie refresh and marks x-give-embed on /embed and /embed/*, while stripping spoofed headers elsewhere (DOS/Give#335)", async () => {
+    for (const path of ["/embed", "/embed/xay-truong-ban-may"]) {
+      const response = await proxy(
+        new NextRequest(`https://give.example${path}`, { headers: { cookie: "__Host-give_rt=rt-1" } })
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
+      expectCookiesKept(response)
+      expect(response.headers.get("x-middleware-request-x-give-embed")).toBe("1")
+    }
+
+    const spoofed = await proxy(
+      new NextRequest("https://give.example/campaigns/xay-truong", {
+        headers: { "x-give-embed": "1" },
+      })
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(spoofed.headers.get("x-middleware-request-x-give-embed")).toBeNull()
+
+    const spoofedEmbedded = await proxy(
+      new NextRequest("https://give.example/embedded", {
+        headers: { "x-give-embed": "1" },
+      })
+    )
+    expect(spoofedEmbedded.headers.get("x-middleware-request-x-give-embed")).toBeNull()
+  })
 })
 
 describe("proxy matcher exclusions", () => {

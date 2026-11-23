@@ -19,6 +19,7 @@ import { RecentSupporters } from "@/components/campaign/RecentSupporters"
 import { StatementPreview } from "@/components/campaign/StatementPreview"
 import { StickyAside } from "@/components/campaign/StickyAside"
 import { TransparencySummaryBox } from "@/components/campaign/TransparencySummaryBox"
+import { EmbedWidgetDisclosure } from "@/components/EmbedWidgetDisclosure"
 import { FollowButton } from "@/components/FollowButton"
 import { Markdown } from "@/components/Markdown"
 import { ProgressBar } from "@/components/ProgressBar"
@@ -809,6 +810,12 @@ export default async function CampaignPage({
                       size="lg"
                     />
                     <ShareButtons path={`/campaigns/${campaign.slug}`} title={campaign.title} origin={origin} />
+                    <EmbedWidgetDisclosure
+                      slug={campaign.slug}
+                      title={campaign.title}
+                      origin={origin}
+                      ambassadorRef={validAmbassadorRef}
+                    />
                     {ambassadorLinkEligible && (
                       <AmbassadorLinkModal
                         slug={campaign.slug}
@@ -922,6 +929,13 @@ export default async function CampaignPage({
                           title={campaign.title}
                           origin={origin}
                           campaignId={campaign.id}
+                        />
+                        <EmbedWidgetDisclosure
+                          slug={campaign.slug}
+                          title={campaign.title}
+                          origin={origin}
+                          campaignId={campaign.id}
+                          ambassadorRef={validAmbassadorRef}
                         />
                         {ambassadorLinkEligible && (
                           <AmbassadorLinkModal
