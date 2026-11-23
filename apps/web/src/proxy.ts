@@ -20,9 +20,9 @@ const ANY_CASE_EMBED_RE = /^\/embed(?:\/|$)/i
  *
  * Embed widget routes (`/embed`, `/embed/*`) stay strictly anonymous: `proxy()`
  * marks them with a trusted internal `x-give-embed` request header and returns
- * before touching cookies or OIDC refresh, while stripping any client-supplied
- * `x-give-embed` on every other route and rejecting mixed-case `/Embed*` paths
- * with 404 + `X-Frame-Options: DENY` (DOS/Give#335).
+ * before touching cookies or OIDC refresh, while neutralizing any client-supplied
+ * `x-give-embed` to `"0"` on every other route and rejecting mixed-case
+ * `/Embed*` paths with 404 + `X-Frame-Options: DENY` (DOS/Give#335).
  */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
@@ -44,7 +44,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const hadSpoofedEmbed = request.headers.has(EMBED_HEADER)
-  if (hadSpoofedEmbed) request.headers.delete(EMBED_HEADER)
+  if (hadSpoofedEmbed) request.headers.set(EMBED_HEADER, "0")
 
   const { hostname } = request.nextUrl
   const accessName = cookieName(SESSION_ACCESS, hostname)

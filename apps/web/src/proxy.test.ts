@@ -194,7 +194,14 @@ describe("proxy session refresh", () => {
     expect(loggedText()).not.toContain("rt-1")
   })
 
-  it("marks lowercase /embed* with x-give-embed without refreshing cookies, strips spoofed headers elsewhere, and blocks mixed-case /Embed* with 404 DENY (DOS/Give#335)", async () => {
+  it("marks lowercase /embed* with x-give-embed without refreshing cookies, neutralizes spoofed headers elsewhere across all return paths, and blocks mixed-case /Embed* with 404 DENY (DOS/Give#335)", async () => {
+    function expectEmbedHeaderNeutralized(response: Awaited<ReturnType<typeof proxy>>) {
+      expect(response.headers.get("x-middleware-request-x-give-embed")).toBe("0")
+      expect(
+        (response.headers.get("x-middleware-override-headers") ?? "").split(",").map((h) => h.trim().toLowerCase())
+      ).toContain(EMBED_HEADER)
+    }
+
     for (const path of ["/embed", "/embed/test-slug"]) {
       const response = await proxy(
         new NextRequest(`https://give.example${path}`, { headers: { cookie: "__Host-give_rt=rt-1" } })
@@ -205,37 +212,59 @@ describe("proxy session refresh", () => {
       expect(response.headers.get("x-middleware-request-x-give-embed")).toBe("1")
     }
 
-    // Spoofed x-give-embed without token refresh is dropped cleanly.
+    // Minimal-header spoofed x-give-embed (no host/cookie headers) still emits non-empty
+    // x-middleware-override-headers containing x-give-embed="0" so Next.js resolves the override.
+    const minimalSpoofed = await proxy(
+      new NextRequest("https://give.example/campaigns", {
+        headers: { [EMBED_HEADER]: "1" },
+      })
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+    expectEmbedHeaderNeutralized(minimalSpoofed)
+
+    // Spoofed x-give-embed with other headers and no token refresh is neutralized to "0".
     const spoofedNoRefresh = await proxy(
       new NextRequest("https://give.example/campaigns", {
         headers: { [EMBED_HEADER]: "1", host: "give.example" },
       })
     )
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(spoofedNoRefresh.headers.get("x-middleware-request-x-give-embed")).toBeNull()
-    expect(
-      (spoofedNoRefresh.headers.get("x-middleware-override-headers") ?? "")
-        .split(",")
-        .map((h) => h.trim().toLowerCase())
-    ).not.toContain(EMBED_HEADER)
+    expectEmbedHeaderNeutralized(spoofedNoRefresh)
 
-    // Spoofed x-give-embed with token refresh is ALSO dropped cleanly while refreshing cookies.
+    // Spoofed x-give-embed with token refresh is ALSO neutralized while refreshing cookies.
     fetchMock.mockResolvedValueOnce(
       Response.json({ access_token: "at-2", refresh_token: "rt-2", expires_in: 3600, token_type: "bearer" })
     )
     const spoofedWithRefresh = await proxy(
       new NextRequest("https://give.example/campaigns", {
-        headers: { cookie: "__Host-give_rt=rt-1", [EMBED_HEADER]: "1", host: "give.example" },
+        headers: { cookie: "__Host-give_rt=rt-1", [EMBED_HEADER]: "1" },
       })
     )
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(spoofedWithRefresh.cookies.get("__Host-give_at")?.value).toBe("at-2")
-    expect(spoofedWithRefresh.headers.get("x-middleware-request-x-give-embed")).toBeNull()
-    expect(
-      (spoofedWithRefresh.headers.get("x-middleware-override-headers") ?? "")
-        .split(",")
-        .map((h) => h.trim().toLowerCase())
-    ).not.toContain(EMBED_HEADER)
+    expectEmbedHeaderNeutralized(spoofedWithRefresh)
+
+    // Spoofed x-give-embed on transient refresh failure keeps cookies AND neutralizes the header.
+    fetchMock.mockResolvedValueOnce(new Response("bad gateway", { status: 502 }))
+    const spoofedTransientError = await proxy(
+      new NextRequest("https://give.example/campaigns", {
+        headers: { cookie: "__Host-give_rt=rt-1", [EMBED_HEADER]: "1" },
+      })
+    )
+    expectCookiesKept(spoofedTransientError)
+    expectEmbedHeaderNeutralized(spoofedTransientError)
+
+    // Spoofed x-give-embed on dead-token clear-session clears cookies AND neutralizes the header.
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ error: "invalid_grant", error_description: "expired" }, { status: 400 })
+    )
+    const spoofedCleared = await proxy(
+      new NextRequest("https://give.example/campaigns", {
+        headers: { cookie: "__Host-give_rt=rt-1", [EMBED_HEADER]: "1" },
+      })
+    )
+    expectCookiesCleared(spoofedCleared)
+    expectEmbedHeaderNeutralized(spoofedCleared)
 
     // Mixed-case /Embed* returns 404 with DENY & frame-ancestors 'none' without refreshing cookies.
     fetchMock.mockClear()
