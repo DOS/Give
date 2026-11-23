@@ -184,3 +184,9 @@ export const PrinterIcon = (p: SVGProps<SVGSVGElement>) => (
     <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
   </Icon>
 )
+
+export const CodeIcon = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p}>
+    <path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14" />
+  </Icon>
+)

@@ -2294,3 +2294,67 @@ describe("DonorWishesWall on /campaigns/[slug] (DOS/Give#320)", () => {
     expect(state.userCalls.some((c) => c.target === "rpc:list_hidden_campaign_wishes")).toBe(false)
   })
 })
+
+describe("EmbedWidgetDisclosure on /campaigns/[slug] (DOS/Give#335)", () => {
+  it("renders 'Nhúng vào website / báo chí' on public live and pre-launch campaigns, and hides it on draft/suspended previews", async () => {
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "rpc:public_ambassador_ref") {
+        return { data: [{ ref_code: "ab23cd45ef", display_name: "CLB Sinh viên Xanh" }] }
+      }
+      return baseAnon(call)
+    }
+
+    const liveDoc = parseDoc(
+      renderToStaticMarkup(
+        await CampaignPage({
+          params: Promise.resolve({ slug: SLUG }),
+          searchParams: Promise.resolve({ ref: "AB23CD45EF" }),
+        })
+      )
+    )
+    const liveSummary = [...liveDoc.querySelectorAll("summary")].find((s) =>
+      s.textContent?.includes("Nhúng vào website / báo chí")
+    )
+    expect(liveSummary).toBeDefined()
+    expect(liveSummary!.closest("details")?.querySelector("textarea")?.textContent).toContain(
+      `/embed/${SLUG}?ref=ab23cd45ef`
+    )
+
+    // Public pre-launch teaser also offers embed snippet without money leakage.
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("approved"),
+            prelaunch_public: true,
+            starts_at: "2099-06-01T00:00:00.000Z",
+          },
+        }
+      }
+      return baseAnon(call)
+    }
+    const preDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    expect(
+      [...preDoc.querySelectorAll("summary")].some((s) => s.textContent?.includes("Nhúng vào website / báo chí"))
+    ).toBe(true)
+
+    // Suspended preview hides embed disclosure.
+    state.session = { user: { id: VIEWER, email: "mod@dos.me", name: "Kiểm duyệt viên" }, accessToken: "mod-jwt" }
+    state.anonHandler = () => ({ data: null })
+    state.userHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("suspended") }
+      if (
+        call.target === "campaign_milestones" ||
+        call.target === "campaign_updates" ||
+        call.target === "campaign_media" ||
+        call.target === "campaign_faqs"
+      ) {
+        return { data: [] }
+      }
+      return undefined
+    }
+    const suspendedHtml = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(suspendedHtml).not.toContain("Nhúng vào website / báo chí")
+  })
+})

@@ -21,10 +21,22 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/:path*",
+        // Global defaults with X-Frame-Options: DENY, excluding /embed and /embed/*
+        // which are intentionally frameable read-only widgets (DOS/Give#335).
+        source: "/((?!embed(?:/|$)).*)",
         headers: [
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+      {
+        // Embeddable campaign widget (DOS/Give#335): allows third-party framing
+        // via CSP frame-ancestors * and omits X-Frame-Options.
+        source: "/embed/:path*",
+        headers: [
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Content-Security-Policy", value: "frame-ancestors *" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
         ],
       },

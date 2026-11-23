@@ -69,6 +69,53 @@
   }
 }
 
+/* Explicit light/dark override for /embed/[slug] (?theme=light|dark, DOS/Give#335). */
+:root:has([data-embed-theme="light"]),
+[data-embed-theme="light"] {
+  color-scheme: light;
+
+  --bg: #ffffff;
+  --surface: #f7f8fa;
+  --surface-raised: #ffffff;
+  --border: #e6e8ec;
+  --text: #111318;
+  --text-muted: #5b6270;
+  --primary: #047857;
+  --primary-hover: #065f46;
+  --primary-fg: #ffffff;
+  --primary-soft: #ecfdf5;
+  --accent: #c2410c;
+  --accent-soft: #fff7ed;
+  --danger: #b42318;
+  --danger-soft: #fef3f2;
+  --warning: #b54708;
+  --warning-soft: #fffaeb;
+  --scrim: rgb(17 19 24 / 0.5);
+}
+
+:root:has([data-embed-theme="dark"]),
+[data-embed-theme="dark"] {
+  color-scheme: dark;
+
+  --bg: #0f1115;
+  --surface: #171a20;
+  --surface-raised: #1e222a;
+  --border: #2a2f38;
+  --text: #f2f4f7;
+  --text-muted: #a3aab8;
+  --primary: #34d399;
+  --primary-hover: #6ee7b7;
+  --primary-fg: #052e22;
+  --primary-soft: #0b2a21;
+  --accent: #fb923c;
+  --accent-soft: #2a1a0e;
+  --danger: #f97066;
+  --danger-soft: #2d1412;
+  --warning: #fdb022;
+  --warning-soft: #2a1f0a;
+  --scrim: rgb(0 0 0 / 0.6);
+}
+
 @theme inline {
   --font-sans:
     var(--font-be-vietnam-pro), "Be Vietnam Pro", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,

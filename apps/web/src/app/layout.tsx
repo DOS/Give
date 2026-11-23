@@ -1,12 +1,14 @@
 import type { Metadata } from "next"
 import { Be_Vietnam_Pro } from "next/font/google"
+import { headers } from "next/headers"
 import type { ReactNode } from "react"
 
-import { SiteFooter } from "@/components/layout/SiteFooter"
 import { RingBoxScroll } from "@/components/layout/RingBoxScroll"
+import { SiteFooter } from "@/components/layout/SiteFooter"
 import { SiteHeader } from "@/components/layout/SiteHeader"
 import { siteOrigin } from "@/lib/auth/origin"
 import { getSession, type Session } from "@/lib/auth/session"
+import { EMBED_HEADER } from "@/lib/embed"
 import { countUnreadNotices, unreadBadge } from "@/lib/notices"
 import { dbAs } from "@/lib/supabase"
 
@@ -39,6 +41,21 @@ async function unreadNotices(session: Session): Promise<string | null> {
 }
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
+  // Strictly before getSession() / unreadNotices(): proxy.ts sets this header
+  // exclusively on lowercase `/embed` and `/embed/*` and strips it elsewhere so
+  // embedded widgets never read cookies or serialize user PII in RSC payloads (DOS/Give#335).
+  if ((await headers()).get(EMBED_HEADER) === "1") {
+    return (
+      <html lang="vi" className={font.variable}>
+        <body className="flex min-h-screen flex-col">
+          <main id="main" className="flex-1">
+            {children}
+          </main>
+        </body>
+      </html>
+    )
+  }
+
   const session = await getSession()
   const unread = session ? await unreadNotices(session) : null
 

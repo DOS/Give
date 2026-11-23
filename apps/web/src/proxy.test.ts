@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks"
 import { NextRequest } from "next/server"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { config, proxy } from "./proxy"
+import { config, EMBED_HEADER, proxy } from "./proxy"
 
 const ISSUER = "https://issuer.example/auth/v1"
 
@@ -193,6 +193,94 @@ describe("proxy session refresh", () => {
     })
     expect(loggedText()).not.toContain("rt-1")
   })
+
+  it("marks lowercase /embed* with x-give-embed without refreshing cookies, neutralizes spoofed headers elsewhere across all return paths, and blocks mixed-case /Embed* with 404 DENY (DOS/Give#335)", async () => {
+    function expectEmbedHeaderNeutralized(response: Awaited<ReturnType<typeof proxy>>) {
+      expect(response.headers.get("x-middleware-request-x-give-embed")).toBe("0")
+      expect(
+        (response.headers.get("x-middleware-override-headers") ?? "").split(",").map((h) => h.trim().toLowerCase())
+      ).toContain(EMBED_HEADER)
+    }
+
+    for (const path of ["/embed", "/embed/test-slug"]) {
+      const response = await proxy(
+        new NextRequest(`https://give.example${path}`, { headers: { cookie: "__Host-give_rt=rt-1" } })
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
+      expectCookiesKept(response)
+      expect(response.status).toBe(200)
+      expect(response.headers.get("x-middleware-request-x-give-embed")).toBe("1")
+    }
+
+    // Minimal-header spoofed x-give-embed (no host/cookie headers) still emits non-empty
+    // x-middleware-override-headers containing x-give-embed="0" so Next.js resolves the override.
+    const minimalSpoofed = await proxy(
+      new NextRequest("https://give.example/campaigns", {
+        headers: { [EMBED_HEADER]: "1" },
+      })
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+    expectEmbedHeaderNeutralized(minimalSpoofed)
+
+    // Spoofed x-give-embed with other headers and no token refresh is neutralized to "0".
+    const spoofedNoRefresh = await proxy(
+      new NextRequest("https://give.example/campaigns", {
+        headers: { [EMBED_HEADER]: "1", host: "give.example" },
+      })
+    )
+    expect(fetchMock).not.toHaveBeenCalled()
+    expectEmbedHeaderNeutralized(spoofedNoRefresh)
+
+    // Spoofed x-give-embed with token refresh is ALSO neutralized while refreshing cookies.
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ access_token: "at-2", refresh_token: "rt-2", expires_in: 3600, token_type: "bearer" })
+    )
+    const spoofedWithRefresh = await proxy(
+      new NextRequest("https://give.example/campaigns", {
+        headers: { cookie: "__Host-give_rt=rt-1", [EMBED_HEADER]: "1" },
+      })
+    )
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(spoofedWithRefresh.cookies.get("__Host-give_at")?.value).toBe("at-2")
+    expectEmbedHeaderNeutralized(spoofedWithRefresh)
+
+    // Spoofed x-give-embed on transient refresh failure keeps cookies AND neutralizes the header.
+    fetchMock.mockResolvedValueOnce(new Response("bad gateway", { status: 502 }))
+    const spoofedTransientError = await proxy(
+      new NextRequest("https://give.example/campaigns", {
+        headers: { cookie: "__Host-give_rt=rt-1", [EMBED_HEADER]: "1" },
+      })
+    )
+    expectCookiesKept(spoofedTransientError)
+    expectEmbedHeaderNeutralized(spoofedTransientError)
+
+    // Spoofed x-give-embed on dead-token clear-session clears cookies AND neutralizes the header.
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ error: "invalid_grant", error_description: "expired" }, { status: 400 })
+    )
+    const spoofedCleared = await proxy(
+      new NextRequest("https://give.example/campaigns", {
+        headers: { cookie: "__Host-give_rt=rt-1", [EMBED_HEADER]: "1" },
+      })
+    )
+    expectCookiesCleared(spoofedCleared)
+    expectEmbedHeaderNeutralized(spoofedCleared)
+
+    // Mixed-case /Embed* returns 404 with DENY & frame-ancestors 'none' without refreshing cookies.
+    fetchMock.mockClear()
+    for (const mixedCasePath of ["/EMBED", "/Embed/test-slug"]) {
+      const response = await proxy(
+        new NextRequest(`https://give.example${mixedCasePath}`, { headers: { cookie: "__Host-give_rt=rt-1" } })
+      )
+      expect(fetchMock).not.toHaveBeenCalled()
+      expectCookiesKept(response)
+      expect(response.status).toBe(404)
+      expect(response.headers.get("x-frame-options")).toBe("DENY")
+      expect(response.headers.get("content-security-policy")).toBe("frame-ancestors 'none'")
+      expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow")
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff")
+    }
+  })
 })
 
 describe("proxy matcher exclusions", () => {
@@ -277,6 +365,12 @@ describe("proxy matcher exclusions", () => {
       unstable_doesMiddlewareMatch({
         config,
         url: "https://give.example/admin",
+      })
+    ).toBe(true)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/embed/test-slug",
       })
     ).toBe(true)
   })

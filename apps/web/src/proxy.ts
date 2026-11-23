@@ -4,6 +4,12 @@ import { cookieName, cookieOptions, REFRESH_TTL_SECONDS, SESSION_ACCESS, SESSION
 import { isDeadRefreshToken, loadOidcConfig, refreshTokens, tokenFailureLog } from "@/lib/auth/oidc"
 import { appOrigin } from "@/lib/auth/origin"
 import { needsRefresh } from "@/lib/auth/token"
+import { EMBED_HEADER } from "@/lib/embed"
+
+export { EMBED_HEADER }
+
+const EXACT_EMBED_RE = /^\/embed(?:\/|$)/
+const ANY_CASE_EMBED_RE = /^\/embed(?:\/|$)/i
 
 /**
  * Keeps the session's access token fresh. When it is missing or about to
@@ -11,15 +17,46 @@ import { needsRefresh } from "@/lib/auth/token"
  * token to this request too, so server components render signed in. The
  * refresh call gives up after TOKEN_TIMEOUT_MS (set in oidc.ts) and never
  * follows a redirect.
+ *
+ * Embed widget routes (`/embed`, `/embed/*`) stay strictly anonymous: `proxy()`
+ * marks them with a trusted internal `x-give-embed` request header and returns
+ * before touching cookies or OIDC refresh, while neutralizing any client-supplied
+ * `x-give-embed` to `"0"` on every other route and rejecting mixed-case
+ * `/Embed*` paths with 404 + `X-Frame-Options: DENY` (DOS/Give#335).
  */
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl
+  if (ANY_CASE_EMBED_RE.test(pathname) && !EXACT_EMBED_RE.test(pathname)) {
+    return new NextResponse("Not Found", {
+      status: 404,
+      headers: {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Content-Security-Policy": "frame-ancestors 'none'",
+        "X-Robots-Tag": "noindex, nofollow",
+      },
+    })
+  }
+  if (EXACT_EMBED_RE.test(pathname)) {
+    const embedHeaders = new Headers(request.headers)
+    embedHeaders.set(EMBED_HEADER, "1")
+    return NextResponse.next({ request: { headers: embedHeaders } })
+  }
+
+  const hadSpoofedEmbed = request.headers.has(EMBED_HEADER)
+  if (hadSpoofedEmbed) request.headers.set(EMBED_HEADER, "0")
+
   const { hostname } = request.nextUrl
   const accessName = cookieName(SESSION_ACCESS, hostname)
   const refreshName = cookieName(SESSION_REFRESH, hostname)
   const access = request.cookies.get(accessName)?.value
   const refresh = request.cookies.get(refreshName)?.value
 
-  if (!refresh || !needsRefresh(access)) return NextResponse.next()
+  if (!refresh || !needsRefresh(access)) {
+    return hadSpoofedEmbed
+      ? NextResponse.next({ request: { headers: new Headers(request.headers) } })
+      : NextResponse.next()
+  }
 
   try {
     const tokens = await refreshTokens(loadOidcConfig(appOrigin(request.nextUrl.origin)), refresh)
@@ -37,7 +74,9 @@ export async function proxy(request: NextRequest) {
     // config mistake fails loudly instead of signing everyone out.
     if (!isDeadRefreshToken(error)) {
       console.warn("auth.refresh.failed", tokenFailureLog(error))
-      return NextResponse.next()
+      return hadSpoofedEmbed
+        ? NextResponse.next({ request: { headers: new Headers(request.headers) } })
+        : NextResponse.next()
     }
     request.cookies.delete(accessName)
     const response = NextResponse.next({ request })
