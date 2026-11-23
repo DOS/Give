@@ -136,13 +136,15 @@ async function FollowingList({ session }: { session: Session }) {
                         </Link>
                       </h3>
                       {(campaign.organizer_display_name || validHandle) && (
-                        <p className="mt-2 flex min-w-0 items-center gap-2 text-sm text-muted">
+                        <p className="mt-3 flex min-w-0 items-center gap-2 text-sm text-muted">
                           {validHandle ? (
                             <Link
                               href={organizerProfileHref(validHandle)}
-                              className="hit-area truncate text-muted underline-offset-4 hover:text-fg hover:underline"
+                              className="hit-area min-w-0 text-muted underline-offset-4 hover:text-fg hover:underline"
                             >
-                              {campaign.organizer_display_name ?? `@${validHandle}`}
+                              <span className="block truncate">
+                                {campaign.organizer_display_name ?? `@${validHandle}`}
+                              </span>
                             </Link>
                           ) : (
                             <span className="truncate">{campaign.organizer_display_name}</span>

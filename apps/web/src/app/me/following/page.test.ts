@@ -278,6 +278,8 @@ describe("MyFollowingPage (/me/following, DOS/Give#337)", () => {
     const orgLink = campaignItems[0].querySelector('a[href="/u/quy-ban-may"]')
     expect(orgLink?.textContent).toBe("Quỹ Bản Mây")
     expect(orgLink?.className).toContain("hit-area")
+    expect(orgLink?.className).not.toContain("truncate")
+    expect(orgLink?.querySelector("span")?.className).toContain("truncate")
     expect(liveHtml).toContain('aria-label="Đã xác minh"')
     expect(campaignItems[0].querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("45")
     expect(liveText).toContain(formatVnd(45_000_000))
