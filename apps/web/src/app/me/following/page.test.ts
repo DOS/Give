@@ -275,13 +275,16 @@ describe("MyFollowingPage (/me/following, DOS/Give#337)", () => {
     expect(liveHtml).toContain(">Đang gây quỹ<")
     expect(liveHtml).toContain(">Đã ủng hộ<")
     expect(campaignItems[0].querySelector('a[href="/campaigns/bep-am-vung-cao"]')?.textContent).toBe("Bếp ấm vùng cao")
-    expect(campaignItems[0].querySelector('a[href="/u/quy-ban-may"]')?.textContent).toBe("Quỹ Bản Mây")
+    const orgLink = campaignItems[0].querySelector('a[href="/u/quy-ban-may"]')
+    expect(orgLink?.textContent).toBe("Quỹ Bản Mây")
+    expect(orgLink?.className).toContain("hit-area")
     expect(liveHtml).toContain('aria-label="Đã xác minh"')
     expect(campaignItems[0].querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow")).toBe("45")
     expect(liveText).toContain(formatVnd(45_000_000))
     expect(liveText).toContain(formatVnd(100_000_000))
     expect(campaignItems[0].querySelector('input[name="campaign_id"]')?.getAttribute("value")).toBe(CAMPAIGN_LIVE)
     expect(campaignItems[0].querySelector('input[name="campaign_slug"]')?.getAttribute("value")).toBe("bep-am-vung-cao")
+    expect(campaignItems[0].querySelector('button[type="submit"]')?.className).toBe("btn-secondary")
 
     // 2) Pre-launch teaser: public cover, "Sắp ra mắt", starts_at launch date, ZERO ProgressBar and ZERO raised totals.
     const prelaunchHtml = campaignItems[1].innerHTML
@@ -314,5 +317,6 @@ describe("MyFollowingPage (/me/following, DOS/Give#337)", () => {
     expect(orgItems[0].innerHTML).toContain("Theo dõi từ 18/11/2026")
     expect(orgItems[0].querySelector('input[name="handle"]')?.getAttribute("value")).toBe("quy-ban-may")
     expect(orgItems[0].textContent).toContain("Bỏ theo dõi")
+    expect(orgItems[0].querySelector('button[type="submit"]')?.className).toBe("btn-secondary")
   })
 })

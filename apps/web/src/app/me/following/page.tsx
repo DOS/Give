@@ -16,7 +16,7 @@ import { CheckIcon } from "@/components/ui/icons"
 import { PageHeader } from "@/components/ui/PageHeader"
 import { SkeletonList } from "@/components/ui/Skeleton"
 import { requireSession, type Session } from "@/lib/auth/session"
-import { isPublicCampaignVisible, isPublicStatus } from "@/lib/campaigns"
+import { isPublicPrelaunch, isPublicStatus } from "@/lib/campaigns"
 import { publicCoverUrl } from "@/lib/cover-urls"
 import {
   listMyFollowedCampaigns,
@@ -92,8 +92,9 @@ async function FollowingList({ session }: { session: Session }) {
           <ul className="divide-y divide-border card">
             {campaigns.map((campaign) => {
               const publicLiveOrEnded = isPublicStatus(campaign.status)
-              const prelaunch = campaign.status === "approved"
-              const canShowPublicCover = Boolean(campaign.cover_storage_path && isPublicCampaignVisible(campaign))
+              const publicPrelaunch = isPublicPrelaunch(campaign)
+              const prelaunch = publicPrelaunch || campaign.status === "approved"
+              const canShowPublicCover = Boolean(campaign.cover_storage_path && (publicLiveOrEnded || publicPrelaunch))
               const percent = publicLiveOrEnded ? progressPercent(campaign.received_amount, campaign.goal_amount) : 0
               const days = campaign.status === "live" ? daysLeft(campaign.ends_at) : null
               const validHandle = isNavigableOrganizerHandle(campaign.organizer_handle)
@@ -119,23 +120,27 @@ async function FollowingList({ session }: { session: Session }) {
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
                         <TypeBadge type={campaign.type} />
-                        {prelaunch ? <Badge tone="info">Sắp ra mắt</Badge> : <StatusBadge status={campaign.status} />}
+                        {publicPrelaunch ? (
+                          <Badge tone="info">Sắp ra mắt</Badge>
+                        ) : (
+                          <StatusBadge status={campaign.status} />
+                        )}
                         {campaign.has_supported && <Badge tone="brand">Đã ủng hộ</Badge>}
                       </div>
                       <h3 className="mt-2 text-h3 break-words">
                         <Link
                           href={`/campaigns/${campaign.slug}`}
-                          className="text-fg hover:text-primary hover:underline"
+                          className="relative z-10 text-fg hover:text-primary hover:underline"
                         >
                           {campaign.title}
                         </Link>
                       </h3>
                       {(campaign.organizer_display_name || validHandle) && (
-                        <p className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 text-sm text-muted">
+                        <p className="mt-2 flex min-w-0 items-center gap-2 text-sm text-muted">
                           {validHandle ? (
                             <Link
                               href={organizerProfileHref(validHandle)}
-                              className="truncate text-muted underline-offset-4 hover:text-fg hover:underline"
+                              className="hit-area truncate text-muted underline-offset-4 hover:text-fg hover:underline"
                             >
                               {campaign.organizer_display_name ?? `@${validHandle}`}
                             </Link>
@@ -155,7 +160,7 @@ async function FollowingList({ session }: { session: Session }) {
                         </p>
                       )}
                       {publicLiveOrEnded ? (
-                        <div className="mt-3 max-w-md space-y-1.5">
+                        <div className="mt-3 max-w-md space-y-2">
                           <ProgressBar percent={percent} size="sm" />
                           <p className="text-sm">
                             <span className="font-semibold text-fg tabular-nums">
@@ -183,7 +188,7 @@ async function FollowingList({ session }: { session: Session }) {
                     <ActionForm action={unfollowFollowedCampaign}>
                       <input type="hidden" name="campaign_id" value={campaign.campaign_id} />
                       <input type="hidden" name="campaign_slug" value={campaign.slug} />
-                      <SubmitButton className={buttonClass({ variant: "secondary", size: "sm" })}>
+                      <SubmitButton className={buttonClass({ variant: "secondary" })}>
                         Bỏ theo dõi<span className="sr-only">{`: ${campaign.title}`}</span>
                       </SubmitButton>
                     </ActionForm>
@@ -213,7 +218,7 @@ async function FollowingList({ session }: { session: Session }) {
                       <VerificationBadge status={organizer.verification_status} />
                       <Badge tone="neutral">{ORGANIZER_KIND_LABELS[organizer.kind]}</Badge>
                     </div>
-                    <h3 className="mt-1.5 text-h3 break-words">
+                    <h3 className="mt-2 text-h3 break-words">
                       <Link
                         href={organizerProfileHref(organizer.handle)}
                         className="text-fg hover:text-primary hover:underline"
@@ -221,7 +226,7 @@ async function FollowingList({ session }: { session: Session }) {
                         {organizer.display_name}
                       </Link>
                     </h3>
-                    <p className="mt-0.5 text-sm text-muted">
+                    <p className="mt-1 text-sm text-muted">
                       @{organizer.handle}
                       {organizer.followed_at &&
                         !Number.isNaN(Date.parse(organizer.followed_at)) &&
@@ -232,7 +237,7 @@ async function FollowingList({ session }: { session: Session }) {
                 <div className="flex shrink-0 flex-wrap items-center gap-3">
                   <ActionForm action={unfollowFollowedOrganizer}>
                     <input type="hidden" name="handle" value={organizer.handle} />
-                    <SubmitButton className={buttonClass({ variant: "secondary", size: "sm" })}>
+                    <SubmitButton className={buttonClass({ variant: "secondary" })}>
                       Bỏ theo dõi<span className="sr-only">{`: ${organizer.display_name}`}</span>
                     </SubmitButton>
                   </ActionForm>

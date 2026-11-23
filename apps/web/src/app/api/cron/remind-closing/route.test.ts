@@ -8,10 +8,17 @@ const SECRET = "0123456789abcdef0123"
 const state = vi.hoisted(() => ({
   handler: (() => undefined) as Handler,
   calls: [] as Call[],
+  rpcMock: null as ReturnType<typeof vi.fn> | null,
 }))
 
 vi.mock("@/lib/supabase", () => ({
-  dbService: () => fakeDb((call) => state.handler(call), state.calls),
+  dbService: () => {
+    const db = fakeDb((call) => state.handler(call), state.calls)
+    return {
+      ...db,
+      rpc: (fn: string, args?: unknown) => (state.rpcMock ? state.rpcMock(fn, args) : db.rpc(fn, args)),
+    }
+  },
 }))
 
 const { GET } = await import("./route")
@@ -26,6 +33,7 @@ beforeEach(() => {
   vi.stubEnv("CRON_SECRET", SECRET)
   state.handler = () => undefined
   state.calls.length = 0
+  state.rpcMock = null
 })
 
 afterEach(() => {
@@ -95,5 +103,13 @@ describe("GET /api/cron/remind-closing (DOS/Give#337)", () => {
     let call = 0
     state.handler = () => (++call === 1 ? { data: 10_000 } : { error: { code: "57014", message: "timeout" } })
     expect((await GET(request(`Bearer ${SECRET}`))).status).toBe(500)
+
+    // Async Promise rejection from rpc() -> returns 500 { error: "remind_failed" }.
+    const rpcMock = vi.fn().mockRejectedValueOnce(new Error("boom"))
+    state.rpcMock = rpcMock
+    const rejected = await GET(request(`Bearer ${SECRET}`))
+    expect(rpcMock).toHaveBeenCalledTimes(1)
+    expect(rejected.status).toBe(500)
+    expect(await rejected.json()).toEqual({ error: "remind_failed" })
   })
 })

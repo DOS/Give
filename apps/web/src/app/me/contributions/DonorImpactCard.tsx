@@ -51,7 +51,10 @@ export function DonorImpactCard({
         </div>
         <div className="rounded-md bg-surface p-4">
           <dt className="text-sm text-muted">
-            <Link href="/me/following" className="underline-offset-4 hover:text-primary hover:underline">
+            <Link
+              href="/me/following"
+              className="hit-area inline-flex items-center underline-offset-4 hover:text-primary hover:underline"
+            >
               Đang theo dõi
             </Link>
           </dt>
