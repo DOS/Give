@@ -115,6 +115,9 @@ export function SiteHeader({ session, unread }: { session: Session | null; unrea
               <Link href="/me/contributions" className={menuLink}>
                 Ủng hộ của tôi
               </Link>
+              <Link href="/me/following" className={menuLink}>
+                Đang theo dõi
+              </Link>
               <Link href="/me/accounts" className={menuLink}>
                 Tài khoản nhận
               </Link>
@@ -178,6 +181,11 @@ export function SiteHeader({ session, unread }: { session: Session | null; unrea
                     <li>
                       <Link href="/me/contributions" className={menuLink}>
                         Ủng hộ của tôi
+                      </Link>
+                    </li>
+                    <li>
+                      <Link href="/me/following" className={menuLink}>
+                        Đang theo dõi
                       </Link>
                     </li>
                     <li>

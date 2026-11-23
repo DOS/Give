@@ -73,5 +73,8 @@ describe("DonorImpactCard (/me/contributions, DOS/Give#315)", () => {
     expect(text).toContain("40%")
     expect(win.document.querySelector('a[href="/u/quy-ban-may"]')?.textContent).toContain("Quỹ Bản Mây")
     expect(win.document.querySelector('a[href="/u/admin"]')).toBeNull()
+    const followingLink = win.document.querySelector('a[href="/me/following"]')
+    expect(followingLink?.textContent).toBe("Đang theo dõi")
+    expect(followingLink?.className).toContain("hit-area")
   })
 })

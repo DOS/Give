@@ -92,6 +92,17 @@ describe("stoppedNoticeCampaigns (DOS/Give#93)", () => {
     expect(op(calls[0], "in")).toEqual(["id", [CAMPAIGN, OTHER]])
   })
 
+  it("includes campaign_closing_soon notices when checking stopped campaigns (DOS/Give#337)", async () => {
+    const calls: Call[] = []
+    const db = fakeDb(() => ({ data: [{ id: CAMPAIGN, payments_stopped_at: "2026-11-05T00:00:00Z" }] }), calls)
+    const stopped = await stoppedNoticeCampaigns(asDb(db), [
+      notice({ kind: "campaign_closing_soon", campaign_id: CAMPAIGN, payload: { campaign_slug: "den-ngu" } }),
+    ])
+    expect([...stopped]).toEqual([CAMPAIGN])
+    expect(calls).toHaveLength(1)
+    expect(op(calls[0], "in")).toEqual(["id", [CAMPAIGN]])
+  })
+
   it("propagates database errors so stopped campaigns never fall back to 'pay'", async () => {
     const db = fakeDb(() => ({ error: { code: "42501", message: "denied" } }))
     await expect(stoppedNoticeCampaigns(asDb(db), [notice({ kind: "payment_due" })])).rejects.toMatchObject({
@@ -715,5 +726,57 @@ describe("describeNotice — follower & pre-launch notices (DOS/Give#315)", () =
       href: "/u/quy-anh-sang",
       linkLabel: "Xem hồ sơ",
     })
+  })
+})
+
+describe("describeNotice — campaign_closing_soon (DOS/Give#337)", () => {
+  it("renders title, campaign name, formatted ends_at, and 'Xem và ủng hộ' link for valid slugs", () => {
+    const view = describeNotice(
+      notice({
+        kind: "campaign_closing_soon",
+        payload: {
+          campaign_slug: "xay-truong",
+          campaign_title: "Xây trường vùng cao",
+          ends_at: "2026-11-25T10:30:00Z",
+        },
+      })
+    )
+    expect(view.title).toBe("Chiến dịch sắp kết thúc")
+    expect(view.body).toContain("Chiến dịch “Xây trường vùng cao” sắp kết thúc vào")
+    expect(view.body).toContain("25/11/2026")
+    expect(view.href).toBe("/campaigns/xay-truong")
+    expect(view.linkLabel).toBe("Xem và ủng hộ")
+  })
+
+  it("handles missing title, invalid ends_at, and unsafe slug cleanly", () => {
+    const view = describeNotice(
+      notice({
+        kind: "campaign_closing_soon",
+        payload: { campaign_slug: "../evil", ends_at: "not-a-date" },
+      })
+    )
+    expect(view.title).toBe("Chiến dịch sắp kết thúc")
+    expect(view.body).toContain("Chiến dịch bạn theo dõi sắp kết thúc.")
+    expect(view.href).toBeNull()
+    expect(view.linkLabel).toBeNull()
+  })
+
+  it("uses neutral non-payment copy and 'Xem chiến dịch' when paymentRequestsStopped is true", () => {
+    const view = describeNotice(
+      notice({
+        kind: "campaign_closing_soon",
+        payload: {
+          campaign_slug: "den-ngu-go",
+          campaign_title: "Đèn ngủ gỗ",
+          ends_at: "2026-11-25T10:30:00Z",
+        },
+      }),
+      { paymentRequestsStopped: true }
+    )
+    expect(view.title).toBe("Yêu cầu thanh toán đang tạm dừng")
+    expect(view.body).toContain("Give đang tạm dừng yêu cầu thanh toán của chiến dịch “Đèn ngủ gỗ”.")
+    expect(view.body).not.toContain("ủng hộ trước khi")
+    expect(view.href).toBe("/campaigns/den-ngu-go")
+    expect(view.linkLabel).toBe("Xem chiến dịch")
   })
 })

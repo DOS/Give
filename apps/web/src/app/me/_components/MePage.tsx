@@ -2,12 +2,13 @@ import type { ReactNode } from "react"
 
 import { SectionNav } from "@/components/ui/Tabs"
 
-export type MeSection = "profile" | "campaigns" | "contributions" | "notices" | "accounts"
+export type MeSection = "profile" | "campaigns" | "contributions" | "following" | "notices" | "accounts"
 
 const SECTIONS: { key: MeSection; href: string; label: string }[] = [
   { key: "profile", href: "/me", label: "Hồ sơ người tổ chức" },
   { key: "campaigns", href: "/me/campaigns", label: "Chiến dịch của tôi" },
   { key: "contributions", href: "/me/contributions", label: "Ủng hộ của tôi" },
+  { key: "following", href: "/me/following", label: "Đang theo dõi" },
   { key: "notices", href: "/me/notices", label: "Thông báo" },
   { key: "accounts", href: "/me/accounts", label: "Tài khoản nhận tiền" },
 ]
