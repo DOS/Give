@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache"
 import { redirect } from "next/navigation"
 
 import { getSession } from "@/lib/auth/session"
-import { fundingModelFor, getOrganizer } from "@/lib/campaigns"
+import { getCampaignTemplate } from "@/lib/campaign-templates"
+import { categoriesFor, fundingModelFor, getOrganizer, listCategories } from "@/lib/campaigns"
 import { dbErrorMessage, done, fail, type ActionResult } from "@/lib/errors"
 import { uniqueSlug } from "@/lib/slug"
 import { dbAs } from "@/lib/supabase"
@@ -64,28 +65,69 @@ export async function createCampaign(_state: ActionResult, form: FormData): Prom
   if (!parsed.success) return fail(firstError(parsed.error))
   const { type, title, goal_amount } = parsed.data
 
+  const template = getCampaignTemplate(form.get("template_id"))
+  const activeTemplate = template && template.id !== "blank" ? template : null
+
   const db = dbAs(session.accessToken)
+  let categoryId: string | null = null
+  if (activeTemplate?.categorySlug) {
+    try {
+      const categories = await listCategories(db)
+      const matched = categoriesFor(categories, type).find((c) => c.slug === activeTemplate.categorySlug)
+      categoryId = matched?.id ?? null
+    } catch (error) {
+      console.error("createCampaign category lookup failed", error)
+      categoryId = null
+    }
+  }
+
   let id: string | null = null
   // A random suffix makes a slug clash unlikely; retry once if it happens.
   for (let attempt = 0; attempt < 2 && !id; attempt++) {
-    const { data, error } = await db
-      .from("campaigns")
-      .insert({
-        slug: uniqueSlug(title),
-        type,
-        funding_model: fundingModelFor(type),
-        organizer_id: session.user.id,
-        title,
-        goal_amount,
-      })
-      .select("id")
-      .single()
+    const draft = activeTemplate
+      ? {
+          slug: uniqueSlug(title),
+          type,
+          funding_model: fundingModelFor(type),
+          organizer_id: session.user.id,
+          title,
+          goal_amount,
+          ...(categoryId ? { category_id: categoryId } : {}),
+          ...(activeTemplate.summary ? { summary: activeTemplate.summary } : {}),
+          ...(activeTemplate.story ? { story: activeTemplate.story } : {}),
+        }
+      : {
+          slug: uniqueSlug(title),
+          type,
+          funding_model: fundingModelFor(type),
+          organizer_id: session.user.id,
+          title,
+          goal_amount,
+        }
+    const { data, error } = await db.from("campaigns").insert(draft).select("id").single()
     if (!error) id = (data as { id: string }).id
     else if (error.code !== "23505") {
       return fail(error.code === "23503" ? "Hãy tạo hồ sơ người tổ chức trước." : dbErrorMessage(error))
     }
   }
   if (!id) return fail(dbErrorMessage({ code: "23505" }))
+
+  if (activeTemplate) {
+    for (const faq of activeTemplate.starterFaqs) {
+      try {
+        const { error } = await db.rpc("upsert_campaign_faq", {
+          p_campaign_id: id,
+          p_question: faq.question,
+          p_answer: faq.answer,
+          p_faq_id: null,
+          p_position: null,
+        })
+        if (error) console.error("createCampaign starter FAQ failed", error)
+      } catch (error) {
+        console.error("createCampaign starter FAQ threw", error)
+      }
+    }
+  }
 
   revalidatePath("/me/campaigns")
   redirect(`/me/campaigns/${id}`)
