@@ -14,6 +14,105 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
 
 ### Design system and screens
 
+- Followed campaigns and organizers hub (`/me/following`) and automated
+  48-hour closing-soon reminder cron: adds `/me/following`
+  (`apps/web/src/app/me/following/page.tsx`, `error.tsx`, `actions.ts`) wired
+  into `SiteHeader`, `MePage` (`"Đang theo dõi"` tab) and `/me/contributions`
+  `DonorImpactCard`, backed by `lib/follows.ts` (`listMyFollowedCampaigns`
+  calling `give.list_my_followed_campaigns`, handle-only
+  `listMyFollowedOrganizers` and `unfollowOrganizerByHandle` with zero
+  `organizer_id` exposure, and `unfollowCampaign` under RLS). Pre-launch
+  teasers zero `received_amount` and hide progress bars and raised totals,
+  other non-public statuses hide cover URLs and raised totals, supported
+  campaigns badge `"Đã ủng hộ"`, and navigation/hub links enforce 44px
+  `min-h-11` (`SiteHeader` `menuLink`, `MePage` `SectionNav`) and unclipped
+  `hit-area` targets (`DonorImpactCard` and `/me/following` organizer links with
+  inner-span `truncate` and `relative z-10` title links).
+  `GET /api/cron/remind-closing` (`"20 * * * *"` in `apps/web/vercel.json`)
+  runs a bounded drain loop (`MAX_BATCHES = 5`, `BATCH_LIMIT = 10_000`) over
+  `give.remind_closing_campaigns` to emit in-app `campaign_closing_soon`
+  notices only (zero `give.outbox` emails, excluding organizers, net-positive
+  donations, active/paid pledges and active monthly plans), and
+  `apps/web/src/lib/notices.ts` renders `campaign_closing_soon` notices
+  respecting `paymentRequestsStopped`, backed by `DOS/DOS.Me#1908` with Vitest
+  suites (#337 / #344).
+- Clickjacking-safe embeddable campaign widget (`/embed`, `/embed/[slug]`,
+  `/embed/[slug]/[...rest]`) and copyable `<iframe>` snippet:
+  `apps/web/src/app/embed/[slug]/page.tsx` renders a chrome-free, strictly
+  read-only campaign card via anonymous `dbAs()` (zero `getSession()`, cookies,
+  `<form>` mutations or inline VietQR/bank details; pre-launch `approved`
+  teasers omit `getMoneyTotals` and progress/amounts), supporting
+  `?theme=light|dark|auto` (`apps/web/src/app/globals.css`), `?compact=1`
+  (`180px` vs `280px` default height) and sanitized `?ref=` outbound links,
+  while `/embed`, `/embed/[slug]/[...rest]` and
+  `apps/web/src/app/embed/not-found.tsx` render `EmbedNotFoundCard`.
+  `apps/web/src/lib/embed.ts` (`EMBED_HEADER`, `parseEmbedOptions`,
+  `escapeHtmlAttr`, `buildEmbedIframeCode`) powers `EmbedWidgetDisclosure`
+  (`"Nhúng vào website / báo chí"`) on `/campaigns/[slug]`.
+  `apps/web/next.config.ts` scopes `Content-Security-Policy: frame-ancestors *`
+  without `X-Frame-Options` to `/embed/:path*` while preserving
+  `X-Frame-Options: DENY` on non-embed routes; `apps/web/src/proxy.ts` sets
+  `x-give-embed: "1"` exclusively on lowercase `/embed` and `/embed/*` without
+  touching cookies/OIDC refresh, neutralizes spoofed `x-give-embed` to `"0"`
+  elsewhere, and rejects mixed-case `/Embed*` paths with `404`,
+  `X-Frame-Options: DENY` and `Content-Security-Policy: frame-ancestors 'none'`;
+  and `RootLayout` (`apps/web/src/app/layout.tsx`) exits early on
+  `x-give-embed === "1"` strictly before `getSession()` and `unreadNotices()`,
+  with Vitest suites (#335 / #342).
+- Quick-start Vietnamese campaign creation templates on `/start`:
+  `apps/web/src/lib/campaign-templates.ts` (`CAMPAIGN_TEMPLATES`,
+  `getCampaignTemplate`) defines 5 curated presets (`blank`,
+  `medical_emergency`, `education_community`, `relief_environment` and
+  `creative_product`), where the 4 non-blank presets supply suggested VND
+  goals, Vietnamese title placeholders, summaries, markdown stories and 3
+  starter FAQs. `StartCampaignForm`
+  (`apps/web/src/app/start/StartCampaignForm.tsx`) adds a `noscript:hidden`
+  progressive `radiogroup` picker with roving `tabIndex` keyboard navigation
+  while keeping `type`, `title` and `goal_amount` uncontrolled so pre-hydration
+  edits, manual overrides and zero-JS submissions remain intact.
+  `createCampaign` (`apps/web/src/app/start/actions.ts`) resolves `type`-matched
+  categories via `listCategories` and `categoriesFor`, seeds template `summary`
+  and `story`, and best-effort creates starter FAQs via
+  `give.upsert_campaign_faq`, with Vitest suites (#338 / #343).
+- Dynamic SEO growth engine (`robots.txt`, `sitemap.xml` and JSON-LD):
+  `apps/web/src/app/robots.ts` allows `/` and `/media/public/` while disallowing
+  `/admin`, `/me`, `/api`, `/auth`, `/donations`, `/plans`, `/email`, `/embed`,
+  `/invites` and `/start` and advertises `/sitemap.xml` when `siteOrigin()` is
+  set. `apps/web/src/app/sitemap.ts` builds `sitemap.xml` strictly via anonymous
+  `dbAs()` (paginating up to `5,000` visible campaigns, deriving unique
+  navigable organizer handles via chunked concurrent `listCampaignOrganizers`
+  calls to `give.public_campaign_organizers`, gating
+  `/campaigns/[slug]/statement` strictly on `isPublicStatus`, and failing open
+  to static `/` and `/campaigns` entries on errors).
+  `apps/web/src/lib/jsonld.ts` adds `safeJsonLd` (escaping `<`, `\u2028` and
+  `\u2029`), `buildWebsiteJsonLd` (`WebSite`/`SearchAction` emitted on `/` when
+  `siteOrigin()` is set), `buildFaqPageJsonLd` (`FAQPage` emitted on
+  non-preview, non-halted `/campaigns/[slug]` when FAQs exist, alongside
+  `BreadcrumbList` migrated to `safeJsonLd`) and `buildProfilePageJsonLd`
+  (`ProfilePage` emitted on `/u/[handle]` when `siteOrigin()` is set), while
+  `apps/web/src/proxy.ts` excludes `robots.txt` and `sitemap.xml` from session
+  cookie rotation, with Vitest suites (#334 / #341).
+- Public transparency statement CSV export and print-friendly PDF view:
+  `apps/web/src/lib/csv.ts` implements pure RFC-4180 serialization (`buildCsv`,
+  `neutralizeCsvFormula`, `csvFilenameSlug`) with UTF-8 BOM and formula-trigger
+  neutralization across leading `=`, `+`, `-`, `@`, `\t`, `\r` and `\p{Cc}` /
+  `\p{Cf}` / `\s` prefixes. `GET /campaigns/[slug]/statement/export`
+  (`apps/web/src/app/campaigns/[slug]/statement/export/route.ts` and
+  `apps/web/src/lib/statement.ts` `STATEMENT_EXPORT_MAX_ROWS`,
+  `statementCsvRow`) exports anonymous `dbAs()` `give.public_statement` rows
+  gated on `isPublicStatus` and public `getMoneyTotals` (`404` otherwise; zero
+  donor PII, raw account numbers or evidence URLs), capped at `5,000`
+  deduplicated rows (emitting `X-Statement-Truncated: true` when truncated),
+  with `Cache-Control: public, s-maxage=60, stale-while-revalidate=300`,
+  `X-Content-Type-Options: nosniff` and `X-Robots-Tag: noindex, nofollow`, and
+  excluded from `apps/web/src/proxy.ts` so cached public CSV responses never
+  emit rotated `Set-Cookie` headers.
+  `apps/web/src/app/campaigns/[slug]/statement/page.tsx` adds
+  `"Tải CSV sao kê"`, `PrintStatementButton` (`"In / Lưu PDF"`), a
+  `.print-only` summary header, and `print:hidden` hiding (including
+  `PublicEvidenceList` `"Báo cáo ảnh"` in `PublicEvidence.tsx`), paired with
+  `@media print` styling in `apps/web/src/app/globals.css` and
+  `data-site-footer` in `SiteFooter`, with Vitest suites (#336 / #340).
 - Moderated `"Tường lời chúc"` donor wishes wall, heart reactions, reporting
   and staff wish-report queue: `/campaigns/[slug]` adds `#tuong-loi-chuc`
   (`DonorWishesWall`, `WishHeartButton`, `wish-actions.ts`, `lib/donor-wishes.ts`)
@@ -871,6 +970,22 @@ trang"` gating, `"Quản lý"`, and `changes_requested` review notes),
 
 ### Database (DOS.Me)
 
+- Followed campaigns hub and automated 48-hour closing-soon reminders: adds
+  `contributions_campaign_contributor_idx` on `give.contributions`, extends
+  `give.notices` `notices_kind_check` with `campaign_closing_soon`, and adds
+  `authenticated`-only `give.list_my_followed_campaigns` (returning visible
+  followed campaigns via `give.is_public_campaign_visible` with cover and public
+  organizer handle fields, zero `organizer_id` exposure, forced `0`
+  `received_amount` on non-public pre-launch teasers, public raised-math parity
+  and `has_supported` across net-of-refunds donations, active/paid pledges and
+  active monthly plans) and `service_role`-only `give.remind_closing_campaigns`
+  (inserting in-app `campaign_closing_soon` notices into `give.notices` only —
+  never `give.outbox` — in `c.ends_at ASC, c.id ASC, u.id ASC` `LIMIT 10000`
+  batches with `FOR KEY SHARE OF u SKIP LOCKED` and `notices_dedupe_key`
+  deduplication for un-supporting active followers of live campaigns ending
+  within 48 hours with `payments_stopped_at IS NULL`), with 43 pgTAP
+  assertions (#337 / DOS/DOS.Me#1908, on Beta). Migration
+  `20261204110000_give_following_and_closing_reminders`.
 - Moderated donor wishes wall and heart reactions: adds message-moderation
   columns on `give.contributions`, `give.contribution_hearts` and
   `give.contribution_message_reports` with zero-PII RLS and `SECURITY DEFINER`
