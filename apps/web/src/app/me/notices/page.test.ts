@@ -231,4 +231,64 @@ describe("MyNoticesPage (DOS/Give#93)", () => {
     expect(items[1]).toContain('href="/me/pledges/GVSWP567"')
     expect(items[1]).toContain(">Thanh toán ngay<")
   })
+
+  it("renders campaign_closing_soon neutrally when stopped and with 'Xem và ủng hộ' when active (DOS/Give#337)", async () => {
+    state.handler = (call) => {
+      if (call.target === "notices") {
+        if (call.ops.some(([name]) => name === "is")) return { count: 2 }
+        return {
+          data: [
+            {
+              id: "99999999-9999-4999-8999-999999999999",
+              kind: "campaign_closing_soon",
+              campaign_id: STOPPED_CAMPAIGN,
+              payload: {
+                campaign_slug: "den-ngu-go",
+                campaign_title: "Đèn ngủ gỗ",
+                ends_at: "2026-11-25T10:00:00Z",
+              },
+              created_at: "2026-11-23T02:00:00Z",
+              read_at: null,
+            },
+            {
+              id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+              kind: "campaign_closing_soon",
+              campaign_id: ACTIVE_CAMPAIGN,
+              payload: {
+                campaign_slug: "ban-phim-co",
+                campaign_title: "Bàn phím cơ",
+                ends_at: "2026-11-25T10:00:00Z",
+              },
+              created_at: "2026-11-23T01:00:00Z",
+              read_at: null,
+            },
+          ],
+        }
+      }
+      if (call.target === "campaigns") {
+        return {
+          data: [
+            { id: STOPPED_CAMPAIGN, payments_stopped_at: "2026-11-23T00:00:00Z" },
+            { id: ACTIVE_CAMPAIGN, payments_stopped_at: null },
+          ],
+        }
+      }
+      return undefined
+    }
+
+    const html = await renderAsync(await MyNoticesPage())
+    expect(state.calls.map((c) => c.target)).toContain("campaigns")
+    const items = [...html.matchAll(/<li[\s\S]*?<\/li>/g)].map((m) => m[0])
+    expect(items).toHaveLength(2)
+
+    expect(items[0]).toContain("Yêu cầu thanh toán đang tạm dừng")
+    expect(items[0]).toContain('href="/campaigns/den-ngu-go"')
+    expect(items[0]).toContain(">Xem chiến dịch<")
+    expect(items[0]).not.toContain(">Xem và ủng hộ<")
+
+    expect(items[1]).toContain("Chiến dịch sắp kết thúc")
+    expect(items[1]).toContain("Bàn phím cơ")
+    expect(items[1]).toContain('href="/campaigns/ban-phim-co"')
+    expect(items[1]).toContain(">Xem và ủng hộ<")
+  })
 })

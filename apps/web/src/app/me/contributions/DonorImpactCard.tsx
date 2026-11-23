@@ -50,7 +50,11 @@ export function DonorImpactCard({
           </dd>
         </div>
         <div className="rounded-md bg-surface p-4">
-          <dt className="text-sm text-muted">Đang theo dõi</dt>
+          <dt className="text-sm text-muted">
+            <Link href="/me/following" className="underline-offset-4 hover:text-primary hover:underline">
+              Đang theo dõi
+            </Link>
+          </dt>
           <dd className="mt-1 text-xl font-bold text-fg tabular-nums">
             {COUNT.format(summary.followed_campaigns_count + summary.followed_organizers_count)}
           </dd>

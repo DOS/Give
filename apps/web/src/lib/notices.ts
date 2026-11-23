@@ -179,8 +179,14 @@ export function swappedOldAccountTarget(payload: Notice["payload"], noun = "chi�
 }
 
 function asksForPayment(notice: Pick<Notice, "kind" | "payload">): boolean {
-  if (notice.kind === "payment_due" || notice.kind === "payment_reminder" || notice.kind === "payment_account_changed")
+  if (
+    notice.kind === "payment_due" ||
+    notice.kind === "payment_reminder" ||
+    notice.kind === "payment_account_changed" ||
+    notice.kind === "campaign_closing_soon"
+  ) {
     return true
+  }
   return notice.kind === "payment_requests_resumed" && text(notice.payload, "reference_code") !== null
 }
 
@@ -526,6 +532,35 @@ export function describeNotice(notice: Notice, options?: NoticeRenderOptions): N
           : "Người tổ chức bạn theo dõi vừa mở chiến dịch mới",
         body: `${actor} vừa chính thức mở ${subject}.`,
         ...link,
+      }
+    }
+    case "campaign_closing_soon": {
+      const slug = text(p, "campaign_slug")
+      const safeLink =
+        slug && slug.length <= 80 && SLUG_PATTERN.test(slug)
+          ? {
+              href: `/campaigns/${slug}`,
+              linkLabel: options?.paymentRequestsStopped ? "Xem chiến dịch" : "Xem và ủng hộ",
+            }
+          : { href: null, linkLabel: null }
+      const campaignTitle = text(p, "campaign_title")
+      const subject = campaignTitle ? `chiến dịch “${campaignTitle}”` : "chiến dịch bạn theo dõi"
+      if (options?.paymentRequestsStopped) {
+        return {
+          title: "Yêu cầu thanh toán đang tạm dừng",
+          body: `Give đang tạm dừng yêu cầu thanh toán của ${subject}. Thông báo sắp kết thúc này được gửi trước khi tạm dừng; hiện chưa thể ủng hộ hay chuyển khoản cho chiến dịch này.`,
+          ...safeLink,
+        }
+      }
+      const rawEndsAt = text(p, "ends_at")?.trim() ?? null
+      const endsAt = rawEndsAt && !Number.isNaN(Date.parse(rawEndsAt)) ? formatDateTime(rawEndsAt) : null
+      let body = `${capitalize(subject)} sắp kết thúc`
+      body += endsAt ? ` vào ${endsAt}.` : "."
+      body += " Nếu bạn muốn chung tay, hãy xem và ủng hộ trước khi thời gian gây quỹ khép lại."
+      return {
+        title: "Chiến dịch sắp kết thúc",
+        body,
+        ...safeLink,
       }
     }
     default:

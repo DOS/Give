@@ -12,6 +12,7 @@ import {
   getOrganizerFollowerCountByHandle,
   isFollowingCampaign,
   isFollowingOrganizerByHandle,
+  listMyFollowedCampaigns,
   listMyFollowedOrganizers,
   unfollowCampaign,
   unfollowOrganizerByHandle,
@@ -202,5 +203,126 @@ describe("follows & donor impact data layer (DOS/Give#315)", () => {
 
     const emptyDb = mockDb(() => ({ data: [] }))
     expect(await getMyDonorImpactSummary(emptyDb)).toEqual(EMPTY_DONOR_IMPACT_SUMMARY)
+  })
+})
+
+describe("listMyFollowedCampaigns (DOS/Give#337)", () => {
+  it("clamps pagination, parses bigint strings, validates slugs/handles/covers, and zeroes non-public received_amount", async () => {
+    const calls: Call[] = []
+    const db = mockDb((call) => {
+      if (call.target === "rpc:list_my_followed_campaigns") {
+        return {
+          data: [
+            {
+              campaign_id: CAMPAIGN,
+              slug: "bep-am-vung-cao",
+              type: "give",
+              title: "Bếp ấm vùng cao",
+              summary: "Hỗ trợ bữa ăn",
+              status: "live",
+              goal_amount: "50000000",
+              starts_at: "2026-11-01T00:00:00Z",
+              ends_at: "2026-12-31T00:00:00Z",
+              prelaunch_public: false,
+              cover_storage_path: "campaigns/22222222-2222-4222-8222-222222222222/cover.webp",
+              cover_alt: "Ảnh bìa",
+              organizer_display_name: "Quỹ Bản Mây",
+              organizer_handle: "  QuY-Ban-May ",
+              organizer_verification_status: "verified",
+              received_amount: "12500000",
+              followed_at: "2026-11-21T00:00:00Z",
+              has_supported: true,
+            },
+            {
+              campaign_id: "33333333-3333-4333-8333-333333333333",
+              slug: "du-an-sap-mo",
+              type: "back",
+              title: "Dự án sắp mở",
+              summary: null,
+              status: "approved",
+              goal_amount: 100_000_000,
+              starts_at: "2099-12-15T00:00:00Z",
+              ends_at: "2100-01-15T00:00:00Z",
+              prelaunch_public: true,
+              cover_storage_path: "../secret/file.webp",
+              cover_alt: null,
+              organizer_display_name: "Admin Giả",
+              organizer_handle: "admin",
+              organizer_verification_status: "bogus",
+              // Defense-in-depth: even if leaked, non-public received_amount is zeroed.
+              received_amount: 999999,
+              followed_at: "2026-11-22T00:00:00Z",
+              has_supported: false,
+            },
+            // Unsafe slug and invalid campaign_id rows are dropped cleanly.
+            {
+              campaign_id: "not-a-uuid",
+              slug: "ok-slug",
+              type: "give",
+              title: "Bad ID",
+              status: "live",
+            },
+            {
+              campaign_id: "44444444-4444-4444-8444-444444444444",
+              slug: "../evil",
+              type: "give",
+              title: "Bad Slug",
+              status: "live",
+            },
+          ],
+        }
+      }
+      return undefined
+    }, calls)
+
+    const items = await listMyFollowedCampaigns(db, 250, -5)
+    expect(op(calls[0], "args")).toEqual([{ p_limit: 100, p_offset: 0 }])
+    expect(items).toEqual([
+      {
+        campaign_id: CAMPAIGN,
+        slug: "bep-am-vung-cao",
+        type: "give",
+        title: "Bếp ấm vùng cao",
+        summary: "Hỗ trợ bữa ăn",
+        status: "live",
+        goal_amount: 50_000_000,
+        starts_at: "2026-11-01T00:00:00Z",
+        ends_at: "2026-12-31T00:00:00Z",
+        prelaunch_public: false,
+        cover_storage_path: "campaigns/22222222-2222-4222-8222-222222222222/cover.webp",
+        cover_alt: "Ảnh bìa",
+        organizer_display_name: "Quỹ Bản Mây",
+        organizer_handle: "quy-ban-may",
+        organizer_verification_status: "verified",
+        received_amount: 12_500_000,
+        followed_at: "2026-11-21T00:00:00Z",
+        has_supported: true,
+      },
+      {
+        campaign_id: "33333333-3333-4333-8333-333333333333",
+        slug: "du-an-sap-mo",
+        type: "back",
+        title: "Dự án sắp mở",
+        summary: null,
+        status: "approved",
+        goal_amount: 100_000_000,
+        starts_at: "2099-12-15T00:00:00Z",
+        ends_at: "2100-01-15T00:00:00Z",
+        prelaunch_public: true,
+        cover_storage_path: null,
+        cover_alt: null,
+        organizer_display_name: "Admin Giả",
+        organizer_handle: null,
+        organizer_verification_status: null,
+        received_amount: 0,
+        followed_at: "2026-11-22T00:00:00Z",
+        has_supported: false,
+      },
+    ])
+  })
+
+  it("propagates RPC errors", async () => {
+    const db = mockDb(() => ({ error: { code: "PGRST303", message: "JWT expired" } }))
+    await expect(listMyFollowedCampaigns(db)).rejects.toMatchObject({ code: "PGRST303" })
   })
 })

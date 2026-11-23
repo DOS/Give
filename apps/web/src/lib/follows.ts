@@ -1,4 +1,12 @@
-import type { Db, OrganizerKind, VerificationStatus } from "./campaigns"
+import {
+  isPublicStatus,
+  STATUS_LABELS,
+  type CampaignStatus,
+  type CampaignType,
+  type Db,
+  type OrganizerKind,
+  type VerificationStatus,
+} from "./campaigns"
 import { isUuid } from "./ids"
 import {
   isReservedOrganizerHandle,
@@ -6,6 +14,7 @@ import {
   normalizeOrganizerHandle,
   safeAvatarUrl,
 } from "./organizer-handle"
+import { SLUG_PATTERN } from "./slug"
 
 /**
  * Campaign/organizer follows and donor impact summary data layer over the
@@ -28,6 +37,27 @@ export interface FollowedOrganizer {
   kind: OrganizerKind
   verification_status: VerificationStatus
   followed_at: string
+}
+
+export interface FollowedCampaign {
+  campaign_id: string
+  slug: string
+  type: CampaignType
+  title: string
+  summary: string | null
+  status: CampaignStatus
+  goal_amount: number
+  starts_at: string | null
+  ends_at: string | null
+  prelaunch_public: boolean
+  cover_storage_path: string | null
+  cover_alt: string | null
+  organizer_display_name: string | null
+  organizer_handle: string | null
+  organizer_verification_status: VerificationStatus | null
+  received_amount: number
+  followed_at: string
+  has_supported: boolean
 }
 
 export interface CategoryImpactItem {
@@ -98,6 +128,111 @@ export async function followCampaign(db: Db, userId: string, campaignId: string)
 export async function unfollowCampaign(db: Db, userId: string, campaignId: string): Promise<void> {
   const { error } = await db.from("campaign_follows").delete().eq("user_id", userId).eq("campaign_id", campaignId)
   if (error) throw error
+}
+
+interface RawFollowedCampaignRow {
+  campaign_id?: unknown
+  slug?: unknown
+  type?: unknown
+  title?: unknown
+  summary?: unknown
+  status?: unknown
+  goal_amount?: unknown
+  starts_at?: unknown
+  ends_at?: unknown
+  prelaunch_public?: unknown
+  cover_storage_path?: unknown
+  cover_alt?: unknown
+  organizer_display_name?: unknown
+  organizer_handle?: unknown
+  organizer_verification_status?: unknown
+  received_amount?: unknown
+  followed_at?: unknown
+  has_supported?: unknown
+}
+
+const VALID_VERIFICATION_STATUSES: ReadonlySet<VerificationStatus> = new Set([
+  "unverified",
+  "pending",
+  "verified",
+  "rejected",
+])
+const SAFE_COVER_STORAGE_PATH = /^campaigns\/[a-z0-9-]+\/[a-z0-9_-]+\.(?:jpg|jpeg|png|webp)$/i
+
+function safeCampaignSlug(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.length === 0 || raw.length > 80) return null
+  return SLUG_PATTERN.test(raw) ? raw : null
+}
+
+function safeCoverStoragePath(raw: unknown): string | null {
+  if (typeof raw !== "string") return null
+  const trimmed = raw.trim()
+  return SAFE_COVER_STORAGE_PATH.test(trimmed) ? trimmed : null
+}
+
+function validIsoTimestamp(raw: unknown): string | null {
+  if (typeof raw !== "string") return null
+  const trimmed = raw.trim()
+  return trimmed !== "" && !Number.isNaN(Date.parse(trimmed)) ? trimmed : null
+}
+
+/**
+ * Lists the signed-in user's followed campaigns via `give.list_my_followed_campaigns`
+ * (DOS/Give#337). Enforces slug, handle, cover-path, timestamp, and numeric checks,
+ * and zeroes `received_amount` for non-public statuses (including pre-launch `approved`).
+ */
+export async function listMyFollowedCampaigns(db: Db, limit = 50, offset = 0): Promise<FollowedCampaign[]> {
+  const clampedLimit = Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit), 1), 100) : 50
+  const clampedOffset = Number.isFinite(offset) ? Math.max(Math.trunc(offset), 0) : 0
+
+  const { data, error } = await db.rpc("list_my_followed_campaigns", {
+    p_limit: clampedLimit,
+    p_offset: clampedOffset,
+  })
+  if (error) throw error
+
+  const items: FollowedCampaign[] = []
+  for (const row of (Array.isArray(data) ? data : []) as RawFollowedCampaignRow[]) {
+    if (!isUuid(row.campaign_id)) continue
+    const slug = safeCampaignSlug(row.slug)
+    if (!slug) continue
+    if (row.type !== "give" && row.type !== "back") continue
+    if (typeof row.status !== "string" || !Object.hasOwn(STATUS_LABELS, row.status)) continue
+    const status = row.status as CampaignStatus
+    if (typeof row.title !== "string" || row.title.trim() === "") continue
+
+    const organizerHandle = typeof row.organizer_handle === "string" ? validHandle(row.organizer_handle) : null
+    const verificationStatus =
+      typeof row.organizer_verification_status === "string" &&
+      VALID_VERIFICATION_STATUSES.has(row.organizer_verification_status as VerificationStatus)
+        ? (row.organizer_verification_status as VerificationStatus)
+        : null
+
+    items.push({
+      campaign_id: row.campaign_id,
+      slug,
+      type: row.type,
+      title: row.title,
+      summary: typeof row.summary === "string" && row.summary.trim() !== "" ? row.summary : null,
+      status,
+      goal_amount: toSafeCount(row.goal_amount),
+      starts_at: validIsoTimestamp(row.starts_at),
+      ends_at: validIsoTimestamp(row.ends_at),
+      prelaunch_public: row.prelaunch_public === true,
+      cover_storage_path: safeCoverStoragePath(row.cover_storage_path),
+      cover_alt: typeof row.cover_alt === "string" && row.cover_alt.trim() !== "" ? row.cover_alt : null,
+      organizer_display_name:
+        typeof row.organizer_display_name === "string" && row.organizer_display_name.trim() !== ""
+          ? row.organizer_display_name
+          : null,
+      organizer_handle: organizerHandle,
+      organizer_verification_status: verificationStatus,
+      received_amount: isPublicStatus(status) ? toSafeCount(row.received_amount) : 0,
+      followed_at: validIsoTimestamp(row.followed_at) ?? "",
+      has_supported: row.has_supported === true,
+    })
+  }
+  return items
 }
 
 // ---------------------------------------------------------------------------
