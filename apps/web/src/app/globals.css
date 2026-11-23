@@ -300,3 +300,51 @@
 @utility hit-area {
   @apply relative before:absolute before:inset-x-0 before:top-1/2 before:h-11 before:-translate-y-1/2 before:content-[''];
 }
+
+@media print {
+  :root {
+    color-scheme: light;
+    --bg: #ffffff;
+    --surface: #f7f8fa;
+    --surface-raised: #ffffff;
+    --border: #d1d5db;
+    --text: #000000;
+    --text-muted: #4b5563;
+    --primary: #047857;
+    --primary-hover: #065f46;
+    --primary-fg: #ffffff;
+    --primary-soft: #ecfdf5;
+    --accent: #c2410c;
+    --accent-soft: #fff7ed;
+    --danger: #b42318;
+    --danger-soft: #fef3f2;
+    --warning: #b54708;
+    --warning-soft: #fffaeb;
+  }
+
+  body {
+    display: block;
+    min-height: 0;
+    background: #ffffff;
+    color: #000000;
+  }
+
+  [data-site-header],
+  body > header,
+  [data-site-footer],
+  body > footer,
+  nav,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  .card:not(ol):not(ul),
+  main ol > li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

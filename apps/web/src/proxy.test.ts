@@ -1,7 +1,8 @@
+import { AsyncLocalStorage } from "node:async_hooks"
 import { NextRequest } from "next/server"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { proxy } from "./proxy"
+import { config, proxy } from "./proxy"
 
 const ISSUER = "https://issuer.example/auth/v1"
 
@@ -191,5 +192,62 @@ describe("proxy session refresh", () => {
       error: "TypeError",
     })
     expect(loggedText()).not.toContain("rt-1")
+  })
+})
+
+describe("proxy matcher exclusions", () => {
+  it("excludes public statement CSV exports while still matching statement pages and campaign routes", async () => {
+    ;(globalThis as { AsyncLocalStorage?: typeof AsyncLocalStorage }).AsyncLocalStorage ??= AsyncLocalStorage
+    const { unstable_doesMiddlewareMatch } = await import("next/experimental/testing/server")
+
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/campaigns/xay-truong-ban-may/statement/export",
+      })
+    ).toBe(false)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/campaigns/xay-truong-ban-may/statement/export?filter=out",
+      })
+    ).toBe(false)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/campaigns/xay-truong-ban-may/statement/export/",
+      })
+    ).toBe(false)
+
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/campaigns/xay-truong-ban-may/statement",
+      })
+    ).toBe(true)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/campaigns/xay-truong-ban-may/statement?filter=out",
+      })
+    ).toBe(true)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/campaigns/xay-truong-ban-may/statement/export-other",
+      })
+    ).toBe(true)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/campaigns/xay-truong-ban-may",
+      })
+    ).toBe(true)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/campaigns",
+      })
+    ).toBe(true)
   })
 })

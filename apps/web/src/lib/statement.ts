@@ -2,7 +2,7 @@ import { z } from "zod"
 
 import type { CampaignType, Db } from "./campaigns"
 import { VIA_CONTACT_EMAIL } from "./contact"
-import { formatDate, formatVnd } from "./format"
+import { formatDate, formatDateTime, formatVnd } from "./format"
 import { isUuid } from "./ids"
 import { isOwnContribution, type Viewer } from "./own-contribution"
 
@@ -296,6 +296,92 @@ export function statementHref(slug: string, filter: StatementFilter, page = 1): 
   if (page > 1) params.set("page", String(page))
   const query = params.toString()
   return `/campaigns/${slug}/statement${query ? `?${query}` : ""}`
+}
+
+export function statementExportHref(slug: string, filter: StatementFilter = "all"): string {
+  const params = new URLSearchParams()
+  if (filter !== "all") params.set("filter", filter)
+  const query = params.toString()
+  return `/campaigns/${slug}/statement/export${query ? `?${query}` : ""}`
+}
+
+export const STATEMENT_EXPORT_MAX_ROWS = 5_000
+
+export const STATEMENT_CSV_HEADERS = [
+  "Thời gian (ISO)",
+  "Thời gian hiển thị",
+  "Chiều giao dịch",
+  "Số tiền (VND)",
+  "Loại / Nhóm",
+  "Đối tác công khai",
+  "Trạng thái giải trình",
+  "Nội dung giải trình",
+] as const
+
+/**
+ * Formats one `give.public_statement` row into the public CSV columns shown on
+ * the statement page, leaving out private donor details, full account numbers,
+ * and evidence URLs.
+ */
+export function statementCsvRow(
+  row: StatementRow,
+  pair: StatementPair | null = null
+): [string, string, string, number, string, string, string, string] {
+  const incoming = row.direction === "in"
+  const ownTransfer = Boolean(row.own_transfer_label)
+  const displayedTime = row.booked_date_only ? formatDate(row.booked_at) : formatDateTime(row.booked_at)
+  const directionLabel = incoming ? "Tiền vào" : "Tiền ra"
+
+  let groupLabel = ""
+  let counterparty = counterpartyLabel(row)
+  let statusLabel = ""
+  let details = ""
+
+  if (ownTransfer) {
+    groupLabel = "Chuyển tài khoản"
+    statusLabel = row.own_transfer_at ? `Give xác nhận ngày ${formatDate(row.own_transfer_at)}` : "Đã xác nhận"
+    details = incoming
+      ? "Tiền từ tài khoản cũ của chiến dịch, không tính là tiền ủng hộ mới."
+      : "Chuyển sang tài khoản mới của chiến dịch, không tính là khoản chi."
+  } else if (incoming && row.return_of) {
+    groupLabel = "Không phải tiền ủng hộ"
+    if (pair) {
+      counterparty = `Ngân hàng trả lại ${pair.is_refund ? "khoản hoàn tiền" : "khoản chi"}`
+    }
+    statusLabel = row.returned_at ? `Give ghi nhận ngày ${formatDate(row.returned_at)}` : "Ngân hàng trả lại"
+    details = returnedTransferText(row, pair)
+  } else if (explainedNotDonation(row)) {
+    groupLabel = "Không phải tiền ủng hộ"
+    statusLabel = row.in_explained_at ? `Give giải trình ngày ${formatDate(row.in_explained_at)}` : "Đã giải trình"
+    details = row.after_close ? "Tiền về sau khi chiến dịch đã kết thúc." : ""
+  } else if (incoming) {
+    groupLabel = row.matched ? "Tiền ủng hộ" : "Chưa khớp lượt ủng hộ"
+    statusLabel = row.matched ? "Đã khớp lượt ủng hộ" : "Chưa khớp lượt ủng hộ"
+    details = row.after_close ? "Tiền về sau khi chiến dịch đã kết thúc." : ""
+  } else if (row.explained) {
+    const category = categoryLabel(row.category)
+    if (row.is_refund) {
+      groupLabel = category && row.category !== "refund" ? `Hoàn tiền · ${category}` : (category ?? "Hoàn tiền")
+    } else {
+      groupLabel = category ?? ""
+    }
+    if (!row.is_refund && row.counterparty_account_masked) {
+      counterparty = `${counterparty} (TK ${row.counterparty_account_masked})`
+    }
+    if (row.returned_by) {
+      statusLabel = row.returned_at ? `Bị ngân hàng trả lại (${formatDate(row.returned_at)})` : "Bị ngân hàng trả lại"
+      const returnNote = returnedTransferText(row, pair)
+      details = row.purpose ? `${row.purpose} — ${returnNote}` : returnNote
+    } else {
+      statusLabel = row.explained_at ? `Đã giải trình (${formatDate(row.explained_at)})` : "Đã giải trình"
+      details = row.purpose ?? ""
+    }
+  } else {
+    statusLabel = "Chưa giải trình"
+    details = "Người tổ chức chưa giải trình khoản chi này."
+  }
+
+  return [row.booked_at, displayedTime, directionLabel, row.amount, groupLabel, counterparty, statusLabel, details]
 }
 
 function statementQuery(db: Db, campaignId: string, filter: StatementFilter, columns: string, head = false) {
