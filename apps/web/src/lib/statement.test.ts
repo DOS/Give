@@ -34,9 +34,13 @@ import {
   returnedOutgoingText,
   returnedTransferText,
   returnedUnexplainedText,
+  STATEMENT_CSV_HEADERS,
   STATEMENT_PAGE_SIZE,
+  statementCsvRow,
+  statementExportHref,
   statementHref,
   type MoneyTotals,
+  type StatementRow,
 } from "./statement"
 
 const CAMPAIGN = "22222222-2222-4222-8222-222222222222"
@@ -890,5 +894,194 @@ describe("explain form", () => {
       false
     )
     expect(explainSchema.safeParse({ ...base, purpose: "a".repeat(1001) }).success).toBe(false)
+  })
+})
+
+describe("statement export helpers (DOS/Give#336)", () => {
+  it("builds export href preserving non-default filter", () => {
+    expect(statementExportHref("quy-a")).toBe("/campaigns/quy-a/statement/export")
+    expect(statementExportHref("quy-a", "all")).toBe("/campaigns/quy-a/statement/export")
+    expect(statementExportHref("quy-a", "out")).toBe("/campaigns/quy-a/statement/export?filter=out")
+    expect(statementExportHref("quy-a", "unexplained")).toBe("/campaigns/quy-a/statement/export?filter=unexplained")
+  })
+
+  it("formats statement rows with date-only, after_close, and returned outgoing notes", () => {
+    expect(STATEMENT_CSV_HEADERS).toHaveLength(8)
+    const base: StatementRow = {
+      id: "row-1",
+      direction: "in",
+      asset: "VND",
+      amount: 250_000,
+      booked_at: "2026-11-10T00:00:00.000Z",
+      booked_date_only: true,
+      after_close: true,
+      matched: true,
+      counterparty_account_masked: null,
+      explained: null,
+      purpose: null,
+      category: null,
+      recipient: null,
+      is_refund: null,
+      explained_at: null,
+      donor_name: "Minh",
+      donor_anonymous: false,
+      in_explanation: null,
+      in_explained_at: null,
+      own_transfer_id: null,
+      own_transfer_at: null,
+      own_transfer_label: null,
+      return_of: null,
+      returned_by: null,
+      returned_at: null,
+      return_bank_fee: null,
+    }
+    expect(statementCsvRow(base)).toEqual([
+      "2026-11-10T00:00:00.000Z",
+      "10/11/2026",
+      "Tiền vào",
+      250_000,
+      "Tiền ủng hộ",
+      "Minh",
+      "Đã khớp lượt ủng hộ",
+      "Tiền về sau khi chiến dịch đã kết thúc.",
+    ])
+
+    const returnedOut: StatementRow = {
+      ...base,
+      direction: "out",
+      booked_date_only: false,
+      after_close: false,
+      matched: false,
+      donor_name: null,
+      donor_anonymous: null,
+      explained: true,
+      category: "goods",
+      recipient: "Cửa hàng X",
+      purpose: "Mua vật tư",
+      explained_at: "2026-11-11T03:00:00.000Z",
+      returned_by: "in-1",
+      returned_at: "2026-11-12T03:00:00.000Z",
+      return_bank_fee: 11_000,
+    }
+    const row = statementCsvRow(returnedOut, {
+      id: "in-1",
+      direction: "in",
+      is_refund: null,
+      amount: 239_000,
+      booked_at: "2026-11-12T03:00:00.000Z",
+    })
+    expect(row[2]).toBe("Tiền ra")
+    expect(row[4]).toBe("Mua hàng, vật phẩm")
+    expect(row[5]).toBe("Cửa hàng X")
+    expect(row[6]).toBe("Bị ngân hàng trả lại (12/11/2026)")
+    expect(row[7]).toContain("Mua vật tư")
+    expect(row[7]).toContain("trả lại")
+
+    const ownIn = statementCsvRow({
+      ...base,
+      direction: "in",
+      after_close: false,
+      matched: false,
+      donor_name: null,
+      donor_anonymous: null,
+      own_transfer_id: "own-1",
+      own_transfer_at: "2026-11-12T03:00:00.000Z",
+      own_transfer_label: "Chuyển sang tài khoản mới",
+    })
+    expect(ownIn.slice(4)).toEqual([
+      "Chuyển tài khoản",
+      "Chuyển sang tài khoản mới",
+      "Give xác nhận ngày 12/11/2026",
+      "Tiền từ tài khoản cũ của chiến dịch, không tính là tiền ủng hộ mới.",
+    ])
+
+    const ownOut = statementCsvRow({
+      ...base,
+      direction: "out",
+      after_close: false,
+      matched: false,
+      donor_name: null,
+      donor_anonymous: null,
+      explained: true,
+      own_transfer_id: "own-1",
+      own_transfer_at: null,
+      own_transfer_label: "Chuyển sang tài khoản mới",
+    })
+    expect(ownOut.slice(4)).toEqual([
+      "Chuyển tài khoản",
+      "Chuyển sang tài khoản mới",
+      "Đã xác nhận",
+      "Chuyển sang tài khoản mới của chiến dịch, không tính là khoản chi.",
+    ])
+
+    const inboundOther = statementCsvRow({
+      ...base,
+      after_close: false,
+      matched: false,
+      donor_name: null,
+      donor_anonymous: null,
+      in_explanation: "organizer_top_up",
+      in_explained_at: "2026-11-12T03:00:00.000Z",
+    })
+    expect(inboundOther.slice(4)).toEqual([
+      "Không phải tiền ủng hộ",
+      "Người tổ chức nạp thêm tiền",
+      "Give giải trình ngày 12/11/2026",
+      "",
+    ])
+
+    const refundRow = statementCsvRow({
+      ...base,
+      direction: "out",
+      after_close: false,
+      matched: false,
+      donor_name: null,
+      donor_anonymous: null,
+      explained: true,
+      is_refund: true,
+      category: "refund",
+      recipient: "Không công khai",
+      purpose: "Hoàn tiền ủng hộ",
+      counterparty_account_masked: "9999",
+      explained_at: "2026-11-12T03:00:00.000Z",
+    })
+    expect(refundRow.slice(4)).toEqual([
+      "Hoàn tiền cho người ủng hộ",
+      "Không công khai",
+      "Đã giải trình (12/11/2026)",
+      "Hoàn tiền ủng hộ",
+    ])
+
+    const unexplainedOut = statementCsvRow({
+      ...base,
+      direction: "out",
+      after_close: false,
+      matched: false,
+      donor_name: null,
+      donor_anonymous: null,
+      explained: false,
+    })
+    expect(unexplainedOut.slice(4)).toEqual([
+      "",
+      "Chưa rõ người nhận",
+      "Chưa giải trình",
+      "Người tổ chức chưa giải trình khoản chi này.",
+    ])
+
+    const returnedInNoPair = statementCsvRow(
+      {
+        ...base,
+        direction: "in",
+        after_close: false,
+        matched: false,
+        donor_name: null,
+        donor_anonymous: null,
+        return_of: "missing-pair",
+        returned_at: null,
+      },
+      null
+    )
+    expect(returnedInNoPair.slice(4, 7)).toEqual(["Không phải tiền ủng hộ", RETURNED_IN_LABEL, "Ngân hàng trả lại"])
+    expect(returnedInNoPair[7]).toContain("Tiền chiến dịch đã chuyển đi quay về")
   })
 })

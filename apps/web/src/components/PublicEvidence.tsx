@@ -41,7 +41,7 @@ export function PublicEvidenceList({
               />
             </a>
             <p className="mt-1">{kind}</p>
-            <details className="mt-1">
+            <details className="mt-1 print:hidden">
               <summary className="inline-flex min-h-11 cursor-pointer items-center text-muted hover:text-fg">
                 Báo cáo ảnh
               </summary>

@@ -8,10 +8,13 @@ import { MoneyTotals } from "@/components/MoneyTotals"
 import { PublicEvidenceList } from "@/components/PublicEvidence"
 import { Badge } from "@/components/ui/Badge"
 import { buttonClass } from "@/components/ui/Button"
+import { DownloadIcon } from "@/components/ui/icons"
 import { FilterNav, TabNav } from "@/components/ui/Tabs"
 import { listPublicAccountChanges } from "@/lib/account-swaps"
+import { siteOrigin } from "@/lib/auth/origin"
 import { getSession } from "@/lib/auth/session"
 import { getCampaignBySlug, isPublicStatus } from "@/lib/campaigns"
+import { csvFilenameSlug } from "@/lib/csv"
 import { formatDate, formatDateTime, formatVnd } from "@/lib/format"
 import { SLUG_PATTERN } from "@/lib/slug"
 import {
@@ -23,10 +26,12 @@ import {
   listStatement,
   listStatementPairs,
   parseStatementParams,
+  remainingAmount,
   returnedTransferText,
   STATEMENT_FILTER_LABELS,
   STATEMENT_FILTERS,
   STATEMENT_PAGE_SIZE,
+  statementExportHref,
   statementHref,
   type PublicEvidence,
   type StatementPair,
@@ -34,6 +39,7 @@ import {
 } from "@/lib/statement"
 import { dbAs } from "@/lib/supabase"
 
+import { PrintStatementButton } from "./PrintStatementButton"
 import { reportEvidence } from "./actions"
 
 /**
@@ -93,10 +99,56 @@ export default async function StatementPage({
     listStatementPairs(db, campaign.id, rows).catch(() => new Map<string, StatementPair>()),
   ])
   const loginHref = `/auth/login?return_path=${encodeURIComponent(statementHref(campaign.slug, filter, page))}`
+  const exportHref = statementExportHref(campaign.slug, filter)
+  const safeSlug = csvFilenameSlug(campaign.slug, "sao-ke")
+  const canonicalPath = `/campaigns/${campaign.slug}/statement`
+  const origin = siteOrigin()
+  const canonicalUrl = origin ? `${origin}${canonicalPath}` : canonicalPath
+  const printedAt = formatDateTime(new Date().toISOString())
 
   return (
     <div className="container-page pt-6 pb-16 sm:pt-8 lg:pb-24">
-      <p className="min-w-0">
+      <div className="print-only mb-6 hidden border-b border-border pb-4 print:block">
+        <p className="text-sm font-semibold text-muted">Give · Sao kê công khai</p>
+        <p className="mt-1 text-h3 text-fg">{campaign.title}</p>
+        <p className="mt-1 text-sm text-muted">
+          Nguồn công khai:{" "}
+          <a href={canonicalUrl} className="underline">
+            {canonicalUrl}
+          </a>
+          {" · "}
+          In lúc: {printedAt}
+          {filter !== "all" ? ` · Bộ lọc: ${STATEMENT_FILTER_LABELS[filter]}` : ""}
+          {pages > 1 ? ` · Trang ${page}/${pages} (${rows.length}/${total} giao dịch)` : ""}
+        </p>
+        <dl className="mt-3 flex flex-wrap gap-x-6 gap-y-2 text-sm tabular-nums">
+          <div>
+            <dt className="inline text-muted">Đã nhận: </dt>
+            <dd className="inline font-semibold text-fg">{formatVnd(totals.paid_amount)}</dd>
+          </div>
+          <div>
+            <dt className="inline text-muted">Đã chi: </dt>
+            <dd className="inline font-semibold text-fg">{formatVnd(totals.disbursed_amount)}</dd>
+          </div>
+          <div>
+            <dt className="inline text-muted">Đã hoàn: </dt>
+            <dd className="inline font-semibold text-fg">{formatVnd(totals.refunded_amount)}</dd>
+          </div>
+          <div>
+            <dt className="inline text-muted">Còn lại: </dt>
+            <dd className="inline font-semibold text-fg">{formatVnd(remainingAmount(totals))}</dd>
+          </div>
+          {totals.unexplained_out_count > 0 && (
+            <div>
+              <dt className="inline text-muted">Chưa giải trình: </dt>
+              <dd className="inline font-semibold text-warning">
+                {formatVnd(totals.unexplained_out_amount)} ({totals.unexplained_out_count} khoản)
+              </dd>
+            </div>
+          )}
+        </dl>
+      </div>
+      <p className="min-w-0 print:hidden">
         <Link
           href={`/campaigns/${campaign.slug}`}
           className="-ml-1 inline-flex min-h-11 items-center gap-2 px-1 text-sm break-words text-muted hover:text-fg hover:underline"
@@ -105,7 +157,20 @@ export default async function StatementPage({
           {campaign.title}
         </Link>
       </p>
-      <h1 className="mt-2 text-h1-phone tracking-tight sm:text-h1">Sao kê chiến dịch</h1>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
+        <h1 className="text-h1-phone tracking-tight sm:text-h1">Sao kê chiến dịch</h1>
+        <div className="flex flex-wrap items-center gap-2 print:hidden">
+          <a
+            href={exportHref}
+            download={`sao-ke-${safeSlug}.csv`}
+            className={buttonClass({ variant: "secondary", size: "sm" })}
+          >
+            <DownloadIcon aria-hidden />
+            <span>Tải CSV sao kê</span>
+          </a>
+          <PrintStatementButton />
+        </div>
+      </div>
       <TabNav
         label="Nội dung chiến dịch"
         className="mt-6"
@@ -127,8 +192,8 @@ export default async function StatementPage({
       </p>
 
       {/* Detail page, 8/4 (DESIGN.md 2.2): the figures come first on phones, beside the rows from 1024px. */}
-      <div className="mt-8 flex flex-col gap-8 lg:grid lg:grid-cols-12 lg:gap-x-6">
-        <div className="min-w-0 space-y-6 lg:sticky lg:top-24 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:self-start">
+      <div className="mt-8 flex flex-col gap-8 lg:grid lg:grid-cols-12 lg:gap-x-6 print:block print:space-y-6">
+        <div className="min-w-0 space-y-6 lg:sticky lg:top-24 lg:col-span-4 lg:col-start-9 lg:row-start-1 lg:self-start print:static">
           <MoneyTotals totals={totals} />
           <AccountChanges changes={accountChanges} />
         </div>
