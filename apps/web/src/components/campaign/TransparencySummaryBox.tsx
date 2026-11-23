@@ -33,10 +33,10 @@ export function TransparencySummaryBox({
     <section
       aria-labelledby="transparency-summary-heading"
       data-transparency-summary
-      className="card border-border bg-surface/60 p-4 sm:p-5"
+      className="card border-border bg-surface/60 p-4 sm:p-6"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-2.5">
+        <div className="flex items-start gap-3">
           <ShieldIcon width={20} height={20} className="mt-0.5 shrink-0 text-primary" />
           <div>
             <h2 id="transparency-summary-heading" className="text-base font-semibold text-fg">
@@ -53,7 +53,7 @@ export function TransparencySummaryBox({
           {showImpactReportLink && (
             <Link
               href="#bao-cao-tong-ket"
-              className="inline-flex min-h-9 items-center rounded bg-primary-soft px-3 py-1 text-xs font-semibold text-primary hover:underline"
+              className="inline-flex min-h-9 items-center rounded bg-primary-soft px-3 py-1 text-sm font-semibold text-primary hover:underline"
             >
               Đã có báo cáo tổng kết →
             </Link>
@@ -69,29 +69,29 @@ export function TransparencySummaryBox({
 
       <dl className="mt-4 grid gap-3 border-t border-border pt-4 sm:grid-cols-3">
         <div className="min-w-0">
-          <dt className="text-xs font-medium text-muted">Đã giải ngân</dt>
+          <dt className="text-sm font-medium text-muted">Đã giải ngân</dt>
           <dd className="mt-1 flex flex-wrap items-baseline gap-x-2">
             <span className="text-lg font-bold text-fg tabular-nums">{pct !== null ? `${pct}%` : "—"}</span>
-            <span className="text-xs text-muted tabular-nums">{formatVnd(summary.disbursed_total)}</span>
+            <span className="text-sm text-muted tabular-nums">{formatVnd(summary.disbursed_total)}</span>
           </dd>
         </div>
 
         <div className="min-w-0">
-          <dt className="text-xs font-medium text-muted">Chứng từ hóa đơn công khai</dt>
+          <dt className="text-sm font-medium text-muted">Chứng từ hóa đơn công khai</dt>
           <dd className="mt-1 flex flex-wrap items-baseline gap-x-2">
             <span className="text-lg font-bold text-fg tabular-nums">{summary.evidence_count}</span>
-            <span className="text-xs text-muted">ảnh hóa đơn / biên nhận</span>
+            <span className="text-sm text-muted">ảnh hóa đơn / biên nhận</span>
           </dd>
         </div>
 
         <div className="min-w-0">
-          <dt className="text-xs font-medium text-muted">Giao dịch chưa giải trình</dt>
+          <dt className="text-sm font-medium text-muted">Giao dịch chưa giải trình</dt>
           <dd className="mt-1 flex flex-wrap items-center gap-2">
             <Badge tone={unexplained === 0 ? "brand" : "warning"}>
               {unexplained === 0 ? "0 chưa giải trình" : `${unexplained} chưa giải trình`}
             </Badge>
             {unexplained > 0 && (
-              <span className="text-xs text-muted tabular-nums">
+              <span className="text-sm text-muted tabular-nums">
                 ({summary.unexplained_inbound_count} vào · {summary.unexplained_out_count} ra)
               </span>
             )}

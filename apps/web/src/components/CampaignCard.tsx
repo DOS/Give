@@ -6,7 +6,7 @@ import { ProgressBar } from "@/components/ProgressBar"
 import { Badge } from "@/components/ui/Badge"
 import { CoverPlaceholder } from "@/components/ui/CoverPlaceholder"
 import { CheckIcon } from "@/components/ui/icons"
-import { STATUS_LABELS, type DisplayOptions, type ListedCampaign } from "@/lib/campaigns"
+import { isPublicStatus, STATUS_LABELS, type DisplayOptions, type ListedCampaign } from "@/lib/campaigns"
 import { publicCoverUrl } from "@/lib/cover-urls"
 import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
 import { isNavigableOrganizerHandle, organizerProfileHref } from "@/lib/organizer-handle"
@@ -43,7 +43,7 @@ export function CampaignCard({
   hasImpactReport?: boolean
   /**
    * Verified bank statement import timestamp from give.public_campaign_statement_freshness
-   * (DOS/Give#318). Strictly suppressed on pre-launch (`approved`) cards.
+   * (DOS/Give#318). Strictly suppressed on non-public statuses (including pre-launch `approved`).
    */
   lastStatementAt?: string | null
 }) {
@@ -57,7 +57,9 @@ export function CampaignCard({
   const Heading = headingLevel === 2 ? "h2" : "h3"
   const validStartsAt = campaign.starts_at && !Number.isNaN(Date.parse(campaign.starts_at)) ? campaign.starts_at : null
   const validLastStatementAt =
-    !prelaunch && lastStatementAt && !Number.isNaN(Date.parse(lastStatementAt)) ? lastStatementAt : null
+    isPublicStatus(campaign.status) && lastStatementAt && !Number.isNaN(Date.parse(lastStatementAt))
+      ? lastStatementAt
+      : null
   const meta = prelaunch
     ? validStartsAt
       ? [`Mở ngày ${formatDate(validStartsAt)}`]

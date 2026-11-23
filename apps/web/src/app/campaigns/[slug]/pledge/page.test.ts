@@ -481,11 +481,34 @@ describe("PledgePage (/campaigns/[slug]/pledge, DOS/Give#216)", () => {
       setup({ tiers: [expiredTier, activeTier], pledges: [pledgeRow({ reward_tier_id: TIER })] })
       const doc = await renderPage()
       expect(doc.body.textContent).toContain("vẫn giữ nguyên hiệu lực")
+      expect(doc.body.textContent).toContain(
+        "Bạn có thể giữ nguyên, hủy cam kết, hoặc chuyển sang một phần quà khác bên dưới."
+      )
       expect(doc.querySelector('a[href="/me/pledges/GVABCDEFG"]')?.textContent).toBe("Xem cam kết")
       expect(doc.body.textContent).toContain("Hủy cam kết")
       expect(formProps().changing).toBe(true)
       expect(formProps().currentTierId).toBe(TIER)
       expect(formProps().defaults.tier).toBe("")
+    })
+
+    it("omits cancel/switch reassurance sentence for expired Early Bird tier once campaign stops accepting pledges (DOS/Give#331)", async () => {
+      const expiredTier = tierRow(TIER, {
+        title: "Early Bird Hết Hạn",
+        is_early_bird: true,
+        available_until: "2020-01-01T00:00:00.000Z",
+        quantity_remaining: 5,
+      })
+      setup({
+        campaign: campaignRow({ status: "settling" }),
+        tiers: [expiredTier],
+        pledges: [pledgeRow({ reward_tier_id: TIER })],
+      })
+      const doc = await renderPage()
+      expect(doc.body.textContent).toContain("vẫn giữ nguyên hiệu lực.")
+      expect(doc.body.textContent).not.toContain(
+        "Bạn có thể giữ nguyên, hủy cam kết, hoặc chuyển sang một phần quà khác bên dưới."
+      )
+      expect(PledgeForm).not.toHaveBeenCalled()
     })
 
     it("preserves valid ?ref= across requireSession returnPath, shows attribution note, and passes hidden field (DOS/Give#319)", async () => {

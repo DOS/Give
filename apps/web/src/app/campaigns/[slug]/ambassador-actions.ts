@@ -23,6 +23,9 @@ export interface AmbassadorActionState {
 
 const SIGNED_OUT = "Hãy đăng nhập để tạo liên kết kêu gọi giúp chiến dịch."
 const INVALID_CAMPAIGN = "Không tìm thấy chiến dịch công khai này."
+const AMBASSADOR_ERROR_OVERRIDES: Record<string, string> = {
+  GIVE_CAMPAIGN_NOT_ACCEPTING: "Chiến dịch này hiện không còn mở tạo liên kết kêu gọi.",
+}
 
 /**
  * Creates or updates the signed-in user's ambassador link for a live or public
@@ -83,6 +86,6 @@ export async function saveMyCampaignAmbassador(
     if (err?.code?.startsWith("PGRST30")) {
       return { ambassador: state.ambassador, error: "Phiên đăng nhập đã hết. Hãy đăng nhập lại." }
     }
-    return { ambassador: state.ambassador, error: dbErrorMessage(err) }
+    return { ambassador: state.ambassador, error: dbErrorMessage(err, AMBASSADOR_ERROR_OVERRIDES) }
   }
 }

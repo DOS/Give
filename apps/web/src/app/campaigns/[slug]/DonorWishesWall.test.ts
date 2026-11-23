@@ -125,6 +125,8 @@ describe("DonorWishesWall (DOS/Give#320)", () => {
 
     const heartBtn = doc.querySelector('button[aria-pressed="true"]')
     expect(heartBtn).not.toBeNull()
+    expect(heartBtn?.getAttribute("aria-label")).toBe("Bỏ tim lời chúc (5 tim)")
+    expect(heartBtn?.querySelector(".sr-only")).toBeNull()
     expect(heartBtn?.textContent).toContain("5")
     expect(doc.body.textContent).toContain("Báo cáo")
     expect(doc.body.textContent).toContain("Ẩn lời chúc")

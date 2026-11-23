@@ -47,7 +47,6 @@ function SignedInWishHeartForm({
         >
           <HeartIcon width={18} height={18} fill={hearted ? "currentColor" : "none"} className="shrink-0" />
           <span className="tabular-nums">{COUNT_FORMAT.format(count)}</span>
-          <span className="sr-only">{hearted ? "Đã thả tim" : "Thả tim"}</span>
         </button>
       </form>
       {state.error && (

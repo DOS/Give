@@ -144,8 +144,45 @@ describe("AdminWishReportsPage (DOS/Give#320)", () => {
     expect(html).toContain("/admin/reports/wishes")
     // Open actions include hide, dismiss_reports, and restore warning for already-hidden wish
     expect(doc.body.textContent).toContain("Ẩn lời chúc & chốt báo cáo")
+    expect(doc.body.textContent).toContain("Xác nhận ẩn & chốt báo cáo")
+    expect(doc.body.textContent).toContain(
+      "Bấm “Xác nhận ẩn & chốt báo cáo” để nâng thành quyết định kiểm duyệt và đóng báo cáo"
+    )
     expect(doc.body.textContent).toContain("Bác bỏ báo cáo")
     expect(doc.body.textContent).toContain("Khôi phục lời chúc (giữ báo cáo mở)")
+    expect(doc.body.textContent).not.toContain("trên tổng số")
+  })
+
+  it("shows clear Vietnamese truncation note when totalCount exceeds returned reports (DOS/Give#331)", async () => {
+    state.handler = (call) => {
+      if (call.target === "rpc:is_admin") return { data: true }
+      if (call.target === "rpc:list_reported_contribution_messages") {
+        return {
+          data: [reportFixture(REPORT_OPEN, { total_count: 75 }), reportFixture(REPORT_RESOLVED, { total_count: 75 })],
+        }
+      }
+      return undefined
+    }
+
+    const openHtml = renderToStaticMarkup(
+      await AdminWishReportsPage({ searchParams: Promise.resolve({ status: "open" }) })
+    )
+    expect(openHtml).toContain("Đang hiển thị 2 báo cáo sớm nhất trên tổng số 75 báo cáo.")
+
+    state.handler = (call) => {
+      if (call.target === "rpc:is_admin") return { data: true }
+      if (call.target === "rpc:list_reported_contribution_messages") {
+        return {
+          data: [reportFixture(REPORT_RESOLVED, { status: "resolved", total_count: 60 })],
+        }
+      }
+      return undefined
+    }
+
+    const resolvedHtml = renderToStaticMarkup(
+      await AdminWishReportsPage({ searchParams: Promise.resolve({ status: "resolved" }) })
+    )
+    expect(resolvedHtml).toContain("Đang hiển thị 1 báo cáo mới nhất trên tổng số 60 báo cáo.")
   })
 
   it("renders empty state cleanly and passes resolved filter to RPC", async () => {
