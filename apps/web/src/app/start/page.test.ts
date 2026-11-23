@@ -164,6 +164,11 @@ describe("StartPage (DOS/Give#208)", () => {
       expect(doc.querySelector("#phone")?.getAttribute("maxlength")).toBe("20")
       expect(doc.querySelector("#phone")?.getAttribute("aria-describedby")).toBe("phone_hint")
       expect(Boolean(doc.querySelector("#organizer_reverify_hint"))).toBe(warns)
+
+      const templateGroup = doc.querySelector('[role="radiogroup"]')
+      expect(templateGroup).not.toBeNull()
+      expect(doc.querySelectorAll('button[role="radio"]')).toHaveLength(5)
+      expect(doc.querySelector('input[type="hidden"][name="template_id"]')?.getAttribute("value")).toBe("blank")
     }
   )
 })

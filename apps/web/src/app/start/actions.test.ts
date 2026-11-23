@@ -3,7 +3,8 @@ import { redirect } from "next/navigation"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 import { getSession } from "@/lib/auth/session"
-import type { Organizer } from "@/lib/campaigns"
+import { getCampaignTemplate } from "@/lib/campaign-templates"
+import type { Category, Organizer } from "@/lib/campaigns"
 import { dbErrorMessage } from "@/lib/errors"
 import { uniqueSlug } from "@/lib/slug"
 import { dbAs } from "@/lib/supabase"
@@ -407,4 +408,185 @@ describe("createCampaign (DOS/Give#208)", () => {
       noNavigation()
     }
   )
+})
+
+const HEALTHCARE_CAT: Category = {
+  id: "33333333-3333-4333-8333-333333333333",
+  slug: "healthcare",
+  name: "Y tế",
+  description: null,
+  icon: null,
+  color: null,
+  applies_to: "give",
+  sort_order: 3,
+}
+
+const TECH_CAT: Category = {
+  id: "44444444-4444-4444-8444-444444444444",
+  slug: "technology",
+  name: "Công nghệ",
+  description: null,
+  icon: null,
+  color: null,
+  applies_to: "back",
+  sort_order: 101,
+}
+
+describe("createCampaign templates (DOS/Give#338)", () => {
+  it.each(["blank", "unknown-template", ""])(
+    "behaves identically to omitted template_id when template_id = %j",
+    async (template_id) => {
+      state.handler = () => ({ data: { id: CAMPAIGN } })
+      await expect(createCampaign(null, campaignForm({ template_id }))).rejects.toThrow(
+        `NEXT_REDIRECT /me/campaigns/${CAMPAIGN}`
+      )
+      expect(state.calls).toEqual([
+        {
+          target: "campaigns",
+          ops: [
+            [
+              "insert",
+              {
+                slug: "quy-hoc-bong-first",
+                type: "give",
+                funding_model: "flexible",
+                organizer_id: USER,
+                title: "Quỹ học bổng",
+                goal_amount: 10_000,
+              },
+            ],
+            ["select", "id"],
+            ["single"],
+          ],
+        },
+      ])
+      expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/me/campaigns")
+      expect(redirect).toHaveBeenCalledExactlyOnceWith(`/me/campaigns/${CAMPAIGN}`)
+    }
+  )
+
+  it("populates category_id, summary, story, and starter FAQs sequentially for a matching non-blank template", async () => {
+    const template = getCampaignTemplate("creative_product")!
+    state.handler = (call) => {
+      if (call.target === "categories") return { data: [HEALTHCARE_CAT, TECH_CAT] }
+      if (call.target === "campaigns") return { data: { id: CAMPAIGN } }
+      if (call.target === "rpc:upsert_campaign_faq") return { data: [{ id: "faq-id" }] }
+      return undefined
+    }
+
+    await expect(
+      createCampaign(
+        null,
+        campaignForm({
+          type: "back",
+          title: "Bàn phím cơ tiếng Việt",
+          goal_amount: "80.000.000",
+          template_id: "creative_product",
+        })
+      )
+    ).rejects.toThrow(`NEXT_REDIRECT /me/campaigns/${CAMPAIGN}`)
+
+    expect(state.calls[0].target).toBe("categories")
+    expect(state.calls[1].target).toBe("campaigns")
+    expect(op(state.calls[1], "insert")?.[0]).toEqual({
+      slug: "quy-hoc-bong-first",
+      type: "back",
+      funding_model: "all_or_nothing",
+      organizer_id: USER,
+      title: "Bàn phím cơ tiếng Việt",
+      goal_amount: 80_000_000,
+      category_id: TECH_CAT.id,
+      summary: template.summary,
+      story: template.story,
+    })
+
+    const faqCalls = state.calls.slice(2)
+    expect(faqCalls).toHaveLength(3)
+    expect(faqCalls.map((c) => c.target)).toEqual([
+      "rpc:upsert_campaign_faq",
+      "rpc:upsert_campaign_faq",
+      "rpc:upsert_campaign_faq",
+    ])
+    expect(faqCalls.map((c) => op(c, "args")?.[0])).toEqual(
+      template.starterFaqs.map((faq) => ({
+        p_campaign_id: CAMPAIGN,
+        p_question: faq.question,
+        p_answer: faq.answer,
+        p_faq_id: null,
+        p_position: null,
+      }))
+    )
+    expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/me/campaigns")
+    expect(redirect).toHaveBeenCalledExactlyOnceWith(`/me/campaigns/${CAMPAIGN}`)
+  })
+
+  it("omits category_id when the user manually overrides type to one incompatible with the template category", async () => {
+    const template = getCampaignTemplate("medical_emergency")!
+    state.handler = (call) => {
+      if (call.target === "categories") return { data: [HEALTHCARE_CAT, TECH_CAT] }
+      if (call.target === "campaigns") return { data: { id: CAMPAIGN } }
+      return undefined
+    }
+
+    await expect(
+      createCampaign(
+        null,
+        campaignForm({
+          type: "back",
+          title: "Dự án thiết bị y tế",
+          goal_amount: "100.000.000",
+          template_id: "medical_emergency",
+        })
+      )
+    ).rejects.toThrow(`NEXT_REDIRECT /me/campaigns/${CAMPAIGN}`)
+
+    const inserted = op(state.calls[1], "insert")?.[0] as Record<string, unknown>
+    expect(inserted).not.toHaveProperty("category_id")
+    expect(inserted).toMatchObject({
+      type: "back",
+      funding_model: "all_or_nothing",
+      summary: template.summary,
+      story: template.story,
+    })
+    expect(state.calls.filter((c) => c.target === "rpc:upsert_campaign_faq")).toHaveLength(3)
+  })
+
+  it("never blocks draft creation or redirect when category lookup or starter FAQ insertion fails", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    try {
+      let faqCount = 0
+      state.handler = (call) => {
+        if (call.target === "categories") return { error: { code: "42501", message: "cat read error" } }
+        if (call.target === "campaigns") return { data: { id: CAMPAIGN } }
+        if (call.target === "rpc:upsert_campaign_faq") {
+          faqCount++
+          if (faqCount === 1) return { error: { code: "42501", message: "faq denied" } }
+          if (faqCount === 2) throw new Error("network blip")
+          return { data: [{ id: "faq-3" }] }
+        }
+        return undefined
+      }
+
+      await expect(
+        createCampaign(
+          null,
+          campaignForm({
+            type: "give",
+            title: "Hỗ trợ chi phí phẫu thuật",
+            goal_amount: "100.000.000",
+            template_id: "medical_emergency",
+          })
+        )
+      ).rejects.toThrow(`NEXT_REDIRECT /me/campaigns/${CAMPAIGN}`)
+
+      const insertCall = state.calls.find((c) => c.target === "campaigns")
+      expect(op(insertCall, "insert")?.[0]).not.toHaveProperty("category_id")
+      expect(state.calls.filter((c) => c.target === "rpc:upsert_campaign_faq")).toHaveLength(3)
+      expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/me/campaigns")
+      expect(redirect).toHaveBeenCalledExactlyOnceWith(`/me/campaigns/${CAMPAIGN}`)
+      expect(spy).toHaveBeenCalled()
+    } finally {
+      spy.mockRestore()
+    }
+  })
 })
