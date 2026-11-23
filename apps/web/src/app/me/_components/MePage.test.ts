@@ -1,7 +1,9 @@
 import { Window } from "happy-dom"
-import { createElement } from "react"
+import { createElement, type ComponentType } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
+
+import type { MeSection } from "./MePage"
 
 vi.mock("next/link", () => ({
   default: ({ href, children, ...rest }: { href: string; children: unknown }) =>
@@ -13,7 +15,11 @@ const { MePage } = await import("./MePage")
 describe("MePage navigation (DOS/Give#337)", () => {
   it("includes 'Đang theo dõi' -> /me/following and marks it current when section is 'following'", () => {
     const html = renderToStaticMarkup(
-      createElement(MePage, { section: "following" }, createElement("div", null, "Body"))
+      createElement(
+        MePage as ComponentType<{ section: MeSection }>,
+        { section: "following" },
+        createElement("div", null, "Body")
+      )
     )
     const doc = new Window().document
     doc.body.innerHTML = html
