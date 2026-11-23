@@ -169,5 +169,13 @@ describe("saveMyCampaignAmbassador (DOS/Give#319)", () => {
       ambassador: null,
       error: "Tài khoản của bạn hiện không hoạt động nên không thể thực hiện thao tác này.",
     })
+
+    state.userHandler = () => ({ error: { code: "23514", message: "GIVE_CAMPAIGN_NOT_ACCEPTING" } })
+    expect(
+      await saveMyCampaignAmbassador(CAMPAIGN, SLUG, { ambassador: null }, makeForm({ display_name: "Minh Anh" }))
+    ).toEqual({
+      ambassador: null,
+      error: "Chiến dịch này hiện không còn mở tạo liên kết kêu gọi.",
+    })
   })
 })

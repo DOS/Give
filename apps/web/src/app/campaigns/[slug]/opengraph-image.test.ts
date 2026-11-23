@@ -149,6 +149,7 @@ describe("CampaignOpenGraphImage (/campaigns/[slug]/opengraph-image, DOS/Give#31
     const response = await CampaignOpenGraphImage({ params: Promise.resolve({ slug: SLUG }) })
     expect(response.status).toBe(200)
     expect(response.headers.get("content-type")).toContain("image/png")
+    expect(response.headers.get("cache-control")).toBe(PUBLIC_COVER_CACHE)
     expect(state.anonCalls.some((c) => c.target === "public_campaigns")).toBe(false)
     const bytes = new Uint8Array(await response.arrayBuffer())
     expect(Array.from(bytes.slice(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47])
@@ -166,6 +167,30 @@ describe("CampaignOpenGraphImage (/campaigns/[slug]/opengraph-image, DOS/Give#31
     const expired = await CampaignOpenGraphImage({ params: Promise.resolve({ slug: SLUG }) })
     expect(expired.status).toBe(404)
     expect(expired.headers.get("cache-control")).toBe("no-store")
+  })
+
+  it("returns Cache-Control: no-store on live/ended campaigns when totals read fails so CDNs never cache 0 ₫ fallbacks (DOS/Give#331)", async () => {
+    const base = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "public_campaigns") return { error: { code: "XX000", message: "transient failure" } }
+      return base(call)
+    }
+
+    const liveFailed = await CampaignOpenGraphImage({ params: Promise.resolve({ slug: SLUG }) })
+    expect(liveFailed.status).toBe(200)
+    expect(liveFailed.headers.get("content-type")).toContain("image/png")
+    expect(liveFailed.headers.get("cache-control")).toBe("no-store")
+    expect(liveFailed.headers.get("x-content-type-options")).toBe("nosniff")
+
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture("closed") }
+      if (call.target === "public_campaigns") return { data: null }
+      return base(call)
+    }
+
+    const endedMissingTotals = await CampaignOpenGraphImage({ params: Promise.resolve({ slug: SLUG }) })
+    expect(endedMissingTotals.status).toBe(200)
+    expect(endedMissingTotals.headers.get("cache-control")).toBe("no-store")
   })
 
   it("returns 404 for nonexistent campaigns and invalid slugs without querying the database for invalid slugs", async () => {

@@ -17,7 +17,7 @@ import { dbAs } from "@/lib/supabase"
 import { isSessionRejected } from "@/server/contributions"
 
 import { MePage } from "./_components/MePage"
-import { updateOrganizerPublicProfile } from "./actions"
+import { toggleMyAmbassadorLeaderboard, updateOrganizerPublicProfile } from "./actions"
 import { PublicProfileForm } from "./PublicProfileForm"
 
 export const metadata: Metadata = { title: "Hồ sơ người tổ chức", robots: { index: false } }
@@ -57,7 +57,11 @@ export default async function MyProfilePage() {
         >
           Tạo hồ sơ người tổ chức trước khi bắt đầu gây quỹ và mở trang hồ sơ công khai trên Give.
         </EmptyState>
-        <MyAmbassadorLinksSection links={ambassadorLinks} origin={origin} />
+        <MyAmbassadorLinksSection
+          links={ambassadorLinks}
+          origin={origin}
+          toggleLeaderboardAction={toggleMyAmbassadorLeaderboard}
+        />
       </MePage>
     )
   }
@@ -120,7 +124,11 @@ export default async function MyProfilePage() {
         </p>
       </section>
 
-      <MyAmbassadorLinksSection links={ambassadorLinks} origin={origin} />
+      <MyAmbassadorLinksSection
+        links={ambassadorLinks}
+        origin={origin}
+        toggleLeaderboardAction={toggleMyAmbassadorLeaderboard}
+      />
     </MePage>
   )
 }

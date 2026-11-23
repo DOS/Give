@@ -330,8 +330,10 @@ describe("PledgeForm (DOS/Give#216)", () => {
 
       expect(radio(EB_EXPIRED).disabled).toBe(true)
       expect(radio(EB_EXPIRED).checked).toBe(false)
-      expect(radio(EB_EXPIRED).closest("label")?.textContent).toContain("Mức hiện tại của bạn")
-      expect(radio(EB_EXPIRED).closest("label")?.textContent).toContain("Đã hết hạn ưu đãi")
+      const expiredCard = radio(EB_EXPIRED).closest("label")!
+      expect(expiredCard.textContent).toContain("Mức hiện tại của bạn")
+      expect(expiredCard.querySelector("span.bg-primary-soft.text-primary")?.textContent).toBe("Mức hiện tại của bạn")
+      expect(expiredCard.textContent).toContain("Đã hết hạn ưu đãi")
 
       choose(LOW)
       expect(radio(LOW).checked).toBe(true)

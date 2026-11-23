@@ -115,7 +115,7 @@ export function PledgeForm({
                   <span className="flex min-w-0 flex-wrap items-center gap-2">
                     <span className="min-w-0 font-semibold break-words text-fg">{t.title}</span>
                     {t.is_early_bird && <Badge tone="warning">Ưu đãi Early Bird</Badge>}
-                    {isCurrentExpired && <Badge tone="info">Mức hiện tại của bạn</Badge>}
+                    {isCurrentExpired && <Badge tone="brand">Mức hiện tại của bạn</Badge>}
                   </span>
                   <span className="font-bold text-fg tabular-nums">Từ {formatVnd(t.min_amount)}</span>
                 </span>

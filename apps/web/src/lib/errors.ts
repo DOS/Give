@@ -230,7 +230,7 @@ const GIVE_MESSAGES: Record<string, string> = {
   GIVE_PRELAUNCH_REQUIRES_FUTURE_START: "Cần đặt ngày bắt đầu trong tương lai để bật chế độ Sắp ra mắt.",
   // Structured campaign FAQs and duplicate campaign draft (DOS/Give#316).
   GIVE_FAQ_QUESTION_INVALID: "Câu hỏi phải từ 1 đến 300 ký tự.",
-  GIVE_FAQ_ANSWER_INVALID: "Câu trả lời phải từ 1 đến 4000 ký tự.",
+  GIVE_FAQ_ANSWER_INVALID: "Câu trả lời phải từ 1 đến 4.000 ký tự.",
   GIVE_FAQ_POSITION_INVALID: "Thứ tự câu hỏi không hợp lệ.",
   GIVE_FAQ_LIMIT_EXCEEDED: "Mỗi chiến dịch chỉ có tối đa 25 câu hỏi thường gặp.",
   GIVE_FAQ_NOT_FOUND: "Không tìm thấy câu hỏi thường gặp này.",

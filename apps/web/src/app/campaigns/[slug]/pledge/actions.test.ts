@@ -185,7 +185,7 @@ describe("savePledge", () => {
     expect(await savePledge(CAMPAIGN, null, null, form())).toEqual({ ok: false, message: expected })
   })
 
-  it("refuses an expired Early Bird tier before calling create_pledge (DOS/Give#317)", async () => {
+  it("refuses an expired Early Bird tier before calling create_pledge or change_pledge (DOS/Give#317, #331)", async () => {
     state.userHandler = userReads({
       tier: {
         ...tierRow(false),
@@ -194,6 +194,10 @@ describe("savePledge", () => {
       },
     })
     expect(await savePledge(CAMPAIGN, null, null, form())).toEqual({
+      ok: false,
+      message: "Ưu đãi Early Bird của phần quà này đã hết hạn. Hãy chọn phần quà khác.",
+    })
+    expect(await savePledge(CAMPAIGN, PLEDGE, null, form())).toEqual({
       ok: false,
       message: "Ưu đãi Early Bird của phần quà này đã hết hạn. Hãy chọn phần quà khác.",
     })

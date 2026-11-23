@@ -41,6 +41,10 @@ const RETURNED_NOT_EXPLAINABLE =
 
 /** give.record_disbursement refuses a refund to the organizer's own contribution (DOS/Give#199). */
 const REFUND_MESSAGES: Record<string, string> = { GIVE_SELF_REVIEW: OWN_CONTRIBUTION_MESSAGES.refund }
+/** Context-specific wording for milestone linking on an unexplained disbursement (DOS/Give#314, #331). */
+const LINK_MILESTONE_MESSAGES: Record<string, string> = {
+  GIVE_DISBURSEMENT_NOT_FOUND: "Khoản chi này chưa được giải trình, nên chưa gắn được mốc mục tiêu.",
+}
 
 type Loaded = {
   campaign: CampaignWithRefs
@@ -236,7 +240,9 @@ export async function linkDisbursementMilestone(
   const loaded = await load(session, campaignId, transactionId)
   if (typeof loaded === "string") return fail(loaded)
   const { campaign, tx, disbursement } = loaded
-  if (!disbursement) return fail(dbErrorMessage({ message: "GIVE_DISBURSEMENT_NOT_FOUND" }))
+  if (!disbursement) {
+    return fail(dbErrorMessage({ message: "GIVE_DISBURSEMENT_NOT_FOUND" }, LINK_MILESTONE_MESSAGES))
+  }
   if (disbursement.is_refund) {
     return fail(dbErrorMessage({ message: "GIVE_DISBURSEMENT_MILESTONE_NOT_ALLOWED" }))
   }
@@ -248,7 +254,7 @@ export async function linkDisbursementMilestone(
       p_milestone_id: milestoneId,
     })
     .single()
-  if (error) return fail(dbErrorMessage(error))
+  if (error) return fail(dbErrorMessage(error, LINK_MILESTONE_MESSAGES))
 
   refresh(campaign)
   if ((data as { replayed?: boolean } | null)?.replayed === true) {

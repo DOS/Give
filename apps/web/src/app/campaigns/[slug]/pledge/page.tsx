@@ -153,7 +153,8 @@ export default async function PledgePage({
               {openTierExpired && (
                 <p>
                   Phần quà Early Bird bạn đã chọn đã hết hạn nhận cam kết mới, nhưng cam kết hiện tại của bạn vẫn giữ
-                  nguyên hiệu lực. Bạn có thể giữ nguyên, hủy cam kết, hoặc chuyển sang một phần quà khác bên dưới.
+                  nguyên hiệu lực.
+                  {accepting ? " Bạn có thể giữ nguyên, hủy cam kết, hoặc chuyển sang một phần quà khác bên dưới." : ""}
                 </p>
               )}
               <div className="flex flex-wrap items-center gap-3 pt-2">

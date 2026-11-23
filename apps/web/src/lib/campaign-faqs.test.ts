@@ -88,7 +88,11 @@ describe("campaign-faqs helpers (DOS/Give#316)", () => {
     expect(campaignFaqSchema.safeParse({ question: "   \t\n ", answer: "Đáp." }).success).toBe(false)
     expect(campaignFaqSchema.safeParse({ question: "a".repeat(301), answer: "Đáp." }).success).toBe(false)
     expect(campaignFaqSchema.safeParse({ question: "Hỏi?", answer: "  \n " }).success).toBe(false)
-    expect(campaignFaqSchema.safeParse({ question: "Hỏi?", answer: "a".repeat(4001) }).success).toBe(false)
+    const tooLong = campaignFaqSchema.safeParse({ question: "Hỏi?", answer: "a".repeat(4001) })
+    expect(tooLong.success).toBe(false)
+    if (!tooLong.success) {
+      expect(tooLong.error.issues[0]?.message).toBe("Câu trả lời tối đa 4.000 ký tự.")
+    }
   })
 
   it("maps every FAQ & duplicate DB error code to Vietnamese copy without raw DB leaks", () => {
@@ -110,6 +114,7 @@ describe("campaign-faqs helpers (DOS/Give#316)", () => {
       expect(msg).not.toContain("internal detail")
       expect(msg).not.toBe("Có lỗi xảy ra. Hãy thử lại sau.")
     }
+    expect(dbErrorMessage({ message: "GIVE_FAQ_ANSWER_INVALID" })).toBe("Câu trả lời phải từ 1 đến 4.000 ký tự.")
     expect(dbErrorMessage({ message: 'relation "give.campaign_faqs" boom' })).toBe("Có lỗi xảy ra. Hãy thử lại sau.")
   })
 })

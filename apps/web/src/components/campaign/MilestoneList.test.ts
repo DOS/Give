@@ -148,13 +148,13 @@ describe("MilestoneList (DOS/Give#268)", () => {
         raisedAmount: 25_000_000,
         preview: false,
         rollups,
-        statementUrl: "/campaigns/ban-may/statement?direction=out",
+        statementUrl: "/campaigns/ban-may/statement?filter=out",
       })
     )
     expect(publicHtml).toContain("Đã giải ngân")
     expect(publicHtml).toContain("2 khoản chi")
     expect(publicHtml).toContain("5 chứng từ công khai")
-    expect(publicHtml).toContain("/campaigns/ban-may/statement?direction=out")
+    expect(publicHtml).toContain("/campaigns/ban-may/statement?filter=out")
     expect(publicHtml).toContain("Chưa có khoản chi gắn mốc này")
 
     const previewHtml = renderToStaticMarkup(

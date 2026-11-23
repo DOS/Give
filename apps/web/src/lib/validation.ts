@@ -191,7 +191,7 @@ export const updateSchema = z.object({
 
 export const campaignFaqSchema = z.object({
   question: z.string().trim().min(1, "Hãy nhập câu hỏi.").max(300, "Câu hỏi tối đa 300 ký tự."),
-  answer: z.string().trim().min(1, "Hãy nhập câu trả lời.").max(4000, "Câu trả lời tối đa 4000 ký tự."),
+  answer: z.string().trim().min(1, "Hãy nhập câu trả lời.").max(4000, "Câu trả lời tối đa 4.000 ký tự."),
 })
 
 /** Pulls a form's string fields into a plain object for zod. */

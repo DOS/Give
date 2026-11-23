@@ -69,6 +69,9 @@ export default async function CampaignOpenGraphImage({ params }: { params: Promi
   const model = buildOgCampaignCardModel({ campaign, totals, organizer, now })
   if (!model) return notFoundResponse()
 
+  // Never let CDNs cache transient 0 ₫ fallback figures when totals lookup fails on live/ended campaigns.
+  const cacheControl = !prelaunch && totals === null ? "no-store" : PUBLIC_COVER_CACHE
+
   const isGive = model.type === "give"
   const barColor = isGive ? "#047857" : "#C2410C"
   const badgeBg = isGive ? "#ECFDF5" : "#FFF7ED"
@@ -298,7 +301,7 @@ export default async function CampaignOpenGraphImage({ params }: { params: Promi
     {
       ...size,
       headers: {
-        "Cache-Control": PUBLIC_COVER_CACHE,
+        "Cache-Control": cacheControl,
         "X-Content-Type-Options": "nosniff",
       },
       fonts: [
