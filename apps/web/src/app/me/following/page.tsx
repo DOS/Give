@@ -81,9 +81,14 @@ async function FollowingList({ session }: { session: Session }) {
     <div className="space-y-12">
       {campaigns.length > 0 && (
         <section aria-labelledby="followed-campaigns-heading" className="space-y-4">
-          <h2 id="followed-campaigns-heading" className="text-h2">
-            Chiến dịch đang theo dõi <span className="font-normal text-muted">({campaigns.length})</span>
-          </h2>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="followed-campaigns-heading" className="text-h2">
+              Chiến dịch đang theo dõi <span className="font-normal text-muted">({campaigns.length})</span>
+            </h2>
+            {campaigns.length >= 100 && (
+              <p className="text-sm text-muted">Hiển thị 100 chiến dịch theo dõi mới nhất.</p>
+            )}
+          </div>
           <ul className="divide-y divide-border card">
             {campaigns.map((campaign) => {
               const publicLiveOrEnded = isPublicStatus(campaign.status)

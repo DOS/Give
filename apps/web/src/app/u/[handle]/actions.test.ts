@@ -65,7 +65,7 @@ describe("toggleOrganizerFollow action (/u/[handle], DOS/Give#315)", () => {
       "rpc:follow_organizer_by_handle",
       "rpc:organizer_follower_count_by_handle",
     ])
-    expect(state.revalidated).toEqual(["/u/quy-ban-may", "/me/contributions"])
+    expect(state.revalidated).toEqual(["/u/quy-ban-may", "/me/contributions", "/me/following"])
 
     state.calls.length = 0
     state.handler = (call) => {

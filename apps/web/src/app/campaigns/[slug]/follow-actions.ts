@@ -45,6 +45,7 @@ export async function toggleCampaignFollow(
     )
     if (SLUG_PATTERN.test(slug) && slug.length <= 80) revalidatePath(`/campaigns/${slug}`)
     revalidatePath("/me/contributions")
+    revalidatePath("/me/following")
     return { following: intent === "follow", count: nextCount }
   } catch (error: unknown) {
     const err = error as { code?: string; message?: string } | null

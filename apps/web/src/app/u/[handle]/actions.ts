@@ -52,6 +52,7 @@ export async function toggleOrganizerFollow(
     )
     revalidatePath(organizerProfileHref(handle))
     revalidatePath("/me/contributions")
+    revalidatePath("/me/following")
     return { following: intent === "follow", count: nextCount }
   } catch (error: unknown) {
     const err = error as { code?: string; message?: string } | null

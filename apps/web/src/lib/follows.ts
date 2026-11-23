@@ -87,6 +87,7 @@ export const EMPTY_DONOR_IMPACT_SUMMARY: DonorImpactSummary = {
 }
 
 function toSafeCount(value: unknown): number {
+  if (typeof value === "boolean") return 0
   const n = Number(value)
   return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : 0
 }
@@ -183,7 +184,7 @@ function validIsoTimestamp(raw: unknown): string | null {
  */
 export async function listMyFollowedCampaigns(db: Db, limit = 50, offset = 0): Promise<FollowedCampaign[]> {
   const clampedLimit = Number.isFinite(limit) ? Math.min(Math.max(Math.trunc(limit), 1), 100) : 50
-  const clampedOffset = Number.isFinite(offset) ? Math.max(Math.trunc(offset), 0) : 0
+  const clampedOffset = Number.isFinite(offset) ? Math.min(Math.max(Math.trunc(offset), 0), 2_147_483_647) : 0
 
   const { data, error } = await db.rpc("list_my_followed_campaigns", {
     p_limit: clampedLimit,
@@ -193,6 +194,7 @@ export async function listMyFollowedCampaigns(db: Db, limit = 50, offset = 0): P
 
   const items: FollowedCampaign[] = []
   for (const row of (Array.isArray(data) ? data : []) as RawFollowedCampaignRow[]) {
+    if (!row || typeof row !== "object") continue
     if (!isUuid(row.campaign_id)) continue
     const slug = safeCampaignSlug(row.slug)
     if (!slug) continue

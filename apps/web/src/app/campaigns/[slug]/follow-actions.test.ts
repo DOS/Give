@@ -67,7 +67,7 @@ describe("toggleCampaignFollow action (DOS/Give#315)", () => {
     )
     expect(followed).toEqual({ following: true, count: 4 })
     expect(state.calls.some((c) => c.target === "campaign_follows" && op(c, "insert"))).toBe(true)
-    expect(state.revalidated).toEqual(["/campaigns/sap-ra-mat", "/me/contributions"])
+    expect(state.revalidated).toEqual(["/campaigns/sap-ra-mat", "/me/contributions", "/me/following"])
 
     state.calls.length = 0
     state.handler = (call) => {

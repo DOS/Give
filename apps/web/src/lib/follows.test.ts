@@ -254,7 +254,8 @@ describe("listMyFollowedCampaigns (DOS/Give#337)", () => {
               followed_at: "2026-11-22T00:00:00Z",
               has_supported: false,
             },
-            // Unsafe slug and invalid campaign_id rows are dropped cleanly.
+            // Null/non-object, unsafe slug, and invalid campaign_id rows are dropped cleanly.
+            null,
             {
               campaign_id: "not-a-uuid",
               slug: "ok-slug",
