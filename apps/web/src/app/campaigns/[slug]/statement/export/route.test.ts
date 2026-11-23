@@ -469,6 +469,34 @@ describe("GET /campaigns/[slug]/statement/export (DOS/Give#336)", () => {
     expect(amounts.at(-1)).toBe(String(10_000 + 100))
   })
 
+  it("fetches past page 100 within maxPagesCap when concurrent inserts shift rows at the 5,000-row boundary", async () => {
+    const dataset = Array.from({ length: STATEMENT_EXPORT_MAX_ROWS + 2 }, (_, idx) =>
+      statementRow({ id: `tx-${idx + 1}`, amount: 1000 + idx })
+    )
+    const requestedPages: number[] = []
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignRow("live") }
+      if (call.target === "public_campaigns") return { data: TOTALS_ROW }
+      if (call.target === "public_statement") {
+        const [from, to] = op(call, "range") as [number, number]
+        requestedPages.push(from / STATEMENT_PAGE_SIZE + 1)
+        if (from === 0) {
+          return { data: dataset.slice(2, 52), count: STATEMENT_EXPORT_MAX_ROWS }
+        }
+        return { data: dataset.slice(from, to + 1), count: STATEMENT_EXPORT_MAX_ROWS + 2 }
+      }
+      return undefined
+    }
+
+    const res = await GET(makeRequest(), { params: Promise.resolve({ slug: SLUG }) })
+    expect(res.status).toBe(200)
+    expect(res.headers.get("x-statement-truncated")).toBe("true")
+    expect(requestedPages).toContain(101)
+    const body = new TextDecoder("utf-8", { ignoreBOM: true }).decode(new Uint8Array(await res.arrayBuffer()))
+    const dataLines = body.slice(1).split("\r\n").slice(1)
+    expect(dataLines).toHaveLength(STATEMENT_EXPORT_MAX_ROWS)
+  })
+
   it("stops cleanly if rows shrink and subsequent page returns PGRST103", async () => {
     state.anonHandler = (call) => {
       if (call.target === "campaigns") return { data: campaignRow("live") }

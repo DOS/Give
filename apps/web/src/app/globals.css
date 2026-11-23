@@ -331,7 +331,8 @@
 
   [data-site-header],
   body > header,
-  footer,
+  [data-site-footer],
+  body > footer,
   nav,
   .print\:hidden {
     display: none !important;

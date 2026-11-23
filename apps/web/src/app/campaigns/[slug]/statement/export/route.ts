@@ -81,7 +81,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     if (firstPage.rows.length > 0) {
       while (rows.length < STATEMENT_EXPORT_MAX_ROWS && nextPage <= maxPagesCap) {
-        const targetPages = Math.ceil(Math.min(latestTotal, STATEMENT_EXPORT_MAX_ROWS) / STATEMENT_PAGE_SIZE)
+        const pagesForRemaining = Math.ceil((STATEMENT_EXPORT_MAX_ROWS - rows.length) / STATEMENT_PAGE_SIZE)
+        const targetPages = Math.min(
+          nextPage + pagesForRemaining - 1,
+          Math.ceil(latestTotal / STATEMENT_PAGE_SIZE),
+          maxPagesCap
+        )
         if (nextPage > targetPages) break
         const pages: number[] = []
         for (let page = nextPage; page < nextPage + EXPORT_FETCH_CONCURRENCY && page <= targetPages; page += 1) {

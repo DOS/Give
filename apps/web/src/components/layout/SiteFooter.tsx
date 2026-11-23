@@ -48,7 +48,7 @@ const SECTIONS: { title: string; links: { href: string; label: string }[] }[] = 
  */
 export function SiteFooter() {
   return (
-    <footer className="border-t border-border bg-bg text-sm">
+    <footer data-site-footer className="border-t border-border bg-bg text-sm">
       <div className="container-page grid grid-cols-2 gap-x-4 gap-y-6 pt-12 pb-8 sm:pt-16 lg:grid-cols-4 lg:gap-x-6">
         <div className="col-span-2 min-w-0 lg:col-span-1">
           <p className="text-lg font-bold text-fg">Give</p>

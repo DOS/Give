@@ -13,19 +13,17 @@ export interface CsvOptions {
 }
 
 const FORMULA_TRIGGERS = new Set(["=", "+", "-", "@", "\t", "\r"])
+const LEADING_IGNORABLE = /[\p{Cc}\p{Cf}\s]/u
 
 /**
  * True when `value` starts with a spreadsheet formula trigger (=, +, -, @, \t, \r),
- * or begins with whitespace/ASCII control characters followed by one.
+ * or begins with whitespace, control characters (\p{Cc}, including NEL \u0085),
+ * or invisible format characters (\p{Cf}, e.g. ZWSP/ZWJ/Bidi/Soft Hyphen) followed by one.
  */
 function needsFormulaNeutralization(value: string): boolean {
-  if (value.length === 0) return false
-  if (FORMULA_TRIGGERS.has(value[0])) return true
-  for (let i = 0; i < value.length; i += 1) {
-    const ch = value[i]
+  for (const ch of value) {
     if (FORMULA_TRIGGERS.has(ch)) return true
-    const code = value.charCodeAt(i)
-    if (code <= 0x20 || code === 0x7f || /\s/.test(ch)) continue
+    if (LEADING_IGNORABLE.test(ch)) continue
     return false
   }
   return false
