@@ -1,5 +1,10 @@
 # CROWDFUNDING PLATFORM ARCHITECTURE & TECH STACK
 
+> **Historical 2025 Strapi prototype doc — archived and not kept up to date.**
+> Replaced by [README.md](../README.md), [DESIGN.md](../DESIGN.md),
+> [Give-Technical-Design.md](Give-Technical-Design.md),
+> [Platform-Roadmap.md](Platform-Roadmap.md), and [CHANGELOG.md](../CHANGELOG.md).
+
 _Kiến trúc tối ưu cho crowdfunding platform - Lessons learned từ Giveth + Modern Stack_
 
 ## 🏗️ SYSTEM ARCHITECTURE OVERVIEW
