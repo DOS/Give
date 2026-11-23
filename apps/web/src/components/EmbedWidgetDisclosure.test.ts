@@ -83,7 +83,7 @@ describe("EmbedWidgetDisclosure (DOS/Give#335)", () => {
 
     const textarea = container.querySelector("textarea")!
     expect(textarea.value).toBe(
-      '<iframe src="https://give.vn/embed/xay-truong?ref=ab23cd45ef" title="Xây &quot;trường&quot; &amp; lớp &lt;mới&gt; · Give" width="100%" height="280" style="border:0;border-radius:12px;overflow:hidden" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>'
+      '<iframe src="https://give.vn/embed/xay-truong?ref=ab23cd45ef" title="Xây &quot;trường&quot; &amp; lớp &lt;mới&gt; · Give" width="100%" height="280" style="border:0;border-radius:6px;overflow:hidden" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>'
     )
 
     const compactBtn = [...container.querySelectorAll("button")].find((b) => b.textContent?.includes("Thu gọn"))!

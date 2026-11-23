@@ -71,7 +71,7 @@ describe("embed helpers (DOS/Give#335)", () => {
       origin: "https://give.vn",
     })
     expect(defaultSnippet).toBe(
-      '<iframe src="https://give.vn/embed/xay-truong" title="Xây &quot;trường&quot; &amp; lớp &lt;mới&gt; · Give" width="100%" height="280" style="border:0;border-radius:12px;overflow:hidden" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>'
+      '<iframe src="https://give.vn/embed/xay-truong" title="Xây &quot;trường&quot; &amp; lớp &lt;mới&gt; · Give" width="100%" height="280" style="border:0;border-radius:6px;overflow:hidden" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>'
     )
     expect(defaultSnippet).toContain(`height="${EMBED_HEIGHT_DEFAULT}"`)
 

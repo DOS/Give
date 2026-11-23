@@ -53,7 +53,16 @@ describe("response headers", () => {
     expect(globalIdx).toBeGreaterThanOrEqual(0)
     expect(embedIdx).toBeGreaterThan(globalIdx)
 
-    for (const path of ["/", "/campaigns/abc", "/me", "/admin", "/donations/GV123", "/invites/tok123", "/embedded"]) {
+    for (const path of [
+      "/",
+      "/campaigns/abc",
+      "/campaigns/embed",
+      "/me",
+      "/admin",
+      "/donations/GV123",
+      "/invites/tok123",
+      "/embedded",
+    ]) {
       const headers = await resolveHeadersForPath(path)
       expect(headers.get("x-frame-options"), path).toBe("DENY")
       expect(headers.get("x-content-type-options"), path).toBe("nosniff")
@@ -66,6 +75,13 @@ describe("response headers", () => {
       expect(headers.get("content-security-policy"), embedPath).toBe("frame-ancestors *")
       expect(headers.get("x-content-type-options"), embedPath).toBe("nosniff")
       expect(headers.get("referrer-policy"), embedPath).toBe("strict-origin-when-cross-origin")
+    }
+
+    // Next.js pathToRegexp defaults to case-insensitive matching; proxy.ts explicitly
+    // rejects mixed-case /Embed/* and /EMBED with 404 + X-Frame-Options: DENY.
+    for (const mixedCaseEmbed of ["/Embed/abc", "/EMBED"]) {
+      const headers = await resolveHeadersForPath(mixedCaseEmbed)
+      expect(headers.get("x-frame-options"), mixedCaseEmbed).toBeUndefined()
     }
   })
 

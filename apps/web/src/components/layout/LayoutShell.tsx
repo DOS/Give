@@ -6,7 +6,8 @@ import type { ReactNode } from "react"
 import { RingBoxScroll } from "@/components/layout/RingBoxScroll"
 
 export function isEmbedRoute(pathname: string | null): boolean {
-  return pathname === "/embed" || Boolean(pathname?.startsWith("/embed/"))
+  const normalized = pathname?.toLowerCase() ?? ""
+  return normalized === "/embed" || normalized.startsWith("/embed/")
 }
 
 /**

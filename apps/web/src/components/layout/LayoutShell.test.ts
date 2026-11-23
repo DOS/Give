@@ -39,9 +39,11 @@ afterEach(() => {
 })
 
 describe("LayoutShell (DOS/Give#335)", () => {
-  it("recognizes /embed and /embed/* without matching /embedded", () => {
+  it("recognizes /embed and /embed/* case-insensitively without matching /embedded", () => {
     expect(isEmbedRoute("/embed")).toBe(true)
     expect(isEmbedRoute("/embed/xay-truong")).toBe(true)
+    expect(isEmbedRoute("/Embed/xay-truong")).toBe(true)
+    expect(isEmbedRoute("/EMBED")).toBe(true)
     expect(isEmbedRoute("/embedded")).toBe(false)
     expect(isEmbedRoute("/campaigns/xay-truong")).toBe(false)
     expect(isEmbedRoute(null)).toBe(false)

@@ -210,7 +210,9 @@ describe("/embed/[slug] page (DOS/Give#335)", () => {
       )
     )
     expect(darkCompactDoc.querySelector("article")?.getAttribute("data-embed-theme")).toBe("dark")
+    expect(darkCompactDoc.querySelector("article")?.className).toContain("rounded-md")
     expect(darkCompactDoc.querySelector("h1")?.className).toContain("truncate")
+    expect(darkCompactDoc.body.textContent).not.toContain("Mục tiêu")
     expect(darkCompactDoc.querySelector("a")?.getAttribute("href")).toBe(
       `https://give.vn/campaigns/${SLUG}?ref=ab23cd45ef`
     )
@@ -293,5 +295,57 @@ describe("/embed/[slug] page (DOS/Give#335)", () => {
       "NEXT_NOT_FOUND"
     )
     expect(state.anonCalls).toEqual([])
+  })
+
+  it("calls notFound() when prelaunch_public=true approved campaign has past starts_at", async () => {
+    state.anonHandler = () => ({
+      data: campaignFixture({
+        status: "approved",
+        prelaunch_public: true,
+        starts_at: "2020-01-01T00:00:00.000Z",
+      }),
+    })
+    await expect(EmbedCampaignPage({ params: Promise.resolve({ slug: SLUG }) })).rejects.toThrow("NEXT_NOT_FOUND")
+  })
+
+  it("handles missing totals, goal_amount=0, expired live campaigns, and display_options=false safely", async () => {
+    // 1. totals === null on live campaign omits 0 ₫ and progressbar
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") return { data: campaignFixture({ status: "live" }) }
+      if (call.target === "rpc:public_organizer") return { data: [] }
+      if (call.target === "public_campaigns") return { data: null }
+      return undefined
+    }
+    const noTotalsDoc = parseDoc(
+      renderToStaticMarkup(await EmbedCampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    )
+    expect(noTotalsDoc.querySelector('[role="progressbar"]')).toBeNull()
+    expect(noTotalsDoc.body.textContent).not.toContain("đã nhận")
+    expect(noTotalsDoc.body.textContent).toContain("Mục tiêu 100.000.000")
+
+    // 2. Expired live campaign shows "Đã hết hạn" and "Xem chi tiết" instead of "Ủng hộ ngay"
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: campaignFixture({
+            status: "live",
+            ends_at: "2020-01-01T00:00:00.000Z",
+            goal_amount: 0,
+            display_options: { progress_bar: false, backers_count: false, time_remaining: true },
+          }),
+        }
+      }
+      if (call.target === "rpc:public_organizer") return { data: [] }
+      if (call.target === "public_campaigns") return { data: totalsFixture({ paid_amount: 0, supporters_count: 5 }) }
+      return undefined
+    }
+    const expiredDoc = parseDoc(
+      renderToStaticMarkup(await EmbedCampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    )
+    expect(expiredDoc.querySelector('[role="progressbar"]')).toBeNull()
+    expect(expiredDoc.body.textContent).not.toContain("5 người ủng hộ")
+    expect(expiredDoc.body.textContent).toContain("Đã hết hạn")
+    expect(expiredDoc.querySelector("a")?.textContent).toContain("Xem chi tiết")
+    expect(expiredDoc.querySelector("a")?.textContent).not.toContain("Ủng hộ ngay")
   })
 })

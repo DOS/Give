@@ -110,5 +110,5 @@ export function buildEmbedIframeCode({
   const cleanTitle = title.replace(/\s+/g, " ").trim()
   const iframeTitle = cleanTitle ? `${cleanTitle} · Give` : "Chiến dịch Give"
 
-  return `<iframe src="${escapeHtmlAttr(src)}" title="${escapeHtmlAttr(iframeTitle)}" width="100%" height="${height}" style="border:0;border-radius:12px;overflow:hidden" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>`
+  return `<iframe src="${escapeHtmlAttr(src)}" title="${escapeHtmlAttr(iframeTitle)}" width="100%" height="${height}" style="border:0;border-radius:6px;overflow:hidden" loading="lazy" referrerpolicy="strict-origin-when-cross-origin"></iframe>`
 }

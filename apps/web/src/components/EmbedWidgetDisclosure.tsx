@@ -126,7 +126,7 @@ export function EmbedWidgetDisclosure({
                   }}
                   className={clsx(
                     "min-h-9 rounded px-2 text-sm font-semibold transition-colors duration-150 focus-visible:-outline-offset-2",
-                    active ? "border border-border bg-raised text-fg" : "text-muted hover:text-fg"
+                    active ? "bg-raised text-fg ring-1 ring-border ring-inset" : "text-muted hover:text-fg"
                   )}
                 >
                   {option.label}
@@ -152,7 +152,7 @@ export function EmbedWidgetDisclosure({
                   }}
                   className={clsx(
                     "min-h-9 rounded px-2 text-sm font-semibold transition-colors duration-150 focus-visible:-outline-offset-2",
-                    active ? "border border-border bg-raised text-fg" : "text-muted hover:text-fg"
+                    active ? "bg-raised text-fg ring-1 ring-border ring-inset" : "text-muted hover:text-fg"
                   )}
                 >
                   {EMBED_THEME_LABELS[option]}

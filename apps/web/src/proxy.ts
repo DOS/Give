@@ -5,11 +5,10 @@ import { isDeadRefreshToken, loadOidcConfig, refreshTokens, tokenFailureLog } fr
 import { appOrigin } from "@/lib/auth/origin"
 import { needsRefresh } from "@/lib/auth/token"
 
-const EMBED_HEADER = "x-give-embed"
+export const EMBED_HEADER = "x-give-embed"
 
-export function isEmbedPath(pathname: string): boolean {
-  return pathname === "/embed" || pathname.startsWith("/embed/")
-}
+const EXACT_EMBED_RE = /^\/embed(?:\/|$)/
+const ANY_CASE_EMBED_RE = /^\/embed(?:\/|$)/i
 
 /**
  * Keeps the session's access token fresh. When it is missing or about to
@@ -18,19 +17,33 @@ export function isEmbedPath(pathname: string): boolean {
  * refresh call gives up after TOKEN_TIMEOUT_MS (set in oidc.ts) and never
  * follows a redirect.
  *
- * Embed widget routes (`/embed`, `/embed/*`) are strictly anonymous and
- * read-only (DOS/Give#335): they never read/refresh session cookies, and carry
- * a proxy-controlled `x-give-embed` header so `RootLayout` can skip `getSession()`.
+ * Embed widget routes (`/embed`, `/embed/*`) stay strictly anonymous: `proxy()`
+ * marks them with a trusted internal `x-give-embed` request header and returns
+ * before touching cookies or OIDC refresh, while stripping any client-supplied
+ * `x-give-embed` on every other route and rejecting mixed-case `/Embed*` paths
+ * with 404 + `X-Frame-Options: DENY` (DOS/Give#335).
  */
 export async function proxy(request: NextRequest) {
-  if (isEmbedPath(request.nextUrl.pathname)) {
-    const requestHeaders = new Headers(request.headers)
-    requestHeaders.set(EMBED_HEADER, "1")
-    return NextResponse.next({ request: { headers: requestHeaders } })
+  const { pathname } = request.nextUrl
+  if (ANY_CASE_EMBED_RE.test(pathname) && !EXACT_EMBED_RE.test(pathname)) {
+    return new NextResponse("Not Found", {
+      status: 404,
+      headers: {
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY",
+        "Content-Security-Policy": "frame-ancestors 'none'",
+        "X-Robots-Tag": "noindex, nofollow",
+      },
+    })
+  }
+  if (EXACT_EMBED_RE.test(pathname)) {
+    const embedHeaders = new Headers(request.headers)
+    embedHeaders.set(EMBED_HEADER, "1")
+    return NextResponse.next({ request: { headers: embedHeaders } })
   }
 
-  const hadSpoofedEmbedHeader = request.headers.has(EMBED_HEADER)
-  if (hadSpoofedEmbedHeader) request.headers.delete(EMBED_HEADER)
+  const hadSpoofedEmbed = request.headers.has(EMBED_HEADER)
+  if (hadSpoofedEmbed) request.headers.delete(EMBED_HEADER)
 
   const { hostname } = request.nextUrl
   const accessName = cookieName(SESSION_ACCESS, hostname)
@@ -39,7 +52,7 @@ export async function proxy(request: NextRequest) {
   const refresh = request.cookies.get(refreshName)?.value
 
   if (!refresh || !needsRefresh(access)) {
-    return hadSpoofedEmbedHeader ? NextResponse.next({ request }) : NextResponse.next()
+    return hadSpoofedEmbed ? NextResponse.next({ request: { headers: new Headers(request.headers) } }) : NextResponse.next()
   }
 
   try {
@@ -58,7 +71,9 @@ export async function proxy(request: NextRequest) {
     // config mistake fails loudly instead of signing everyone out.
     if (!isDeadRefreshToken(error)) {
       console.warn("auth.refresh.failed", tokenFailureLog(error))
-      return hadSpoofedEmbedHeader ? NextResponse.next({ request }) : NextResponse.next()
+      return hadSpoofedEmbed
+        ? NextResponse.next({ request: { headers: new Headers(request.headers) } })
+        : NextResponse.next()
     }
     request.cookies.delete(accessName)
     const response = NextResponse.next({ request })

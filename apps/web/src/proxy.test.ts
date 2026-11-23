@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks"
 import { NextRequest } from "next/server"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-import { config, proxy } from "./proxy"
+import { config, EMBED_HEADER, proxy } from "./proxy"
 
 const ISSUER = "https://issuer.example/auth/v1"
 
@@ -194,30 +194,62 @@ describe("proxy session refresh", () => {
     expect(loggedText()).not.toContain("rt-1")
   })
 
-  it("skips cookie refresh and marks x-give-embed on /embed and /embed/*, while stripping spoofed headers elsewhere (DOS/Give#335)", async () => {
-    for (const path of ["/embed", "/embed/xay-truong-ban-may"]) {
+  it("marks lowercase /embed* with x-give-embed without refreshing cookies, strips spoofed headers elsewhere, and blocks mixed-case /Embed* with 404 DENY (DOS/Give#335)", async () => {
+    for (const path of ["/embed", "/embed/test-slug"]) {
       const response = await proxy(
         new NextRequest(`https://give.example${path}`, { headers: { cookie: "__Host-give_rt=rt-1" } })
       )
       expect(fetchMock).not.toHaveBeenCalled()
       expectCookiesKept(response)
+      expect(response.status).toBe(200)
       expect(response.headers.get("x-middleware-request-x-give-embed")).toBe("1")
     }
 
-    const spoofed = await proxy(
-      new NextRequest("https://give.example/campaigns/xay-truong", {
-        headers: { "x-give-embed": "1" },
+    // Spoofed x-give-embed without token refresh is dropped cleanly.
+    const spoofedNoRefresh = await proxy(
+      new NextRequest("https://give.example/campaigns", {
+        headers: { [EMBED_HEADER]: "1", host: "give.example" },
       })
     )
     expect(fetchMock).not.toHaveBeenCalled()
-    expect(spoofed.headers.get("x-middleware-request-x-give-embed")).toBeNull()
+    expect(spoofedNoRefresh.headers.get("x-middleware-request-x-give-embed")).toBeNull()
+    expect(
+      (spoofedNoRefresh.headers.get("x-middleware-override-headers") ?? "")
+        .split(",")
+        .map((h) => h.trim().toLowerCase())
+    ).not.toContain(EMBED_HEADER)
 
-    const spoofedEmbedded = await proxy(
-      new NextRequest("https://give.example/embedded", {
-        headers: { "x-give-embed": "1" },
+    // Spoofed x-give-embed with token refresh is ALSO dropped cleanly while refreshing cookies.
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ access_token: "at-2", refresh_token: "rt-2", expires_in: 3600, token_type: "bearer" })
+    )
+    const spoofedWithRefresh = await proxy(
+      new NextRequest("https://give.example/campaigns", {
+        headers: { cookie: "__Host-give_rt=rt-1", [EMBED_HEADER]: "1", host: "give.example" },
       })
     )
-    expect(spoofedEmbedded.headers.get("x-middleware-request-x-give-embed")).toBeNull()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(spoofedWithRefresh.cookies.get("__Host-give_at")?.value).toBe("at-2")
+    expect(spoofedWithRefresh.headers.get("x-middleware-request-x-give-embed")).toBeNull()
+    expect(
+      (spoofedWithRefresh.headers.get("x-middleware-override-headers") ?? "")
+        .split(",")
+        .map((h) => h.trim().toLowerCase())
+    ).not.toContain(EMBED_HEADER)
+
+    // Mixed-case /Embed* returns 404 with DENY & frame-ancestors 'none' without refreshing cookies.
+    for (const mixedCasePath of ["/EMBED", "/Embed/test-slug"]) {
+      const response = await proxy(
+        new NextRequest(`https://give.example${mixedCasePath}`, { headers: { cookie: "__Host-give_rt=rt-1" } })
+      )
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expectCookiesKept(response)
+      expect(response.status).toBe(404)
+      expect(response.headers.get("x-frame-options")).toBe("DENY")
+      expect(response.headers.get("content-security-policy")).toBe("frame-ancestors 'none'")
+      expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow")
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff")
+    }
   })
 })
 
@@ -303,6 +335,12 @@ describe("proxy matcher exclusions", () => {
       unstable_doesMiddlewareMatch({
         config,
         url: "https://give.example/admin",
+      })
+    ).toBe(true)
+    expect(
+      unstable_doesMiddlewareMatch({
+        config,
+        url: "https://give.example/embed/test-slug",
       })
     ).toBe(true)
   })

@@ -90,53 +90,63 @@ export default async function EmbedCampaignPage({
   const showBackers = displayOptions.backers_count !== false
   const showTime = displayOptions.time_remaining !== false
 
-  const raised = publicStatus ? raisedAmount(totals, campaign.type) : 0
-  const percent = publicStatus ? progressPercent(raised, campaign.goal_amount) : 0
-  const people = publicStatus && totals ? (isGive ? totals.supporters_count : totals.backers_count) : null
-  const days = publicStatus ? daysLeft(campaign.ends_at) : null
+  const hasTotals = publicStatus && totals !== null
+  const raised = hasTotals ? raisedAmount(totals, campaign.type) : 0
+  const percent = hasTotals ? progressPercent(raised, campaign.goal_amount) : 0
+  const people = hasTotals ? (isGive ? totals.supporters_count : totals.backers_count) : null
+  const now = new Date()
+  const days = publicStatus ? daysLeft(campaign.ends_at, now) : null
+  const notStarted =
+    campaign.starts_at !== null &&
+    !Number.isNaN(Date.parse(campaign.starts_at)) &&
+    new Date(campaign.starts_at).getTime() > now.getTime()
+  const expired = days !== null && days <= 0
+  const canSupportNow = publicStatus && campaign.status === "live" && !expired && !notStarted
   const validStartsAt = campaign.starts_at && !Number.isNaN(Date.parse(campaign.starts_at)) ? campaign.starts_at : null
 
   const metaParts = publicStatus
-    ? [
-        `Mục tiêu ${formatVnd(campaign.goal_amount)}`,
-        !options.compact && showBackers && people !== null
-          ? `${people} ${isGive ? "người ủng hộ" : "người đồng hành"}`
-          : null,
-        !options.compact && campaign.status === "live" && showTime && days !== null
-          ? days > 0
-            ? `Còn ${days} ngày`
-            : "Đã hết hạn"
-          : null,
-      ].filter(Boolean)
+    ? options.compact
+      ? []
+      : [
+          `Mục tiêu ${formatVnd(campaign.goal_amount)}`,
+          hasTotals && showBackers && people !== null
+            ? `${people} ${isGive ? "người ủng hộ" : "người đồng hành"}`
+            : null,
+          campaign.status === "live" && showTime && days !== null
+            ? days > 0
+              ? `Còn ${days} ngày`
+              : "Đã hết hạn"
+            : null,
+        ].filter(Boolean)
     : []
 
-  const ctaLabel = publicStatus ? (campaign.status === "live" ? "Ủng hộ ngay" : "Xem chi tiết") : "Xem chi tiết"
+  const ctaLabel = canSupportNow ? "Ủng hộ ngay" : "Xem chi tiết"
 
   return (
     <article
       data-embed-theme={options.theme}
-      className="flex min-h-screen w-full flex-col justify-between overflow-hidden rounded-[12px] border border-border bg-raised p-4 text-fg"
+      className="flex min-h-screen w-full flex-col justify-between overflow-hidden rounded-md border border-border bg-raised p-4 text-fg"
     >
       <div className="flex min-w-0 items-start gap-3">
         {coverSrc && (
           <div
             className={clsx(
-              "relative shrink-0 overflow-hidden rounded bg-surface",
-              options.compact ? "hidden aspect-video w-24 sm:block" : "aspect-video w-28 sm:w-36"
+              "relative hidden shrink-0 overflow-hidden rounded bg-surface sm:block",
+              options.compact ? "aspect-video w-24" : "aspect-video w-36"
             )}
           >
             <Image
               src={coverSrc}
               alt={campaign.cover?.alt ?? campaign.title}
               fill
-              sizes={options.compact ? "96px" : "(min-width: 640px) 144px, 112px"}
+              sizes={options.compact ? "96px" : "144px"}
               className="object-cover"
             />
           </div>
         )}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <div className={clsx("flex items-center justify-between", options.compact ? "gap-1" : "gap-2")}>
+            <div className={clsx("flex min-w-0 items-center", options.compact ? "gap-1" : "flex-wrap gap-2")}>
               <TypeBadge type={campaign.type} />
               {publicStatus ? <StatusBadge status={campaign.status} /> : <Badge tone="info">Sắp ra mắt</Badge>}
             </div>
@@ -168,25 +178,31 @@ export default async function EmbedCampaignPage({
         </div>
       </div>
 
-      <div className="mt-auto pt-3">
+      <div className={clsx("mt-auto", options.compact ? "pt-2" : "pt-3")}>
         {publicStatus ? (
           <>
-            {showProgress && <ProgressBar percent={percent} size="sm" />}
+            {hasTotals && showProgress && <ProgressBar percent={percent} size="sm" />}
             <div
               className={clsx(
                 "flex items-center justify-between gap-3",
-                showProgress && "mt-2",
+                hasTotals && showProgress && "mt-2",
                 !options.compact && "flex-wrap"
               )}
             >
               <div className="min-w-0 flex-1">
-                <p className="truncate">
-                  <span className={clsx("figure", options.compact ? "text-base" : "text-lg")}>{formatVnd(raised)}</span>{" "}
-                  <span className="text-sm text-muted">
-                    {isGive ? "đã nhận" : "đã cam kết"}
-                    {showProgress && ` · ${percent}%`}
-                  </span>
-                </p>
+                {hasTotals ? (
+                  <p className="truncate">
+                    <span className={clsx("figure", options.compact ? "text-base" : "text-lg")}>
+                      {formatVnd(raised)}
+                    </span>{" "}
+                    <span className="text-sm text-muted">
+                      {isGive ? "đã nhận" : "đã cam kết"}
+                      {showProgress && ` · ${percent}%`}
+                    </span>
+                  </p>
+                ) : (
+                  <p className="truncate text-sm font-semibold text-fg">Mục tiêu {formatVnd(campaign.goal_amount)}</p>
+                )}
                 {metaParts.length > 0 && <p className="truncate text-sm text-muted">{metaParts.join(" · ")}</p>}
               </div>
               <a
@@ -205,7 +221,7 @@ export default async function EmbedCampaignPage({
             </div>
           </>
         ) : (
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className={clsx("flex items-center justify-between gap-3", !options.compact && "flex-wrap")}>
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold text-fg">Sắp ra mắt</p>
               <p className="truncate text-sm text-muted">

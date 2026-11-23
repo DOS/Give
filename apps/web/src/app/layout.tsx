@@ -1,6 +1,5 @@
 import type { Metadata } from "next"
 import { Be_Vietnam_Pro } from "next/font/google"
-import { headers } from "next/headers"
 import type { ReactNode } from "react"
 
 import { LayoutShell } from "@/components/layout/LayoutShell"
@@ -40,18 +39,13 @@ async function unreadNotices(session: Session): Promise<string | null> {
 }
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
-  // Embed widget requests set x-give-embed in proxy.ts and stay strictly anonymous (DOS/Give#335).
-  const isEmbed = (await headers()).get("x-give-embed") === "1"
-  const session = isEmbed ? null : await getSession()
+  const session = await getSession()
   const unread = session ? await unreadNotices(session) : null
 
   return (
     <html lang="vi" className={font.variable}>
       <body className="flex min-h-screen flex-col">
-        <LayoutShell
-          header={isEmbed ? null : <SiteHeader session={session} unread={unread} />}
-          footer={isEmbed ? null : <SiteFooter />}
-        >
+        <LayoutShell header={<SiteHeader session={session} unread={unread} />} footer={<SiteFooter />}>
           {children}
         </LayoutShell>
       </body>
