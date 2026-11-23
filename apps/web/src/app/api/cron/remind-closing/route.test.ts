@@ -8,7 +8,7 @@ const SECRET = "0123456789abcdef0123"
 const state = vi.hoisted(() => ({
   handler: (() => undefined) as Handler,
   calls: [] as Call[],
-  rpcMock: null as ReturnType<typeof vi.fn> | null,
+  rpcMock: null as ((fn: string, args?: unknown) => Promise<unknown>) | null,
 }))
 
 vi.mock("@/lib/supabase", () => ({
