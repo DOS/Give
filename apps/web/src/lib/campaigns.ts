@@ -497,6 +497,8 @@ export async function listPublicCampaigns(
 /** give.public_campaign_organizers reads at most this many ids per call. */
 const ORGANIZERS_PER_CALL = IDS_PER_REQUEST
 
+const CONCURRENT_ORGANIZER_CHUNKS = 5
+
 /**
  * Public organizer cards of public campaigns, by campaign id, through
  * give.public_campaign_organizers (DOS-Me
@@ -505,22 +507,33 @@ const ORGANIZERS_PER_CALL = IDS_PER_REQUEST
  * organizer line is still a working card, so a failed lookup is logged and
  * leaves every card without one instead of failing the page.
  */
-async function listCampaignOrganizers(db: Db, campaignIds: readonly string[]): Promise<Map<string, PublicOrganizer>> {
+export async function listCampaignOrganizers(
+  db: Db,
+  campaignIds: readonly string[]
+): Promise<Map<string, PublicOrganizer>> {
   const organizers = new Map<string, PublicOrganizer>()
-  if (campaignIds.length === 0) return organizers
+  const uniqueIds = [...new Set(campaignIds)]
+  if (uniqueIds.length === 0) return organizers
   try {
-    for (let i = 0; i < campaignIds.length; i += ORGANIZERS_PER_CALL) {
-      const { data, error } = await db.rpc("public_campaign_organizers", {
-        p_campaign_ids: campaignIds.slice(i, i + ORGANIZERS_PER_CALL),
-      })
-      if (error) throw error
-      for (const row of (data ?? []) as (PublicOrganizer & { campaign_id: string })[]) {
-        organizers.set(row.campaign_id, {
-          display_name: row.display_name,
-          kind: row.kind,
-          verification_status: row.verification_status,
-          handle: row.handle ?? null,
+    for (const batch of chunks(chunks(uniqueIds, ORGANIZERS_PER_CALL), CONCURRENT_ORGANIZER_CHUNKS)) {
+      const pages = await Promise.all(
+        batch.map(async (chunk) => {
+          const { data, error } = await db.rpc("public_campaign_organizers", {
+            p_campaign_ids: chunk,
+          })
+          if (error) throw error
+          return (data ?? []) as (PublicOrganizer & { campaign_id: string })[]
         })
+      )
+      for (const rows of pages) {
+        for (const row of rows) {
+          organizers.set(row.campaign_id, {
+            display_name: row.display_name,
+            kind: row.kind,
+            verification_status: row.verification_status,
+            handle: row.handle ?? null,
+          })
+        }
       }
     }
   } catch (error) {

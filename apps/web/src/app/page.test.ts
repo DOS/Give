@@ -6,7 +6,7 @@
  */
 import { Window } from "happy-dom"
 import { renderToStaticMarkup } from "react-dom/server"
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { discoveryHref, type CampaignType, type Category } from "@/lib/campaigns"
 import { fakeDb, op, type Call, type Handler } from "@/test/fake-db"
@@ -173,6 +173,10 @@ async function renderHome(params: { login_error?: string } = {}) {
 beforeEach(() => {
   state.calls.length = 0
   setupHome([])
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
 })
 
 describe("HomePage (/, DOS/Give#233)", () => {
@@ -432,5 +436,39 @@ describe("HomePage (/, DOS/Give#233)", () => {
         expect(alert!.textContent.trim()).toBe("Đăng nhập DOS.Me không thành công. Hãy thử lại.")
       }
     )
+  })
+
+  describe("WebSite JSON-LD", () => {
+    it("emits WebSite JSON-LD with SearchAction when siteOrigin() is configured", async () => {
+      vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://give.vn/ignored-path")
+
+      const { doc } = await renderHome()
+      const scripts = doc.querySelectorAll('script[type="application/ld+json"]')
+      expect(scripts).toHaveLength(1)
+      expect(JSON.parse(scripts[0].textContent ?? "")).toStrictEqual({
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        name: "Give",
+        url: "https://give.vn",
+        potentialAction: {
+          "@type": "SearchAction",
+          target: {
+            "@type": "EntryPoint",
+            urlTemplate: "https://give.vn/campaigns?q={search_term_string}",
+          },
+          "query-input": "required name=search_term_string",
+        },
+      })
+    })
+
+    it("omits WebSite JSON-LD when siteOrigin() is unset or invalid", async () => {
+      vi.stubEnv("NEXT_PUBLIC_SITE_URL", "")
+      const unsetDoc = (await renderHome()).doc
+      expect(unsetDoc.querySelector('script[type="application/ld+json"]')).toBeNull()
+
+      vi.stubEnv("NEXT_PUBLIC_SITE_URL", "not-a-url")
+      const invalidDoc = (await renderHome()).doc
+      expect(invalidDoc.querySelector('script[type="application/ld+json"]')).toBeNull()
+    })
   })
 })

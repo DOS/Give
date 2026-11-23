@@ -1038,6 +1038,127 @@ describe("CampaignPage BreadcrumbList JSON-LD (DOS/Give#283)", () => {
       }
     }
   )
+
+  it("emits FAQPage JSON-LD via safeJsonLd on public live and pre-launch pages when FAQs exist, sorted by position, and escapes XSS", async () => {
+    const xssQuestion = 'Câu hỏi </script><script>alert("xss")</script> <!--\u2028?'
+    const xssAnswer = "Trả lời\u2029</script><!-- an toàn."
+    const faqs = [
+      {
+        id: "faq-2",
+        campaign_id: CAMPAIGN,
+        question: xssQuestion,
+        answer: xssAnswer,
+        position: 2,
+        created_at: "2026-11-22T00:00:00Z",
+        updated_at: "2026-11-22T00:00:00Z",
+      },
+      {
+        id: "faq-1",
+        campaign_id: CAMPAIGN,
+        question: "Câu hỏi đầu tiên?",
+        answer: "Câu trả lời đầu tiên.",
+        position: 1,
+        created_at: "2026-11-22T00:00:00Z",
+        updated_at: "2026-11-22T00:00:00Z",
+      },
+    ]
+
+    const baseAnon = state.anonHandler
+    state.anonHandler = (call) => {
+      if (call.target === "campaign_faqs") return { data: faqs }
+      return baseAnon(call)
+    }
+
+    const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+    expect(html).not.toContain('</script><script>alert("xss")</script>')
+
+    const doc = parseDoc(html)
+    const scripts = doc.querySelectorAll('script[type="application/ld+json"]')
+    expect(scripts).toHaveLength(2)
+    expect(scripts[1].textContent).not.toContain("\u2028")
+    expect(scripts[1].textContent).not.toContain("\u2029")
+    expect(scripts[1].textContent).toContain("\\u2028")
+    expect(scripts[1].textContent).toContain("\\u2029")
+
+    const faqJsonLd = JSON.parse(scripts[1].textContent ?? "")
+    expect(faqJsonLd).toStrictEqual({
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: [
+        {
+          "@type": "Question",
+          name: "Câu hỏi đầu tiên?",
+          acceptedAnswer: { "@type": "Answer", text: "Câu trả lời đầu tiên." },
+        },
+        {
+          "@type": "Question",
+          name: xssQuestion,
+          acceptedAnswer: { "@type": "Answer", text: xssAnswer },
+        },
+      ],
+    })
+
+    // Also emitted on opted-in public pre-launch teasers.
+    state.anonHandler = (call) => {
+      if (call.target === "campaigns") {
+        return {
+          data: {
+            ...campaignFixture("approved"),
+            prelaunch_public: true,
+            starts_at: "2099-12-01T00:00:00.000Z",
+          },
+        }
+      }
+      if (call.target === "campaign_faqs") return { data: [faqs[1]] }
+      return baseAnon(call)
+    }
+    const prelaunchDoc = parseDoc(renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) })))
+    const prelaunchScripts = prelaunchDoc.querySelectorAll('script[type="application/ld+json"]')
+    expect(prelaunchScripts).toHaveLength(2)
+    expect(JSON.parse(prelaunchScripts[1].textContent ?? "")["@type"]).toBe("FAQPage")
+  })
+
+  it.each(["draft", "in_review", "changes_requested", "approved", "suspended", "cancelled"] as const)(
+    "omits FAQPage JSON-LD on non-public and halted status %s even when FAQs exist",
+    async (status) => {
+      state.session = {
+        user: { id: VIEWER, email: "mod@dos.me", name: "Kiểm duyệt viên" },
+        accessToken: "mod-token",
+      }
+      state.anonHandler = () => ({ data: null })
+      state.userHandler = (call) => {
+        if (call.target === "campaigns") return { data: campaignFixture(status) }
+        if (call.target === "campaign_faqs") {
+          return {
+            data: [
+              {
+                id: "faq-secret",
+                campaign_id: CAMPAIGN,
+                question: "Bí mật nội bộ?",
+                answer: "Không được lập chỉ mục.",
+                position: 0,
+                created_at: "2026-11-22T00:00:00Z",
+                updated_at: "2026-11-22T00:00:00Z",
+              },
+            ],
+          }
+        }
+        if (
+          call.target === "campaign_milestones" ||
+          call.target === "campaign_updates" ||
+          call.target === "campaign_media"
+        ) {
+          return { data: [] }
+        }
+        return undefined
+      }
+
+      const html = renderToStaticMarkup(await CampaignPage({ params: Promise.resolve({ slug: SLUG }) }))
+      const doc = parseDoc(html)
+      expect(doc.querySelector('script[type="application/ld+json"]')).toBeNull()
+      expect(html).not.toContain("FAQPage")
+    }
+  )
 })
 
 describe("CampaignPage monthly giving (DOS/Give#276)", () => {

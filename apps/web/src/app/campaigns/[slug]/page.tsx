@@ -55,7 +55,7 @@ import {
   parseShowHiddenComments,
   type CampaignCommentsPage,
 } from "@/lib/campaign-comments"
-import { listCampaignFaqs, type CampaignFaq } from "@/lib/campaign-faqs"
+import { listCampaignFaqs, sortFaqs, type CampaignFaq } from "@/lib/campaign-faqs"
 import { getMyCampaignRole, listCampaignPublicTeam, type PublicTeamMember } from "@/lib/campaign-members"
 import {
   listCampaignWishes,
@@ -82,6 +82,7 @@ import {
 import { MODERATION_ROLES } from "@/lib/evidence-moderation"
 import { getCampaignFollowerCount, isFollowingCampaign } from "@/lib/follows"
 import { daysLeft, formatDate, formatVnd, progressPercent } from "@/lib/format"
+import { buildFaqPageJsonLd, safeJsonLd } from "@/lib/jsonld"
 import { isNavigableOrganizerHandle, organizerProfileHref } from "@/lib/organizer-handle"
 import { acceptsPledges } from "@/lib/pledges"
 import { listCampaignTiers, previewTiers } from "@/lib/reward-tiers"
@@ -616,6 +617,7 @@ export default async function CampaignPage({
   ].filter((stat) => stat !== null)
   const origin = siteOrigin()
   const breadcrumbJsonLd = !preview && !halted ? buildBreadcrumbJsonLd(campaign, origin) : null
+  const faqJsonLd = !preview && !halted ? buildFaqPageJsonLd(sortFaqs(faqs)) : null
   const posterData = isPublicLiveOrEnded
     ? buildServerPosterData({ campaign, totals, organizer, account, origin })
     : null
@@ -624,11 +626,9 @@ export default async function CampaignPage({
     <article>
       {isPublicLiveOrEnded && <CampaignViewBeacon campaignId={campaign.id} />}
       {breadcrumbJsonLd && (
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd).replace(/</g, "\\u003c") }}
-        />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(breadcrumbJsonLd) }} />
       )}
+      {faqJsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(faqJsonLd) }} />}
       {preview && (
         <div className="bg-warning-soft py-3">
           <p className="container-page">

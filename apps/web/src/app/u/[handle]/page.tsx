@@ -9,10 +9,12 @@ import { OrganizerAvatar } from "@/components/OrganizerAvatar"
 import { Badge } from "@/components/ui/Badge"
 import { ButtonLink } from "@/components/ui/Button"
 import { EmptyState } from "@/components/ui/EmptyState"
+import { siteOrigin } from "@/lib/auth/origin"
 import { getSession } from "@/lib/auth/session"
 import type { CardCampaign } from "@/lib/campaigns"
 import { getOrganizerFollowerCountByHandle, isFollowingOrganizerByHandle } from "@/lib/follows"
 import { formatDate } from "@/lib/format"
+import { buildProfilePageJsonLd, safeJsonLd } from "@/lib/jsonld"
 import { organizerProfileHref } from "@/lib/organizer-handle"
 import {
   getPublicOrganizerProfile,
@@ -143,9 +145,24 @@ export default async function OrganizerProfilePage({ params }: { params: Promise
   const pastCampaigns = campaigns.filter((c) => c.status !== "live" && c.status !== "approved")
   const bio = profile.bio?.trim() || null
   const loginHref = `/auth/login?return_path=${encodeURIComponent(organizerProfileHref(profile.handle))}`
+  const origin = siteOrigin()
+  const profileJsonLd = origin
+    ? buildProfilePageJsonLd({
+        origin,
+        handle: profile.handle,
+        displayName: profile.display_name,
+        kind: profile.kind,
+        bio,
+        avatarUrl: profile.avatar_url,
+        dateCreated: profile.created_at,
+      })
+    : null
 
   return (
     <div className="container-page pt-8 pb-16 sm:pt-12 lg:pb-24">
+      {profileJsonLd && (
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: safeJsonLd(profileJsonLd) }} />
+      )}
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
         <div className="flex min-w-0 flex-1 items-start gap-4 sm:gap-6">
           <OrganizerAvatar displayName={profile.display_name} avatarUrl={profile.avatar_url} size="lg" />
