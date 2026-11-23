@@ -279,5 +279,15 @@ describe("CampaignCard", () => {
     )
     expect(prelaunchSuppressed).toContain("Sắp ra mắt")
     expect(prelaunchSuppressed).not.toContain("Sao kê mới nhất:")
+
+    for (const nonPublic of ["draft", "in_review", "changes_requested", "suspended", "cancelled"] as const) {
+      const nonPublicHtml = renderToStaticMarkup(
+        createElement(CampaignCard, {
+          campaign: campaign(null, { status: nonPublic }),
+          lastStatementAt: "2026-11-20T10:00:00Z",
+        })
+      )
+      expect(nonPublicHtml, nonPublic).not.toContain("Sao kê mới nhất:")
+    }
   })
 })

@@ -20,6 +20,23 @@ import {
 const SANS_FONT = '"Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif'
 const MONO_FONT = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
 
+/**
+ * Resolves the browser's computed body font family at draw time so client PNG
+ * exports pick up next/font's self-hosted Be Vietnam Pro family across all
+ * browsers, falling back cleanly to `SANS_FONT` in SSR/Node environments.
+ */
+export function resolveCanvasSansFont(): string {
+  if (typeof document !== "undefined" && typeof getComputedStyle === "function" && document.body) {
+    try {
+      const computed = getComputedStyle(document.body).fontFamily?.trim()
+      if (computed) return computed
+    } catch {
+      // Fall back to SANS_FONT if computed style lookup fails.
+    }
+  }
+  return SANS_FONT
+}
+
 const COLORS = {
   bg: "#FFFFFF",
   surface: "#F7F8FA",
@@ -158,12 +175,12 @@ function drawBadge(
   text: string,
   x: number,
   y: number,
-  options: { bg: string; fg: string; fontSize?: number; height?: number; padX?: number }
+  options: { bg: string; fg: string; fontSize?: number; height?: number; padX?: number; sansFont: string }
 ): number {
   const fontSize = options.fontSize ?? 24
   const height = options.height ?? 48
   const padX = options.padX ?? 20
-  ctx.font = `700 ${fontSize}px ${SANS_FONT}`
+  ctx.font = `700 ${fontSize}px ${options.sansFont}`
   const textWidth = ctx.measureText(text).width
   const width = Math.ceil(textWidth + padX * 2)
   fillRoundedRect(ctx, x, y, width, height, 8, options.bg)
@@ -173,8 +190,8 @@ function drawBadge(
   return width
 }
 
-function drawGiveBrand(ctx: CanvasRenderingContext2D, rightEdge: number, y: number) {
-  ctx.font = `700 34px ${SANS_FONT}`
+function drawGiveBrand(ctx: CanvasRenderingContext2D, rightEdge: number, y: number, sansFont: string) {
+  ctx.font = `700 34px ${sansFont}`
   const labelWidth = ctx.measureText("Give").width
   const markSize = 44
   const gap = 12
@@ -182,14 +199,14 @@ function drawGiveBrand(ctx: CanvasRenderingContext2D, rightEdge: number, y: numb
 
   fillRoundedRect(ctx, startX, y, markSize, markSize, 8, COLORS.primary)
   ctx.fillStyle = "#FFFFFF"
-  ctx.font = `700 28px ${SANS_FONT}`
+  ctx.font = `700 28px ${sansFont}`
   ctx.textAlign = "center"
   ctx.textBaseline = "middle"
   ctx.fillText("G", startX + markSize / 2, y + markSize / 2 + 1)
 
   ctx.textAlign = "left"
   ctx.fillStyle = COLORS.text
-  ctx.font = `700 34px ${SANS_FONT}`
+  ctx.font = `700 34px ${sansFont}`
   ctx.fillText("Give", startX + markSize + gap, y + markSize / 2 + 1)
 }
 
@@ -209,6 +226,7 @@ export function renderPosterCanvas(
   const ctx = canvas.getContext("2d")
   if (!ctx) return
 
+  const sansFont = resolveCanvasSansFont()
   const isStory = format === "story"
   const isGive = data.type === "give"
   const topBarColor = isGive ? COLORS.primary : COLORS.accent
@@ -235,21 +253,22 @@ export function renderPosterCanvas(
   // Header row: type badge (+ verified statement badge) and Give brand
   const headerY = isStory ? 84 : 56
   ctx.textAlign = "left"
-  const typeW = drawBadge(ctx, data.typeBadge, padX, headerY, { bg: badgeBg, fg: badgeFg })
+  const typeW = drawBadge(ctx, data.typeBadge, padX, headerY, { bg: badgeBg, fg: badgeFg, sansFont })
   if (data.verifiedStatementBadge) {
     drawBadge(ctx, data.verifiedStatementBadge, padX + typeW + 14, headerY, {
       bg: COLORS.primarySoft,
       fg: COLORS.primary,
       fontSize: 22,
+      sansFont,
     })
   }
-  drawGiveBrand(ctx, width - padX, headerY + 2)
+  drawGiveBrand(ctx, width - padX, headerY + 2, sansFont)
 
   // Campaign title
   let cursorY = isStory ? 188 : 140
   const titleFontSize = isStory ? 54 : 42
   const titleLineHeight = isStory ? 70 : 54
-  ctx.font = `700 ${titleFontSize}px ${SANS_FONT}`
+  ctx.font = `700 ${titleFontSize}px ${sansFont}`
   ctx.fillStyle = COLORS.text
   ctx.textBaseline = "top"
   const titleLines = wrapCanvasLines(ctx, data.title, contentW, isStory ? 3 : 2)
@@ -261,7 +280,7 @@ export function renderPosterCanvas(
   // Organizer line
   if (data.organizerName) {
     cursorY += isStory ? 16 : 10
-    ctx.font = `500 ${isStory ? 28 : 24}px ${SANS_FONT}`
+    ctx.font = `500 ${isStory ? 28 : 24}px ${sansFont}`
     ctx.fillStyle = COLORS.muted
     const verifiedSuffix = data.organizerVerified ? " · Đã xác minh" : ""
     const orgLine = wrapCanvasLines(ctx, `${data.organizerName}${verifiedSuffix}`, contentW, 1)[0] ?? ""
@@ -278,18 +297,18 @@ export function renderPosterCanvas(
   const innerW = contentW - 64
   const figureY = cursorY + (isStory ? 32 : 24)
   ctx.textBaseline = "top"
-  ctx.font = `700 ${isStory ? 46 : 38}px ${SANS_FONT}`
+  ctx.font = `700 ${isStory ? 46 : 38}px ${sansFont}`
   ctx.fillStyle = COLORS.text
   ctx.fillText(data.raisedText, innerX, figureY)
 
   ctx.textAlign = "right"
-  ctx.font = `700 ${isStory ? 38 : 32}px ${SANS_FONT}`
+  ctx.font = `700 ${isStory ? 38 : 32}px ${sansFont}`
   ctx.fillStyle = COLORS.primary
   ctx.fillText(`${data.percent}%`, innerX + innerW, figureY + 4)
 
   ctx.textAlign = "left"
   const subY = figureY + (isStory ? 60 : 48)
-  ctx.font = `400 ${isStory ? 24 : 21}px ${SANS_FONT}`
+  ctx.font = `400 ${isStory ? 24 : 21}px ${sansFont}`
   ctx.fillStyle = COLORS.muted
   ctx.fillText(`${data.raisedLabel} · ${data.goalText}`, innerX, subY)
 
@@ -325,6 +344,7 @@ export function renderPosterCanvas(
         title: "Quét bằng app ngân hàng",
         detail: `${data.vietQr.bankName} · ${data.vietQr.maskedAccount}`,
         caption: "Chuyển thẳng vào tài khoản nhận đã xác minh của chiến dịch.",
+        sansFont,
       })
       drawHorizontalQrCard(ctx, {
         x: padX,
@@ -337,6 +357,7 @@ export function renderPosterCanvas(
         title: "Xem sao kê & nhận mã ủng hộ",
         detail: shortUrl,
         caption: "Quét camera để theo dõi sao kê công khai và nhận mã đối chiếu riêng.",
+        sansFont,
       })
     } else {
       const gap = 28
@@ -350,6 +371,7 @@ export function renderPosterCanvas(
         title: "VietQR chuyển khoản",
         subtitle: `${data.vietQr.bankName} · ${data.vietQr.maskedAccount}`,
         highlight: true,
+        sansFont,
       })
       drawCompactQrCard(ctx, {
         x: padX + colW + gap,
@@ -360,6 +382,7 @@ export function renderPosterCanvas(
         title: "Trang chiến dịch & sao kê",
         subtitle: shortUrl,
         highlight: false,
+        sansFont,
       })
     }
   } else {
@@ -373,11 +396,11 @@ export function renderPosterCanvas(
 
     ctx.textAlign = "center"
     ctx.textBaseline = "top"
-    ctx.font = `700 ${isStory ? 34 : 26}px ${SANS_FONT}`
+    ctx.font = `700 ${isStory ? 34 : 26}px ${sansFont}`
     ctx.fillStyle = COLORS.text
     ctx.fillText("Quét mã QR để xem chiến dịch", width / 2, qrY + qrSize + (isStory ? 44 : 26))
 
-    ctx.font = `500 ${isStory ? 26 : 21}px ${SANS_FONT}`
+    ctx.font = `500 ${isStory ? 26 : 21}px ${sansFont}`
     ctx.fillStyle = COLORS.primary
     const urlLine = wrapCanvasLines(ctx, shortUrl, contentW - 80, 1)[0] ?? shortUrl
     ctx.fillText(urlLine, width / 2, qrY + qrSize + (isStory ? 96 : 64))
@@ -395,7 +418,7 @@ export function renderPosterCanvas(
 
   ctx.textAlign = "center"
   ctx.textBaseline = "middle"
-  ctx.font = `600 ${isStory ? 24 : 21}px ${SANS_FONT}`
+  ctx.font = `600 ${isStory ? 24 : 21}px ${sansFont}`
   ctx.fillStyle = COLORS.primary
   const footerCopy = isGive
     ? "give.vn · Sao kê đối chiếu ngân hàng · Give không giữ tiền"
@@ -417,6 +440,7 @@ function drawHorizontalQrCard(
     title: string
     detail: string
     caption: string
+    sansFont: string
   }
 ) {
   fillRoundedRect(ctx, opts.x, opts.y, opts.width, opts.height, 12, COLORS.surface, COLORS.border, 2)
@@ -434,12 +458,12 @@ function drawHorizontalQrCard(
 
   ctx.textAlign = "left"
   ctx.textBaseline = "top"
-  ctx.font = `700 22px ${SANS_FONT}`
+  ctx.font = `700 22px ${opts.sansFont}`
   ctx.fillStyle = opts.eyebrowColor
   ctx.fillText(opts.eyebrow, textX, y)
   y += 40
 
-  ctx.font = `700 32px ${SANS_FONT}`
+  ctx.font = `700 32px ${opts.sansFont}`
   ctx.fillStyle = COLORS.text
   const titleLines = wrapCanvasLines(ctx, opts.title, textW, 2)
   for (const line of titleLines) {
@@ -448,7 +472,7 @@ function drawHorizontalQrCard(
   }
 
   y += 10
-  ctx.font = `600 26px ${SANS_FONT}`
+  ctx.font = `600 26px ${opts.sansFont}`
   ctx.fillStyle = COLORS.primary
   const detailLines = wrapCanvasLines(ctx, opts.detail, textW, 2)
   for (const line of detailLines) {
@@ -457,7 +481,7 @@ function drawHorizontalQrCard(
   }
 
   y += 12
-  ctx.font = `400 22px ${SANS_FONT}`
+  ctx.font = `400 22px ${opts.sansFont}`
   ctx.fillStyle = COLORS.muted
   const capLines = wrapCanvasLines(ctx, opts.caption, textW, 3)
   for (const line of capLines) {
@@ -477,6 +501,7 @@ function drawCompactQrCard(
     title: string
     subtitle: string
     highlight: boolean
+    sansFont: string
   }
 ) {
   fillRoundedRect(
@@ -500,11 +525,11 @@ function drawCompactQrCard(
   ctx.textAlign = "center"
   ctx.textBaseline = "top"
   const centerX = opts.x + opts.width / 2
-  ctx.font = `700 24px ${SANS_FONT}`
+  ctx.font = `700 24px ${opts.sansFont}`
   ctx.fillStyle = COLORS.text
   ctx.fillText(opts.title, centerX, qrY + qrSize + 24)
 
-  ctx.font = `600 20px ${SANS_FONT}`
+  ctx.font = `600 20px ${opts.sansFont}`
   ctx.fillStyle = opts.highlight ? COLORS.primary : COLORS.muted
   const sub = wrapCanvasLines(ctx, opts.subtitle, opts.width - 40, 1)[0] ?? opts.subtitle
   ctx.fillText(sub, centerX, qrY + qrSize + 60)
@@ -522,6 +547,7 @@ export function renderThankYouCanvas(canvas: HTMLCanvasElement, model: ThankYouC
   const ctx = canvas.getContext("2d")
   if (!ctx) return
 
+  const sansFont = resolveCanvasSansFont()
   const padX = 80
   const contentW = size - padX * 2
 
@@ -536,31 +562,32 @@ export function renderThankYouCanvas(canvas: HTMLCanvasElement, model: ThankYouC
   drawBadge(ctx, model.typeBadge, padX, headerY, {
     bg: model.typeBadge === "Dự án" ? COLORS.accentSoft : COLORS.primarySoft,
     fg: model.typeBadge === "Dự án" ? COLORS.accent : COLORS.primary,
+    sansFont,
   })
-  drawGiveBrand(ctx, size - padX, headerY + 2)
+  drawGiveBrand(ctx, size - padX, headerY + 2, sansFont)
 
   // Headline banner
   let y = 168
   fillRoundedRect(ctx, padX, y, contentW, 196, 12, COLORS.primarySoft)
   ctx.textAlign = "left"
   ctx.textBaseline = "top"
-  ctx.font = `700 58px ${SANS_FONT}`
+  ctx.font = `700 58px ${sansFont}`
   ctx.fillStyle = COLORS.primary
   ctx.fillText(model.headline, padX + 40, y + 36)
 
-  ctx.font = `600 32px ${SANS_FONT}`
+  ctx.font = `600 32px ${sansFont}`
   ctx.fillStyle = COLORS.text
   const donorLine = wrapCanvasLines(ctx, model.donorName, contentW - 80, 1)[0] ?? model.donorName
   ctx.fillText(donorLine, padX + 40, y + 118)
   y += 236
 
   // Campaign title block
-  ctx.font = `500 24px ${SANS_FONT}`
+  ctx.font = `500 24px ${sansFont}`
   ctx.fillStyle = COLORS.muted
   ctx.fillText("Chiến dịch", padX, y)
   y += 38
 
-  ctx.font = `700 40px ${SANS_FONT}`
+  ctx.font = `700 40px ${sansFont}`
   ctx.fillStyle = COLORS.text
   const titleLines = wrapCanvasLines(ctx, model.campaignTitle, contentW, 3)
   for (const line of titleLines) {
@@ -578,16 +605,16 @@ export function renderThankYouCanvas(canvas: HTMLCanvasElement, model: ThankYouC
 
   ctx.textAlign = "left"
   ctx.textBaseline = "top"
-  ctx.font = `500 24px ${SANS_FONT}`
+  ctx.font = `500 24px ${sansFont}`
   ctx.fillStyle = COLORS.muted
   ctx.fillText(model.amountCaption, innerX, y + 32)
 
   if (model.amountText !== null) {
-    ctx.font = `700 52px ${SANS_FONT}`
+    ctx.font = `700 52px ${sansFont}`
     ctx.fillStyle = COLORS.primary
     ctx.fillText(model.amountText, innerX, y + 72, innerW)
   } else {
-    ctx.font = `600 28px ${SANS_FONT}`
+    ctx.font = `600 28px ${sansFont}`
     ctx.fillStyle = COLORS.text
     const hiddenLines = wrapCanvasLines(ctx, "Số tiền được ẩn theo lựa chọn của người ủng hộ", innerW, 2)
     hiddenLines.forEach((line, index) => {
@@ -605,7 +632,7 @@ export function renderThankYouCanvas(canvas: HTMLCanvasElement, model: ThankYouC
   ctx.stroke()
 
   // Verification code (monospace per DESIGN.md Reference codes) & date
-  ctx.font = `500 22px ${SANS_FONT}`
+  ctx.font = `500 22px ${sansFont}`
   ctx.fillStyle = COLORS.muted
   ctx.fillText("Mã đối chiếu sao kê", innerX, divY + 20)
 
@@ -615,11 +642,11 @@ export function renderThankYouCanvas(canvas: HTMLCanvasElement, model: ThankYouC
 
   if (model.dateText) {
     ctx.textAlign = "right"
-    ctx.font = `500 22px ${SANS_FONT}`
+    ctx.font = `500 22px ${sansFont}`
     ctx.fillStyle = COLORS.muted
     ctx.fillText("Ngày ghi nhận", innerX + innerW, divY + 20)
 
-    ctx.font = `600 28px ${SANS_FONT}`
+    ctx.font = `600 28px ${sansFont}`
     ctx.fillStyle = COLORS.text
     ctx.fillText(model.dateText, innerX + innerW, divY + 54)
     ctx.textAlign = "left"
@@ -636,11 +663,11 @@ export function renderThankYouCanvas(canvas: HTMLCanvasElement, model: ThankYouC
 
   ctx.textAlign = "center"
   ctx.textBaseline = "top"
-  ctx.font = `600 22px ${SANS_FONT}`
+  ctx.font = `600 22px ${sansFont}`
   ctx.fillStyle = COLORS.primary
   ctx.fillText(model.footerText, size / 2, footerTop + 26)
 
-  ctx.font = `400 20px ${SANS_FONT}`
+  ctx.font = `400 20px ${sansFont}`
   ctx.fillStyle = COLORS.muted
   const urlLine = wrapCanvasLines(ctx, `Sao kê: ${model.statementUrlText}`, contentW, 1)[0] ?? model.statementUrlText
   ctx.fillText(urlLine, size / 2, footerTop + 64)

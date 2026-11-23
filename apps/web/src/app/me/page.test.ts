@@ -145,5 +145,6 @@ describe("MyProfilePage (/me, DOS/Give#251)", () => {
     expect(html).toContain("?ref=ab23cd45ef")
     expect(html).toContain("900.000")
     expect(html).toContain("Sao chép liên kết")
+    expect(html).toContain("Ẩn khỏi bảng xếp hạng")
   })
 })

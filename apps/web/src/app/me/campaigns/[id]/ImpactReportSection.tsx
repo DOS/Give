@@ -103,13 +103,13 @@ export function ImpactReportSection({
             soát.
           </Callout>
           {report && (
-            <div className="space-y-4 rounded-md border border-border bg-surface/50 p-4">
+            <div className="space-y-4 border-t border-border pt-4">
               {report.highlights.length > 0 && (
                 <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {report.highlights.map((item, idx) => (
-                    <div key={`${item.label}-${idx}`} className="rounded border border-border bg-bg p-3">
-                      <dt className="text-xs font-medium text-muted">{item.label}</dt>
-                      <dd className="mt-1 text-base font-bold text-fg tabular-nums">{item.value}</dd>
+                    <div key={`${item.label}-${idx}`} className="min-w-0 rounded-md bg-surface p-3">
+                      <dt className="text-sm font-medium break-words text-muted">{item.label}</dt>
+                      <dd className="mt-1 text-base font-bold break-words text-fg tabular-nums">{item.value}</dd>
                     </div>
                   ))}
                 </dl>
@@ -143,7 +143,7 @@ export function ImpactReportSection({
             {previewMode ? (
               <>
                 <input type="hidden" name="summary" value={summary} />
-                <div className="mt-2 min-h-40 rounded-md border border-border bg-surface p-4">
+                <div className="mt-2 min-h-40 rounded-md bg-surface p-4">
                   {summary.trim() ? (
                     <Markdown>{summary}</Markdown>
                   ) : (
@@ -182,7 +182,7 @@ export function ImpactReportSection({
               {rows.map((row, idx) => (
                 <div key={row.key} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
                   <div>
-                    <label htmlFor={`highlight-label-${row.key}`} className="text-xs font-medium text-muted">
+                    <label htmlFor={`highlight-label-${row.key}`} className="text-sm font-medium text-muted">
                       Tiêu đề #{idx + 1}
                     </label>
                     <input
@@ -196,7 +196,7 @@ export function ImpactReportSection({
                     />
                   </div>
                   <div>
-                    <label htmlFor={`highlight-value-${row.key}`} className="text-xs font-medium text-muted">
+                    <label htmlFor={`highlight-value-${row.key}`} className="text-sm font-medium text-muted">
                       Giá trị #{idx + 1}
                     </label>
                     <input

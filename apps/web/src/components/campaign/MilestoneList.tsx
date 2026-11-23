@@ -63,7 +63,7 @@ export function MilestoneList({
             {rollup && (
               <div
                 data-milestone-evidence={milestone.id}
-                className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded bg-surface px-3 py-2 text-xs text-muted"
+                className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 rounded bg-surface px-3 py-2 text-sm text-muted"
               >
                 {rollup.disbursement_count > 0 ? (
                   <>

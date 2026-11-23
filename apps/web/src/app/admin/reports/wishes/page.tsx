@@ -33,6 +33,8 @@ import { moderateReportedWish } from "./actions"
 
 export const metadata: Metadata = { title: "Báo cáo lời chúc", robots: { index: false } }
 
+const COUNT = new Intl.NumberFormat("vi-VN")
+
 const REPORT_STATUS_TONES: Record<WishReportStatus, BadgeTone> = {
   open: "info",
   resolved: "brand",
@@ -103,11 +105,19 @@ export default async function AdminWishReportsPage({
               : "Chọn trạng thái khác để xem các báo cáo lời chúc tương ứng."}
           </EmptyState>
         ) : (
-          <ItemList>
-            {reports.map((report) => (
-              <WishReportCard key={report.report_id} report={report} />
-            ))}
-          </ItemList>
+          <>
+            {totalCount > reports.length && (
+              <p className="mb-4 text-sm text-muted tabular-nums">
+                Đang hiển thị {COUNT.format(reports.length)} báo cáo {status === "open" ? "sớm nhất" : "mới nhất"} trên
+                tổng số {COUNT.format(totalCount)} báo cáo.
+              </p>
+            )}
+            <ItemList>
+              {reports.map((report) => (
+                <WishReportCard key={report.report_id} report={report} />
+              ))}
+            </ItemList>
+          </>
         )}
       </AdminSection>
     </AdminPage>
@@ -180,7 +190,7 @@ function WishReportCard({ report }: { report: ReportedWishRow }) {
           {isHidden && (
             <Callout tone="warning">
               <p className="max-w-[68ch] text-sm">
-                Lời chúc này hiện đã bị ẩn khỏi trang công khai. Bấm “Ẩn lời chúc & chốt báo cáo” để nâng thành quyết
+                Lời chúc này hiện đã bị ẩn khỏi trang công khai. Bấm “Xác nhận ẩn & chốt báo cáo” để nâng thành quyết
                 định kiểm duyệt và đóng báo cáo, hoặc “Bác bỏ báo cáo” nếu không có vi phạm.
               </p>
             </Callout>

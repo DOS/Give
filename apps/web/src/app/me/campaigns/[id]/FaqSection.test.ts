@@ -43,6 +43,7 @@ describe("FaqSection (DOS/Give#316)", () => {
     expect(html).toContain("↑ Lên")
     expect(html).toContain("↓ Xuống")
     expect(html).toContain("Xóa")
+    expect(html).toContain("Tối đa 4.000 ký tự.")
     // Plain-text escaping: zero raw script/HTML tags injected from user input.
     expect(html).not.toContain("<script>alert(1)</script>")
     expect(html).toContain("&lt;script&gt;alert(1)&lt;/script&gt;")

@@ -36,8 +36,8 @@ export function ClosingImpactReport({ report }: { report: CampaignImpactReport }
         {report.highlights.length > 0 && (
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" data-impact-highlights>
             {report.highlights.map((item, idx) => (
-              <div key={`${item.label}-${idx}`} className="min-w-0 rounded-md border border-border bg-surface p-3">
-                <dt className="text-xs font-medium break-words text-muted">{item.label}</dt>
+              <div key={`${item.label}-${idx}`} className="min-w-0 rounded-md bg-surface p-3">
+                <dt className="text-sm font-medium break-words text-muted">{item.label}</dt>
                 <dd className="mt-1 text-lg font-bold break-words text-fg tabular-nums">{item.value}</dd>
               </div>
             ))}

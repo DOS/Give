@@ -523,4 +523,28 @@ describe("milestone-linked disbursements (DOS/Give#314)", () => {
     expect(unlinkRes).toEqual({ ok: false, message: expect.stringContaining("Khoản hoàn tiền") })
     expect(rpc("set_disbursement_milestone")).toBeUndefined()
   })
+
+  it("uses milestone-specific GIVE_DISBURSEMENT_NOT_FOUND wording for unexplained transactions (DOS/Give#331)", async () => {
+    const linkForm = new FormData()
+    linkForm.set("milestone_id", MILESTONE)
+
+    // Pre-check when disbursement is absent
+    state.userHandler = reads({ disbursement: null })
+    expect(await linkDisbursementMilestone(CAMPAIGN, TX, null, linkForm)).toEqual({
+      ok: false,
+      message: "Khoản chi này chưa được giải trình, nên chưa gắn được mốc mục tiêu.",
+    })
+    expect(rpc("set_disbursement_milestone")).toBeUndefined()
+
+    // RPC error path when DB raises GIVE_DISBURSEMENT_NOT_FOUND
+    state.userHandler = reads({ disbursement: { ...explained(), is_refund: false } })
+    state.serviceHandler = (call) =>
+      call.target === "rpc:set_disbursement_milestone"
+        ? { error: { code: "P0002", message: "GIVE_DISBURSEMENT_NOT_FOUND" } }
+        : undefined
+    expect(await linkDisbursementMilestone(CAMPAIGN, TX, null, linkForm)).toEqual({
+      ok: false,
+      message: "Khoản chi này chưa được giải trình, nên chưa gắn được mốc mục tiêu.",
+    })
+  })
 })
