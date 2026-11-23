@@ -321,6 +321,7 @@ describe("/embed/[slug] page (DOS/Give#335)", () => {
     )
     expect(noTotalsDoc.querySelector('[role="progressbar"]')).toBeNull()
     expect(noTotalsDoc.body.textContent).not.toContain("đã nhận")
+    expect(noTotalsDoc.body.textContent?.match(/Mục tiêu/g)).toHaveLength(1)
     expect(noTotalsDoc.body.textContent).toContain("Mục tiêu 100.000.000")
 
     // 2. Expired live campaign shows "Đã hết hạn" and "Xem chi tiết" instead of "Ủng hộ ngay"

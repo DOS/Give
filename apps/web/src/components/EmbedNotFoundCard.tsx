@@ -15,7 +15,9 @@ function EmbedNotFoundCardBody({ campaignsUrl, theme }: { campaignsUrl: string; 
       <div>
         <p className="text-sm font-bold text-primary">Give</p>
         <h1 className="mt-1 text-base font-semibold text-fg">Không tìm thấy chiến dịch</h1>
-        <p className="mt-1 text-sm text-fg">Chiến dịch không tồn tại, chưa công khai hoặc đang tạm dừng.</p>
+        <p className="mt-1 line-clamp-2 text-sm text-fg">
+          Chiến dịch không tồn tại, chưa công khai hoặc đang tạm dừng.
+        </p>
       </div>
       <div className="pt-2">
         <a

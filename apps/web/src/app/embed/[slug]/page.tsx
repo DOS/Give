@@ -55,7 +55,7 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
  * third-party `<iframe>` embeds (`/embed/[slug]`, DOS/Give#335).
  *
  * Security invariants:
- * - Anonymous `dbAs()` ONLY (zero `getSession()` or cookie reads).
+ * - This route uses anonymous `dbAs()` ONLY (zero `getSession()`, cookie reads, or `dbService()`).
  * - Zero `<form>` mutations, zero inline VietQR / bank transfer details.
  * - Pre-launch (`approved`) teasers NEVER call `getMoneyTotals` and NEVER
  *   render raised/goal amounts or progress bars.
@@ -108,7 +108,7 @@ export default async function EmbedCampaignPage({
     ? options.compact
       ? []
       : [
-          `Mục tiêu ${formatVnd(campaign.goal_amount)}`,
+          hasTotals ? `Mục tiêu ${formatVnd(campaign.goal_amount)}` : null,
           hasTotals && showBackers && people !== null
             ? `${people} ${isGive ? "người ủng hộ" : "người đồng hành"}`
             : null,
@@ -146,7 +146,12 @@ export default async function EmbedCampaignPage({
         )}
         <div className="min-w-0 flex-1">
           <div className={clsx("flex items-center justify-between", options.compact ? "gap-1" : "gap-2")}>
-            <div className={clsx("flex min-w-0 items-center", options.compact ? "gap-1" : "flex-wrap gap-2")}>
+            <div
+              className={clsx(
+                "flex min-w-0 items-center",
+                options.compact ? "gap-1 overflow-hidden" : "flex-wrap gap-2"
+              )}
+            >
               <TypeBadge type={campaign.type} />
               {publicStatus ? <StatusBadge status={campaign.status} /> : <Badge tone="info">Sắp ra mắt</Badge>}
             </div>
