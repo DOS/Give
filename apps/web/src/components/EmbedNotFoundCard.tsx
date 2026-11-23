@@ -46,7 +46,7 @@ function EmbedNotFoundWithSearch({ campaignsUrl }: { campaignsUrl: string }) {
  */
 export function EmbedNotFoundCard({ campaignsUrl = "/campaigns" }: { campaignsUrl?: string }) {
   return (
-    <Suspense fallback={<EmbedNotFoundCardBody campaignsUrl={campaignsUrl} theme="auto" />}>
+    <Suspense fallback={<EmbedNotFoundCardBody campaignsUrl={campaignsUrl} theme="light" />}>
       <EmbedNotFoundWithSearch campaignsUrl={campaignsUrl} />
     </Suspense>
   )

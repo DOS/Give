@@ -4,8 +4,9 @@ import { cookieName, cookieOptions, REFRESH_TTL_SECONDS, SESSION_ACCESS, SESSION
 import { isDeadRefreshToken, loadOidcConfig, refreshTokens, tokenFailureLog } from "@/lib/auth/oidc"
 import { appOrigin } from "@/lib/auth/origin"
 import { needsRefresh } from "@/lib/auth/token"
+import { EMBED_HEADER } from "@/lib/embed"
 
-export const EMBED_HEADER = "x-give-embed"
+export { EMBED_HEADER }
 
 const EXACT_EMBED_RE = /^\/embed(?:\/|$)/
 const ANY_CASE_EMBED_RE = /^\/embed(?:\/|$)/i
@@ -52,7 +53,9 @@ export async function proxy(request: NextRequest) {
   const refresh = request.cookies.get(refreshName)?.value
 
   if (!refresh || !needsRefresh(access)) {
-    return hadSpoofedEmbed ? NextResponse.next({ request: { headers: new Headers(request.headers) } }) : NextResponse.next()
+    return hadSpoofedEmbed
+      ? NextResponse.next({ request: { headers: new Headers(request.headers) } })
+      : NextResponse.next()
   }
 
   try {

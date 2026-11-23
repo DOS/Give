@@ -56,6 +56,7 @@ describe("/embed fallback routes and EmbedNotFound (DOS/Give#335)", () => {
 
     expect(doc.querySelector("h1")?.textContent.trim()).toBe("Không tìm thấy chiến dịch")
     const card = doc.querySelector("[data-embed-theme]")!
+    expect(card.getAttribute("data-embed-theme")).toBe("light")
     expect(card.className).toContain("rounded-md")
     const link = doc.querySelector('a[href="https://give.vn/campaigns"]')!
     expect(link).toBeTruthy()

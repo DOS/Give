@@ -2,8 +2,10 @@ import { createElement, type ReactNode } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
+import { EMBED_HEADER } from "@/lib/embed"
+
 const state = vi.hoisted(() => ({
-  pathname: "/",
+  headers: new Headers(),
   session: null as { user: { id: string; email: string | null; name: string | null }; accessToken: string } | null,
 }))
 
@@ -11,8 +13,8 @@ vi.mock("next/font/google", () => ({
   Be_Vietnam_Pro: () => ({ variable: "--font-be-vietnam-pro" }),
 }))
 
-vi.mock("next/navigation", () => ({
-  usePathname: () => state.pathname,
+vi.mock("next/headers", () => ({
+  headers: vi.fn(async () => state.headers),
 }))
 
 const getSessionMock = vi.fn(async () => state.session)
@@ -45,9 +47,9 @@ vi.mock("@/components/layout/RingBoxScroll", () => ({
 
 const { default: RootLayout } = await import("./layout")
 
-describe("RootLayout chrome isolation (DOS/Give#335)", () => {
+describe("RootLayout chrome & session isolation (DOS/Give#335)", () => {
   beforeEach(() => {
-    state.pathname = "/"
+    state.headers = new Headers()
     state.session = {
       user: { id: "user-1", email: "user@dos.me", name: "Nguyễn An" },
       accessToken: "jwt-token",
@@ -56,28 +58,26 @@ describe("RootLayout chrome isolation (DOS/Give#335)", () => {
     countUnreadNoticesMock.mockClear()
   })
 
-  it("renders SiteHeader, SiteFooter, and RingBoxScroll on normal routes", async () => {
-    for (const path of ["/", "/campaigns/xay-truong", "/embedded"]) {
-      state.pathname = path
-      const html = renderToStaticMarkup(await RootLayout({ children: createElement("div", null, "Page") as ReactNode }))
-      expect(html).toContain("SignedIn(3)")
-      expect(html).toContain("SiteFooter")
-      expect(html).toContain("ring-box-scroll")
-      expect(html).toContain("Page")
-    }
+  it("renders SiteHeader, SiteFooter, and RingBoxScroll with session on normal routes", async () => {
+    const html = renderToStaticMarkup(await RootLayout({ children: createElement("div", null, "Page") as ReactNode }))
+    expect(getSessionMock).toHaveBeenCalledTimes(1)
+    expect(countUnreadNoticesMock).toHaveBeenCalledTimes(1)
+    expect(html).toContain("SignedIn(3)")
+    expect(html).toContain("SiteFooter")
+    expect(html).toContain("ring-box-scroll")
+    expect(html).toContain("Page")
   })
 
-  it("omits SiteHeader, SiteFooter, and RingBoxScroll on /embed and /embed/*", async () => {
-    for (const path of ["/embed", "/embed/xay-truong", "/Embed/xay-truong"]) {
-      state.pathname = path
-      const html = renderToStaticMarkup(
-        await RootLayout({ children: createElement("div", null, "Embed") as ReactNode })
-      )
-      expect(html).not.toContain("SignedIn")
-      expect(html).not.toContain("SignedOut")
-      expect(html).not.toContain("SiteFooter")
-      expect(html).not.toContain("ring-box-scroll")
-      expect(html).toContain("Embed")
-    }
+  it("exits before getSession()/unreadNotices() and omits all site chrome when x-give-embed is 1", async () => {
+    state.headers = new Headers({ [EMBED_HEADER]: "1" })
+
+    const html = renderToStaticMarkup(await RootLayout({ children: createElement("div", null, "Embed") as ReactNode }))
+    expect(getSessionMock).not.toHaveBeenCalled()
+    expect(countUnreadNoticesMock).not.toHaveBeenCalled()
+    expect(html).not.toContain("SignedIn")
+    expect(html).not.toContain("SignedOut")
+    expect(html).not.toContain("SiteFooter")
+    expect(html).not.toContain("ring-box-scroll")
+    expect(html).toContain("Embed")
   })
 })

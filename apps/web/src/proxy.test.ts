@@ -238,11 +238,12 @@ describe("proxy session refresh", () => {
     ).not.toContain(EMBED_HEADER)
 
     // Mixed-case /Embed* returns 404 with DENY & frame-ancestors 'none' without refreshing cookies.
+    fetchMock.mockClear()
     for (const mixedCasePath of ["/EMBED", "/Embed/test-slug"]) {
       const response = await proxy(
         new NextRequest(`https://give.example${mixedCasePath}`, { headers: { cookie: "__Host-give_rt=rt-1" } })
       )
-      expect(fetchMock).toHaveBeenCalledTimes(1)
+      expect(fetchMock).not.toHaveBeenCalled()
       expectCookiesKept(response)
       expect(response.status).toBe(404)
       expect(response.headers.get("x-frame-options")).toBe("DENY")

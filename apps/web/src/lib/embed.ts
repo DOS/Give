@@ -7,6 +7,8 @@ import { sanitizeAmbassadorRef } from "./ambassadors"
  * Client-safe: never imports server-only modules or Supabase clients.
  */
 
+export const EMBED_HEADER = "x-give-embed"
+
 export const EMBED_THEMES = ["light", "dark", "auto"] as const
 export type EmbedTheme = (typeof EMBED_THEMES)[number]
 
