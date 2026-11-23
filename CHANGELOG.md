@@ -1276,7 +1276,9 @@ DOS/DOS.Me#1742 (merge commit `d6732a30`) applied `20261115120000` (#84),
 `20261115150000` (#72), `20261115170000` (#195), `20261116090000` (#71),
 `20261116120000` (#78), `20261116150000` (#199), `20261117090000` (#196) and
 `20261120090000` (#207), plus the CI fix of #174. Then Give `main` took `dev`
-through #224 (merge commit `84e42a23`), which deploys give.vn on Vercel. The
+through #224 (merge commit `84e42a23`), which deploys give.vn on Vercel, and
+later that day merged `dev` through #227 (merge commit `35916606`), deploying
+the #225 promotion record and `hi@give.vn` contact updates (#205 / #226). The
 test-only #135 and #144 changes reached DOS.Me `main` earlier (#155,
 DOS/DOS.Me#1673).
 
@@ -1288,7 +1290,7 @@ DOS/DOS.Me#1769 (merge commit `a4c18cf5`) applied `20261121160000` (#138,
 #238 (merge commit `51dfd645`), deploying refusal reasons on `/admin/unmatched`
 (#138 / #230), the Techcombank Business statement parser `tcb-business`
 (#17 / #231), home and campaign OpenGraph/canonical metadata (#232 / #236,
-#233 / #237), and campaign report/UI test follow-ups (#229, #234 / #235).
+#233 / #237), and campaign report/UI test follow-ups (#228 / #229, #234 / #235).
 
 ### On Production (2026-11-19)
 
@@ -1317,7 +1319,9 @@ Promoted with JOY's approval in two waves:
   Wave 1 campaigns features (#250–#253 / #295–#298, #299 / #300, #258–#260 /
   #265–#267, #268–#270 / #271–#272, #274, #281–#283 / #284–#286, #287 / #288),
   the email outbox (#254 / #257, #279; live sending still waits on AWS SES
-  production access), and monthly plans A (#275 / #276 / #290).
+  production access), monthly plans A (#255 / #256 design, #275 / #276 / #290),
+  the `read-excel-file` bump (#289), and PO/agent docs updates (#280,
+  #292 / #293, #294).
 - **Wave 2:** Database via DOS/DOS.Me#1876 (merge commit `2cc2bb29`) applied
   `20261130110000` (#273 email outbox follow-ups), `20261130120000` (#77
   send-back race guard & pre-launch recovery), `20261130130000` (#291
