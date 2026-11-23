@@ -589,4 +589,52 @@ describe("createCampaign templates (DOS/Give#338)", () => {
       spy.mockRestore()
     }
   })
+
+  it("looks up categories once and preserves template fields across a 23505 slug collision retry", async () => {
+    const template = getCampaignTemplate("medical_emergency")!
+    vi.mocked(uniqueSlug).mockReturnValueOnce("ho-tro-y-te-first").mockReturnValueOnce("ho-tro-y-te-second")
+
+    let campaignAttempt = 0
+    state.handler = (call) => {
+      if (call.target === "categories") return { data: [HEALTHCARE_CAT] }
+      if (call.target === "campaigns") {
+        campaignAttempt++
+        return campaignAttempt === 1 ? { error: { code: "23505" } } : { data: { id: CAMPAIGN } }
+      }
+      if (call.target === "rpc:upsert_campaign_faq") return { data: [{ id: "faq-id" }] }
+      return undefined
+    }
+
+    await expect(
+      createCampaign(
+        null,
+        campaignForm({
+          type: "give",
+          title: "Hỗ trợ phẫu thuật",
+          goal_amount: "100.000.000",
+          template_id: "medical_emergency",
+        })
+      )
+    ).rejects.toThrow(`NEXT_REDIRECT /me/campaigns/${CAMPAIGN}`)
+
+    expect(state.calls.filter((c) => c.target === "categories")).toHaveLength(1)
+    const campaignInserts = state.calls.filter((c) => c.target === "campaigns").map((c) => op(c, "insert")?.[0])
+    expect(campaignInserts).toEqual([
+      expect.objectContaining({
+        slug: "ho-tro-y-te-first",
+        category_id: HEALTHCARE_CAT.id,
+        summary: template.summary,
+        story: template.story,
+      }),
+      expect.objectContaining({
+        slug: "ho-tro-y-te-second",
+        category_id: HEALTHCARE_CAT.id,
+        summary: template.summary,
+        story: template.story,
+      }),
+    ])
+    expect(state.calls.filter((c) => c.target === "rpc:upsert_campaign_faq")).toHaveLength(3)
+    expect(revalidatePath).toHaveBeenCalledExactlyOnceWith("/me/campaigns")
+    expect(redirect).toHaveBeenCalledExactlyOnceWith(`/me/campaigns/${CAMPAIGN}`)
+  })
 })

@@ -22,7 +22,7 @@ export default async function StartPage() {
           <h1 className="text-h1-phone tracking-tight sm:text-h1">Tạo chiến dịch</h1>
           <p className="mt-3 max-w-[68ch] text-fg">
             {organizer
-              ? "Bắt đầu bằng loại chiến dịch, tiêu đề và mục tiêu. Bạn sẽ viết tiếp câu chuyện, chọn danh mục và ảnh bìa ở bước sau."
+              ? "Chọn mẫu gợi ý hoặc bắt đầu bằng loại chiến dịch, tiêu đề và mục tiêu. Bạn có thể chỉnh sửa câu chuyện, danh mục và ảnh bìa ở bước sau."
               : "Trước tiên, cho chúng tôi biết ai đứng ra gây quỹ. Tên pháp lý cần khớp với tên chủ tài khoản nhận tiền."}
           </p>
         </div>

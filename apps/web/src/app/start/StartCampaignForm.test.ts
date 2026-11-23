@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 /** StartCampaignForm template selection, keyboard navigation, and field preservation (DOS/Give#338). */
 import { act, createElement } from "react"
-import { createRoot, type Root } from "react-dom/client"
+import { createRoot, hydrateRoot, type Root } from "react-dom/client"
+import { renderToString } from "react-dom/server"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 
 import { CAMPAIGN_TEMPLATES, getCampaignTemplate } from "@/lib/campaign-templates"
@@ -158,6 +159,44 @@ describe("StartCampaignForm (DOS/Give#338)", () => {
     act(() => typeRadio("back").click())
     expect(typeRadio("back").checked).toBe(true)
     expect(templateHiddenInput().value).toBe("education_community")
+
+    // Re-clicking the already-selected template does not clobber manual type or goal overrides.
+    setInputValue(goalInput(), "75.000.000")
+    act(() => templateRadio("education_community").click())
+    expect(typeRadio("back").checked).toBe(true)
+    expect(goalInput().value).toBe("75.000.000")
+  })
+
+  it("preserves pre-hydration edits to type, title, and goal_amount across React hydration", () => {
+    act(() => root.unmount())
+    const ssrContainer = document.createElement("div")
+    ssrContainer.innerHTML = renderToString(createElement(StartCampaignForm, { action: async () => null }))
+    document.body.append(ssrContainer)
+
+    try {
+      const preBack = ssrContainer.querySelector<HTMLInputElement>('input[type="radio"][name="type"][value="back"]')!
+      const preTitle = ssrContainer.querySelector<HTMLInputElement>("#title")!
+      const preGoal = ssrContainer.querySelector<HTMLInputElement>("#goal_amount")!
+      preBack.checked = true
+      preTitle.value = "Dự án gõ trước khi hydrate"
+      preGoal.value = "90.000.000"
+
+      let hydratedRoot: Root
+      act(() => {
+        hydratedRoot = hydrateRoot(ssrContainer, createElement(StartCampaignForm, { action: async () => null }))
+      })
+
+      expect(
+        ssrContainer.querySelector<HTMLInputElement>('input[type="radio"][name="type"][value="back"]')!.checked
+      ).toBe(true)
+      expect(ssrContainer.querySelector<HTMLInputElement>("#title")!.value).toBe("Dự án gõ trước khi hydrate")
+      expect(ssrContainer.querySelector<HTMLInputElement>("#goal_amount")!.value).toBe("90.000.000")
+
+      act(() => hydratedRoot.unmount())
+    } finally {
+      ssrContainer.remove()
+      root = createRoot(container)
+    }
   })
 
   it("supports keyboard arrow, Home, and End navigation with roving tabindex across template cards", () => {

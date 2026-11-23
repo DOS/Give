@@ -172,7 +172,7 @@ export const CAMPAIGN_TEMPLATES: readonly CampaignTemplate[] = [
       {
         question: "Tôi muốn đóng góp bằng hiện vật thay vì chuyển khoản có được không?",
         answer:
-          "Hiện nền tảng Give ghi nhận và đối soát các khoản đóng góp tài chính qua sao kê minh bạch. Nếu muốn gửi hiện vật, vui lòng liên hệ trực tiếp ban tổ chức theo thông tin trong chiến dịch.",
+          "Hiện nền tảng Give ghi nhận và đối soát các khoản đóng góp tài chính qua sao kê minh bạch. Nếu muốn gửi hiện vật, bạn có thể liên hệ qua thông tin do người tổ chức chia sẻ trong phần Câu chuyện hoặc trang hồ sơ công khai (nếu có).",
       },
     ],
   },

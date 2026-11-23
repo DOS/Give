@@ -11,7 +11,6 @@ import {
   type CampaignTemplate,
   type CampaignTemplateId,
 } from "@/lib/campaign-templates"
-import type { CampaignType } from "@/lib/campaigns"
 import type { ActionResult } from "@/lib/errors"
 import { formatVnd } from "@/lib/format"
 
@@ -21,9 +20,8 @@ const TYPE_CHOICE =
 
 /**
  * Campaign creation form on /start with optional quick-start Vietnamese
- * templates (DOS/Give#338). Defaults to "blank" so zero-JS submissions match
- * the baseline flow while hydrated clients get pre-filled type, goal, and
- * title guidance.
+ * templates (DOS/Give#338). Defaults to "blank" and keeps type/title/goal
+ * uncontrolled so pre-hydration edits and zero-JS submissions remain intact.
  */
 export function StartCampaignForm({
   action,
@@ -31,25 +29,33 @@ export function StartCampaignForm({
   action: (state: ActionResult, formData: FormData) => Promise<ActionResult>
 }) {
   const [selectedId, setSelectedId] = useState<CampaignTemplateId>("blank")
-  const [campaignType, setCampaignType] = useState<CampaignType>("give")
-  const [goalAmount, setGoalAmount] = useState("")
   const optionRefs = useRef<(HTMLButtonElement | null)[]>([])
+  const giveRadioRef = useRef<HTMLInputElement>(null)
+  const backRadioRef = useRef<HTMLInputElement>(null)
+  const goalInputRef = useRef<HTMLInputElement>(null)
 
   const selectedTemplate = CAMPAIGN_TEMPLATES.find((t) => t.id === selectedId) ?? CAMPAIGN_TEMPLATES[0]
   const activeTemplate = selectedTemplate.id === "blank" ? null : selectedTemplate
+  const suggestedGoal = activeTemplate?.suggestedGoal ?? null
 
   function selectTemplate(template: CampaignTemplate) {
+    if (template.id === selectedId) return
     const previous = CAMPAIGN_TEMPLATES.find((t) => t.id === selectedId)
     setSelectedId(template.id)
-    setCampaignType(template.type)
+
+    if (giveRadioRef.current) giveRadioRef.current.checked = template.type === "give"
+    if (backRadioRef.current) backRadioRef.current.checked = template.type === "back"
+
+    const goalInput = goalInputRef.current
+    if (!goalInput) return
     if (template.suggestedGoal !== null) {
-      setGoalAmount(formatTemplateGoal(template.suggestedGoal))
+      goalInput.value = formatTemplateGoal(template.suggestedGoal)
     } else if (
       previous?.suggestedGoal !== null &&
       previous?.suggestedGoal !== undefined &&
-      goalAmount === formatTemplateGoal(previous.suggestedGoal)
+      goalInput.value === formatTemplateGoal(previous.suggestedGoal)
     ) {
-      setGoalAmount("")
+      goalInput.value = ""
     }
   }
 
@@ -76,7 +82,7 @@ export function StartCampaignForm({
     <ActionForm action={action} className="mt-6 space-y-6">
       <input type="hidden" name="template_id" value={selectedId} />
 
-      <div>
+      <div className="noscript:hidden">
         <div id="template_picker_label" className="label">
           Mẫu khởi tạo
         </div>
@@ -89,6 +95,9 @@ export function StartCampaignForm({
           {CAMPAIGN_TEMPLATES.map((template, index) => {
             const selected = selectedId === template.id
             const isBlank = template.id === "blank"
+            const nameId = `template_name_${template.id}`
+            const metaId = `template_meta_${template.id}`
+            const descId = `template_desc_${template.id}`
             return (
               <button
                 key={template.id}
@@ -98,6 +107,8 @@ export function StartCampaignForm({
                 type="button"
                 role="radio"
                 aria-checked={selected}
+                aria-labelledby={nameId}
+                aria-describedby={`${metaId} ${descId}`}
                 tabIndex={selected ? 0 : -1}
                 data-template-id={template.id}
                 onClick={() => selectTemplate(template)}
@@ -110,7 +121,10 @@ export function StartCampaignForm({
                     : "border-border bg-raised hover:bg-surface"
                 )}
               >
-                <span className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm">
+                <span
+                  id={metaId}
+                  className="flex w-full flex-wrap items-center justify-between gap-x-3 gap-y-1 text-sm"
+                >
                   <span className="inline-flex items-center gap-2 font-medium text-muted">
                     {isBlank ? (
                       <LedgerIcon width={16} height={16} className="shrink-0 text-muted" />
@@ -127,8 +141,12 @@ export function StartCampaignForm({
                     <span className="text-muted tabular-nums">Gợi ý {formatVnd(template.suggestedGoal)}</span>
                   )}
                 </span>
-                <span className="font-semibold break-words text-fg">{template.name}</span>
-                <span className="text-sm break-words text-fg">{template.tagline}</span>
+                <span id={nameId} className="font-semibold break-words text-fg">
+                  {template.name}
+                </span>
+                <span id={descId} className="text-sm break-words text-fg">
+                  {template.tagline}
+                </span>
               </button>
             )
           })}
@@ -145,11 +163,11 @@ export function StartCampaignForm({
         <div className="grid gap-3 sm:grid-cols-2 [&>*]:min-w-0">
           <label className={TYPE_CHOICE}>
             <input
+              ref={giveRadioRef}
               type="radio"
               name="type"
               value="give"
-              checked={campaignType === "give"}
-              onChange={() => setCampaignType("give")}
+              defaultChecked
               className="mt-1 size-5 shrink-0 accent-primary"
             />
             <span className="min-w-0">
@@ -162,11 +180,10 @@ export function StartCampaignForm({
           </label>
           <label className={TYPE_CHOICE}>
             <input
+              ref={backRadioRef}
               type="radio"
               name="type"
               value="back"
-              checked={campaignType === "back"}
-              onChange={() => setCampaignType("back")}
               className="mt-1 size-5 shrink-0 accent-primary"
             />
             <span className="min-w-0">
@@ -211,24 +228,19 @@ export function StartCampaignForm({
           Mục tiêu (₫)
         </label>
         <input
+          ref={goalInputRef}
           id="goal_amount"
           name="goal_amount"
           className="field tabular-nums"
           inputMode="numeric"
-          placeholder={
-            activeTemplate?.suggestedGoal !== null && activeTemplate?.suggestedGoal !== undefined
-              ? formatTemplateGoal(activeTemplate.suggestedGoal)
-              : "50.000.000"
-          }
-          value={goalAmount}
-          onChange={(event) => setGoalAmount(event.target.value)}
-          aria-describedby={activeTemplate?.suggestedGoal ? "goal_amount_hint" : undefined}
+          defaultValue=""
+          placeholder={suggestedGoal !== null ? formatTemplateGoal(suggestedGoal) : "50.000.000"}
+          aria-describedby={suggestedGoal !== null ? "goal_amount_hint" : undefined}
           required
         />
-        {activeTemplate?.suggestedGoal !== null && activeTemplate?.suggestedGoal !== undefined && (
+        {suggestedGoal !== null && (
           <p id="goal_amount_hint" className="hint">
-            Mục tiêu gợi ý cho mẫu này ({formatVnd(activeTemplate.suggestedGoal)}). Bạn có thể sửa lại bất kỳ mức nào từ
-            10.000 ₫.
+            Mục tiêu gợi ý cho mẫu này ({formatVnd(suggestedGoal)}). Bạn có thể sửa lại bất kỳ mức nào từ 10.000 ₫.
           </p>
         )}
       </div>
