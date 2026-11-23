@@ -1,5 +1,10 @@
 # Design Principles - Give Crowdfunding Platform
 
+> **Historical 2025 Strapi / Tailwind Plus / Roboto prototype doc — archived and not kept up to date.**
+> Replaced by [DESIGN.md](../DESIGN.md), [README.md](../README.md),
+> [Give-Technical-Design.md](Give-Technical-Design.md),
+> [Platform-Roadmap.md](Platform-Roadmap.md), and [CHANGELOG.md](../CHANGELOG.md).
+
 ## 🎯 **Core Design Philosophy**
 
 ### **Minimalism First**

@@ -1,5 +1,10 @@
 # User Profile System - Comprehensive Design Document
 
+> **Historical 2025 Strapi prototype doc — archived and not kept up to date.**
+> Replaced by [README.md](../README.md), [DESIGN.md](../DESIGN.md),
+> [Give-Technical-Design.md](Give-Technical-Design.md),
+> [Platform-Roadmap.md](Platform-Roadmap.md), and [CHANGELOG.md](../CHANGELOG.md).
+
 ## Table of Contents
 
 1. [Overview](#overview)

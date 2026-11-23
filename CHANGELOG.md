@@ -113,6 +113,31 @@ they reach Production with a separate, approved promotion of DOS.Me `main`.
   `PublicEvidenceList` `"Báo cáo ảnh"` in `PublicEvidence.tsx`), paired with
   `@media print` styling in `apps/web/src/app/globals.css` and
   `data-site-footer` in `SiteFooter`, with Vitest suites (#336 / #340).
+- Give v2.1 polish — Sprint 5 P3 fixes, `/me` ambassador leaderboard toggle and
+  `README.md` Production sync: `apps/web/src/app/me/actions.ts` adds
+  `toggleMyAmbassadorLeaderboard` strictly under the caller's own JWT
+  (`dbAs(session.accessToken)`) via `give.get_my_campaign_ambassador` and
+  `give.upsert_my_campaign_ambassador` (zero `dbService()`, preserving
+  `display_name` and working on ended campaigns), wired into `MyProfilePage`
+  (`/me/page.tsx`) and `MyAmbassadorLinksSection`
+  (`apps/web/src/components/me/MyAmbassadorLinksSection.tsx`) with per-link
+  `useActionState` controls and `/me` + `/campaigns/[slug]` revalidation.
+  `/admin/reports/wishes` (`apps/web/src/app/admin/reports/wishes/page.tsx`)
+  adds a bounded-list count notice when `totalCount > reports.length` and aligns
+  the hidden-wish action label (`“Xác nhận ẩn & chốt báo cáo”`);
+  `/campaigns/[slug]/ambassador-actions.ts` maps `GIVE_CAMPAIGN_NOT_ACCEPTING`;
+  `/campaigns/[slug]/opengraph-image.tsx` emits `Cache-Control: no-store` when
+  `totals === null` on live/ended campaigns so CDNs never cache `0 ₫` fallbacks;
+  `/campaigns/[slug]/pledge/page.tsx` gates the expired-Early-Bird tier switch
+  guidance on `accepting`; `/me/campaigns/[id]/disbursements/actions.ts` maps
+  `GIVE_DISBURSEMENT_NOT_FOUND` for unexplained disbursements;
+  `apps/web/src/lib/canvas-cards.ts` adds `resolveCanvasSansFont()` so client
+  QR poster and thank-you PNG exports inherit `next/font`'s computed
+  `Be Vietnam Pro` font family; UI/copy polish lands across
+  `TransparencySummaryBox.tsx`, `ClosingImpactReport.tsx`,
+  `ImpactReportSection.tsx`, `CampaignCard.tsx`, `MilestoneList.tsx`,
+  `lib/errors.ts` and `lib/validation.ts`; and `README.md` syncs Production
+  status, with Vitest suites (#331 / #332).
 - Moderated `"Tường lời chúc"` donor wishes wall, heart reactions, reporting
   and staff wish-report queue: `/campaigns/[slug]` adds `#tuong-loi-chuc`
   (`DonorWishesWall`, `WishHeartButton`, `wish-actions.ts`, `lib/donor-wishes.ts`)
@@ -1254,3 +1279,72 @@ DOS/DOS.Me#1742 (merge commit `d6732a30`) applied `20261115120000` (#84),
 through #224 (merge commit `84e42a23`), which deploys give.vn on Vercel. The
 test-only #135 and #144 changes reached DOS.Me `main` earlier (#155,
 DOS/DOS.Me#1673).
+
+### On Production (2026-11-18)
+
+Promoted with JOY's approval. Database first: the selective promotion
+DOS/DOS.Me#1769 (merge commit `a4c18cf5`) applied `20261121160000` (#138,
+`give.bank_transaction_refusal_reasons`). Then Give `main` merged `dev` through
+#238 (merge commit `51dfd645`), deploying refusal reasons on `/admin/unmatched`
+(#138 / #230), the Techcombank Business statement parser `tcb-business`
+(#17 / #231), home and campaign OpenGraph/canonical metadata (#232 / #236,
+#233 / #237), and campaign report/UI test follow-ups (#229, #234 / #235).
+
+### On Production (2026-11-19)
+
+Promoted with JOY's approval. Database first: the selective promotion
+DOS/DOS.Me#1779 (merge commit `dacc8b3a`) applied `20261122090000`
+(`give_statement_import_followups`), `20261122100000`
+(`give_statement_review_followups`) and `20261122120000`
+(`give_statement_restore_token`) (#57). Then Give `main` merged `dev` through
+#249 (merge commit `035ceaeb`), deploying statement import follow-ups and
+finance review/trust-restore UI (#57 / #243, #245, #246), Tingee M2 channel
+research (#239), and discovery, fulfillment and admin queue fixes (#240 / #247,
+#241 / #244, #242 / #248).
+
+### On Production (2026-11-22)
+
+Promoted with JOY's approval in two waves:
+
+- **Wave 1:** Database via DOS/DOS.Me#1869 (merge commit `1de1b0b4`) applied
+  `20261129120000` (#263 analytics), `20261129150000` (#262 comments),
+  `20261129160000` (#261 organizer public profiles), `20261129170000` (#264
+  co-organizers/invites), and monotonic late-apply
+  `20261129180000_give_outbox_and_donation_plans_late_apply` (consolidating
+  `20261123090000` #254, `20261124090000` #254 hold, and `20261125120000` #275
+  monthly plans A because `main` already carried `20261127130000`). Then Give
+  `main` merged `dev` through #301 (merge commit `d2df5d88`), deploying
+  Wave 1 campaigns features (#250–#253 / #295–#298, #299 / #300, #258–#260 /
+  #265–#267, #268–#270 / #271–#272, #274, #281–#283 / #284–#286, #287 / #288),
+  the email outbox (#254 / #257, #279; live sending still waits on AWS SES
+  production access), and monthly plans A (#275 / #276 / #290).
+- **Wave 2:** Database via DOS/DOS.Me#1876 (merge commit `2cc2bb29`) applied
+  `20261130110000` (#273 email outbox follow-ups), `20261130120000` (#77
+  send-back race guard & pre-launch recovery), `20261130130000` (#291
+  `plan_account_swapped` notice), and `20261130140000` (#92 `back` campaign
+  account swaps & `payment_due` notices). Then Give `main` merged `dev` through
+  #312 (merge commit `9493c5ea`), deploying Wave 2 (#273 / #305, #77 / #306,
+  #291 / #307, #308 / #309, #92 / #310, #303 / #304, and #311).
+
+### On Production (2026-11-23)
+
+Promoted with JOY's approval in two releases:
+
+- **Give v2 (Sprint 5):** Database via DOS/DOS.Me#1890 (merge commit `66da2c4a`)
+  applied the consolidated monotonic late-apply migration
+  `20261202150000_give_sprint5_consolidated_late_apply` (consolidating
+  `20261201110000` #314, `20261201120000` #315, `20261201160000` #316,
+  `20261202110000` #317, `20261202120000` #318, `20261202130000` #319, and
+  `20261202140000` #320 in one atomic transaction because `main` already
+  carried `20261202100000`). Then Give `main` merged `dev` through #330 (merge
+  commit `7eb13347`), deploying Give v2 (#313–#320 / #321–#329).
+- **Give v2.1 polish:** Give `main` merged `dev` through #333 (merge commit
+  `55f4b609`), deploying #331 / #332 (`16a8357`, Sprint 5 P3 fixes, `/me`
+  ambassador leaderboard visibility toggle, and `README.md` Production sync)
+  with no new database migrations.
+
+### Pending Production (on `dev` / Beta, 2026-11-23)
+
+- Give v3 (#334–#338, PRs #340–#345 + DOS/DOS.Me#1908 migration
+  `20261204110000_give_following_and_closing_reminders`) is on `dev`
+  (`https://beta.give.vn`) only and awaits Production promotion.
